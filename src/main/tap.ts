@@ -53,6 +53,9 @@ export class WebSocketTap {
     /** Called for every game-socket frame, in order, once the socket is classified. */
     onGameFrame: ((dir: Direction, bytes: Uint8Array) => void) | null = null;
 
+    /** Fired when a new game socket opens, so decode state can be reset. */
+    onGameSocketOpen: (() => void) | null = null;
+
     constructor(
         private readonly wc: WebContents,
         private readonly log: (msg: string) => void,
@@ -135,6 +138,7 @@ export class WebSocketTap {
             return;
         }
         if (s.kind === 'game') {
+            this.onGameSocketOpen?.();
             for (const f of s.pending) this.onGameFrame?.(f.dir, f.bytes);
         }
         s.pending.length = 0;

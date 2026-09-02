@@ -3,11 +3,11 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { resolveServerTarget, isReachable, type ServerTarget } from './serverUrl';
 import { WebSocketTap } from './tap';
-import { HandshakeReader, type Handshake } from './seedProbe';
-import { findAdjacentPair, type RngDump } from './rngProbe';
+import { SessionDecoder, type RngDump } from './session';
+import { XpTracker } from './xp';
 import { loadPrivateKey, decryptLoginBlock } from './rsa';
 import { computeLayout, sidebarWidth, MIN_GAME_WIDTH, RAIL_WIDTH } from './layout';
-import { IPC, type SidebarState, type SessionState, type SidebarMode } from '../shared/ipc';
+import { IPC, type SidebarState, type SessionState, type SidebarMode, type XpState } from '../shared/ipc';
 
 const SEAM_ENABLED = process.env.SWIFTKIT_SEAM !== '0';
 const RNG_PROBE_ENABLED = process.env.SWIFTKIT_RNG !== '0';
@@ -35,6 +35,22 @@ const session_: { revision: number | null; seedRecovered: boolean | null } = {
     revision: null,
     seedRecovered: null
 };
+
+const xp = new XpTracker();
+let decoder: SessionDecoder | null = null;
+let xpKeyed = false;
+let xpDegraded: string | null = null;
+
+function pushXpState(): void {
+    if (!shellView || shellView.webContents.isDestroyed()) return;
+    const state: XpState = {
+        rows: xp.rows(),
+        totalGained: xp.totalGained(),
+        keyed: xpKeyed,
+        degraded: xpDegraded
+    };
+    shellView.webContents.send(IPC.xpState, state);
+}
 
 // ── layout ────────────────────────────────────────────────────────────────
 
@@ -89,55 +105,77 @@ function pushSessionState(): void {
     shellView.webContents.send(IPC.sessionState, state);
 }
 
-// ── seed recovery (spike, retained as the session readout) ────────────────
+// ── decoding ──────────────────────────────────────────────────────────────
 
-async function verifySeedRecovery(h: Handshake): Promise<void> {
-    session_.revision = h.revision;
-    log(`[seed] revision ${h.revision}, server seed ${h.serverSeedHi}/${h.serverSeedLo}`);
-
-    let dump: RngDump | null = null;
-    try {
-        dump = (await gameView!.webContents.executeJavaScript(
-            'window.__swiftkitRng ? window.__swiftkitRng.dump() : null'
-        )) as RngDump | null;
-    } catch {
-        /* probe unavailable */
-    }
-    if (!dump) {
-        log('[seed] RNG probe not installed — cannot recover');
-        session_.seedRecovered = false;
-        pushSessionState();
-        return;
-    }
-
+/**
+ * Local-only sanity check: if the server's private key is on disk, decrypt the
+ * login block and confirm the seed we recovered by observing Math.random is the
+ * real one. Never required to decode — it exists so the XP numbers are trusted
+ * rather than assumed, and it silently does nothing for servers we don't run.
+ */
+function crossCheckSeed(seeds: number[], rsaBlock: Uint8Array | null): void {
+    if (!rsaBlock) return;
     const pemPath = resolve(target.serverRoot, 'engine/data/config/private.pem');
-    if (!existsSync(pemPath)) {
-        log('[seed] no private.pem — skipping oracle verification');
-        pushSessionState();
-        return;
-    }
-
+    if (!existsSync(pemPath)) return;
     try {
-        const { magic, seeds } = decryptLoginBlock(h.rsaBlock, loadPrivateKey(pemPath));
-        const plaintextMatch = seeds[2] === h.serverSeedHi && seeds[3] === h.serverSeedLo;
-        const pair = findAdjacentPair(dump, seeds[0], seeds[1]);
-        session_.seedRecovered = magic === 10 && plaintextMatch && pair.found;
-        log(
-            `[seed] recovered=${session_.seedRecovered} (magic ${magic}, plaintext ${plaintextMatch}, ` +
-                `pair ${pair.found ? `at draw #${pair.index}/${dump.seq}` : 'not found'})`
-        );
+        const { magic, seeds: truth } = decryptLoginBlock(rsaBlock, loadPrivateKey(pemPath));
+        const match = magic === 10 && truth.every((w, i) => w === seeds[i]);
+        log(`[seed] oracle cross-check: ${match ? 'MATCH' : `MISMATCH recovered ${seeds} vs true ${truth}`}`);
     } catch (err) {
-        session_.seedRecovered = false;
-        log(`[seed] verification failed: ${(err as Error).message}`);
+        log(`[seed] oracle unavailable: ${(err as Error).message}`);
     }
+}
 
-    try {
-        await gameView!.webContents.executeJavaScript('window.__swiftkitRng.disarm()');
-        log('[rng] disarmed — Math.random restored to native');
-    } catch {
-        /* page gone */
-    }
-    pushSessionState();
+function createDecoder(): SessionDecoder {
+    return new SessionDecoder({
+        log,
+        onNeedRandoms: () => {
+            void (async () => {
+                let dump: RngDump | null = null;
+                try {
+                    dump = (await gameView!.webContents.executeJavaScript(
+                        'window.__swiftkitRng ? window.__swiftkitRng.dump() : null'
+                    )) as RngDump | null;
+                } catch {
+                    /* page gone */
+                }
+                decoder?.setRandoms(dump);
+                // The observer is only needed across the login window.
+                try {
+                    await gameView!.webContents.executeJavaScript('window.__swiftkitRng && window.__swiftkitRng.disarm()');
+                } catch {
+                    /* page gone */
+                }
+            })();
+        },
+        onKeyed: info => {
+            xpKeyed = true;
+            xpDegraded = null;
+            session_.revision = info.revision;
+            session_.seedRecovered = true;
+            log(`[seed] keyed on revision ${info.revision} from draw #${info.drawIndex} of ${info.totalDraws}`);
+            crossCheckSeed(info.seeds, info.rsaBlock);
+            pushSessionState();
+            pushXpState();
+        },
+        onStat: (skill, exp, level) => {
+            xp.update(skill, exp, level);
+            pushXpState();
+        },
+        onLogout: () => {
+            log('[session] logout');
+            xpKeyed = false;
+            pushXpState();
+        },
+        onDegraded: reason => {
+            xpKeyed = false;
+            xpDegraded = reason;
+            session_.seedRecovered = false;
+            log(`[session] degraded: ${reason}`);
+            pushSessionState();
+            pushXpState();
+        }
+    });
 }
 
 // ── dev capture ───────────────────────────────────────────────────────────
@@ -145,14 +183,9 @@ async function verifySeedRecovery(h: Handshake): Promise<void> {
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Render the sidebar to PNGs and quit.
- *
- * Uses webContents.capturePage(), which captures page content rather than the
- * screen — so it works regardless of which Space the window is on, whether it
- * is occluded, or where it sits. Screen-level capture cannot do this.
- *
- * Captures the empty state as it really is, plus a populated state driven by a
- * synthetic snapshot, because both need reviewing.
+ * Render the sidebar to PNGs and quit. Uses webContents.capturePage(), which
+ * captures page content rather than the screen, so it works regardless of which
+ * Space the window is on or whether it is occluded.
  */
 async function captureAndExit(dir: string): Promise<void> {
     if (!shellView) return;
@@ -185,8 +218,22 @@ async function captureAndExit(dir: string): Promise<void> {
         seedRecovered: true
     };
     shellView.webContents.send(IPC.sessionState, populated);
+
+    // Two passes: the first sets the baseline the way a login does, the second
+    // is the gain. One pass would correctly show zero everywhere.
+    const fixture = [[0, 4320, 42], [2, 1180, 38], [3, 1440, 44], [7, 275, 21], [14, 9860, 51]] as const;
+    for (const [id, , level] of fixture) xp.update(id, 100_000, level);
+    for (const [id, gained, level] of fixture) xp.update(id, 100_000 + gained, level);
+    xpKeyed = true;
+    pushXpState();
     await wait(350);
     await shot('panel-live');
+
+    await shellView.webContents.executeJavaScript(
+        "document.querySelectorAll('[role=tab]')[1].click()"
+    );
+    await wait(250);
+    await shot('panel-xp');
 
     app.quit();
 }
@@ -296,6 +343,7 @@ app.whenReady().then(async () => {
         win?.show();
         pushSidebarState();
         pushSessionState();
+        pushXpState();
     });
 
     win.on('resize', () => {
@@ -319,8 +367,16 @@ app.whenReady().then(async () => {
 
     if (SEAM_ENABLED) {
         tap = new WebSocketTap(gameView.webContents, log, RNG_PROBE_ENABLED);
-        const reader = new HandshakeReader(h => void verifySeedRecovery(h), log);
-        tap.onGameFrame = (dir, bytes) => reader.feed(dir, bytes);
+        decoder = createDecoder();
+        tap.onGameFrame = (dir, bytes) => decoder?.feed(dir, bytes);
+        tap.onGameSocketOpen = () => {
+            // Each connection gets fresh seeds, so start a fresh decoder.
+            decoder = createDecoder();
+            xp.reset();
+            xpKeyed = false;
+            xpDegraded = null;
+            pushXpState();
+        };
         await tap.attach();
     }
 

@@ -4,7 +4,8 @@ export const IPC = {
     sidebarToggle: 'swiftkit:sidebar-toggle',
     sidebarSetOpen: 'swiftkit:sidebar-set-open',
     sidebarState: 'swiftkit:sidebar-state',
-    sessionState: 'swiftkit:session-state'
+    sessionState: 'swiftkit:session-state',
+    xpState: 'swiftkit:xp-state'
 } as const;
 
 export type SidebarMode = 'widen' | 'push';
@@ -26,6 +27,24 @@ export interface SessionState {
     seedRecovered: boolean | null;
 }
 
+export interface SkillRow {
+    id: number;
+    name: string;
+    xp: number;
+    level: number;
+    gained: number;
+    /** False until the server has sent this skill at least once. */
+    seen: boolean;
+}
+
+export interface XpState {
+    rows: SkillRow[];
+    totalGained: number;
+    keyed: boolean;
+    /** Set when decoding stopped — the reason is shown rather than guessed numbers. */
+    degraded: string | null;
+}
+
 export interface SwiftkitApi {
     sidebar: {
         toggle(): Promise<SidebarState>;
@@ -34,5 +53,8 @@ export interface SwiftkitApi {
     };
     session: {
         onState(cb: (s: SessionState) => void): () => void;
+    };
+    xp: {
+        onState(cb: (s: XpState) => void): () => void;
     };
 }

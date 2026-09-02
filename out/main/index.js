@@ -69,19 +69,6 @@ const RNG_PROBE_SOURCE = `(() => {
     };
     Math.random = patched;
 })();`;
-const RANDOM_MULTIPLIER = 99999999;
-function seedWordFromRandom(r) {
-  return Math.floor(RANDOM_MULTIPLIER * r) | 0;
-}
-function findAdjacentPair(dump, want0, want1) {
-  const v = dump.values;
-  for (let i = 0; i + 1 < v.length; i++) {
-    if (seedWordFromRandom(v[i]) === want0 && seedWordFromRandom(v[i + 1]) === want1) {
-      return { found: true, index: dump.baseSeq + i, candidates: Math.max(v.length - 1, 0) };
-    }
-  }
-  return { found: false, index: null, candidates: Math.max(v.length - 1, 0) };
-}
 const OPCODE_GAME_LOGIN = 14;
 const OPCODE_ONDEMAND = 15;
 function frameBytes(response) {
@@ -104,6 +91,8 @@ class WebSocketTap {
   attached = false;
   /** Called for every game-socket frame, in order, once the socket is classified. */
   onGameFrame = null;
+  /** Fired when a new game socket opens, so decode state can be reset. */
+  onGameSocketOpen = null;
   /** Snapshot of the game socket, for the sidebar's connection panel. */
   gameStats() {
     for (const s of this.sockets.values()) {
@@ -172,6 +161,7 @@ class WebSocketTap {
       return;
     }
     if (s.kind === "game") {
+      this.onGameSocketOpen?.();
       for (const f of s.pending) this.onGameFrame?.(f.dir, f.bytes);
     }
     s.pending.length = 0;
@@ -242,61 +232,645 @@ class WebSocketTap {
 ${lines.join("\n")}`);
   }
 }
-const S2C_SEED_OFFSET = 9;
-const C2S_LOGIN_OFFSET = 2;
-class HandshakeReader {
-  constructor(onComplete, log2) {
-    this.onComplete = onComplete;
-    this.log = log2;
+class Isaac {
+  count = 0;
+  rsl = new Int32Array(256);
+  mem = new Int32Array(256);
+  a = 0;
+  b = 0;
+  c = 0;
+  constructor(seed = [0, 0, 0, 0]) {
+    for (let i = 0; i < seed.length; i++) {
+      this.rsl[i] = seed[i];
+    }
+    this.init();
   }
-  onComplete;
-  log;
+  // prettier-ignore
+  init() {
+    let a = 2654435769, b = 2654435769, c = 2654435769, d = 2654435769, e = 2654435769, f = 2654435769, g = 2654435769, h = 2654435769;
+    const mix = () => {
+      a ^= b << 11;
+      d += a;
+      b += c;
+      b ^= c >>> 2;
+      e += b;
+      c += d;
+      c ^= d << 8;
+      f += c;
+      d += e;
+      d ^= e >>> 16;
+      g += d;
+      e += f;
+      e ^= f << 10;
+      h += e;
+      f += g;
+      f ^= g >>> 4;
+      a += f;
+      g += h;
+      g ^= h << 8;
+      b += g;
+      h += a;
+      h ^= a >>> 9;
+      c += h;
+      a += b;
+    };
+    for (let i = 0; i < 4; i++) mix();
+    for (let i = 0; i < 256; i += 8) {
+      a += this.rsl[i];
+      b += this.rsl[i + 1];
+      c += this.rsl[i + 2];
+      d += this.rsl[i + 3];
+      e += this.rsl[i + 4];
+      f += this.rsl[i + 5];
+      g += this.rsl[i + 6];
+      h += this.rsl[i + 7];
+      mix();
+      this.mem[i] = a;
+      this.mem[i + 1] = b;
+      this.mem[i + 2] = c;
+      this.mem[i + 3] = d;
+      this.mem[i + 4] = e;
+      this.mem[i + 5] = f;
+      this.mem[i + 6] = g;
+      this.mem[i + 7] = h;
+    }
+    for (let i = 0; i < 256; i += 8) {
+      a += this.mem[i];
+      b += this.mem[i + 1];
+      c += this.mem[i + 2];
+      d += this.mem[i + 3];
+      e += this.mem[i + 4];
+      f += this.mem[i + 5];
+      g += this.mem[i + 6];
+      h += this.mem[i + 7];
+      mix();
+      this.mem[i] = a;
+      this.mem[i + 1] = b;
+      this.mem[i + 2] = c;
+      this.mem[i + 3] = d;
+      this.mem[i + 4] = e;
+      this.mem[i + 5] = f;
+      this.mem[i + 6] = g;
+      this.mem[i + 7] = h;
+    }
+    this.isaac();
+    this.count = 256;
+  }
+  isaac() {
+    this.c++;
+    this.b += this.c;
+    for (let i = 0; i < 256; i++) {
+      const x = this.mem[i];
+      switch (i & 3) {
+        case 0:
+          this.a ^= this.a << 13;
+          break;
+        case 1:
+          this.a ^= this.a >>> 6;
+          break;
+        case 2:
+          this.a ^= this.a << 2;
+          break;
+        case 3:
+          this.a ^= this.a >>> 16;
+          break;
+      }
+      this.a += this.mem[i + 128 & 255];
+      const y = this.mem[i] = this.mem[x >>> 2 & 255] + this.a + this.b;
+      this.rsl[i] = this.b = this.mem[y >>> 8 >>> 2 & 255] + x;
+    }
+  }
+  nextInt() {
+    if (this.count-- === 0) {
+      this.isaac();
+      this.count = 255;
+    }
+    return this.rsl[this.count];
+  }
+}
+const REVISION = 289;
+const SERVER_PROT = [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "TUT_OPEN", length: 2 },
+  { name: "CHAT_FILTER_SETTINGS", length: 3 },
+  null,
+  null,
+  null,
+  null,
+  { name: "IF_SETOBJECT", length: 6 },
+  null,
+  null,
+  { name: "SET_PLAYER_OP", length: -1 },
+  null,
+  { name: "IF_CLOSE", length: 0 },
+  null,
+  null,
+  null,
+  null,
+  { name: "UPDATE_INV_STOP_TRANSMIT", length: 2 },
+  { name: "MIDI_JINGLE", length: 4 },
+  { name: "IF_SETPLAYERHEAD", length: 2 },
+  null,
+  null,
+  null,
+  null,
+  { name: "P_COUNTDIALOG", length: 0 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "UPDATE_RUNWEIGHT", length: 2 },
+  { name: "UPDATE_IGNORELIST", length: -2 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "IF_OPENMAIN_SIDE", length: 4 },
+  null,
+  null,
+  null,
+  { name: "IF_SETTEXT", length: -2 },
+  { name: "OBJ_ADD", length: 5 },
+  null,
+  null,
+  { name: "IF_SETTAB", length: 3 },
+  null,
+  { name: "NPC_INFO", length: -2 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "OBJ_DEL", length: 3 },
+  null,
+  { name: "CAM_MOVETO", length: 6 },
+  null,
+  { name: "VARP_SMALL", length: 3 },
+  { name: "UPDATE_INV_PARTIAL", length: -2 },
+  null,
+  null,
+  { name: "IF_SETPOSITION", length: 6 },
+  null,
+  { name: "IF_OPENCHAT", length: 2 },
+  { name: "CAM_LOOKAT", length: 6 },
+  { name: "LOC_MERGE", length: 14 },
+  null,
+  null,
+  null,
+  { name: "MAP_PROJANIM", length: 15 },
+  null,
+  null,
+  { name: "LOC_ADD_CHANGE", length: 4 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "VARP_LARGE", length: 6 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "LOC_ANIM", length: 4 },
+  { name: "UPDATE_INV_FULL", length: -2 },
+  null,
+  null,
+  null,
+  null,
+  { name: "UPDATE_ZONE_PARTIAL_ENCLOSED", length: -2 },
+  null,
+  null,
+  { name: "HINT_ARROW", length: 6 },
+  null,
+  { name: "OBJ_COUNT", length: 7 },
+  null,
+  { name: "IF_OPENMAIN", length: 2 },
+  { name: "UPDATE_PID", length: 3 },
+  { name: "LOGOUT", length: 0 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "IF_OPENOVERLAY", length: 2 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "CAM_RESET", length: 0 },
+  null,
+  null,
+  { name: "MINIMAP_TOGGLE", length: 1 },
+  null,
+  { name: "IF_SETHIDE", length: 3 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "UPDATE_ZONE_FULL_FOLLOWS", length: 2 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "UPDATE_STAT", length: 6 },
+  { name: "UPDATE_ZONE_PARTIAL_FOLLOWS", length: 2 },
+  null,
+  null,
+  null,
+  null,
+  { name: "IF_SETCOLOUR", length: 4 },
+  null,
+  null,
+  null,
+  { name: "UNSET_MAP_FLAG", length: 0 },
+  null,
+  null,
+  null,
+  { name: "UPDATE_FRIENDLIST", length: 9 },
+  null,
+  null,
+  null,
+  { name: "RESET_CLIENT_VARCACHE", length: 0 },
+  null,
+  null,
+  null,
+  { name: "OBJ_REVEAL", length: 7 },
+  { name: "SYNTH_SOUND", length: 5 },
+  null,
+  null,
+  null,
+  { name: "TUT_FLASH", length: 1 },
+  null,
+  null,
+  { name: "IF_SETSCROLLPOS", length: 4 },
+  null,
+  null,
+  { name: "MIDI_SONG", length: 2 },
+  { name: "PLAYER_INFO", length: -2 },
+  { name: "IF_SETTAB_ACTIVE", length: 1 },
+  null,
+  null,
+  null,
+  null,
+  { name: "LOC_DEL", length: 2 },
+  { name: "UPDATE_RUNENERGY", length: 1 },
+  { name: "MESSAGE_GAME", length: -1 },
+  null,
+  null,
+  null,
+  null,
+  { name: "RESET_ANIMS", length: 0 },
+  null,
+  null,
+  { name: "UPDATE_REBOOT_TIMER", length: 2 },
+  null,
+  null,
+  null,
+  { name: "CAM_SHAKE", length: 4 },
+  null,
+  null,
+  { name: "IF_SETANIM", length: 4 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "REBUILD_NORMAL", length: 4 },
+  null,
+  null,
+  { name: "IF_SETMODEL", length: 4 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "MAP_ANIM", length: 6 },
+  null,
+  { name: "FRIENDLIST_LOADED", length: 1 },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  { name: "MESSAGE_PRIVATE", length: -1 },
+  { name: "IF_SETNPCHEAD", length: 4 },
+  null,
+  null,
+  { name: "SET_MULTIWAY", length: 1 },
+  null,
+  null,
+  null,
+  null,
+  { name: "IF_OPENSIDE", length: 2 },
+  { name: "LAST_LOGIN_INFO", length: 10 },
+  null,
+  null
+];
+const SKILLS = ["attack", "defence", "strength", "hitpoints", "ranged", "prayer", "magic", "cooking", "woodcutting", "fletching", "fishing", "firemaking", "crafting", "smithing", "mining", "herblore", "agility", "thieving", "slayer", "-unused-", "runecraft", "-unused-", "-unused-", "-unused-", "-unused-"];
+class FrameSplitter {
+  buf = Buffer.alloc(0);
+  pos = 0;
+  pendingOpcode = null;
+  pendingDef = null;
+  pendingLen = null;
+  desynced = false;
+  desyncReason = null;
+  packets = 0;
+  // Node's strip-only type mode rejects parameter properties, and this file is
+  // imported directly by the tests, so the fields are declared explicitly.
+  isaac;
+  onPacket;
+  constructor(isaac, onPacket) {
+    this.isaac = isaac;
+    this.onPacket = onPacket;
+  }
+  push(bytes) {
+    if (this.desynced) return;
+    const remaining = this.buf.subarray(this.pos);
+    this.buf = remaining.length === 0 ? Buffer.from(bytes) : Buffer.concat([remaining, bytes]);
+    this.pos = 0;
+    this.run();
+    if (this.pos > 0) {
+      this.buf = this.buf.subarray(this.pos);
+      this.pos = 0;
+    }
+  }
+  get available() {
+    return this.buf.length - this.pos;
+  }
+  run() {
+    for (; ; ) {
+      if (this.pendingOpcode === null) {
+        if (this.available < 1) return;
+        const raw = this.buf[this.pos];
+        this.pos += 1;
+        const opcode = raw - this.isaac.nextInt() & 255;
+        const def = SERVER_PROT[opcode];
+        if (!def) {
+          this.desynced = true;
+          this.desyncReason = `unknown opcode ${opcode} after ${this.packets} packets`;
+          return;
+        }
+        this.pendingOpcode = opcode;
+        this.pendingDef = def;
+        this.pendingLen = def.length >= 0 ? def.length : null;
+      }
+      if (this.pendingLen === null) {
+        const need = this.pendingDef.length === -1 ? 1 : 2;
+        if (this.available < need) return;
+        this.pendingLen = need === 1 ? this.buf[this.pos] : this.buf.readUInt16BE(this.pos);
+        this.pos += need;
+      }
+      if (this.available < this.pendingLen) return;
+      const payload = Uint8Array.prototype.slice.call(this.buf, this.pos, this.pos + this.pendingLen);
+      this.pos += this.pendingLen;
+      this.packets += 1;
+      this.onPacket({ opcode: this.pendingOpcode, def: this.pendingDef, payload });
+      this.pendingOpcode = null;
+      this.pendingDef = null;
+      this.pendingLen = null;
+    }
+  }
+}
+function trialFrame(stream, seed, want) {
+  const isaac = new Isaac([...seed]);
+  let framed = 0;
+  const splitter = new FrameSplitter(isaac, () => {
+    framed += 1;
+  });
+  splitter.push(stream);
+  if (splitter.desynced) return "fail";
+  return framed >= want ? "ok" : "need-more";
+}
+const RANDOM_MULTIPLIER = 99999999;
+const DECRYPT_OFFSET = 50;
+const VERIFY_PACKETS = 6;
+const MAX_CANDIDATES = 512;
+const OPCODE_UPDATE_STAT = SERVER_PROT.findIndex((p) => p?.name === "UPDATE_STAT");
+const OPCODE_LOGOUT = SERVER_PROT.findIndex((p) => p?.name === "LOGOUT");
+class SessionDecoder {
+  hooks;
   up = [];
   down = [];
-  done = false;
-  feed(dir, bytes) {
-    if (this.done) return;
-    const sink = dir === "up" ? this.up : this.down;
-    for (const b of bytes) sink.push(b);
-    this.tryParse();
+  phase = "handshake";
+  serverSeedHi = null;
+  serverSeedLo = null;
+  revision = null;
+  streamStart = -1;
+  randoms = null;
+  rsaBlock = null;
+  askedForRandoms = false;
+  splitter = null;
+  constructor(hooks) {
+    this.hooks = hooks;
   }
-  tryParse() {
-    if (this.down.length < S2C_SEED_OFFSET + 8) return;
-    if (this.up.length < C2S_LOGIN_OFFSET + 45) return;
-    const responseCode = this.down[8];
-    if (responseCode !== 0) {
-      this.log(`[seed] server refused login with code ${responseCode} — no seed exchanged`);
-      this.done = true;
+  feed(dir, bytes) {
+    if (this.phase === "dead") return;
+    if (this.phase === "keyed") {
+      if (dir === "down") this.splitter.push(bytes);
+      this.checkDesync();
       return;
     }
-    const seedBytes = Buffer.from(this.down.slice(S2C_SEED_OFFSET, S2C_SEED_OFFSET + 8));
-    const serverSeedHi = seedBytes.readUInt32BE(0) | 0;
-    const serverSeedLo = seedBytes.readUInt32BE(4) | 0;
-    const up = Buffer.from(this.up);
-    const opcode = up[C2S_LOGIN_OFFSET];
-    if (opcode !== 16 && opcode !== 18) {
-      this.log(`[seed] unexpected login opcode ${opcode} at offset ${C2S_LOGIN_OFFSET} — layout mismatch`);
-      this.done = true;
+    for (const b of bytes) (dir === "up" ? this.up : this.down).push(b);
+    this.parseHandshake();
+    this.tryKey();
+  }
+  /** Supplied asynchronously after onNeedRandoms fires. */
+  setRandoms(dump) {
+    if (!dump) {
+      this.fail("RNG observer was not installed");
       return;
     }
-    let p = C2S_LOGIN_OFFSET + 2;
-    const marker = up[p];
-    p += 1;
-    if (marker !== 255) {
-      this.log(`[seed] expected 255 revision marker, got ${marker} — layout mismatch`);
-      this.done = true;
-      return;
+    this.randoms = dump;
+    this.tryKey();
+  }
+  fail(reason) {
+    this.phase = "dead";
+    this.hooks.onDegraded(reason);
+  }
+  checkDesync() {
+    if (this.splitter?.desynced) {
+      this.fail(this.splitter.desyncReason ?? "stream desync");
     }
-    const revision = up.readUInt16BE(p);
-    p += 2;
-    p += 1;
-    p += 36;
-    const rsaLen = up[p];
-    p += 1;
-    if (up.length < p + rsaLen) return;
-    const rsaBlock = up.subarray(p, p + rsaLen);
-    this.done = true;
-    this.onComplete({ serverSeedHi, serverSeedLo, revision, reconnect: opcode === 18, rsaBlock });
+  }
+  parseHandshake() {
+    if (this.revision === null && this.up.length >= 7) {
+      const opcode = this.up[2];
+      if (opcode !== 16 && opcode !== 18) {
+        this.fail(`unexpected login opcode ${opcode}`);
+        return;
+      }
+      if (this.up[4] !== 255) {
+        this.fail("login block layout mismatch");
+        return;
+      }
+      this.revision = this.up[5] << 8 | this.up[6];
+      if (this.revision !== REVISION) {
+        this.fail(`server is revision ${this.revision}, decoder is ${REVISION}`);
+        return;
+      }
+      if (this.rsaBlock === null && this.up.length >= 45) {
+        const rsaLen = this.up[44];
+        if (this.up.length >= 45 + rsaLen) {
+          this.rsaBlock = Uint8Array.from(this.up.slice(45, 45 + rsaLen));
+        }
+      }
+      if (!this.askedForRandoms) {
+        this.askedForRandoms = true;
+        this.hooks.onNeedRandoms();
+      }
+    }
+    if (this.revision !== null && this.rsaBlock === null && this.up.length >= 45) {
+      const rsaLen = this.up[44];
+      if (this.up.length >= 45 + rsaLen) {
+        this.rsaBlock = Uint8Array.from(this.up.slice(45, 45 + rsaLen));
+      }
+    }
+    if (this.serverSeedHi === null && this.down.length >= 17) {
+      if (this.down[8] !== 0) {
+        this.fail(`server refused login with code ${this.down[8]}`);
+        return;
+      }
+      const seed = Buffer.from(this.down.slice(9, 17));
+      this.serverSeedHi = seed.readUInt32BE(0) | 0;
+      this.serverSeedLo = seed.readUInt32BE(4) | 0;
+    }
+    if (this.streamStart < 0 && this.serverSeedHi !== null && this.down.length >= 18) {
+      const reply = this.down[17];
+      if (reply === 2) {
+        if (this.down.length < 20) return;
+        this.streamStart = 20;
+      } else if (reply === 15) {
+        this.streamStart = 18;
+      } else {
+        this.fail(`login rejected with code ${reply}`);
+      }
+    }
+  }
+  tryKey() {
+    if (this.phase !== "handshake") return;
+    if (this.streamStart < 0 || this.serverSeedHi === null || !this.randoms) return;
+    const stream = Uint8Array.from(this.down.slice(this.streamStart));
+    if (stream.length < 24) return;
+    const values = this.randoms.values;
+    let sawNeedMore = false;
+    const limit = Math.max(0, values.length - 1 - MAX_CANDIDATES);
+    for (let i = values.length - 2; i >= limit; i--) {
+      const seeds = [
+        Math.floor(RANDOM_MULTIPLIER * values[i]) | 0,
+        Math.floor(RANDOM_MULTIPLIER * values[i + 1]) | 0,
+        this.serverSeedHi,
+        this.serverSeedLo
+      ];
+      const decrypt = seeds.map((w) => w + DECRYPT_OFFSET | 0);
+      const outcome = trialFrame(stream, decrypt, VERIFY_PACKETS);
+      if (outcome === "ok") {
+        this.key(decrypt, stream, this.randoms.baseSeq + i, seeds);
+        return;
+      }
+      if (outcome === "need-more") sawNeedMore = true;
+    }
+    if (!sawNeedMore) {
+      this.fail(`seed not recoverable from ${values.length} observed draws`);
+    }
+  }
+  key(decryptSeed, stream, drawIndex, seeds) {
+    this.splitter = new FrameSplitter(new Isaac(decryptSeed), (p) => this.onPacket(p));
+    this.phase = "keyed";
+    this.hooks.onKeyed({
+      revision: this.revision,
+      drawIndex,
+      totalDraws: this.randoms.seq,
+      seeds,
+      rsaBlock: this.rsaBlock
+    });
+    this.splitter.push(stream);
+    this.checkDesync();
+  }
+  onPacket(p) {
+    if (p.opcode === OPCODE_UPDATE_STAT) {
+      const buf = Buffer.from(p.payload);
+      this.hooks.onStat(buf.readUInt8(0), buf.readUInt32BE(1), buf.readUInt8(5));
+    } else if (p.opcode === OPCODE_LOGOUT) {
+      this.hooks.onLogout();
+    }
+  }
+}
+class XpTracker {
+  baseline = /* @__PURE__ */ new Map();
+  current = /* @__PURE__ */ new Map();
+  update(skill, xp2, level) {
+    if (!this.baseline.has(skill)) this.baseline.set(skill, xp2);
+    this.current.set(skill, { xp: xp2, level });
+  }
+  reset() {
+    this.baseline.clear();
+    this.current.clear();
+  }
+  rows() {
+    const rows = [];
+    for (let id = 0; id < SKILLS.length; id++) {
+      const name = SKILLS[id];
+      if (name === "-unused-") continue;
+      const now = this.current.get(id);
+      rows.push({
+        id,
+        name,
+        xp: now?.xp ?? 0,
+        level: now?.level ?? 0,
+        gained: now ? now.xp - (this.baseline.get(id) ?? now.xp) : 0,
+        seen: now !== void 0
+      });
+    }
+    return rows;
+  }
+  totalGained() {
+    let total = 0;
+    for (const [id, base] of this.baseline) {
+      total += (this.current.get(id)?.xp ?? base) - base;
+    }
+    return total;
   }
 }
 function bytesToBigInt(b) {
@@ -410,7 +984,8 @@ const IPC = {
   sidebarToggle: "swiftkit:sidebar-toggle",
   sidebarSetOpen: "swiftkit:sidebar-set-open",
   sidebarState: "swiftkit:sidebar-state",
-  sessionState: "swiftkit:session-state"
+  sessionState: "swiftkit:session-state",
+  xpState: "swiftkit:xp-state"
 };
 const SEAM_ENABLED = process.env.SWIFTKIT_SEAM !== "0";
 const RNG_PROBE_ENABLED = process.env.SWIFTKIT_RNG !== "0";
@@ -432,6 +1007,20 @@ const session_ = {
   revision: null,
   seedRecovered: null
 };
+const xp = new XpTracker();
+let decoder = null;
+let xpKeyed = false;
+let xpDegraded = null;
+function pushXpState() {
+  if (!shellView || shellView.webContents.isDestroyed()) return;
+  const state = {
+    rows: xp.rows(),
+    totalGained: xp.totalGained(),
+    keyed: xpKeyed,
+    degraded: xpDegraded
+  };
+  shellView.webContents.send(IPC.xpState, state);
+}
 function applyLayout() {
   if (!win || !gameView || !shellView || win.isDestroyed()) return;
   const current = win.getContentBounds();
@@ -475,46 +1064,65 @@ function pushSessionState() {
   };
   shellView.webContents.send(IPC.sessionState, state);
 }
-async function verifySeedRecovery(h) {
-  session_.revision = h.revision;
-  log(`[seed] revision ${h.revision}, server seed ${h.serverSeedHi}/${h.serverSeedLo}`);
-  let dump = null;
-  try {
-    dump = await gameView.webContents.executeJavaScript(
-      "window.__swiftkitRng ? window.__swiftkitRng.dump() : null"
-    );
-  } catch {
-  }
-  if (!dump) {
-    log("[seed] RNG probe not installed — cannot recover");
-    session_.seedRecovered = false;
-    pushSessionState();
-    return;
-  }
+function crossCheckSeed(seeds, rsaBlock) {
+  if (!rsaBlock) return;
   const pemPath = node_path.resolve(target.serverRoot, "engine/data/config/private.pem");
-  if (!node_fs.existsSync(pemPath)) {
-    log("[seed] no private.pem — skipping oracle verification");
-    pushSessionState();
-    return;
-  }
+  if (!node_fs.existsSync(pemPath)) return;
   try {
-    const { magic, seeds } = decryptLoginBlock(h.rsaBlock, loadPrivateKey(pemPath));
-    const plaintextMatch = seeds[2] === h.serverSeedHi && seeds[3] === h.serverSeedLo;
-    const pair = findAdjacentPair(dump, seeds[0], seeds[1]);
-    session_.seedRecovered = magic === 10 && plaintextMatch && pair.found;
-    log(
-      `[seed] recovered=${session_.seedRecovered} (magic ${magic}, plaintext ${plaintextMatch}, pair ${pair.found ? `at draw #${pair.index}/${dump.seq}` : "not found"})`
-    );
+    const { magic, seeds: truth } = decryptLoginBlock(rsaBlock, loadPrivateKey(pemPath));
+    const match = magic === 10 && truth.every((w, i) => w === seeds[i]);
+    log(`[seed] oracle cross-check: ${match ? "MATCH" : `MISMATCH recovered ${seeds} vs true ${truth}`}`);
   } catch (err) {
-    session_.seedRecovered = false;
-    log(`[seed] verification failed: ${err.message}`);
+    log(`[seed] oracle unavailable: ${err.message}`);
   }
-  try {
-    await gameView.webContents.executeJavaScript("window.__swiftkitRng.disarm()");
-    log("[rng] disarmed — Math.random restored to native");
-  } catch {
-  }
-  pushSessionState();
+}
+function createDecoder() {
+  return new SessionDecoder({
+    log,
+    onNeedRandoms: () => {
+      void (async () => {
+        let dump = null;
+        try {
+          dump = await gameView.webContents.executeJavaScript(
+            "window.__swiftkitRng ? window.__swiftkitRng.dump() : null"
+          );
+        } catch {
+        }
+        decoder?.setRandoms(dump);
+        try {
+          await gameView.webContents.executeJavaScript("window.__swiftkitRng && window.__swiftkitRng.disarm()");
+        } catch {
+        }
+      })();
+    },
+    onKeyed: (info) => {
+      xpKeyed = true;
+      xpDegraded = null;
+      session_.revision = info.revision;
+      session_.seedRecovered = true;
+      log(`[seed] keyed on revision ${info.revision} from draw #${info.drawIndex} of ${info.totalDraws}`);
+      crossCheckSeed(info.seeds, info.rsaBlock);
+      pushSessionState();
+      pushXpState();
+    },
+    onStat: (skill, exp, level) => {
+      xp.update(skill, exp, level);
+      pushXpState();
+    },
+    onLogout: () => {
+      log("[session] logout");
+      xpKeyed = false;
+      pushXpState();
+    },
+    onDegraded: (reason) => {
+      xpKeyed = false;
+      xpDegraded = reason;
+      session_.seedRecovered = false;
+      log(`[session] degraded: ${reason}`);
+      pushSessionState();
+      pushXpState();
+    }
+  });
 }
 const wait = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms));
 async function captureAndExit(dir) {
@@ -544,8 +1152,18 @@ async function captureAndExit(dir) {
     seedRecovered: true
   };
   shellView.webContents.send(IPC.sessionState, populated);
+  const fixture = [[0, 4320, 42], [2, 1180, 38], [3, 1440, 44], [7, 275, 21], [14, 9860, 51]];
+  for (const [id, , level] of fixture) xp.update(id, 1e5, level);
+  for (const [id, gained, level] of fixture) xp.update(id, 1e5 + gained, level);
+  xpKeyed = true;
+  pushXpState();
   await wait(350);
   await shot("panel-live");
+  await shellView.webContents.executeJavaScript(
+    "document.querySelectorAll('[role=tab]')[1].click()"
+  );
+  await wait(250);
+  await shot("panel-xp");
   electron.app.quit();
 }
 function createGameView() {
@@ -637,6 +1255,7 @@ electron.app.whenReady().then(async () => {
     win?.show();
     pushSidebarState();
     pushSessionState();
+    pushXpState();
   });
   win.on("resize", () => {
     if (applyingLayout || !win) return;
@@ -655,8 +1274,15 @@ electron.app.whenReady().then(async () => {
   await gameView.webContents.loadURL("about:blank");
   if (SEAM_ENABLED) {
     tap = new WebSocketTap(gameView.webContents, log, RNG_PROBE_ENABLED);
-    const reader = new HandshakeReader((h) => void verifySeedRecovery(h), log);
-    tap.onGameFrame = (dir, bytes) => reader.feed(dir, bytes);
+    decoder = createDecoder();
+    tap.onGameFrame = (dir, bytes) => decoder?.feed(dir, bytes);
+    tap.onGameSocketOpen = () => {
+      decoder = createDecoder();
+      xp.reset();
+      xpKeyed = false;
+      xpDegraded = null;
+      pushXpState();
+    };
     await tap.attach();
   }
   if (CAPTURE_DIR) {

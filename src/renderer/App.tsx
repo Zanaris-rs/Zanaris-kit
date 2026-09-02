@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { SidebarState, SessionState } from '../shared/ipc';
+import type { SidebarState, SessionState, XpState } from '../shared/ipc';
 
 const num = (n: number): string => n.toLocaleString('en-US');
 
@@ -74,12 +74,68 @@ function SeedValue({ state }: { state: boolean | null }): ReactNode {
     return <span className="text-brass">not recovered</span>;
 }
 
+function Tab({ id, active, onSelect, children }: { id: string; active: boolean; onSelect: (id: string) => void; children: ReactNode }): ReactNode {
+    return (
+        <button
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(id)}
+            className={`-mb-px border-b px-4 py-2.5 text-[12px] transition-colors ${
+                active ? 'border-brass text-bone' : 'border-transparent text-dim hover:text-bone'
+            }`}
+        >
+            {children}
+        </button>
+    );
+}
+
+function XpPanel({ xp }: { xp: XpState | null }): ReactNode {
+    if (!xp || (!xp.keyed && !xp.degraded)) {
+        return <p className="px-4 py-3.5 text-[12px] text-dim">Waiting for login.</p>;
+    }
+    if (xp.degraded) {
+        return (
+            <p className="px-4 py-3.5 text-[12px] leading-relaxed text-brass">
+                Stopped reading experience: {xp.degraded}. Log in again to retry.
+            </p>
+        );
+    }
+    return (
+        <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+                {xp.rows.map(row => (
+                    <div key={row.id} className="flex items-baseline justify-between gap-4 py-[3px]">
+                        <span className={`shrink-0 text-[12px] ${row.gained > 0 ? 'text-bone' : 'text-dim'}`}>
+                            {row.name.charAt(0).toUpperCase() + row.name.slice(1)}
+                        </span>
+                        <span
+                            className={`font-mono text-[12px] tabular-nums ${row.gained > 0 ? 'text-live' : 'text-dim'}`}
+                        >
+                            {row.gained > 0 ? `+${num(row.gained)}` : '—'}
+                        </span>
+                    </div>
+                ))}
+            </div>
+            <div className="flex items-baseline justify-between gap-4 border-t border-line px-4 py-3">
+                <span className="text-[12px] text-dim">Total</span>
+                <span className="font-mono text-[12px] tabular-nums text-bone">
+                    {xp.totalGained > 0 ? `+${num(xp.totalGained)}` : '—'}
+                </span>
+            </div>
+        </div>
+    );
+}
+
 export default function App(): ReactNode {
     const [sidebar, setSidebar] = useState<SidebarState>({ open: false, mode: 'widen' });
     const [session, setSession] = useState<SessionState | null>(null);
+    const [xp, setXp] = useState<XpState | null>(null);
+    const [tab, setTab] = useState('status');
 
     useEffect(() => window.swiftkit.sidebar.onState(setSidebar), []);
     useEffect(() => window.swiftkit.session.onState(setSession), []);
+    useEffect(() => window.swiftkit.xp.onState(setXp), []);
 
     const live = session?.socketOpen ?? false;
 
@@ -87,6 +143,19 @@ export default function App(): ReactNode {
         <div className="flex h-full bg-ink">
             {sidebar.open && (
                 <div className="panel-in flex w-[280px] shrink-0 flex-col border-l border-line bg-surface">
+                    <div role="tablist" className="flex border-b border-line">
+                        <Tab id="status" active={tab === 'status'} onSelect={setTab}>
+                            Status
+                        </Tab>
+                        <Tab id="xp" active={tab === 'xp'} onSelect={setTab}>
+                            Experience
+                        </Tab>
+                    </div>
+
+                    {tab === 'xp' && <XpPanel xp={xp} />}
+
+                    {tab === 'status' && (
+                    <>
                     <Section title="Connection">
                         <Row label="Server">{session ? hostOf(session.serverUrl) : '—'}</Row>
                         <Row label="Socket">
@@ -113,6 +182,8 @@ export default function App(): ReactNode {
                             <SeedValue state={session?.seedRecovered ?? null} />
                         </Row>
                     </Section>
+                    </>
+                    )}
 
                     {sidebar.mode === 'push' && (
                         <div className="mt-auto border-t border-line px-4 py-3 text-[12px] leading-relaxed text-brass">

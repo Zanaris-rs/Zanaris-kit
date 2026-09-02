@@ -4,7 +4,8 @@ const IPC = {
   sidebarToggle: "swiftkit:sidebar-toggle",
   sidebarSetOpen: "swiftkit:sidebar-set-open",
   sidebarState: "swiftkit:sidebar-state",
-  sessionState: "swiftkit:session-state"
+  sessionState: "swiftkit:session-state",
+  xpState: "swiftkit:xp-state"
 };
 function subscribe(channel, cb) {
   const handler = (_e, value) => cb(value);
@@ -21,6 +22,9 @@ const api = {
   },
   session: {
     onState: (cb) => subscribe(IPC.sessionState, cb)
+  },
+  xp: {
+    onState: (cb) => subscribe(IPC.xpState, cb)
   }
 };
 electron.contextBridge.exposeInMainWorld("swiftkit", api);

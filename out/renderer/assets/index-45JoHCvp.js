@@ -12506,24 +12506,75 @@ function SeedValue({ state }) {
   if (state) return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-live", children: "recovered" });
   return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-brass", children: "not recovered" });
 }
+function Tab({ id, active, onSelect, children }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "button",
+    {
+      type: "button",
+      role: "tab",
+      "aria-selected": active,
+      onClick: () => onSelect(id),
+      className: `-mb-px border-b px-4 py-2.5 text-[12px] transition-colors ${active ? "border-brass text-bone" : "border-transparent text-dim hover:text-bone"}`,
+      children
+    }
+  );
+}
+function XpPanel({ xp }) {
+  if (!xp || !xp.keyed && !xp.degraded) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "px-4 py-3.5 text-[12px] text-dim", children: "Waiting for login." });
+  }
+  if (xp.degraded) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "px-4 py-3.5 text-[12px] leading-relaxed text-brass", children: [
+      "Stopped reading experience: ",
+      xp.degraded,
+      ". Log in again to retry."
+    ] });
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex min-h-0 flex-1 flex-col", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-4 py-3", children: xp.rows.map((row) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-baseline justify-between gap-4 py-[3px]", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `shrink-0 text-[12px] ${row.gained > 0 ? "text-bone" : "text-dim"}`, children: row.name.charAt(0).toUpperCase() + row.name.slice(1) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "span",
+        {
+          className: `font-mono text-[12px] tabular-nums ${row.gained > 0 ? "text-live" : "text-dim"}`,
+          children: row.gained > 0 ? `+${num(row.gained)}` : "—"
+        }
+      )
+    ] }, row.id)) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-baseline justify-between gap-4 border-t border-line px-4 py-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[12px] text-dim", children: "Total" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-mono text-[12px] tabular-nums text-bone", children: xp.totalGained > 0 ? `+${num(xp.totalGained)}` : "—" })
+    ] })
+  ] });
+}
 function App() {
   const [sidebar, setSidebar] = reactExports.useState({ open: false, mode: "widen" });
   const [session, setSession] = reactExports.useState(null);
+  const [xp, setXp] = reactExports.useState(null);
+  const [tab, setTab] = reactExports.useState("status");
   reactExports.useEffect(() => window.swiftkit.sidebar.onState(setSidebar), []);
   reactExports.useEffect(() => window.swiftkit.session.onState(setSession), []);
+  reactExports.useEffect(() => window.swiftkit.xp.onState(setXp), []);
   const live = session?.socketOpen ?? false;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex h-full bg-ink", children: [
     sidebar.open && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "panel-in flex w-[280px] shrink-0 flex-col border-l border-line bg-surface", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(Section, { title: "Connection", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Server", children: session ? hostOf(session.serverUrl) : "—" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Socket", children: live ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-live", children: "open" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-dim", children: "closed" }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Received", children: session ? /* @__PURE__ */ jsxRuntimeExports.jsx(Count, { frames: session.rxFrames, total: session.rxBytes }) : "—" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Sent", children: session ? /* @__PURE__ */ jsxRuntimeExports.jsx(Count, { frames: session.txFrames, total: session.txBytes }) : "—" })
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { role: "tablist", className: "flex border-b border-line", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Tab, { id: "status", active: tab === "status", onSelect: setTab, children: "Status" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Tab, { id: "xp", active: tab === "xp", onSelect: setTab, children: "Experience" })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(Section, { title: "Session", last: true, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Revision", children: session?.revision ?? "—" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Dated", children: session?.revision && REVISION_DATES[session.revision] ? REVISION_DATES[session.revision] : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-dim", children: "—" }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Seed", children: /* @__PURE__ */ jsxRuntimeExports.jsx(SeedValue, { state: session?.seedRecovered ?? null }) })
+      tab === "xp" && /* @__PURE__ */ jsxRuntimeExports.jsx(XpPanel, { xp }),
+      tab === "status" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(Section, { title: "Connection", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Server", children: session ? hostOf(session.serverUrl) : "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Socket", children: live ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-live", children: "open" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-dim", children: "closed" }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Received", children: session ? /* @__PURE__ */ jsxRuntimeExports.jsx(Count, { frames: session.rxFrames, total: session.rxBytes }) : "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Sent", children: session ? /* @__PURE__ */ jsxRuntimeExports.jsx(Count, { frames: session.txFrames, total: session.txBytes }) : "—" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(Section, { title: "Session", last: true, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Revision", children: session?.revision ?? "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Dated", children: session?.revision && REVISION_DATES[session.revision] ? REVISION_DATES[session.revision] : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-dim", children: "—" }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Seed", children: /* @__PURE__ */ jsxRuntimeExports.jsx(SeedValue, { state: session?.seedRecovered ?? null }) })
+        ] })
       ] }),
       sidebar.mode === "push" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-auto border-t border-line px-4 py-3 text-[12px] leading-relaxed text-brass", children: "No room to widen the window here, so the game area is smaller while this is open." })
     ] }),

@@ -9,8 +9,9 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/**/*.test.ts",
-    "seam:off": "SWIFTKIT_SEAM=0 electron-vite preview"
+    "test": "node --test \"src/**/*.test.ts\" && node tools/gen-prot.mjs --check",
+    "seam:off": "SWIFTKIT_SEAM=0 electron-vite preview",
+    "gen:prot": "node tools/gen-prot.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC, type SidebarState, type SessionState, type SwiftkitApi } from '../shared/ipc';
+import { IPC, type SidebarState, type SessionState, type XpState, type SwiftkitApi } from '../shared/ipc';
 
 /**
  * The shell renderer's only bridge to main. Deliberately narrow: no raw
@@ -24,6 +24,9 @@ const api: SwiftkitApi = {
     },
     session: {
         onState: cb => subscribe<SessionState>(IPC.sessionState, cb)
+    },
+    xp: {
+        onState: cb => subscribe<XpState>(IPC.xpState, cb)
     }
 };
 
