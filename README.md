@@ -87,6 +87,34 @@ Security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: 
 everything else opens in the system browser. The game page gets its own persistent
 session partition so its `localStorage` prefs and IndexedDB asset cache survive relaunch.
 
+## Sidebar
+
+A 48px rail is always visible on the right edge; opening expands it to 328px and
+**widens the window** by the difference, so the game area stays pixel-identical either
+way. The game view's bounds never change.
+
+That is the point of the design rather than a detail: recreating or reloading the game
+view would cost the asset cache, the login and the ISAAC session. So the window hosts
+two `WebContentsView`s and the main process owns all layout — the game is never
+re-parented, and hiding is geometry only.
+
+Widening isn't always possible. Maximised, fullscreen, or hard against a screen edge,
+the layout first tries shifting the window left and then falls back to `push` mode,
+where the game area shrinks instead. The active mode is reported to the UI and stated
+in the panel rather than silently substituted.
+
+`src/main/layout.ts` is a pure function, so all of this is tested without launching
+Electron (`npm test`). The behavioural check that matters is different and objective:
+toggle the sidebar while logged in and watch the tap output — frame counters must stay
+monotonic and `socket closed` must never appear. If the game view were being recreated,
+the log would say so.
+
+Visual approach: the panel sits flush against a software-rasterised canvas with
+`image-rendering: pixelated`, so it is flat and square-cornered with 1px hairlines and
+no shadows or gradients — instrumentation beside pixel art, not chrome on top of it.
+Monospace is confined to the live numeric readouts, where tabular figures stop digits
+jittering as counters tick.
+
 ## Spike result: ISAAC seed recovery (verified)
 
 The seed for the ISAAC keystream is **fully recoverable without the server's private

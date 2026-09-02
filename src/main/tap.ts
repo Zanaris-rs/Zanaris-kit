@@ -24,6 +24,7 @@ interface SocketStat {
     rxFrames: number;
     txBytes: number;
     rxBytes: number;
+    closed: boolean;
     /** Frames held until the socket is classified, then replayed. */
     pending: Array<{ dir: Direction; bytes: Uint8Array }>;
 }
@@ -57,6 +58,22 @@ export class WebSocketTap {
         private readonly log: (msg: string) => void,
         private readonly injectRngProbe: boolean
     ) {}
+
+    /** Snapshot of the game socket, for the sidebar's connection panel. */
+    gameStats(): { open: boolean; txFrames: number; rxFrames: number; txBytes: number; rxBytes: number } {
+        for (const s of this.sockets.values()) {
+            if (s.kind === 'game') {
+                return {
+                    open: !s.closed,
+                    txFrames: s.txFrames,
+                    rxFrames: s.rxFrames,
+                    txBytes: s.txBytes,
+                    rxBytes: s.rxBytes
+                };
+            }
+        }
+        return { open: false, txFrames: 0, rxFrames: 0, txBytes: 0, rxBytes: 0 };
+    }
 
     async attach(): Promise<void> {
         try {
@@ -143,6 +160,7 @@ export class WebSocketTap {
                     rxFrames: 0,
                     txBytes: 0,
                     rxBytes: 0,
+                    closed: false,
                     pending: []
                 });
                 this.log(`[tap] socket opened: ${p.url}`);
@@ -172,7 +190,10 @@ export class WebSocketTap {
             case 'Network.webSocketClosed': {
                 const p = params as { requestId: string };
                 const s = this.sockets.get(p.requestId);
-                if (s) this.log(`[tap] socket closed: ${s.kind}`);
+                if (s) {
+                    s.closed = true;
+                    this.log(`[tap] socket closed: ${s.kind}`);
+                }
                 break;
             }
         }

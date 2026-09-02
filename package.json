@@ -2,16 +2,30 @@
   "name": "swiftkit",
   "version": "0.1.0",
   "private": true,
-  "description": "SwiftKit for 04scape — Electron wrapper around the Lost City web client",
-  "main": "dist/main/main.js",
+  "description": "SwiftKit for 04scape \u2014 Electron wrapper around the Lost City web client",
+  "main": "out/main/index.js",
   "scripts": {
-    "build": "tsc",
-    "start": "npm run build && electron .",
-    "seam:off": "npm run build && SWIFTKIT_SEAM=0 electron ."
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/**/*.test.ts",
+    "seam:off": "SWIFTKIT_SEAM=0 electron-vite preview"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.1.1",
-    "typescript": "^7.0.2"
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   }
 }

@@ -1,0 +1,68 @@
+@import 'tailwindcss';
+
+/*
+ * The panel sits flush against a 765x503 software-rasterised canvas with
+ * image-rendering: pixelated. Everything here is flat, square-cornered and
+ * hairline-ruled so it reads as instrumentation beside pixel art rather than
+ * as chrome layered on top of it. No radius, no shadows, no gradients.
+ *
+ * Palette abstracted from the era's own interface: oiled wood and tarnished
+ * brass, with a desaturated moss for live state.
+ */
+@theme {
+    --color-ink: #17120d;
+    --color-surface: #1f1810;
+    --color-line: #35291d;
+    --color-bone: #e6dccb;
+    --color-dim: #8a7a64;
+    --color-brass: #c8973f;
+    --color-live: #7fa650;
+
+    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--color-ink);
+    color: var(--color-bone);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+}
+
+:focus-visible {
+    outline: 1px solid var(--color-brass);
+    outline-offset: -1px;
+}
+
+/* The panel's contents arrive as one orchestrated moment when it opens. */
+@keyframes panel-in {
+    from {
+        opacity: 0;
+        transform: translateX(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.panel-in {
+    animation: panel-in 140ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .panel-in {
+        animation: none;
+    }
+}
