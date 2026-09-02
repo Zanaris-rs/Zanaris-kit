@@ -87,11 +87,34 @@ Security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: 
 everything else opens in the system browser. The game page gets its own persistent
 session partition so its `localStorage` prefs and IndexedDB asset cache survive relaunch.
 
+## Known constraints
+
+**World-anchored overlays are not possible.** Camera position, yaw, pitch and zoom are
+purely client-local and never transmitted, so there is no way to project world
+coordinates to screen space. RuneLite-style entity highlighting, tile markers, hover
+outlines and minimap markers are all out of reach — overlays must be screen-anchored
+HUD panels. XP tracker, skill panel, chat log, run energy/weight, position readout and
+inventory are all fine.
+
+**The wire carries item ids, not names.** Names, icons and examine text live in the
+cache archives. Any useful inventory overlay needs a separate cache reader
+(fetch `/config:crc<n>` over HTTP and parse `obj.dat`) — a distinct module, not part
+of the state layer.
+
+**Anything touching the client's own objects would be a separate, opt-in tier.** The
+state layer must never depend on it. Reading the wire is observation; reaching into
+client internals is the thing most likely to read as a cheat client to a human
+reviewer, regardless of what it's used for.
+
 ## Next
 
 1. **Game-state layer** — recover the ISAAC seed, decode rev-289 packets behind a
    revision seam, emit typed events. Opcodes are ISAAC-obfuscated in both directions
    (`engine/src/engine/entity/NetworkPlayer.ts:205-206`); payload bodies are plaintext.
+   Two of the four seed words arrive in plaintext (the server's 8-byte session seed);
+   the other two come from adjacent `Math.random()` calls in `Client.login`, so they
+   are recoverable by observing the RNG through the login window — no server private
+   key needed, which is what makes this work against servers we don't control.
 2. **Overlays** — XP tracker first (`UPDATE_STAT`, opcode 154).
 3. **Launcher** — GUI over what `start.js` does.
 4. **Non-localhost servers** — gated on resolving third-party-client policy with the
