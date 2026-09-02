@@ -1,0 +1,17 @@
+{
+  "name": "swiftkit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SwiftKit for 04scape — Electron wrapper around the Lost City web client",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && electron .",
+    "seam:off": "npm run build && SWIFTKIT_SEAM=0 electron ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "electron": "^44.1.1",
+    "typescript": "^7.0.2"
+  }
+}

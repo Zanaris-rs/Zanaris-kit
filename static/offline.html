@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>SwiftKit — waiting for server</title>
+<style>
+    :root { color-scheme: dark; }
+    body {
+        margin: 0; height: 100vh; display: grid; place-items: center;
+        background: #12100e; color: #d8ccb4;
+        font: 14px/1.6 ui-sans-serif, system-ui, sans-serif;
+        -webkit-user-select: none; user-select: none;
+    }
+    .panel { max-width: 30rem; padding: 2rem; text-align: center; }
+    h1 { font-size: 1.1rem; margin: 0 0 .75rem; color: #f0e6d2; letter-spacing: .02em; }
+    code { background: #241f1a; padding: .15rem .4rem; border-radius: 3px; color: #e8c88a; }
+    p { margin: .5rem 0; }
+    .hint { color: #8a7e6c; font-size: 13px; margin-top: 1.5rem; }
+    .dots::after {
+        content: ''; animation: dots 1.4s steps(4, end) infinite;
+    }
+    @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+</style>
+<div class="panel">
+    <h1>Waiting for the game server<span class="dots"></span></h1>
+    <p>Nothing is listening at <code id="url">the configured address</code> yet.</p>
+    <p class="hint">
+        Start it with <code>node start.js</code> in the Server directory, then choose
+        <strong>Start Server</strong>. SwiftKit will connect on its own once the server is up.
+    </p>
+</div>
+<script>
+    const u = new URLSearchParams(location.search).get('url');
+    if (u) document.getElementById('url').textContent = u;
+</script>
