@@ -109,6 +109,22 @@ toggle the sidebar while logged in and watch the tap output — frame counters m
 monotonic and `socket closed` must never appear. If the game view were being recreated,
 the log would say so.
 
+### Seeing it
+
+`SWIFTKIT_CAPTURE=<dir> npm start` renders the sidebar to PNGs and exits — the collapsed
+rail, the empty panel, and a populated panel driven by a synthetic snapshot.
+
+It uses `webContents.capturePage()`, which captures page content rather than the screen,
+so it works regardless of which Space the window is on, whether it is occluded, or where
+it sits. Screen-level capture (`screencapture -R`) cannot do this and will silently give
+you the desktop instead.
+
+For automated UI testing later, Playwright supports Electron via `_electron.launch()` —
+but note `app.windows()` enumerates `BrowserWindow` webContents, and the sidebar lives in
+a `WebContentsView` child, so it would need `app.evaluate()` to reach the main process.
+WebdriverIO with `wdio-electron-service` is the maintained alternative. Spectron is
+archived; don't reach for it.
+
 Visual approach: the panel sits flush against a software-rasterised canvas with
 `image-rendering: pixelated`, so it is flat and square-cornered with 1px hairlines and
 no shadows or gradients — instrumentation beside pixel art, not chrome on top of it.

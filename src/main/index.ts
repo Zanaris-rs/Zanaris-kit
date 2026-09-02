@@ -1,5 +1,5 @@
 import { app, BrowserWindow, WebContentsView, ipcMain, screen, session, shell } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { resolveServerTarget, isReachable, type ServerTarget } from './serverUrl';
 import { WebSocketTap } from './tap';
@@ -12,6 +12,8 @@ import { IPC, type SidebarState, type SessionState, type SidebarMode } from '../
 const SEAM_ENABLED = process.env.SWIFTKIT_SEAM !== '0';
 const RNG_PROBE_ENABLED = process.env.SWIFTKIT_RNG !== '0';
 const RENDERER_DEV_URL = process.env.ELECTRON_RENDERER_URL;
+/** Dev-only: capture the sidebar to PNGs and exit. See captureAndExit(). */
+const CAPTURE_DIR = process.env.SWIFTKIT_CAPTURE;
 
 const log = (msg: string): void => console.log(msg);
 
@@ -136,6 +138,57 @@ async function verifySeedRecovery(h: Handshake): Promise<void> {
         /* page gone */
     }
     pushSessionState();
+}
+
+// ── dev capture ───────────────────────────────────────────────────────────
+
+const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Render the sidebar to PNGs and quit.
+ *
+ * Uses webContents.capturePage(), which captures page content rather than the
+ * screen — so it works regardless of which Space the window is on, whether it
+ * is occluded, or where it sits. Screen-level capture cannot do this.
+ *
+ * Captures the empty state as it really is, plus a populated state driven by a
+ * synthetic snapshot, because both need reviewing.
+ */
+async function captureAndExit(dir: string): Promise<void> {
+    if (!shellView) return;
+    mkdirSync(dir, { recursive: true });
+
+    const shot = async (name: string): Promise<void> => {
+        const image = await shellView!.webContents.capturePage();
+        writeFileSync(join(dir, `${name}.png`), image.toPNG());
+        log(`[capture] ${name}.png`);
+    };
+
+    sidebarOpen = false;
+    applyLayout();
+    await wait(350);
+    await shot('rail-closed');
+
+    sidebarOpen = true;
+    applyLayout();
+    await wait(350);
+    await shot('panel-empty');
+
+    const populated: SessionState = {
+        serverUrl: target.url,
+        socketOpen: true,
+        txFrames: 773,
+        rxFrames: 2694,
+        txBytes: 2100,
+        rxBytes: 11909,
+        revision: 289,
+        seedRecovered: true
+    };
+    shellView.webContents.send(IPC.sessionState, populated);
+    await wait(350);
+    await shot('panel-live');
+
+    app.quit();
 }
 
 // ── views ─────────────────────────────────────────────────────────────────
@@ -269,6 +322,12 @@ app.whenReady().then(async () => {
         const reader = new HandshakeReader(h => void verifySeedRecovery(h), log);
         tap.onGameFrame = (dir, bytes) => reader.feed(dir, bytes);
         await tap.attach();
+    }
+
+    if (CAPTURE_DIR) {
+        await new Promise<void>(resolve => shellView!.webContents.once('did-finish-load', () => resolve()));
+        await captureAndExit(CAPTURE_DIR);
+        return;
     }
 
     statsTimer = setInterval(pushSessionState, 1000);

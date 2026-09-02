@@ -415,6 +415,7 @@ const IPC = {
 const SEAM_ENABLED = process.env.SWIFTKIT_SEAM !== "0";
 const RNG_PROBE_ENABLED = process.env.SWIFTKIT_RNG !== "0";
 const RENDERER_DEV_URL = process.env.ELECTRON_RENDERER_URL;
+const CAPTURE_DIR = process.env.SWIFTKIT_CAPTURE;
 const log = (msg) => console.log(msg);
 let win = null;
 let gameView = null;
@@ -514,6 +515,38 @@ async function verifySeedRecovery(h) {
   } catch {
   }
   pushSessionState();
+}
+const wait = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms));
+async function captureAndExit(dir) {
+  if (!shellView) return;
+  node_fs.mkdirSync(dir, { recursive: true });
+  const shot = async (name) => {
+    const image = await shellView.webContents.capturePage();
+    node_fs.writeFileSync(node_path.join(dir, `${name}.png`), image.toPNG());
+    log(`[capture] ${name}.png`);
+  };
+  sidebarOpen = false;
+  applyLayout();
+  await wait(350);
+  await shot("rail-closed");
+  sidebarOpen = true;
+  applyLayout();
+  await wait(350);
+  await shot("panel-empty");
+  const populated = {
+    serverUrl: target.url,
+    socketOpen: true,
+    txFrames: 773,
+    rxFrames: 2694,
+    txBytes: 2100,
+    rxBytes: 11909,
+    revision: 289,
+    seedRecovered: true
+  };
+  shellView.webContents.send(IPC.sessionState, populated);
+  await wait(350);
+  await shot("panel-live");
+  electron.app.quit();
 }
 function createGameView() {
   const view = new electron.WebContentsView({
@@ -625,6 +658,11 @@ electron.app.whenReady().then(async () => {
     const reader = new HandshakeReader((h) => void verifySeedRecovery(h), log);
     tap.onGameFrame = (dir, bytes) => reader.feed(dir, bytes);
     await tap.attach();
+  }
+  if (CAPTURE_DIR) {
+    await new Promise((resolve2) => shellView.webContents.once("did-finish-load", () => resolve2()));
+    await captureAndExit(CAPTURE_DIR);
+    return;
   }
   statsTimer = setInterval(pushSessionState, 1e3);
   await loadGameWhenReady();

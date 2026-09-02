@@ -17,6 +17,26 @@ function hostOf(url: string): string {
     }
 }
 
+/** The revision numbers are dates — this project is about specific ones. */
+const REVISION_DATES: Record<number, string> = {
+    225: '18 May 2004',
+    244: '28 June 2004',
+    254: '7 September 2004',
+    274: '23 November 2004',
+    289: '17 January 2005',
+    377: '5 May 2006'
+};
+
+function Count({ frames, total }: { frames: number; total: number }): ReactNode {
+    // Before anything flows, a dash is honest; "0 0 B" is just noise.
+    if (frames === 0) return <span className="text-dim">—</span>;
+    return (
+        <>
+            {num(frames)} <span className="text-dim">{bytes(total)}</span>
+        </>
+    );
+}
+
 function Chevron({ pointing }: { pointing: 'left' | 'right' }): ReactNode {
     return (
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" fill="none">
@@ -30,9 +50,9 @@ function Chevron({ pointing }: { pointing: 'left' | 'right' }): ReactNode {
     );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }): ReactNode {
+function Section({ title, children, last }: { title: string; children: ReactNode; last?: boolean }): ReactNode {
     return (
-        <section className="px-4 py-3.5 border-b border-line">
+        <section className={`px-4 py-3.5 ${last ? '' : 'border-b border-line'}`}>
             <h2 className="mb-2 font-medium text-bone">{title}</h2>
             <div>{children}</div>
         </section>
@@ -73,23 +93,32 @@ export default function App(): ReactNode {
                             {live ? <span className="text-live">open</span> : <span className="text-dim">closed</span>}
                         </Row>
                         <Row label="Received">
-                            {session ? `${num(session.rxFrames)}  ${bytes(session.rxBytes)}` : '—'}
+                            {session ? <Count frames={session.rxFrames} total={session.rxBytes} /> : '—'}
                         </Row>
-                        <Row label="Sent">{session ? `${num(session.txFrames)}  ${bytes(session.txBytes)}` : '—'}</Row>
+                        <Row label="Sent">
+                            {session ? <Count frames={session.txFrames} total={session.txBytes} /> : '—'}
+                        </Row>
                     </Section>
 
-                    <Section title="Session">
+                    <Section title="Session" last>
                         <Row label="Revision">{session?.revision ?? '—'}</Row>
+                        <Row label="Dated">
+                            {session?.revision && REVISION_DATES[session.revision] ? (
+                                REVISION_DATES[session.revision]
+                            ) : (
+                                <span className="text-dim">—</span>
+                            )}
+                        </Row>
                         <Row label="Seed">
                             <SeedValue state={session?.seedRecovered ?? null} />
                         </Row>
                     </Section>
 
-                    <div className="mt-auto px-4 py-3 text-[12px] leading-relaxed text-dim">
-                        {sidebar.mode === 'push'
-                            ? 'No room to widen the window here, so the game area is smaller while this is open.'
-                            : 'Opening this widens the window, so the game keeps its size.'}
-                    </div>
+                    {sidebar.mode === 'push' && (
+                        <div className="mt-auto border-t border-line px-4 py-3 text-[12px] leading-relaxed text-brass">
+                            No room to widen the window here, so the game area is smaller while this is open.
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -99,7 +128,7 @@ export default function App(): ReactNode {
                     onClick={() => void window.swiftkit.sidebar.toggle()}
                     aria-expanded={sidebar.open}
                     aria-label={sidebar.open ? 'Close panel' : 'Open panel'}
-                    className="flex h-7 w-7 items-center justify-center text-dim transition-colors hover:bg-surface hover:text-bone"
+                    className="flex h-7 w-7 items-center justify-center text-bone/70 transition-colors hover:bg-surface hover:text-bone"
                 >
                     <Chevron pointing={sidebar.open ? 'right' : 'left'} />
                 </button>

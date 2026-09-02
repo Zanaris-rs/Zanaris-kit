@@ -12462,6 +12462,22 @@ function hostOf(url) {
     return url;
   }
 }
+const REVISION_DATES = {
+  225: "18 May 2004",
+  244: "28 June 2004",
+  254: "7 September 2004",
+  274: "23 November 2004",
+  289: "17 January 2005",
+  377: "5 May 2006"
+};
+function Count({ frames, total }) {
+  if (frames === 0) return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-dim", children: "—" });
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    num(frames),
+    " ",
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-dim", children: bytes(total) })
+  ] });
+}
 function Chevron({ pointing }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "10", height: "10", viewBox: "0 0 10 10", "aria-hidden": "true", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
     "path",
@@ -12473,8 +12489,8 @@ function Chevron({ pointing }) {
     }
   ) });
 }
-function Section({ title, children }) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "px-4 py-3.5 border-b border-line", children: [
+function Section({ title, children, last }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: `px-4 py-3.5 ${last ? "" : "border-b border-line"}`, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "mb-2 font-medium text-bone", children: title }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children })
   ] });
@@ -12501,14 +12517,15 @@ function App() {
       /* @__PURE__ */ jsxRuntimeExports.jsxs(Section, { title: "Connection", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Server", children: session ? hostOf(session.serverUrl) : "—" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Socket", children: live ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-live", children: "open" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-dim", children: "closed" }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Received", children: session ? `${num(session.rxFrames)}  ${bytes(session.rxBytes)}` : "—" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Sent", children: session ? `${num(session.txFrames)}  ${bytes(session.txBytes)}` : "—" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Received", children: session ? /* @__PURE__ */ jsxRuntimeExports.jsx(Count, { frames: session.rxFrames, total: session.rxBytes }) : "—" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Sent", children: session ? /* @__PURE__ */ jsxRuntimeExports.jsx(Count, { frames: session.txFrames, total: session.txBytes }) : "—" })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(Section, { title: "Session", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(Section, { title: "Session", last: true, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Revision", children: session?.revision ?? "—" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Dated", children: session?.revision && REVISION_DATES[session.revision] ? REVISION_DATES[session.revision] : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-dim", children: "—" }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(Row, { label: "Seed", children: /* @__PURE__ */ jsxRuntimeExports.jsx(SeedValue, { state: session?.seedRecovered ?? null }) })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-auto px-4 py-3 text-[12px] leading-relaxed text-dim", children: sidebar.mode === "push" ? "No room to widen the window here, so the game area is smaller while this is open." : "Opening this widens the window, so the game keeps its size." })
+      sidebar.mode === "push" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-auto border-t border-line px-4 py-3 text-[12px] leading-relaxed text-brass", children: "No room to widen the window here, so the game area is smaller while this is open." })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex w-12 shrink-0 flex-col items-center border-l border-line py-3", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -12518,7 +12535,7 @@ function App() {
           onClick: () => void window.swiftkit.sidebar.toggle(),
           "aria-expanded": sidebar.open,
           "aria-label": sidebar.open ? "Close panel" : "Open panel",
-          className: "flex h-7 w-7 items-center justify-center text-dim transition-colors hover:bg-surface hover:text-bone",
+          className: "flex h-7 w-7 items-center justify-center text-bone/70 transition-colors hover:bg-surface hover:text-bone",
           children: /* @__PURE__ */ jsxRuntimeExports.jsx(Chevron, { pointing: sidebar.open ? "right" : "left" })
         }
       ),

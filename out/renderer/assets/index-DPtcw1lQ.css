@@ -369,6 +369,11 @@
     overflow: hidden;
   }
 
+  .border-t {
+    border-top-style: var(--tw-border-style);
+    border-top-width: 1px;
+  }
+
   .border-b {
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 1px;
@@ -449,6 +454,16 @@
 
   .text-bone {
     color: var(--color-bone);
+  }
+
+  .text-bone\/70 {
+    color: #e6dccbb3;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .text-bone\/70 {
+      color: color-mix(in oklab, var(--color-bone) 70%, transparent);
+    }
   }
 
   .text-brass {
