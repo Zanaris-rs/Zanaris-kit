@@ -87,6 +87,35 @@ Security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: 
 everything else opens in the system browser. The game page gets its own persistent
 session partition so its `localStorage` prefs and IndexedDB asset cache survive relaunch.
 
+## Experience capture
+
+The Experience tab reads XP straight off the game socket — one line per skill, the XP
+gained this session, and a total. No rates, no timing.
+
+How it works: the server's `UPDATE_STAT` (opcode 154, 6 bytes: `stat u8, xp u32, level
+u8`) carries `exp / 10 | 0` while the engine stores XP x10, so the transmitted value is
+the exact displayed XP. The burst the server sends at login sets the baseline; everything
+after is a gain.
+
+Three things make the numbers trustworthy rather than plausible:
+
+1. **ISAAC is tested against the engine's own implementation**, not a fixture, across
+   10k draws including the int32 wraparound the `+50` decrypt seed causes.
+2. **The packet table is generated and cross-checked.** 69 prots from the engine source,
+   all 69 matching the client's own baked-in length table — the array the client actually
+   frames with. `npm test` re-runs the generator and diffs, so an engine pull that shifts
+   the protocol fails loudly instead of silently producing wrong numbers.
+3. **The seed is verified, not assumed.** Candidates are tested by framing the real
+   stream and requiring six consecutive valid packets; a wrong seed hits an unknown
+   opcode almost immediately.
+
+Verified in a live session: the seed recovered from `Math.random` alone was bit-identical
+to the one decrypted from the login block with the server's private key
+(`oracle cross-check: MATCH`), with zero desyncs over ~1,000 packets.
+
+**Wrong numbers are worse than no numbers.** An unknown opcode stops decoding rather than
+guessing past it, and the tab shows the reason instead of stale figures.
+
 ## Sidebar
 
 A 48px rail is always visible on the right edge; opening expands it to 328px and
