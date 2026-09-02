@@ -1,17 +1,20 @@
 import type { WebContents } from 'electron';
+import { RNG_PROBE_SOURCE } from './rngProbe';
 
 /**
- * Observe-only WebSocket tap via the Chrome DevTools Protocol.
+ * Observe-only instrumentation via the Chrome DevTools Protocol.
  *
- * This injects nothing into the page. The client that runs is byte-for-byte the
- * client the server served, and no wrapper sits in the data path — CDP's Network
- * domain is a passive observer. That matters: the whole point is to prove we can
- * attach without modifying the client.
+ * Two jobs, one mechanism:
+ *   - Network domain    -> mirror WebSocket frames (no wrapper in the data path)
+ *   - Page domain       -> inject the Math.random observer at document_start,
+ *                          in the main world, before any page script runs
  *
- * v1 counts frames and bytes only. No parsing, no decoding, no ISAAC.
+ * Nothing is injected into the page except the RNG observer, which is strictly
+ * pass-through. The client bytes are untouched.
  */
 
 type SocketKind = 'game' | 'ondemand' | 'unknown';
+export type Direction = 'up' | 'down';
 
 interface SocketStat {
     id: string;
@@ -21,6 +24,8 @@ interface SocketStat {
     rxFrames: number;
     txBytes: number;
     rxBytes: number;
+    /** Frames held until the socket is classified, then replayed. */
+    pending: Array<{ dir: Direction; bytes: Uint8Array }>;
 }
 
 interface CdpFrame {
@@ -28,30 +33,15 @@ interface CdpFrame {
     response?: { opcode?: number; payloadData?: string };
 }
 
-interface CdpCreated {
-    requestId: string;
-    url: string;
-}
-
-// The client's very first byte identifies the socket:
-//   14 -> game login, 15 -> on-demand cache.
-// engine/src/engine/World.ts:2103,2254
+// The client's first byte identifies the socket. engine/src/engine/World.ts:2103,2254
 const OPCODE_GAME_LOGIN = 14;
 const OPCODE_ONDEMAND = 15;
 
-function payloadLength(response: CdpFrame['response']): number {
+function frameBytes(response: CdpFrame['response']): Uint8Array {
     const data = response?.payloadData;
-    if (!data) return 0;
-    // opcode 1 = text, 2 = binary (base64-encoded by CDP)
-    if (response?.opcode === 1) return Buffer.byteLength(data, 'utf8');
-    return Buffer.from(data, 'base64').length;
-}
-
-function firstByte(response: CdpFrame['response']): number | null {
-    const data = response?.payloadData;
-    if (!data || response?.opcode === 1) return null;
-    const buf = Buffer.from(data, 'base64');
-    return buf.length > 0 ? buf[0]! : null;
+    if (!data) return new Uint8Array(0);
+    if (response?.opcode === 1) return new Uint8Array(Buffer.from(data, 'utf8'));
+    return new Uint8Array(Buffer.from(data, 'base64'));
 }
 
 export class WebSocketTap {
@@ -59,12 +49,16 @@ export class WebSocketTap {
     private reportTimer: NodeJS.Timeout | null = null;
     private attached = false;
 
+    /** Called for every game-socket frame, in order, once the socket is classified. */
+    onGameFrame: ((dir: Direction, bytes: Uint8Array) => void) | null = null;
+
     constructor(
         private readonly wc: WebContents,
-        private readonly log: (msg: string) => void
+        private readonly log: (msg: string) => void,
+        private readonly injectRngProbe: boolean
     ) {}
 
-    attach(): void {
+    async attach(): Promise<void> {
         try {
             this.wc.debugger.attach('1.3');
         } catch (err) {
@@ -77,17 +71,26 @@ export class WebSocketTap {
             this.attached = false;
             this.log(`[tap] debugger detached: ${reason}`);
         });
-
         this.wc.debugger.on('message', (_event, method, params) => {
-            this.onCdpMessage(method, params);
+            try {
+                this.onCdpMessage(method, params);
+            } catch (err) {
+                this.log(`[tap] handler error (swallowed): ${(err as Error).message}`);
+            }
         });
 
-        this.wc.debugger
-            .sendCommand('Network.enable')
-            .then(() => this.log('[tap] attached — Network domain enabled, observe-only'))
-            .catch((err: Error) => this.log(`[tap] Network.enable failed: ${err.message}`));
+        await this.wc.debugger.sendCommand('Network.enable');
+        this.log('[tap] Network domain enabled — frame mirroring active');
 
-        this.reportTimer = setInterval(() => this.report(), 3000);
+        if (this.injectRngProbe) {
+            await this.wc.debugger.sendCommand('Page.enable');
+            await this.wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
+                source: RNG_PROBE_SOURCE
+            });
+            this.log('[tap] RNG probe registered for document_start (main world)');
+        }
+
+        this.reportTimer = setInterval(() => this.report(), 5000);
     }
 
     detach(): void {
@@ -104,10 +107,34 @@ export class WebSocketTap {
         }
     }
 
+    private classify(s: SocketStat, first: number): void {
+        if (first === OPCODE_GAME_LOGIN) {
+            s.kind = 'game';
+            this.log('[tap] socket classified: game (first client byte 14)');
+        } else if (first === OPCODE_ONDEMAND) {
+            s.kind = 'ondemand';
+            this.log('[tap] socket classified: ondemand (first client byte 15) — ignored');
+        } else {
+            return;
+        }
+        if (s.kind === 'game') {
+            for (const f of s.pending) this.onGameFrame?.(f.dir, f.bytes);
+        }
+        s.pending.length = 0;
+    }
+
+    private record(s: SocketStat, dir: Direction, bytes: Uint8Array): void {
+        if (s.kind === 'unknown') {
+            s.pending.push({ dir, bytes });
+        } else if (s.kind === 'game') {
+            this.onGameFrame?.(dir, bytes);
+        }
+    }
+
     private onCdpMessage(method: string, params: unknown): void {
         switch (method) {
             case 'Network.webSocketCreated': {
-                const p = params as CdpCreated;
+                const p = params as { requestId: string; url: string };
                 this.sockets.set(p.requestId, {
                     id: p.requestId,
                     url: p.url,
@@ -115,7 +142,8 @@ export class WebSocketTap {
                     txFrames: 0,
                     rxFrames: 0,
                     txBytes: 0,
-                    rxBytes: 0
+                    rxBytes: 0,
+                    pending: []
                 });
                 this.log(`[tap] socket opened: ${p.url}`);
                 break;
@@ -124,32 +152,27 @@ export class WebSocketTap {
                 const p = params as CdpFrame;
                 const s = this.sockets.get(p.requestId);
                 if (!s) break;
-                if (s.kind === 'unknown') {
-                    const b = firstByte(p.response);
-                    if (b === OPCODE_GAME_LOGIN) {
-                        s.kind = 'game';
-                        this.log('[tap] socket classified: game (first client byte 14)');
-                    } else if (b === OPCODE_ONDEMAND) {
-                        s.kind = 'ondemand';
-                        this.log('[tap] socket classified: ondemand (first client byte 15)');
-                    }
-                }
+                const bytes = frameBytes(p.response);
+                if (s.kind === 'unknown' && bytes.length > 0) this.classify(s, bytes[0]!);
                 s.txFrames++;
-                s.txBytes += payloadLength(p.response);
+                s.txBytes += bytes.length;
+                this.record(s, 'up', bytes);
                 break;
             }
             case 'Network.webSocketFrameReceived': {
                 const p = params as CdpFrame;
                 const s = this.sockets.get(p.requestId);
                 if (!s) break;
+                const bytes = frameBytes(p.response);
                 s.rxFrames++;
-                s.rxBytes += payloadLength(p.response);
+                s.rxBytes += bytes.length;
+                this.record(s, 'down', bytes);
                 break;
             }
             case 'Network.webSocketClosed': {
                 const p = params as { requestId: string };
                 const s = this.sockets.get(p.requestId);
-                if (s) this.log(`[tap] socket closed: ${s.kind} (${s.url})`);
+                if (s) this.log(`[tap] socket closed: ${s.kind}`);
                 break;
             }
         }
@@ -159,8 +182,8 @@ export class WebSocketTap {
         if (this.sockets.size === 0) return;
         const lines = [...this.sockets.values()].map(
             s =>
-                `  ${s.kind.padEnd(8)} tx ${String(s.txFrames).padStart(6)} frames / ${String(s.txBytes).padStart(9)} B` +
-                `   rx ${String(s.rxFrames).padStart(6)} frames / ${String(s.rxBytes).padStart(9)} B`
+                `  ${s.kind.padEnd(8)} tx ${String(s.txFrames).padStart(6)} / ${String(s.txBytes).padStart(9)} B` +
+                `   rx ${String(s.rxFrames).padStart(6)} / ${String(s.rxBytes).padStart(9)} B`
         );
         this.log(`[tap] ${this.sockets.size} socket(s)\n${lines.join('\n')}`);
     }

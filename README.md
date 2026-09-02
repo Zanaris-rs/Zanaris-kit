@@ -87,6 +87,45 @@ Security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: 
 everything else opens in the system browser. The game page gets its own persistent
 session partition so its `localStorage` prefs and IndexedDB asset cache survive relaunch.
 
+## Spike result: ISAAC seed recovery (verified)
+
+The seed for the ISAAC keystream is **fully recoverable without the server's private
+key**, which is what makes a state layer possible against servers we don't run.
+
+Two of the four seed words arrive in plaintext — they are the server's 8-byte session
+seed, sent unencrypted before the login block. The other two are
+`Math.floor(99999999 * Math.random())`, drawn by two adjacent calls in `Client.login`.
+Observing `Math.random` through the login window recovers them.
+
+Verified against ground truth by RSA-decrypting the real login block with the server's
+private key (an oracle for testing only, never a shipping dependency):
+
+```
+[1] RSA magic byte    : 10 OK (decrypt correct)
+[2] seed[2],[3]       : 12931227, 1753455222
+    vs plaintext wire : MATCH — 2 of 4 words need no recovery
+[3] seed[0],[1]       : 33158998, 99859750
+    found in RNG ring : YES at draw #755782 of 755784
+```
+
+**The two draws are the last two before the login block is sent.** The login screen
+animation stalls while `Client.login` awaits the socket, so nothing else consumes the
+RNG in between. Recovery is therefore reading the tail of the ring, not searching it —
+though the consecutive-pair search stays as a fallback should timing ever shift.
+
+Scale note: the login screen burns ~200 `Math.random()` calls per frame (755,784 draws
+in one session), so the observer ring must be sized for that. It is 65536 entries.
+
+Two environment traps worth knowing:
+
+- **Electron ships BoringSSL, not OpenSSL.** `crypto.createPrivateKey()` rejects these
+  keys with `BAD_E_VALUE` because the RuneScape convention uses a huge public exponent.
+  The same code works in plain Node. `rsa.ts` parses the PKCS#8 DER by hand to avoid
+  the validation entirely.
+- **CDP commands never resolve against a `BrowserWindow` with nothing loaded** — there
+  is no renderer to service them. Load `about:blank` first, then register the
+  document-start script, then navigate.
+
 ## Known constraints
 
 **World-anchored overlays are not possible.** Camera position, yaw, pitch and zoom are
