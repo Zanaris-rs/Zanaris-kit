@@ -1,30 +1,82 @@
-/** Channel names and payload types, shared by main and preload so they can't drift. */
+/** Channel names and payload types, shared by main, preload and the renderer so they can't drift. */
+import type { NewServerInput, ServerDef } from './catalog';
+import type { LayoutMode, TabKind } from './layout';
 
 export const IPC = {
-    serversList: 'swiftkit:servers-list',
-    serversState: 'swiftkit:servers-state',
-    serverOpen: 'swiftkit:server-open',
-    serverOpenUrl: 'swiftkit:server-open-url'
+    catalogState: 'swiftkit:catalog-state',
+    catalogGet: 'swiftkit:catalog-get',
+    catalogAdd: 'swiftkit:catalog-add',
+    catalogRemove: 'swiftkit:catalog-remove',
+    windowOpen: 'swiftkit:window-open',
+    launcherShow: 'swiftkit:launcher-show',
+    shellState: 'swiftkit:shell-state',
+    shellGet: 'swiftkit:shell-get',
+    shellTogglePanel: 'swiftkit:shell-toggle-panel'
 } as const;
 
-export interface ServerInfo {
-    id: string;
-    name: string;
-    url: string;
-    /** True while this server has a window. */
-    open: boolean;
+export interface Rect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
 }
 
-export type OpenResult = { ok: true } | { ok: false; error: string };
+export interface ServerInfo extends ServerDef {
+    /** How many windows of this server are open right now. */
+    openCount: number;
+}
+
+export interface CatalogState {
+    servers: ServerInfo[];
+    /** True when servers.json could not be read and the defaults were restored. */
+    recovered: boolean;
+}
+
+export interface TabInfo {
+    id: string;
+    kind: TabKind;
+    title: string;
+    url: string;
+    active: boolean;
+}
+
+export interface ShellState {
+    windowId: number;
+    server: ServerDef;
+    slot: number;
+    title: string;
+    tabs: TabInfo[];
+    panelOpen: boolean;
+    mode: LayoutMode;
+    /** Where main placed things, relative to the window's content area, so the shell draws exactly there. */
+    rects: {
+        strip: Rect;
+        address: Rect | null;
+        content: Rect;
+        panel: Rect | null;
+        rail: Rect;
+    };
+}
+
+export type Result = { ok: true } | { ok: false; error: string };
 
 export interface SwiftkitApi {
-    servers: {
-        list(): Promise<ServerInfo[]>;
-        /** Opens the server's window, or focuses it if it is already open. */
-        open(id: string): Promise<OpenResult>;
-        /** Opens a typed address, adding it to the list if it is new. */
-        openUrl(url: string): Promise<OpenResult>;
-        /** Fires whenever a window opens or closes. Returns an unsubscribe. */
-        onState(cb: (servers: ServerInfo[]) => void): () => void;
+    launcher: {
+        get(): Promise<CatalogState>;
+        /** Adds the server and opens a window for it. */
+        add(input: NewServerInput): Promise<Result>;
+        /** Refused while the server has open windows. */
+        remove(id: string): Promise<Result>;
+        /** Opens a new window for the server, every time. */
+        open(serverId: string): Promise<Result>;
+        onState(cb: (state: CatalogState) => void): () => void;
+    };
+    shell: {
+        /** Null when the calling view is not a server window's shell. */
+        get(): Promise<ShellState | null>;
+        togglePanel(): Promise<void>;
+        /** Shows the launcher. */
+        newWindow(): Promise<void>;
+        onState(cb: (state: ShellState) => void): () => void;
     };
 }
