@@ -1,41 +1,47 @@
 # SwiftKit for 04scape
 
 An Electron client that opens several 04scape servers at once, one window per
-server, where every window knows which server it is running.
+server, where every window knows which server it is running and can hop
+between that server's worlds.
 
-**Status: milestone one of the server-windows design.** The catalog, the File
-menu, and a server window with the pinned game tab, an empty rail, a
-toggleable panel and the widen / shift / push layout engine. Page tabs, chat,
-timers, screenshots and the server tools follow in later milestones. The design
-is in `docs/superpowers/specs/2026-09-05-server-windows-design.md` and the plan
-this milestone followed in `docs/superpowers/plans/2026-09-05-milestone-1-server-windows.md`.
+**Status: milestone two of the server-windows design.** Server windows with
+the pinned game tab, the rail and panel, the widen / shift / push layout
+engine, and now the Worlds tool: a world list with players and latency, a
+low / high detail switch, and the last world remembered per server. Page tabs,
+chat, timers, screenshots and the other tools follow. The design is in
+`docs/superpowers/specs/2026-09-05-server-windows-design.md`, which also maps
+LostHQ's LostKit 2 onto it; the plans are under `docs/superpowers/plans/`.
 
 ## What it does
 
 There is no launcher or management window; there are only game windows. New
 ones come from the **File menu**: New Window (Cmd/Ctrl+N) opens another window
 of the focused window's server, and New Window For lists the catalog. At
-startup the app opens the first server in the catalog. On macOS the app keeps
-running with no windows and the dock menu opens one; elsewhere closing the
-last window quits, since the menu lives in the window.
+startup the app opens the first server in the catalog, Lost City. On macOS the
+app keeps running with no windows and the dock menu opens one; elsewhere
+closing the last window quits, since the menu lives in the window.
 
 A **server window** is bound to one catalog entry for its whole life. Its tab
-strip starts with the pinned game tab, labelled with the server's name and
-revision ("rev unknown" when the catalog has none). A rail runs down the right
-edge and a panel opens beside it (Cmd/Ctrl+\ or the button at the end of the
-strip). The rail is empty and the panel is a placeholder in this milestone; the
-point of building them now is that the layout engine underneath them is done.
-Closing a window asks first, because it logs you out.
+strip starts with the pinned game tab, which reads "Lost City · W5 · low ·
+43 ms": the server, the world, the detail level and the latency to that
+world's host, measured every ten seconds. A rail runs down the right edge; its
+first tool is **Worlds**. The panel it opens (or Cmd/Ctrl+\) shows Low / High
+detail, then every world with region, players online, members or free, and
+latency, the current world marked. Choosing a world loads it in the same
+window, which logs you out, so the list is the whole gesture and nothing asks
+twice. Flipping detail reloads the current world. The world and detail you
+chose are remembered per server; the next window for that server opens there.
 
 Opening the same server twice gives the second window its own storage
-partition (`persist:server:<id>:2`) and the title "Name (2)", so two accounts
-on one server never share cookies or client prefs. Slot numbers are reused
-once a window closes.
+partition (`persist:server:<id>:2`) and the title "Lost City — World 5 (2)",
+so two accounts on one server never share cookies or client prefs. Slot
+numbers are reused once a window closes.
 
 Nothing is injected into a game page: no preload, no main-world code. The page
 that runs is byte-for-byte the page the server served. A modified client is
 both the most detectable thing we could ship and the most likely to be against
-server policy.
+server policy. LostKit 2 injects a preload for its screenshots, zoom and AFK
+detection; everything equivalent here is done from main or not at all.
 
 ## Why a window keeps playing when it is not in front
 
@@ -48,27 +54,36 @@ a second, which would stall any game you were not looking at.
 ## The catalog
 
 `<userData>/servers.json` (on macOS, `~/Library/Application Support/swiftkit/`),
-seeded on first run:
+seeded on first run, one entry per server:
 
-| id | server | revision | wiki |
-|---|---|---|---|
-| `zanaris-w1` | `https://w1.04.zanaris.rs/rs2.cgi?lowmem=1` | 274 | losthq |
-| `lostcity-w5` | `https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1` | 274 | losthq |
-| `lostcitylabs-w1` | `https://www.lostcitylabs.com/play/world-1/` | unknown, "May 2005 per Lost City Labs" | none |
-| `local` | `http://127.0.0.1:8888/rs2.cgi?lowmem=1` | 289, as `engine/data/config/world.json` sets it | none |
+| id | revision | worlds from | detail switch | wiki |
+|---|---|---|---|---|
+| `lostcity` | 274 | LostHQ's world API (`2004.losthq.rs/pages/api/worlds.php`), which carries players and both detail URLs | yes | losthq |
+| `zanaris` | 274 | `zanaris.rs/worlds.json`, players from each world's `world.json` | yes | losthq |
+| `lostcitylabs` | unknown, "May 2005 per Lost City Labs" | a static list, worlds 1 to 4 | no parameter found | none |
+| `local` | 289, as `engine/data/config/world.json` sets it | none | | none |
 
-Each entry also carries `hosts`, the hosts its page tabs may visit (always the
-game host and the wiki host), and a `map` URL for the map tool. A wiki is
-stored as a URL; nothing claims which revision it describes, since losthq moves
-on its own schedule. LostHQ has no discoverable search endpoint (its
-`index.php?search=` returns the homepage), so `wiki.search` is null for it.
+Each entry carries a `worlds` block (the source, a URL template with `{world}`,
+`{url}` and `{lowmem}`, whether detail is switchable, the default world),
+`bookmarks` for the page-tab menu that arrives next milestone (LostHQ's
+guides, the clue coordinator, the world map, markets), an optional `hiscores`
+API, the `hosts` page tabs may visit, and a wiki URL that never claims which
+revision it describes, since losthq moves on its own schedule.
 
 Until the settings panel arrives, the list is edited as a file: File > Edit
 Server List… opens it in your editor, and the app re-reads it when it regains
 focus, or from File > Reload Server List. A file that cannot be read is renamed
 to `servers.json.broken-<timestamp>` and the defaults are written in its
-place; a message box says so. A window keeps its own copy of its server, so
-editing the file never affects windows already open.
+place; a message box says so. A version 1 file from the launcher-era build
+(one entry per world) is migrated in place: its built-in entries become the
+per-server ones above and any custom entries are kept. The ids changed with
+it, so each server's storage partition starts fresh once. A window keeps its
+own copy of its server, so editing the file never affects windows already
+open.
+
+`<userData>/state.json` remembers the last world and detail per server. It is
+not configuration and never interrupts a launch: a broken file is kept aside
+and the state starts empty.
 
 ## Layout
 
@@ -94,17 +109,19 @@ content rect never drops below 765 x 503 unless the user shrinks the window.
 
 ```sh
 npm start            # build + launch
-npm test             # the pure modules: layout, catalog, slots, tabs, window registry
+npm test             # the pure modules, no Electron
 npm run typecheck
-npm run capture      # open every server, screenshot every view into captures/, exit
+npm run capture      # open every server, screenshot every view, hop a world, exit
 ```
 
 Capture mode (`SWIFTKIT_CAPTURE=<dir>`, settle time `SWIFTKIT_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,
 because a window's own webContents holds nothing when its content lives in
-child views. It then opens the panel on a window whose game loaded and captures
-it again, and opens a second instance of that server. A view that has no frame
-yet is skipped rather than allowed to abort the run.
+child views. It opens the panel on a loaded window, opens the Worlds tool,
+waits for the list, switches to another world and captures that, then opens
+a second instance of that server. It keeps its own `state.json` beside the
+screenshots so a test switch never changes what the next real launch opens.
+A view that has no frame yet is retried, then skipped.
 
 ## Verified
 
@@ -112,62 +129,79 @@ One capture run with every catalog server open at once:
 
 | window | game | shell |
 |---|---|---|
-| Zanaris — World 1 | login screen | strip with the game tab, "rev 274" |
-| Lost City — World 5 | login screen | strip, "rev 274" |
-| Lost City Labs — World 1 | login screen | strip, "rev unknown" |
-| Local server | offline page, `ERR_CONNECTION_REFUSED`, auto-retry | strip, "rev 289" |
-| Zanaris — World 1, panel open | login screen, untouched | panel beside the rail; mode **widen** |
-| Zanaris — World 1 (2) | login screen | slot 2, `persist:server:zanaris-w1:2` |
+| Lost City | login screen at World 5 | "Lost City · W5 · low · 239 ms", the globe on the rail |
+| Zanaris | login screen | "Zanaris · W1 · low · N ms" |
+| Lost City Labs | login screen | "Lost City Labs · W1 · N ms", no detail since Labs has no switch |
+| Local server | offline page, `ERR_CONNECTION_REFUSED`, auto-retry | "Local server", no worlds tool |
+| Lost City, Worlds open | untouched | five worlds with region, players and latency, W5 marked, Low / High switch; mode **widen** |
+| Lost City, after choosing W1 | login screen at World 1 | "Lost City · W1 · low · 294 ms", W1 marked; title "Lost City — World 1" |
+| Lost City (2), opened after the hop | login screen at World 1, the remembered world | slot 2, `persist:server:lostcity:2` |
 
-An earlier run, when a cascaded window happened to sit near the screen edge,
-exercised **shift** instead: the window grew and moved left, and the panel
-said so.
+The version 1 `servers.json` on disk migrated in place during that run, with
+no recovery prompt, and the state file recorded the hop.
 
-Fifty tests cover the pure modules: layout (widen, shift, push, rects tiling
-the window), catalog (validation, defaults, file recovery), slots (reuse,
-partition and title naming), tabs (pinned game tab, close activates the left
-neighbour) and the window registry.
+107 tests cover the pure modules: layout, catalog (validation, defaults, file
+recovery, v1 to v2 migration), slots, tabs, the window registry, the world
+sources against the real API payloads (including a check that the Lost City
+template reproduces LostHQ's URLs exactly), the worlds service (cache, shared
+fetch, last-good-on-error, latency by host), the per-window switch state, the
+app state store, the navigation guard, and the latency probe against a local
+listener.
 
 ## Security posture
 
 `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`,
-`webSecurity: true` on every view. The game view navigates only within its
-server's origin; any other navigation, and any `window.open`, goes to the
-system browser rather than replacing the game. The preload exposes exactly the
-three shell calls in `src/shared/ipc.ts`, and IPC handlers identify a window
+`webSecurity: true` on every view. The game view accepts no page-initiated
+navigation at all: links, `location` changes, form submits and mouse back or
+forward gestures are blocked, and web links open in the system browser. The
+one exception is our own offline page returning to the page main asked for.
+The only way the game view changes page is main calling `loadURL`, which is
+how a world switch happens, and the history is cleared after every load so
+nothing can walk back through worlds. The preload exposes exactly the shell
+and worlds calls in `src/shared/ipc.ts`, and IPC handlers identify a window
 from `event.sender`, never from a value the renderer supplies.
 
 ## Layout of the source
 
 ```
-src/shared/layout.ts     geometry constants shared by main and the shell
-src/shared/catalog.ts    ServerDef and the add-form input
-src/shared/ipc.ts        channel names and payload types
-src/main/layout.ts       pure: window and view rects; widen / shift / push     (tested)
-src/main/catalog.ts      pure validation; the servers.json store               (tested)
-src/main/slots.ts        pure: slot numbers, partitions, titles                (tested)
-src/main/tabs.ts         pure: the pinned game tab and page tabs               (tested)
-src/main/windows.ts      pure: registry of open windows over a factory         (tested)
-src/main/serverWindow.ts one server window: shell view over game view
-src/main/menu.ts         application menu: new windows, the server list, the panel
-src/main/renderer.ts     preload path; load the shell
-src/main/index.ts        wiring, IPC handlers, capture mode
-src/preload/index.ts     the window.swiftkit bridge
-src/renderer/Shell.tsx, main.tsx, styles.css
-static/offline.html      shown when a server can't be reached
+src/shared/layout.ts        geometry constants shared by main and the shell
+src/shared/catalog.ts       ServerDef and the add-form input
+src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorld
+src/shared/ipc.ts           channel names, ShellState, the tool ids
+src/main/layout.ts          pure: window and view rects; widen / shift / push        (tested)
+src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)
+src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
+src/main/tabs.ts            pure: the pinned game tab and page tabs                 (tested)
+src/main/windows.ts         pure: registry of open windows over a factory           (tested)
+src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
+src/main/appState.ts        the state.json store                                    (tested)
+src/main/worlds/sources.ts  pure: LostHQ, Zanaris and static parsers, url templates (tested)
+src/main/worlds/service.ts  per-server world list and latency over injected IO      (tested)
+src/main/worlds/switch.ts   pure: one window's world, detail, url and labels        (tested)
+src/main/worlds/probe.ts    TCP connect latency, node-only                          (tested)
+src/main/serverWindow.ts    one server window: shell view over game view, the switch
+src/main/menu.ts            application menu: new windows, the server list, the panel
+src/main/renderer.ts        preload path; load the shell
+src/main/index.ts           wiring, world services, IPC handlers, capture mode
+src/preload/index.ts        the window.swiftkit bridge
+src/renderer/Shell.tsx      strip, rail, panel
+src/renderer/tools/Worlds.tsx
+static/offline.html         shown when a server can't be reached
 ```
 
 ## Where v1 went
 
-`main` keeps the observe-only CDP tap, ISAAC seed recovery, session decoder,
-XP tracker and the original sidebar. The uncommitted work from just before the
-reset (the six-hour recorder and the reload button) is parked in `git stash`
-on `main`.
+`main` before the reset keeps the observe-only CDP tap, ISAAC seed recovery,
+session decoder, XP tracker and the original sidebar (from `ee5116f` back).
+The uncommitted work from just before the reset (the six-hour recorder and
+the reload button) is parked in `git stash`.
 
 ## Next
 
-2. **Page tabs.** `+`, the address row, wiki search, the map action, the
-   per-server host allowlist, an offline page for pages.
-3. **Shared tools.** Screenshot, timers, settings.
-4. **Chat.** IRC on Libera.Chat, channels under the `#04scape` prefix.
-5. **Server tools.** Clue lookup and calculators, with the data pack loader.
+3. **Page tabs.** `+` with the server's bookmarks, the address row, wiki
+   search, the map action, the per-server host allowlist, per-tab zoom.
+4. **Shared tools.** Screenshot cropped to the canvas, timers with an AFK
+   reset, notes, settings, always-on-top.
+5. **Chat.** IRC on Libera.Chat, channels under the `#04scape` prefix.
+6. **Server tools.** Hiscores, clue lookup and calculators, with the data pack
+   loader.
