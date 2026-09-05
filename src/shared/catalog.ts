@@ -1,3 +1,5 @@
+import type { Bookmark, WorldsDef } from './worlds';
+
 /** A wiki the server's page tabs may browse. */
 export interface WikiDef {
     home: string;
@@ -18,8 +20,14 @@ export interface ServerDef {
     map: string | null;
     /** Hosts page tabs may visit. Always includes the game host and the wiki host. */
     hosts: string[];
-    /** Free text shown in the launcher. */
+    /** Free text shown beside the server. */
     notes: string | null;
+    /** How to list and address this server's worlds; null when it has one page. */
+    worlds: WorldsDef | null;
+    /** Reference pages offered by the page-tab "+" menu. */
+    bookmarks: Bookmark[];
+    /** Player lookup API with {name} in it, or null. */
+    hiscores: string | null;
 }
 
 /** What the launcher's add form collects. */
