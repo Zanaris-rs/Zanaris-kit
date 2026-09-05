@@ -76,6 +76,13 @@ test('setTitle renames a tab', () => {
     assert.equal(tabs.setTitle('nope', 'x'), false);
 });
 
+test('setUrl updates a tab so a world switch does not leave it stale', () => {
+    const tabs = model();
+    assert.equal(tabs.setUrl(GAME_TAB_ID, 'https://w7-2004.lostcity.rs/rs2.cgi?world=7'), true);
+    assert.equal(tabs.list()[0]!.url, 'https://w7-2004.lostcity.rs/rs2.cgi?world=7');
+    assert.equal(tabs.setUrl('nope', 'https://x'), false);
+});
+
 test('list returns copies', () => {
     const tabs = model();
     tabs.list()[0]!.title = 'changed';

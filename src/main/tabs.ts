@@ -61,4 +61,11 @@ export class TabModel {
         tab.title = title;
         return true;
     }
+
+    setUrl(id: string, url: string): boolean {
+        const tab = this.tabs.find(t => t.id === id);
+        if (!tab) return false;
+        tab.url = url;
+        return true;
+    }
 }
