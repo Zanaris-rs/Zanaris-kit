@@ -34,7 +34,7 @@ Tools have a **scope**, and the scope decides where their state lives:
 | Scope | Examples | State lives in | Shown in |
 |---|---|---|---|
 | app | chat, timers, settings | main, once | every window, identically |
-| server | wiki, map, clue lookup, calculators | main, keyed by revision | the windows of that server, with that server's data |
+| server | worlds, wiki, map, hiscores, clue lookup, calculators | main, keyed by server or revision | the windows of that server, with that server's data |
 | instance | screenshot, later the XP tracker | the window | that window only |
 
 ## Server window anatomy
@@ -117,8 +117,35 @@ interface ServerDef {
     } | null;
     map: string | null;  // a URL the map tool opens as a page tab
     hosts: string[];     // extra hosts page tabs may visit; always includes the game and wiki hosts
+    worlds: WorldsDef | null; // how to list and address this server's worlds; null when it has one
+    bookmarks: { name: string; url: string }[]; // reference pages offered by the page-tab "+" menu
+    hiscores: string | null;  // player lookup API with {name}, e.g. "https://2004.lostcity.rs/api/hiscores/player/{name}"
+}
+
+interface WorldsDef {
+    source:
+        | { kind: 'losthq'; url: string }   // JSON: [{ world, location, count, p2p, hd, ld }]
+        | { kind: 'zanaris'; url: string }  // JSON: [{ id, name, region, members, url }]; players from <url>/world.json
+        | { kind: 'static'; worlds: { id: number; name: string; region: string | null; members: boolean | null }[] };
+    /** Game page for a world: {world} is its number, {url} its origin, {lowmem} is 1 for low detail and 0 for high. */
+    template: string;
+    /** False when the server ignores the detail parameter (Labs); the switch is then hidden. */
+    detail: boolean;
+    /** Opened when nothing is remembered for this server. */
+    defaultWorld: number;
 }
 ```
+
+Built-in `worlds`: Lost City uses LostHQ's world API
+(`https://2004.losthq.rs/pages/api/worlds.php`), which carries the player
+count and both detail URLs per world, with template
+`https://w{world}-2004.lostcity.rs/rs2.cgi?plugin=0&world={world}&lowmem={lowmem}`.
+Zanaris uses `https://zanaris.rs/worlds.json` with template
+`{url}/rs2.cgi?lowmem={lowmem}` and counts from each world's `world.json`.
+Labs is static, worlds 1 to 4 under `https://www.lostcitylabs.com/play/world-{world}/`,
+with `detail: false` because no parameter was found. Local has none. The
+catalog entries are per server; the `url` field is the default world's page
+and is what a server without `worlds` loads.
 
 The settings panel's add form (milestone 3) asks for name, game address,
 revision (which may be left unknown), an optional wiki address and a note;
@@ -162,6 +189,22 @@ shell.
 
 ### Initial set
 
+**Worlds** (server). The first rail tool. The panel shows a Low / High detail
+switch (hidden when the server's `detail` is false) above the world list:
+number, region, player count, a members badge, the current world highlighted,
+and a latency figure per world measured from main as the TCP connect time to
+the world's host on port 443, refreshed every ten seconds while the panel is
+open. Choosing a world loads its page in the game view, which logs the player
+out, so the list is the whole gesture and there is no second confirmation.
+Flipping detail reloads the current world. The game tab reads "Lost City · W5
+· low · 43 ms" and the window title follows the world. The list is fetched in
+main, cached for thirty seconds, with a refresh button and the age of the
+list shown; a failed fetch shows the error and a retry, never an empty
+panel. The last world and detail chosen are remembered per server and used
+by the next window for that server. Each source kind is a small adapter with
+a pure, tested parser; the switch state (current world, detail, last known
+list) is a pure module too.
+
 **Chat** (app). A real IRC client, one connection per app, in main. It exists
 whether or not any game is open; the panel is a view onto it. Channels: a
 lobby (`#04scape`) always, plus one per server (`#04scape-zanaris`,
@@ -190,8 +233,16 @@ in the shell. Rail icon and shortcut. This is the same call capture mode
 already uses.
 
 **Wiki** (server). Not a panel: the `+` tab, the address row and the search
-box are the wiki tool. Page tabs use the app-wide `persist:pages` partition,
-so a wiki login is shared by every window.
+box are the wiki tool. The `+` opens a menu of the server's `bookmarks`
+(for Lost City: the LostHQ guides, clue coordinator, world map, markets, item
+database) plus "New tab" at the wiki home. Page tabs use the app-wide
+`persist:pages` partition, so a wiki login is shared by every window, and
+each page tab keeps its own zoom factor (Cmd/Ctrl + and -, remembered per
+URL).
+
+**Hiscores** (server). A panel with a name box, shown only for servers whose
+catalog entry has a `hiscores` API. Lost City's returns JSON per player; a
+second name box compares two players side by side.
 
 **Map** (server). An action: opens the server's `map` URL as a page tab, or
 focuses it if it is already open. Hidden from the rail when the server has no
@@ -207,8 +258,12 @@ hit: melee, from strength level, strength bonus, prayer and potion
 multipliers and attack style, entered by hand. Equipment lookup by name needs
 the data pack and comes later.
 
-**Settings** (app). IRC server and nick, screenshot folder, and the server
-list itself: add, edit and remove entries, including map URL and extra hosts.
+**Settings** (app). IRC server and nick, screenshot folder and shortcut,
+always-on-top per window, and the server list itself: add, edit and remove
+entries, including worlds, bookmarks, map URL and extra hosts.
+
+**Notes** (app). A plain text pad, saved as it is typed. Cheap, and the one
+LostKit tool people reach for constantly.
 
 ## New windows
 
@@ -238,7 +293,14 @@ Slot numbers are reused once a window closes.
 
 ## Navigation rules
 
-- The game tab's view may navigate only within the game page's origin.
+- The game tab's view accepts no page-initiated navigation at all: links,
+  `location` changes, form submits and mouse back and forward gestures are
+  blocked, and http(s) targets open in the system browser. The only way the
+  game view changes page is main calling `loadURL`, which is how the Worlds
+  tool switches. LostKit arrived at the same rule for the same reason: a stray
+  click must never cost a login.
+- The game view's context menu is suppressed, since Chromium's default one
+  carries Back, Forward and Reload.
 - A page tab's view may navigate within any host in the server's `hosts`.
 - Anything else, and any `window.open`, goes to the system browser.
 - Downloads are refused.
@@ -252,6 +314,7 @@ Slot numbers are reused once a window closes.
 | Catalog | `<userData>/servers.json` | on every edit |
 | Timers | `<userData>/timers.json` | on every edit |
 | Settings | `<userData>/settings.json` | on every edit |
+| Last world and detail per server | `<userData>/state.json` | on every switch |
 | Screenshots | `<Pictures>/SwiftKit/<server-id>/` | on capture |
 | Game and page storage | Chromium partitions | by Chromium |
 
@@ -293,15 +356,54 @@ confirm distinct partitions.
 1. **Server windows and the strip.** Catalog file, the File menu, one server
    window per open with the pinned game tab, empty rail, layout engine with
    widen, shift and push. Capture mode covers it.
-2. **Page tabs.** `+`, address row, wiki search, map action, per-server host
-   allowlist, offline page for pages.
-3. **Shared tools.** Screenshot, timers, settings.
-4. **Chat.** IRC client, panel, channels per server, badges.
-5. **Server tools.** Clue lookup and calculators, with the data pack loader
-   and the first packs.
-6. **Follow-ups**, in no committed order: restore page tabs per server, pop a
+2. **Worlds.** The catalog's `worlds` block and the three source adapters,
+   the Worlds tool as the first rail tool with the detail switch and latency,
+   last world remembered per server, the tightened game-view guard and
+   context-menu suppression. Capture mode switches a world to prove it.
+3. **Page tabs.** `+` with bookmarks, address row, wiki search, map action,
+   per-server host allowlist, per-tab zoom, offline page for pages.
+4. **Shared tools.** Screenshot (cropped to the canvas, folder, shortcut),
+   timers with the AFK reset, notes, settings, always-on-top.
+5. **Chat.** IRC client, panel, channels per server, badges.
+6. **Server tools.** Hiscores, clue lookup and calculators, with the data pack
+   loader and the first packs.
+7. **Follow-ups**, in no committed order: restore page tabs per server, pop a
    page tab out to its own window, the observe-only tap from `main` feeding an
-   XP tracker as an instance tool, equipment-aware max hit.
+   XP tracker as an instance tool, equipment-aware max hit, a market price
+   watch for Lost City, packaging and auto-update.
+
+## Reference: LostKit 2
+
+LostHQ's LostKit 2 (https://github.com/LostHQ/LostKit-Electron, GPL-3.0,
+v2.8.0 as of 2026-08-15) is a mature Electron client for Lost City with most
+of the per-client tools this design wants. It was studied for features and
+behaviour; none of its code is used, because its licence would bind ours.
+
+Its architecture is one window with `WebContentsView`s: a nav panel (full
+or strip width; opening a built-in tool widens the window to the right and
+shifts left at the screen edge, the same rule as our layout engine), a game
+view with an injected preload, a chat view loading LostHQ's hosted web IRC
+client, and one view per reference-page tab. Tabs reorder, detach to their
+own window, and are restored at launch.
+
+| LostKit feature | How it does it | SwiftKit |
+|---|---|---|
+| World switcher | LostHQ world API, free/members filter, HD checkbox, per-world latency by HEAD fetch, last world remembered, window title "W2 HD \| 43ms" | Worlds tool, per server through adapters; same API for Lost City; latency by TCP connect from main; last world and detail per server; tab label and title carry the world |
+| Game-view guard | Blocks all page-initiated navigation and the context menu | Adopted as written |
+| Reference pages | Nav buttons open LostHQ guides, clue coordinator, world map, markets, item database as tabs; per-tab zoom; detach; restore | Page tabs seeded from per-server `bookmarks`; per-tab zoom; pop-out and restore are follow-ups |
+| Chat | Embeds `https://irc.losthq.rs` (a bundled web client; no public IRC port found) in a resizable bottom pane | Native IRC on Libera in the panel; LostHQ's client can be a bookmark in the meantime |
+| Screenshot | Injected preload draws the canvas to a data URL; folder, global shortcut, sound | `capturePage` from main cropped to the canvas rect, which the stock page places at a known offset; folder and shortcut; no injection |
+| Stopwatch and AFK timer | Countdown and stopwatch in main; AFK reset from clicks, hover and keys reported by the preload; sound alert; overlay window; title-bar readout | Timers tool; AFK reset from `webContents` input events observed in main, no injection; title-bar readout; overlay is a follow-up |
+| Hiscores and compare | `2004.lostcity.rs/api/hiscores/player/{name}` | Hiscores tool for servers with an API |
+| Price watch and history | Scrapes markets.lostcity.rs, notifications | Follow-up, Lost City only |
+| Notes, always-on-top, zoom | Local notes window; per-window flag; Ctrl+wheel via preload | Notes tool; always-on-top in settings; zoom by shortcut, wheel only if observable without injection |
+| Creators, sound manager, fonts | YouTube live and RSS polling; sound picker; RuneScape fonts injected into tool pages | Not planned |
+| Updates and packaging | electron-forge and electron-builder, squirrel and AppImage, silent auto-update | Follow-up |
+
+The two things LostKit does that this design refuses on principle are
+injecting a preload into the game page (its screenshot, zoom and AFK detection
+depend on it) and loading the game with `webSecurity: false`. Every
+equivalent here is done from main or not at all.
 
 ## Decisions
 
@@ -317,6 +419,9 @@ Settled on 2026-09-05:
    274 servers. Labs has none until its revision is known. A server without a
    wiki gets no `+` default, and its address row still accepts a URL on an
    allowed host.
+4. **Worlds before page tabs.** The world switcher is the first tool, on the
+   losthq API for Lost City, with low detail as the default and no
+   confirmation on switch.
 
 ## Out of scope
 
