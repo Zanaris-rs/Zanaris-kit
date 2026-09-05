@@ -1,13 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, type NativeImage, type WebContents } from 'electron';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { app, BrowserWindow, dialog, ipcMain, shell, type NativeImage, type WebContents } from 'electron';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { NewServerInput } from '../shared/catalog';
-import { IPC, type CatalogState, type Result, type ShellState } from '../shared/ipc';
+import type { ServerDef } from '../shared/catalog';
+import { IPC, type ShellState } from '../shared/ipc';
 import { Catalog } from './catalog';
 import { ServerWindows } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
-import { createLauncherWindow } from './launcher';
-import { installMenu } from './menu';
+import { installMenu, type MenuActions } from './menu';
 
 /** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
 const CAPTURE_DIR = process.env.SWIFTKIT_CAPTURE;
@@ -15,33 +14,25 @@ const CAPTURE_DIR = process.env.SWIFTKIT_CAPTURE;
 const log = (msg: string): void => console.log(msg);
 
 let quitting = false;
-let launcher: BrowserWindow | null = null;
 const catalog = new Catalog(join(app.getPath('userData'), 'servers.json'));
+/** Modification time of servers.json at the last load, so a focus change only re-reads it when it changed. */
+let catalogSeen = 0;
 const serverWindows = new Map<number, ServerWindow>();
 const byShell = new Map<number, ServerWindow>();
 
-// ── catalog state ─────────────────────────────────────────────────────────
-
-function catalogState(): CatalogState {
-    return {
-        servers: catalog.list().map(s => ({ ...s, openCount: windows.countFor(s.id) })),
-        recovered: catalog.recovered
-    };
-}
-
-function pushCatalog(): void {
-    if (launcher && !launcher.isDestroyed()) launcher.webContents.send(IPC.catalogState, catalogState());
-}
-
 // ── windows ───────────────────────────────────────────────────────────────
 
-/** New windows cascade from the launcher so several can open without stacking exactly. */
+function focusedServerWindow(): ServerWindow | undefined {
+    const focused = BrowserWindow.getFocusedWindow();
+    return [...serverWindows.values()].find(sw => sw.window === focused);
+}
+
+/** New windows cascade from the focused one, so several can open without stacking exactly. */
 function nextPosition(): { x: number; y: number } | null {
-    const anchor = launcher && !launcher.isDestroyed() ? launcher : null;
-    if (!anchor) return null;
-    const { x, y, width } = anchor.getBounds();
-    const step = 32 * serverWindows.size;
-    return { x: x + width + 16 + step, y: y + step };
+    const anchor = focusedServerWindow() ?? [...serverWindows.values()].at(-1);
+    if (!anchor || anchor.window.isDestroyed()) return null;
+    const { x, y } = anchor.window.getBounds();
+    return { x: x + 32, y: y + 32 };
 }
 
 function confirmClose(title: string): boolean {
@@ -57,92 +48,83 @@ function confirmClose(title: string): boolean {
     return choice === 0;
 }
 
-const windows = new ServerWindows(
-    (spec, onClosed) => {
-        const sw = createServerWindow(
-            spec,
-            () => {
-                serverWindows.delete(spec.id);
-                byShell.delete(sw.shellContentsId);
-                log(`[main] closed ${spec.title}`);
-                onClosed();
-            },
-            { log, confirmClose, position: nextPosition() }
-        );
-        serverWindows.set(spec.id, sw);
-        byShell.set(sw.shellContentsId, sw);
-        log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
-        return sw;
-    },
-    () => {
-        pushCatalog();
-        if (windows.list().length === 0 && !quitting) showLauncher();
-    }
-);
+const windows = new ServerWindows((spec, onClosed) => {
+    const sw = createServerWindow(
+        spec,
+        () => {
+            serverWindows.delete(spec.id);
+            byShell.delete(sw.shellContentsId);
+            log(`[main] closed ${spec.title}`);
+            onClosed();
+        },
+        { log, confirmClose, position: nextPosition() }
+    );
+    serverWindows.set(spec.id, sw);
+    byShell.set(sw.shellContentsId, sw);
+    log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
+    return sw;
+});
 
-function showLauncher(): void {
-    if (launcher && !launcher.isDestroyed()) {
-        launcher.show();
-        launcher.focus();
-        return;
-    }
-    launcher = createLauncherWindow(() => {
-        launcher = null;
-    });
-    launcher.webContents.once('did-finish-load', pushCatalog);
+function openServer(server: ServerDef): ServerWindow {
+    return serverWindows.get(windows.open(server).id)!;
 }
 
 function windowFor(sender: WebContents): ServerWindow | undefined {
     return byShell.get(sender.id);
 }
 
-function focusedServerWindow(): ServerWindow | undefined {
-    const focused = BrowserWindow.getFocusedWindow();
-    return [...serverWindows.values()].find(sw => sw.window === focused);
+// ── the server list ───────────────────────────────────────────────────────
+
+function catalogMtime(): number {
+    return existsSync(catalog.file) ? statSync(catalog.file).mtimeMs : 0;
 }
 
-function isNewServerInput(x: unknown): x is NewServerInput {
-    if (typeof x !== 'object' || x === null) return false;
-    const i = x as Record<string, unknown>;
-    const nullableString = (v: unknown): boolean => v === null || typeof v === 'string';
-    return (
-        typeof i.name === 'string' &&
-        typeof i.url === 'string' &&
-        (i.revision === null || typeof i.revision === 'number') &&
-        nullableString(i.wikiHome) &&
-        nullableString(i.notes)
-    );
+function loadCatalog(): void {
+    catalog.load();
+    catalogSeen = catalogMtime();
+    installMenu(catalog.list(), actions);
+    if (catalog.recovered) {
+        log(`[main] ${catalog.file} could not be read; the defaults were written and the old file kept beside it`);
+        void dialog.showMessageBox({
+            type: 'warning',
+            message: "Your server list couldn't be read and was reset to the defaults.",
+            detail: `The old file was kept beside ${catalog.file}.`
+        });
+    }
 }
+
+/** Re-read servers.json if it changed since the last load. Runs when the app regains focus. */
+function reloadCatalogIfChanged(): void {
+    if (catalogMtime() === catalogSeen) return;
+    loadCatalog();
+    log(`[main] server list reloaded: ${catalog.list().length} servers`);
+}
+
+const actions: MenuActions = {
+    newWindow: () => {
+        const focused = focusedServerWindow();
+        const server = focused ? (catalog.get(focused.state().server.id) ?? focused.state().server) : catalog.list()[0];
+        if (!server) {
+            void dialog.showMessageBox({ type: 'info', message: 'The server list is empty.', detail: 'Use File > Edit Server List… to add one.' });
+            return;
+        }
+        openServer(server);
+    },
+    newWindowFor: id => {
+        const server = catalog.get(id);
+        if (server) openServer(server);
+    },
+    editServers: () => {
+        void shell.openPath(catalog.file);
+    },
+    reloadServers: () => {
+        loadCatalog();
+        log(`[main] server list reloaded: ${catalog.list().length} servers`);
+    },
+    togglePanel: () => focusedServerWindow()?.togglePanel()
+};
 
 // ── ipc ───────────────────────────────────────────────────────────────────
-
-ipcMain.handle(IPC.catalogGet, (): CatalogState => catalogState());
-
-ipcMain.handle(IPC.catalogAdd, (_event, input: unknown): Result => {
-    if (!isNewServerInput(input)) return { ok: false, error: 'Bad input.' };
-    const result = catalog.add(input);
-    if (!result.ok) return result;
-    pushCatalog();
-    windows.open(result.server);
-    return { ok: true };
-});
-
-ipcMain.handle(IPC.catalogRemove, (_event, id: unknown): Result => {
-    if (typeof id !== 'string') return { ok: false, error: 'Bad server id.' };
-    if (windows.countFor(id) > 0) return { ok: false, error: 'Close its windows first.' };
-    if (!catalog.remove(id)) return { ok: false, error: 'Unknown server.' };
-    pushCatalog();
-    return { ok: true };
-});
-
-ipcMain.handle(IPC.windowOpen, (_event, id: unknown): Result => {
-    const server = typeof id === 'string' ? catalog.get(id) : undefined;
-    if (!server) return { ok: false, error: 'Unknown server.' };
-    windows.open(server);
-    return { ok: true };
-});
-
-ipcMain.handle(IPC.launcherShow, () => showLauncher());
 
 ipcMain.handle(IPC.shellGet, (event): ShellState | null => windowFor(event.sender)?.state() ?? null);
 
@@ -185,7 +167,7 @@ async function captureAndExit(dir: string): Promise<void> {
 
     try {
         const started = Date.now();
-        const opened = catalog.list().map(s => serverWindows.get(windows.open(s).id)!);
+        const opened = catalog.list().map(openServer);
         const results = await Promise.all(
             opened.map(async sw => {
                 const result = await loaded(sw);
@@ -197,18 +179,17 @@ async function captureAndExit(dir: string): Promise<void> {
         log(`[capture] settling for ${settleMs}ms`);
         await wait(settleMs);
 
-        const launcherWindow = launcher;
-        if (launcherWindow) await save('launcher', () => launcherWindow.webContents.capturePage());
         for (const sw of opened) await shoot(sw.state().server.id, sw);
 
         // The layout and slot checks use a window whose game actually loaded, if any did.
-        const first = opened[results.indexOf('loaded')] ?? opened[0]!;
+        const first = opened[results.indexOf('loaded')] ?? opened[0];
+        if (!first) throw new Error('the server list is empty');
         first.togglePanel();
         await wait(500);
         log(`[capture] panel open on ${first.state().title}: mode ${first.state().mode}`);
         await shoot(`${first.state().server.id}-panel`, first);
 
-        const second = serverWindows.get(windows.open(first.state().server).id)!;
+        const second = openServer(first.state().server);
         log(`[capture] ${second.state().title}: ${await loaded(second)}`);
         await wait(Math.min(settleMs, 8_000));
         await shoot(`${first.state().server.id}-2`, second);
@@ -223,31 +204,34 @@ async function captureAndExit(dir: string): Promise<void> {
 // ── app ───────────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-    catalog.load();
+    loadCatalog();
 
     log('');
     log('  SwiftKit');
-    log(`  catalog : ${catalog.file}${catalog.recovered ? ' (recovered — the old file was kept beside it)' : ''}`);
+    log(`  catalog : ${catalog.file}`);
     for (const server of catalog.list()) {
         log(`  ${server.id.padEnd(16)} rev ${String(server.revision ?? '?').padEnd(4)} ${server.url}`);
     }
     log('');
 
-    installMenu({
-        newWindow: showLauncher,
-        togglePanel: () => focusedServerWindow()?.togglePanel()
-    });
-    showLauncher();
-
-    if (CAPTURE_DIR) await captureAndExit(CAPTURE_DIR);
+    if (CAPTURE_DIR) {
+        await captureAndExit(CAPTURE_DIR);
+        return;
+    }
+    actions.newWindow();
 });
 
 app.on('activate', () => {
-    if (windows.list().length === 0) showLauncher();
+    if (serverWindows.size === 0) actions.newWindow();
 });
+
+app.on('browser-window-focus', () => reloadCatalogIfChanged());
 
 app.on('before-quit', () => {
     quitting = true;
 });
 
-app.on('window-all-closed', () => app.quit());
+// macOS keeps running with no windows; the menu and the dock open the next one.
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+});

@@ -12,6 +12,7 @@ import {
     uniqueId,
     createServer,
     isServerDef,
+    serverMenuLabel,
     Catalog
 } from './catalog.ts';
 import type { NewServerInput } from '../shared/catalog.ts';
@@ -108,6 +109,21 @@ test('createServer rejects bad input with a reason', () => {
         assert.equal(r.ok, false);
         if (!r.ok) assert.ok(r.error.length > 0);
     }
+});
+
+test('serverMenuLabel shows the revision only when known', () => {
+    assert.equal(serverMenuLabel({ name: 'Zanaris — World 1', revision: 274 }), 'Zanaris — World 1 (rev 274)');
+    assert.equal(serverMenuLabel({ name: 'Lost City Labs — World 1', revision: null }), 'Lost City Labs — World 1');
+});
+
+test('a later load that succeeds clears recovered', () => {
+    const file = tempFile();
+    writeFileSync(file, '{ not json');
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, true);
+    catalog.load();
+    assert.equal(catalog.recovered, false, 'the defaults it wrote are readable');
 });
 
 test('isServerDef rejects junk', () => {

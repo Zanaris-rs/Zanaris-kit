@@ -3,8 +3,8 @@
 An Electron client that opens several 04scape servers at once, one window per
 server, where every window knows which server it is running.
 
-**Status: milestone one of the server-windows design.** The launcher, the
-catalog, and a server window with the pinned game tab, an empty rail, a
+**Status: milestone one of the server-windows design.** The catalog, the File
+menu, and a server window with the pinned game tab, an empty rail, a
 toggleable panel and the widen / shift / push layout engine. Page tabs, chat,
 timers, screenshots and the server tools follow in later milestones. The design
 is in `docs/superpowers/specs/2026-09-05-server-windows-design.md` and the plan
@@ -12,10 +12,12 @@ this milestone followed in `docs/superpowers/plans/2026-09-05-milestone-1-server
 
 ## What it does
 
-The **launcher** lists the catalog and opens a server in a new window, every
-time you ask. It appears at startup, on Cmd/Ctrl+N, from the File menu, and
-again whenever the last server window closes. The add form takes a name, a
-game address, an optional revision, an optional wiki address and a note.
+There is no launcher or management window; there are only game windows. New
+ones come from the **File menu**: New Window (Cmd/Ctrl+N) opens another window
+of the focused window's server, and New Window For lists the catalog. At
+startup the app opens the first server in the catalog. On macOS the app keeps
+running with no windows and the dock menu opens one; elsewhere closing the
+last window quits, since the menu lives in the window.
 
 A **server window** is bound to one catalog entry for its whole life. Its tab
 strip starts with the pinned game tab, labelled with the server's name and
@@ -61,9 +63,12 @@ stored as a URL; nothing claims which revision it describes, since losthq moves
 on its own schedule. LostHQ has no discoverable search endpoint (its
 `index.php?search=` returns the homepage), so `wiki.search` is null for it.
 
-A file that cannot be read is renamed to `servers.json.broken-<timestamp>` and
-the defaults are written in its place; the launcher says so. Removing a server
-is refused while it has open windows.
+Until the settings panel arrives, the list is edited as a file: File > Edit
+Server List… opens it in your editor, and the app re-reads it when it regains
+focus, or from File > Reload Server List. A file that cannot be read is renamed
+to `servers.json.broken-<timestamp>` and the defaults are written in its
+place; a message box says so. A window keeps its own copy of its server, so
+editing the file never affects windows already open.
 
 ## Layout
 
@@ -107,12 +112,16 @@ One capture run with every catalog server open at once:
 
 | window | game | shell |
 |---|---|---|
-| Zanaris — World 1 | the host was down at the time (`ERR_CONNECTION_TIMED_OUT`); offline page | strip with the game tab, "rev 274" |
+| Zanaris — World 1 | login screen | strip with the game tab, "rev 274" |
 | Lost City — World 5 | login screen | strip, "rev 274" |
 | Lost City Labs — World 1 | login screen | strip, "rev unknown" |
 | Local server | offline page, `ERR_CONNECTION_REFUSED`, auto-retry | strip, "rev 289" |
-| Lost City — World 5, panel open | login screen, untouched | panel beside the rail; mode **shift**, because the cascaded window sat near the screen edge |
-| Lost City — World 5 (2) | login screen | slot 2, `persist:server:lostcity-w5:2` |
+| Zanaris — World 1, panel open | login screen, untouched | panel beside the rail; mode **widen** |
+| Zanaris — World 1 (2) | login screen | slot 2, `persist:server:zanaris-w1:2` |
+
+An earlier run, when a cascaded window happened to sit near the screen edge,
+exercised **shift** instead: the window grew and moved left, and the panel
+said so.
 
 Fifty tests cover the pure modules: layout (widen, shift, push, rects tiling
 the window), catalog (validation, defaults, file recovery), slots (reuse,
@@ -125,8 +134,8 @@ neighbour) and the window registry.
 `webSecurity: true` on every view. The game view navigates only within its
 server's origin; any other navigation, and any `window.open`, goes to the
 system browser rather than replacing the game. The preload exposes exactly the
-launcher and shell calls in `src/shared/ipc.ts`, and IPC handlers identify a
-window from `event.sender`, never from a value the renderer supplies.
+three shell calls in `src/shared/ipc.ts`, and IPC handlers identify a window
+from `event.sender`, never from a value the renderer supplies.
 
 ## Layout of the source
 
@@ -140,12 +149,11 @@ src/main/slots.ts        pure: slot numbers, partitions, titles                (
 src/main/tabs.ts         pure: the pinned game tab and page tabs               (tested)
 src/main/windows.ts      pure: registry of open windows over a factory         (tested)
 src/main/serverWindow.ts one server window: shell view over game view
-src/main/launcher.ts     the launcher window
-src/main/menu.ts         application menu and shortcuts
-src/main/renderer.ts     preload path; load the renderer as launcher or shell
+src/main/menu.ts         application menu: new windows, the server list, the panel
+src/main/renderer.ts     preload path; load the shell
 src/main/index.ts        wiring, IPC handlers, capture mode
 src/preload/index.ts     the window.swiftkit bridge
-src/renderer/Launcher.tsx, Shell.tsx, main.tsx, styles.css
+src/renderer/Shell.tsx, main.tsx, styles.css
 static/offline.html      shown when a server can't be reached
 ```
 

@@ -98,6 +98,11 @@ export function uniqueId(base: string, taken: ReadonlySet<string>): string {
     }
 }
 
+/** How a server reads in a menu: the name, plus its revision when known. */
+export function serverMenuLabel(server: Pick<ServerDef, 'name' | 'revision'>): string {
+    return server.revision === null ? server.name : `${server.name} (rev ${server.revision})`;
+}
+
 export type CreateResult = { ok: true; server: ServerDef } | { ok: false; error: string };
 
 /** Turns the add form into a catalog entry, or says what is wrong with it. */
@@ -167,6 +172,7 @@ export class Catalog {
     }
 
     load(): void {
+        this.recovered = false;
         if (!existsSync(this.file)) {
             this.servers = DEFAULT_SERVERS.map(copy);
             this.save();

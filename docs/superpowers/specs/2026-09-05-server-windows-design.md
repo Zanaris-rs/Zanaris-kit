@@ -20,7 +20,10 @@ Three kinds of thing exist:
 |---|---|---|
 | App (main process) | 1 | server catalog, IRC connection, timers, settings, screenshot writer, data packs |
 | Server window | 0..n | one running game bound to one server, its page tabs, its rail and panel |
-| Launcher | 0..1 | the way to pick a server and open a new server window |
+
+There is no launcher or management window. New windows come from the File
+menu: **New Window** (Cmd/Ctrl+N) opens another window of the focused
+window's server, and **New Window For** lists the catalog.
 
 A server window is created for exactly one catalog entry and never changes
 server. Its title is the server's name; a second window for the same server is
@@ -84,7 +87,9 @@ instead of the L-shaped two-view arrangement v1 used.
 
 | Action | Shortcut | Also |
 |---|---|---|
-| New server window (launcher) | Cmd/Ctrl+N | File menu, dock |
+| New window of the focused server | Cmd/Ctrl+N | File menu |
+| New window for a listed server | | File > New Window For; the dock menu on macOS |
+| Edit the server list | | File > Edit Server List…, opens `servers.json` in the system editor |
 | New page tab | Cmd/Ctrl+T | `+` on the strip |
 | Close page tab | Cmd/Ctrl+W | `x` on the tab |
 | Close window (game tab active) | Cmd/Ctrl+W | confirms: "Close Zanaris W1? You'll be logged out." |
@@ -95,7 +100,9 @@ instead of the L-shaped two-view arrangement v1 used.
 ## Server catalog
 
 Stored at `<userData>/servers.json`, seeded from the built-in list on first
-run, edited from the launcher.
+run. Until the settings panel arrives it is edited as a file: File > Edit
+Server List… opens it in the system editor, and the list is re-read when the
+app regains focus or from File > Reload Server List.
 
 ```ts
 interface ServerDef {
@@ -103,7 +110,7 @@ interface ServerDef {
     name: string;        // "Zanaris — World 1"
     url: string;         // the game page
     revision: number | null;  // 274, 289 …; null when the server does not say
-    notes: string | null;     // shown in the launcher, e.g. "May 2005 per Lost City Labs"
+    notes: string | null;     // free text, e.g. "May 2005 per Lost City Labs"
     wiki: {              // optional
         home: string;    // "https://2004.losthq.rs/"
         search: string | null;  // search URL with {query}; null when the site has no known search endpoint
@@ -113,10 +120,11 @@ interface ServerDef {
 }
 ```
 
-The launcher's add form asks for name, game address, revision (which may be
-left unknown), an optional wiki address and a note; `hosts` is derived and
-`map` is left for the settings panel.
-Removing a server that has open windows is refused.
+The settings panel's add form (milestone 3) asks for name, game address,
+revision (which may be left unknown), an optional wiki address and a note;
+`hosts` is derived and `map` is set in the same panel. A window holds its
+own copy of its server, so removing an entry never affects windows already
+open.
 
 Built-in entries: Zanaris W1 (rev 274, losthq wiki), Lost City W5 (rev 274,
 losthq wiki), Lost City Labs W1 (revision unknown, note "May 2005 per Lost
@@ -199,17 +207,16 @@ hit: melee, from strength level, strength bonus, prayer and potion
 multipliers and attack style, entered by hand. Equipment lookup by name needs
 the data pack and comes later.
 
-**Settings** (app). IRC server and nick, screenshot folder, and per-server
-fields the add form left out (map URL, extra hosts).
+**Settings** (app). IRC server and nick, screenshot folder, and the server
+list itself: add, edit and remove entries, including map URL and extra hosts.
 
-## Launcher
+## New windows
 
-A single window, shown at startup, on Cmd/Ctrl+N, from the File menu, and
-again whenever the last server window closes. It lists the catalog with each
-entry's revision, wiki status and how many windows are open, an "Open" button
-per entry ("Open another" when one is already open), and the add-server form.
-Opening from the launcher creates a new server window every time; focusing an
-existing window is done from the OS, not the launcher.
+At startup the app opens the first server in the catalog (in capture mode,
+all of them). Every New Window creates a new server window; focusing an
+existing one is done from the OS. On macOS the app keeps running with no
+windows, and Cmd/Ctrl+N or the dock menu opens one; elsewhere closing the
+last window quits, as the menu lives in the window.
 
 Each server window gets a storage partition `persist:server:<id>` for its
 first instance and `persist:server:<id>:<n>` for the n-th concurrent
@@ -260,7 +267,7 @@ listed follow-up.
   messages typed meanwhile are refused with a note, not queued.
 - Screenshot write fails: the toast says so with the path.
 - A catalog file that fails to parse is renamed aside and the defaults are
-  written; the launcher says this happened.
+  written; a message box says this happened.
 - A data pack missing for a revision is not an error.
 
 ## Testing
@@ -283,9 +290,9 @@ confirm distinct partitions.
 
 ## Milestones
 
-1. **Server windows and the strip.** Catalog file, launcher, one server window
-   per open with the pinned game tab, empty rail, layout engine with widen,
-   shift and push. Capture mode covers it.
+1. **Server windows and the strip.** Catalog file, the File menu, one server
+   window per open with the pinned game tab, empty rail, layout engine with
+   widen, shift and push. Capture mode covers it.
 2. **Page tabs.** `+`, address row, wiki search, map action, per-server host
    allowlist, offline page for pages.
 3. **Shared tools.** Screenshot, timers, settings.

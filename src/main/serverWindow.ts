@@ -5,7 +5,7 @@ import { MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type L
 import { computeLayout, sideWidth, splitWindow, type Rects } from './layout';
 import { originOf } from './catalog';
 import { TabModel } from './tabs';
-import { loadRenderer, preloadPath } from './renderer';
+import { loadShell, preloadPath } from './renderer';
 import type { ServerWindowHandle, WindowSpec } from './windows';
 
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
@@ -200,13 +200,21 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     });
     gameView.webContents.on('did-finish-load', () => {
         const url = gameView.webContents.getURL();
+        if (url.startsWith('file:')) {
+            deps.log(`${tag} showing the offline page`);
+            return;
+        }
         // Chromium commits its own error page under the failed URL before the offline page replaces it.
         if (failedOver) return;
         if (url.startsWith(origin)) deps.log(`${tag} loaded ${url}`);
     });
+    // A retry from the offline page is a fresh attempt.
+    gameView.webContents.on('did-start-navigation', (_event, url) => {
+        if (url.startsWith(origin)) failedOver = false;
+    });
 
     applyLayout();
-    loadRenderer(shellView.webContents, 'shell');
+    loadShell(shellView.webContents);
     void gameView.webContents.loadURL(server.url);
 
     return {
@@ -220,6 +228,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         close: () => win.close(),
         togglePanel: () => {
             panelOpen = !panelOpen;
+            deps.log(`${tag} panel ${panelOpen ? 'opened' : 'closed'}`);
             applyLayout();
         },
         state,
