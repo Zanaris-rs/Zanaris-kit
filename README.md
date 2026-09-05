@@ -1,233 +1,173 @@
 # SwiftKit for 04scape
 
-An Electron wrapper around the Lost City / 2004scape web client.
+An Electron client that opens several 04scape servers at once, one window per
+server, where every window knows which server it is running.
 
-**Status: v1 — walking skeleton.** It proves the client survives being wrapped and that
-an observer can attach to it without modifying it. There are no overlays, no launcher,
-and no packaging yet.
+**Status: milestone one of the server-windows design.** The catalog, the File
+menu, and a server window with the pinned game tab, an empty rail, a
+toggleable panel and the widen / shift / push layout engine. Page tabs, chat,
+timers, screenshots and the server tools follow in later milestones. The design
+is in `docs/superpowers/specs/2026-09-05-server-windows-design.md` and the plan
+this milestone followed in `docs/superpowers/plans/2026-09-05-milestone-1-server-windows.md`.
 
-## Why it's built this way
+## What it does
 
-The long-term goal is SwiftKit/RuneLite-style QoL overlays. The constraint that shapes
-everything is that we must **not modify the client**, because a modified client is both
-the most detectable thing we could ship and the most likely to be against server policy.
+There is no launcher or management window; there are only game windows. New
+ones come from the **File menu**: New Window (Cmd/Ctrl+N) opens another window
+of the focused window's server, and New Window For lists the catalog. At
+startup the app opens the first server in the catalog. On macOS the app keeps
+running with no windows and the dock menu opens one; elsewhere closing the
+last window quits, since the menu lives in the window.
 
-So SwiftKit observes rather than injects. It uses the Chrome DevTools Protocol
-(`Network.webSocketFrameSent` / `webSocketFrameReceived`) to watch the game socket from
-outside the page. Nothing is injected into the page — there is no preload script and no
-main-world code at all. The client that runs is byte-for-byte the client the server served.
+A **server window** is bound to one catalog entry for its whole life. Its tab
+strip starts with the pinned game tab, labelled with the server's name and
+revision ("rev unknown" when the catalog has none). A rail runs down the right
+edge and a panel opens beside it (Cmd/Ctrl+\ or the button at the end of the
+strip). The rail is empty and the panel is a placeholder in this milestone; the
+point of building them now is that the layout engine underneath them is done.
+Closing a window asks first, because it logs you out.
 
-This was chosen over the more obvious approach of monkeypatching `window.WebSocket` from
-a preload, which would have had to fight Electron's isolated-world boundary and would
-have put our code in the data path.
+Opening the same server twice gives the second window its own storage
+partition (`persist:server:<id>:2`) and the title "Name (2)", so two accounts
+on one server never share cookies or client prefs. Slot numbers are reused
+once a window closes.
 
-## Running it
+Nothing is injected into a game page: no preload, no main-world code. The page
+that runs is byte-for-byte the page the server served. A modified client is
+both the most detectable thing we could ship and the most likely to be against
+server policy.
 
-Requires the game server to be running (`node start.js` in the parent directory →
-*Start Server*).
+## Why a window keeps playing when it is not in front
 
-```sh
-npm start           # build + launch
-npm run seam:off    # launch with the tap disabled (also re-enables DevTools)
-```
+All three hosted clients drive their main loop with `setTimeout`; none of the
+served bundles contain `requestAnimationFrame`, and `visibilitychange` is used
+only to resume audio. Chromium throttles timers in a background window to once
+a second, which would stall any game you were not looking at.
+`backgroundThrottling: false` on each game view turns that off.
 
-The target URL is derived from `engine/data/config/world.json` → `web.port`, never
-hardcoded. `start.js:161-165` hardcodes port 80 on macOS and Windows and so opens the
-wrong URL; reading the config avoids repeating that bug.
+## The catalog
 
-Override the server location with `SWIFTKIT_SERVER_ROOT` if SwiftKit isn't at
-`<serverRoot>/swiftkit`.
+`<userData>/servers.json` (on macOS, `~/Library/Application Support/swiftkit/`),
+seeded on first run:
 
-## What v1 verified
+| id | server | revision | wiki |
+|---|---|---|---|
+| `zanaris-w1` | `https://w1.04.zanaris.rs/rs2.cgi?lowmem=1` | 274 | losthq |
+| `lostcity-w5` | `https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1` | 274 | losthq |
+| `lostcitylabs-w1` | `https://www.lostcitylabs.com/play/world-1/` | unknown, "May 2005 per Lost City Labs" | none |
+| `local` | `http://127.0.0.1:8888/rs2.cgi?lowmem=1` | 289, as `engine/data/config/world.json` sets it | none |
 
-| Check | Result |
-|---|---|
-| Port resolved from `world.json`, not assumed | 8888, read from config |
-| Client renders under Electron (Canvas 2D + `putImageData`) | works |
-| On-demand cache loads (Web Worker + its own WebSocket + IndexedDB) | works |
-| Login and play — input handling intact | works |
-| Seam attaches and observes frames | works — see below |
+Each entry also carries `hosts`, the hosts its page tabs may visit (always the
+game host and the wiki host), and a `map` URL for the map tool. A wiki is
+stored as a URL; nothing claims which revision it describes, since losthq moves
+on its own schedule. LostHQ has no discoverable search endpoint (its
+`index.php?search=` returns the homepage), so `wiki.search` is null for it.
 
-Tap output during play:
-
-```
-[tap] socket opened: ws://127.0.0.1:8888/
-[tap] socket classified: game (first client byte 14)
-  game     tx     64 frames /       607 B   rx    452 frames /      2284 B
-```
-
-### Finding: the tap sees the game socket only
-
-Only one socket appears — the game socket, identified by the client's first byte being
-`14` (`engine/src/engine/World.ts:2103`). The on-demand cache socket (first byte `15`)
-is created *inside a Web Worker*, which is a separate CDP target, so the page-level tap
-never sees it.
-
-This is the desired outcome rather than a limitation: the cache socket carries no game
-state, and not observing it means no cycles spent on asset traffic. If it is ever needed,
-it requires attaching to the worker target separately.
-
-### Not yet verified
-
-*No wire impact.* CDP's Network domain is a passive observer by construction and nothing
-is injected, so there is no mechanism by which it could alter traffic — but a controlled
-with/without comparison has not been run. `npm run seam:off` exists for that.
+Until the settings panel arrives, the list is edited as a file: File > Edit
+Server List… opens it in your editor, and the app re-reads it when it regains
+focus, or from File > Reload Server List. A file that cannot be read is renamed
+to `servers.json.broken-<timestamp>` and the defaults are written in its
+place; a message box says so. A window keeps its own copy of its server, so
+editing the file never affects windows already open.
 
 ## Layout
 
-```
-src/main/main.ts       app lifecycle, window, nav guards, offline handling
-src/main/serverUrl.ts  resolves serverRoot + web.port from world.json
-src/main/tap.ts        CDP WebSocket tap — counts frames, classifies sockets
-static/offline.html    shown while the server is down; auto-connects when it comes up
-```
+Main owns all geometry. Each server window is one full-window **shell** view
+(React, the only view with a preload) with the **game** view placed on top of
+it inside the content rect. The shell draws the strip, rail and panel exactly
+where main says they are, and leaves the content rect empty.
 
-Security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`,
-`webSecurity: true`. Navigation is restricted to the configured localhost origin;
-everything else opens in the system browser. The game page gets its own persistent
-session partition so its `localStorage` prefs and IndexedDB asset cache survive relaunch.
+Opening the panel widens the window by 320px so the content rect, and with it
+the game view, never changes. When that is not possible the engine falls back
+in order:
 
-## Experience capture
+| mode | when | what happens |
+|---|---|---|
+| widen | there is room to the right | the window grows |
+| shift | the window would run off the right edge | the window grows and moves left |
+| push | maximised, fullscreen, or no room on the display | the content rect narrows and the page's own auto-scaling shrinks the canvas |
 
-The Experience tab reads XP straight off the game socket — one line per skill, the XP
-gained this session, and a total. No rates, no timing.
+The active mode is stated in the panel rather than silently substituted. The
+content rect never drops below 765 x 503 unless the user shrinks the window.
 
-How it works: the server's `UPDATE_STAT` (opcode 154, 6 bytes: `stat u8, xp u32, level
-u8`) carries `exp / 10 | 0` while the engine stores XP x10, so the transmitted value is
-the exact displayed XP. The burst the server sends at login sets the baseline; everything
-after is a gain.
+## Running it
 
-Three things make the numbers trustworthy rather than plausible:
-
-1. **ISAAC is tested against the engine's own implementation**, not a fixture, across
-   10k draws including the int32 wraparound the `+50` decrypt seed causes.
-2. **The packet table is generated and cross-checked.** 69 prots from the engine source,
-   all 69 matching the client's own baked-in length table — the array the client actually
-   frames with. `npm test` re-runs the generator and diffs, so an engine pull that shifts
-   the protocol fails loudly instead of silently producing wrong numbers.
-3. **The seed is verified, not assumed.** Candidates are tested by framing the real
-   stream and requiring six consecutive valid packets; a wrong seed hits an unknown
-   opcode almost immediately.
-
-Verified in a live session: the seed recovered from `Math.random` alone was bit-identical
-to the one decrypted from the login block with the server's private key
-(`oracle cross-check: MATCH`), with zero desyncs over ~1,000 packets.
-
-**Wrong numbers are worse than no numbers.** An unknown opcode stops decoding rather than
-guessing past it, and the tab shows the reason instead of stale figures.
-
-## Sidebar
-
-A 48px rail is always visible on the right edge; opening expands it to 328px and
-**widens the window** by the difference, so the game area stays pixel-identical either
-way. The game view's bounds never change.
-
-That is the point of the design rather than a detail: recreating or reloading the game
-view would cost the asset cache, the login and the ISAAC session. So the window hosts
-two `WebContentsView`s and the main process owns all layout — the game is never
-re-parented, and hiding is geometry only.
-
-Widening isn't always possible. Maximised, fullscreen, or hard against a screen edge,
-the layout first tries shifting the window left and then falls back to `push` mode,
-where the game area shrinks instead. The active mode is reported to the UI and stated
-in the panel rather than silently substituted.
-
-`src/main/layout.ts` is a pure function, so all of this is tested without launching
-Electron (`npm test`). The behavioural check that matters is different and objective:
-toggle the sidebar while logged in and watch the tap output — frame counters must stay
-monotonic and `socket closed` must never appear. If the game view were being recreated,
-the log would say so.
-
-### Seeing it
-
-`SWIFTKIT_CAPTURE=<dir> npm start` renders the sidebar to PNGs and exits — the collapsed
-rail, the empty panel, and a populated panel driven by a synthetic snapshot.
-
-It uses `webContents.capturePage()`, which captures page content rather than the screen,
-so it works regardless of which Space the window is on, whether it is occluded, or where
-it sits. Screen-level capture (`screencapture -R`) cannot do this and will silently give
-you the desktop instead.
-
-For automated UI testing later, Playwright supports Electron via `_electron.launch()` —
-but note `app.windows()` enumerates `BrowserWindow` webContents, and the sidebar lives in
-a `WebContentsView` child, so it would need `app.evaluate()` to reach the main process.
-WebdriverIO with `wdio-electron-service` is the maintained alternative. Spectron is
-archived; don't reach for it.
-
-Visual approach: the panel sits flush against a software-rasterised canvas with
-`image-rendering: pixelated`, so it is flat and square-cornered with 1px hairlines and
-no shadows or gradients — instrumentation beside pixel art, not chrome on top of it.
-Monospace is confined to the live numeric readouts, where tabular figures stop digits
-jittering as counters tick.
-
-## Spike result: ISAAC seed recovery (verified)
-
-The seed for the ISAAC keystream is **fully recoverable without the server's private
-key**, which is what makes a state layer possible against servers we don't run.
-
-Two of the four seed words arrive in plaintext — they are the server's 8-byte session
-seed, sent unencrypted before the login block. The other two are
-`Math.floor(99999999 * Math.random())`, drawn by two adjacent calls in `Client.login`.
-Observing `Math.random` through the login window recovers them.
-
-Verified against ground truth by RSA-decrypting the real login block with the server's
-private key (an oracle for testing only, never a shipping dependency):
-
-```
-[1] RSA magic byte    : 10 OK (decrypt correct)
-[2] seed[2],[3]       : 12931227, 1753455222
-    vs plaintext wire : MATCH — 2 of 4 words need no recovery
-[3] seed[0],[1]       : 33158998, 99859750
-    found in RNG ring : YES at draw #755782 of 755784
+```sh
+npm start            # build + launch
+npm test             # the pure modules: layout, catalog, slots, tabs, window registry
+npm run typecheck
+npm run capture      # open every server, screenshot every view into captures/, exit
 ```
 
-**The two draws are the last two before the login block is sent.** The login screen
-animation stalls while `Client.login` awaits the socket, so nothing else consumes the
-RNG in between. Recovery is therefore reading the tail of the ring, not searching it —
-though the consecutive-pair search stays as a fallback should timing ever shift.
+Capture mode (`SWIFTKIT_CAPTURE=<dir>`, settle time `SWIFTKIT_CAPTURE_WAIT` in
+ms, default 15000) writes each window's shell and game views separately,
+because a window's own webContents holds nothing when its content lives in
+child views. It then opens the panel on a window whose game loaded and captures
+it again, and opens a second instance of that server. A view that has no frame
+yet is skipped rather than allowed to abort the run.
 
-Scale note: the login screen burns ~200 `Math.random()` calls per frame (755,784 draws
-in one session), so the observer ring must be sized for that. It is 65536 entries.
+## Verified
 
-Two environment traps worth knowing:
+One capture run with every catalog server open at once:
 
-- **Electron ships BoringSSL, not OpenSSL.** `crypto.createPrivateKey()` rejects these
-  keys with `BAD_E_VALUE` because the RuneScape convention uses a huge public exponent.
-  The same code works in plain Node. `rsa.ts` parses the PKCS#8 DER by hand to avoid
-  the validation entirely.
-- **CDP commands never resolve against a `BrowserWindow` with nothing loaded** — there
-  is no renderer to service them. Load `about:blank` first, then register the
-  document-start script, then navigate.
+| window | game | shell |
+|---|---|---|
+| Zanaris — World 1 | login screen | strip with the game tab, "rev 274" |
+| Lost City — World 5 | login screen | strip, "rev 274" |
+| Lost City Labs — World 1 | login screen | strip, "rev unknown" |
+| Local server | offline page, `ERR_CONNECTION_REFUSED`, auto-retry | strip, "rev 289" |
+| Zanaris — World 1, panel open | login screen, untouched | panel beside the rail; mode **widen** |
+| Zanaris — World 1 (2) | login screen | slot 2, `persist:server:zanaris-w1:2` |
 
-## Known constraints
+An earlier run, when a cascaded window happened to sit near the screen edge,
+exercised **shift** instead: the window grew and moved left, and the panel
+said so.
 
-**World-anchored overlays are not possible.** Camera position, yaw, pitch and zoom are
-purely client-local and never transmitted, so there is no way to project world
-coordinates to screen space. RuneLite-style entity highlighting, tile markers, hover
-outlines and minimap markers are all out of reach — overlays must be screen-anchored
-HUD panels. XP tracker, skill panel, chat log, run energy/weight, position readout and
-inventory are all fine.
+Fifty tests cover the pure modules: layout (widen, shift, push, rects tiling
+the window), catalog (validation, defaults, file recovery), slots (reuse,
+partition and title naming), tabs (pinned game tab, close activates the left
+neighbour) and the window registry.
 
-**The wire carries item ids, not names.** Names, icons and examine text live in the
-cache archives. Any useful inventory overlay needs a separate cache reader
-(fetch `/config:crc<n>` over HTTP and parse `obj.dat`) — a distinct module, not part
-of the state layer.
+## Security posture
 
-**Anything touching the client's own objects would be a separate, opt-in tier.** The
-state layer must never depend on it. Reading the wire is observation; reaching into
-client internals is the thing most likely to read as a cheat client to a human
-reviewer, regardless of what it's used for.
+`contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`,
+`webSecurity: true` on every view. The game view navigates only within its
+server's origin; any other navigation, and any `window.open`, goes to the
+system browser rather than replacing the game. The preload exposes exactly the
+three shell calls in `src/shared/ipc.ts`, and IPC handlers identify a window
+from `event.sender`, never from a value the renderer supplies.
+
+## Layout of the source
+
+```
+src/shared/layout.ts     geometry constants shared by main and the shell
+src/shared/catalog.ts    ServerDef and the add-form input
+src/shared/ipc.ts        channel names and payload types
+src/main/layout.ts       pure: window and view rects; widen / shift / push     (tested)
+src/main/catalog.ts      pure validation; the servers.json store               (tested)
+src/main/slots.ts        pure: slot numbers, partitions, titles                (tested)
+src/main/tabs.ts         pure: the pinned game tab and page tabs               (tested)
+src/main/windows.ts      pure: registry of open windows over a factory         (tested)
+src/main/serverWindow.ts one server window: shell view over game view
+src/main/menu.ts         application menu: new windows, the server list, the panel
+src/main/renderer.ts     preload path; load the shell
+src/main/index.ts        wiring, IPC handlers, capture mode
+src/preload/index.ts     the window.swiftkit bridge
+src/renderer/Shell.tsx, main.tsx, styles.css
+static/offline.html      shown when a server can't be reached
+```
+
+## Where v1 went
+
+`main` keeps the observe-only CDP tap, ISAAC seed recovery, session decoder,
+XP tracker and the original sidebar. The uncommitted work from just before the
+reset (the six-hour recorder and the reload button) is parked in `git stash`
+on `main`.
 
 ## Next
 
-1. **Game-state layer** — recover the ISAAC seed, decode rev-289 packets behind a
-   revision seam, emit typed events. Opcodes are ISAAC-obfuscated in both directions
-   (`engine/src/engine/entity/NetworkPlayer.ts:205-206`); payload bodies are plaintext.
-   Two of the four seed words arrive in plaintext (the server's 8-byte session seed);
-   the other two come from adjacent `Math.random()` calls in `Client.login`, so they
-   are recoverable by observing the RNG through the login window — no server private
-   key needed, which is what makes this work against servers we don't control.
-2. **Overlays** — XP tracker first (`UPDATE_STAT`, opcode 154).
-3. **Launcher** — GUI over what `start.js` does.
-4. **Non-localhost servers** — gated on resolving third-party-client policy with the
-   Lost City team, not on any technical milestone.
+2. **Page tabs.** `+`, the address row, wiki search, the map action, the
+   per-server host allowlist, an offline page for pages.
+3. **Shared tools.** Screenshot, timers, settings.
+4. **Chat.** IRC on Libera.Chat, channels under the `#04scape` prefix.
+5. **Server tools.** Clue lookup and calculators, with the data pack loader.

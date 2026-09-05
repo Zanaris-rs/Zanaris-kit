@@ -1,60 +1,51 @@
-/** Channel names and payload types, shared by main and preload so they can't drift. */
+/** Channel names and payload types, shared by main, preload and the renderer so they can't drift. */
+import type { ServerDef } from './catalog';
+import type { LayoutMode, TabKind } from './layout';
 
 export const IPC = {
-    sidebarToggle: 'swiftkit:sidebar-toggle',
-    sidebarSetOpen: 'swiftkit:sidebar-set-open',
-    sidebarState: 'swiftkit:sidebar-state',
-    sessionState: 'swiftkit:session-state',
-    xpState: 'swiftkit:xp-state'
+    shellState: 'swiftkit:shell-state',
+    shellGet: 'swiftkit:shell-get',
+    shellTogglePanel: 'swiftkit:shell-toggle-panel'
 } as const;
 
-export type SidebarMode = 'widen' | 'push';
-
-export interface SidebarState {
-    open: boolean;
-    /** What actually happened — 'push' means the window could not be widened. */
-    mode: SidebarMode;
+export interface Rect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
 }
 
-export interface SessionState {
-    serverUrl: string;
-    socketOpen: boolean;
-    txFrames: number;
-    rxFrames: number;
-    txBytes: number;
-    rxBytes: number;
-    revision: number | null;
-    seedRecovered: boolean | null;
+export interface TabInfo {
+    id: string;
+    kind: TabKind;
+    title: string;
+    url: string;
+    active: boolean;
 }
 
-export interface SkillRow {
-    id: number;
-    name: string;
-    xp: number;
-    level: number;
-    gained: number;
-    /** False until the server has sent this skill at least once. */
-    seen: boolean;
-}
-
-export interface XpState {
-    rows: SkillRow[];
-    totalGained: number;
-    keyed: boolean;
-    /** Set when decoding stopped — the reason is shown rather than guessed numbers. */
-    degraded: string | null;
+export interface ShellState {
+    windowId: number;
+    server: ServerDef;
+    slot: number;
+    title: string;
+    tabs: TabInfo[];
+    panelOpen: boolean;
+    mode: LayoutMode;
+    /** Where main placed things, relative to the window's content area, so the shell draws exactly there. */
+    rects: {
+        strip: Rect;
+        address: Rect | null;
+        content: Rect;
+        panel: Rect | null;
+        rail: Rect;
+    };
 }
 
 export interface SwiftkitApi {
-    sidebar: {
-        toggle(): Promise<SidebarState>;
-        setOpen(open: boolean): Promise<SidebarState>;
-        onState(cb: (s: SidebarState) => void): () => void;
-    };
-    session: {
-        onState(cb: (s: SessionState) => void): () => void;
-    };
-    xp: {
-        onState(cb: (s: XpState) => void): () => void;
+    shell: {
+        /** Null when the calling view is not a server window's shell. */
+        get(): Promise<ShellState | null>;
+        togglePanel(): Promise<void>;
+        onState(cb: (state: ShellState) => void): () => void;
     };
 }

@@ -1,10 +1,10 @@
 @import 'tailwindcss';
 
 /*
- * The panel sits flush against a 765x503 software-rasterised canvas with
- * image-rendering: pixelated. Everything here is flat, square-cornered and
- * hairline-ruled so it reads as instrumentation beside pixel art rather than
- * as chrome layered on top of it. No radius, no shadows, no gradients.
+ * The launcher sits beside 765x503 software-rasterised game windows with
+ * image-rendering: pixelated, so it is flat, square-cornered and hairline-ruled:
+ * instrumentation beside pixel art rather than chrome on top of it. No radius,
+ * no shadows, no gradients.
  *
  * Palette abstracted from the era's own interface: oiled wood and tarnished
  * brass, with a desaturated moss for live state.
@@ -40,29 +40,22 @@ body {
     overflow: hidden;
 }
 
+button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: default;
+}
+
+input {
+    user-select: text;
+    cursor: text;
+    outline: none;
+}
+
 :focus-visible {
     outline: 1px solid var(--color-brass);
     outline-offset: -1px;
-}
-
-/* The panel's contents arrive as one orchestrated moment when it opens. */
-@keyframes panel-in {
-    from {
-        opacity: 0;
-        transform: translateX(-6px);
-    }
-    to {
-        opacity: 1;
-        transform: none;
-    }
-}
-
-.panel-in {
-    animation: panel-in 140ms ease-out both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .panel-in {
-        animation: none;
-    }
 }

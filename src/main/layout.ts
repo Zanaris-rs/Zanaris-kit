@@ -1,24 +1,25 @@
-import type { SidebarMode } from '../shared/ipc';
+import {
+    ADDRESS_HEIGHT,
+    MIN_CONTENT_WIDTH,
+    PANEL_WIDTH,
+    RAIL_WIDTH,
+    STRIP_HEIGHT,
+    type LayoutMode,
+    type TabKind
+} from '../shared/layout.ts';
 
 /**
- * Sidebar layout.
+ * Window layout.
  *
- * The sidebar is a always-visible rail that expands into a panel. Opening it
- * widens the *window* by the panel width so the game area stays pixel-identical
- * — the game view's bounds never change, which matters because recreating or
- * resizing that view would cost the cache, the login and the ISAAC session.
+ * Opening the panel widens the *window* by the panel width so the content area
+ * stays pixel-identical: the game view's bounds never change, which matters
+ * because reloading or scaling that view costs the login. Widening is not
+ * always possible (maximised, fullscreen, or no room on the display), and then
+ * the content area gives way instead. The mode is reported to the UI rather
+ * than silently substituted.
  *
- * Widening isn't always possible (maximised, fullscreen, or no room on the
- * display). Those cases fall back to 'push', where the game area shrinks
- * instead. The mode is reported to the UI rather than silently substituted.
- *
- * All rects are CONTENT bounds, not window bounds, so height is consistent
- * between the window and the views inside it.
+ * All rects are CONTENT bounds, relative to the window's content area.
  */
-
-export const RAIL_WIDTH = 48;
-export const PANEL_WIDTH = 280;
-export const MIN_GAME_WIDTH = 480;
 
 export interface Rect {
     x: number;
@@ -28,61 +29,73 @@ export interface Rect {
 }
 
 export interface LayoutInput {
-    open: boolean;
+    panelOpen: boolean;
+    activeTabKind: TabKind;
     /** Current window content bounds, in screen coordinates. */
     window: Rect;
     /** Usable area of the display the window is on. */
     workArea: Rect;
-    /** The width the game area should preserve. */
-    gameWidth: number;
-    /** False when maximised or fullscreen — the window cannot be widened. */
+    /** The content width to preserve across panel toggles. */
+    contentWidth: number;
+    /** False when maximised or fullscreen: the window cannot change size. */
     canResize: boolean;
 }
 
-export interface LayoutResult {
-    mode: SidebarMode;
-    /** Content bounds to apply to the window. */
-    window: Rect;
-    /** Bounds for the game view, relative to window content. */
-    game: Rect;
-    /** Bounds for the shell view, relative to window content. */
-    shell: Rect;
+export interface Rects {
+    strip: Rect;
+    /** Only while a page tab is active. */
+    address: Rect | null;
+    content: Rect;
+    /** Only while the panel is open and has room. */
+    panel: Rect | null;
+    rail: Rect;
 }
 
-export function sidebarWidth(open: boolean): number {
-    return open ? RAIL_WIDTH + PANEL_WIDTH : RAIL_WIDTH;
+export interface LayoutResult extends Rects {
+    mode: LayoutMode;
+    /** Content bounds to apply to the window. */
+    window: Rect;
+}
+
+export function sideWidth(panelOpen: boolean): number {
+    return panelOpen ? PANEL_WIDTH + RAIL_WIDTH : RAIL_WIDTH;
+}
+
+/** Splits a window of the given content size into strip, address row, content, panel and rail. */
+export function splitWindow(width: number, height: number, panelOpen: boolean, activeTabKind: TabKind): Rects {
+    const contentW = Math.max(MIN_CONTENT_WIDTH, width - sideWidth(panelOpen));
+    const sideW = Math.max(0, width - contentW);
+    const railW = Math.min(RAIL_WIDTH, sideW);
+    const panelW = panelOpen ? Math.max(0, sideW - railW) : 0;
+    const addressH = activeTabKind === 'page' ? ADDRESS_HEIGHT : 0;
+    const top = STRIP_HEIGHT + addressH;
+    const below = Math.max(0, height - STRIP_HEIGHT);
+    return {
+        strip: { x: 0, y: 0, width, height: STRIP_HEIGHT },
+        address: addressH > 0 ? { x: 0, y: STRIP_HEIGHT, width: contentW, height: addressH } : null,
+        content: { x: 0, y: top, width: contentW, height: Math.max(0, height - top) },
+        panel: panelW > 0 ? { x: contentW, y: STRIP_HEIGHT, width: panelW, height: below } : null,
+        rail: { x: contentW + panelW, y: STRIP_HEIGHT, width: railW, height: below }
+    };
 }
 
 export function computeLayout(input: LayoutInput): LayoutResult {
-    const sw = sidebarWidth(input.open);
-    const height = input.window.height;
+    const desiredWidth = input.contentWidth + sideWidth(input.panelOpen);
+    let mode: LayoutMode;
+    let window: Rect;
 
-    const pushLayout = (): LayoutResult => {
-        const gameW = Math.max(MIN_GAME_WIDTH, input.window.width - sw);
-        const shellW = Math.max(0, input.window.width - gameW);
-        return {
-            mode: 'push',
-            window: { ...input.window },
-            game: { x: 0, y: 0, width: gameW, height },
-            shell: { x: gameW, y: 0, width: shellW, height }
-        };
-    };
+    if (!input.canResize || desiredWidth > input.workArea.width) {
+        mode = 'push';
+        window = { ...input.window };
+    } else {
+        // Keep the window on screen: shift left rather than growing off the edge.
+        const rightEdge = input.workArea.x + input.workArea.width;
+        let x = input.window.x;
+        if (x + desiredWidth > rightEdge) x = rightEdge - desiredWidth;
+        if (x < input.workArea.x) x = input.workArea.x;
+        mode = x === input.window.x ? 'widen' : 'shift';
+        window = { x, y: input.window.y, width: desiredWidth, height: input.window.height };
+    }
 
-    if (!input.canResize) return pushLayout();
-
-    const desiredWidth = input.gameWidth + sw;
-    if (desiredWidth > input.workArea.width) return pushLayout();
-
-    // Keep the window on screen: shift left rather than growing off the edge.
-    let x = input.window.x;
-    const rightEdge = input.workArea.x + input.workArea.width;
-    if (x + desiredWidth > rightEdge) x = rightEdge - desiredWidth;
-    if (x < input.workArea.x) x = input.workArea.x;
-
-    return {
-        mode: 'widen',
-        window: { x, y: input.window.y, width: desiredWidth, height },
-        game: { x: 0, y: 0, width: input.gameWidth, height },
-        shell: { x: input.gameWidth, y: 0, width: sw, height }
-    };
+    return { mode, window, ...splitWindow(window.width, window.height, input.panelOpen, input.activeTabKind) };
 }

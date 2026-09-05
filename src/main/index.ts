@@ -1,410 +1,237 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, screen, session, shell } from 'electron';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { resolveServerTarget, isReachable, type ServerTarget } from './serverUrl';
-import { WebSocketTap } from './tap';
-import { SessionDecoder, type RngDump } from './session';
-import { XpTracker } from './xp';
-import { loadPrivateKey, decryptLoginBlock } from './rsa';
-import { computeLayout, sidebarWidth, MIN_GAME_WIDTH, RAIL_WIDTH } from './layout';
-import { IPC, type SidebarState, type SessionState, type SidebarMode, type XpState } from '../shared/ipc';
+import { app, BrowserWindow, dialog, ipcMain, shell, type NativeImage, type WebContents } from 'electron';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ServerDef } from '../shared/catalog';
+import { IPC, type ShellState } from '../shared/ipc';
+import { Catalog } from './catalog';
+import { ServerWindows } from './windows';
+import { createServerWindow, type ServerWindow } from './serverWindow';
+import { installMenu, type MenuActions } from './menu';
 
-const SEAM_ENABLED = process.env.SWIFTKIT_SEAM !== '0';
-const RNG_PROBE_ENABLED = process.env.SWIFTKIT_RNG !== '0';
-const RENDERER_DEV_URL = process.env.ELECTRON_RENDERER_URL;
-/** Dev-only: capture the sidebar to PNGs and exit. See captureAndExit(). */
+/** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
 const CAPTURE_DIR = process.env.SWIFTKIT_CAPTURE;
 
 const log = (msg: string): void => console.log(msg);
 
-let win: BrowserWindow | null = null;
-let gameView: WebContentsView | null = null;
-let shellView: WebContentsView | null = null;
-let tap: WebSocketTap | null = null;
-let target: ServerTarget;
-let pollTimer: NodeJS.Timeout | null = null;
-let statsTimer: NodeJS.Timeout | null = null;
+let quitting = false;
+const catalog = new Catalog(join(app.getPath('userData'), 'servers.json'));
+/** Modification time of servers.json at the last load, so a focus change only re-reads it when it changed. */
+let catalogSeen = 0;
+const serverWindows = new Map<number, ServerWindow>();
+const byShell = new Map<number, ServerWindow>();
 
-let sidebarOpen = false;
-let sidebarMode: SidebarMode = 'widen';
-/** The width the game area should preserve across sidebar toggles. */
-let gameWidth = 800;
-let applyingLayout = false;
+// ── windows ───────────────────────────────────────────────────────────────
 
-const session_: { revision: number | null; seedRecovered: boolean | null } = {
-    revision: null,
-    seedRecovered: null
+function focusedServerWindow(): ServerWindow | undefined {
+    const focused = BrowserWindow.getFocusedWindow();
+    return [...serverWindows.values()].find(sw => sw.window === focused);
+}
+
+/** New windows cascade from the focused one, so several can open without stacking exactly. */
+function nextPosition(): { x: number; y: number } | null {
+    const anchor = focusedServerWindow() ?? [...serverWindows.values()].at(-1);
+    if (!anchor || anchor.window.isDestroyed()) return null;
+    const { x, y } = anchor.window.getBounds();
+    return { x: x + 32, y: y + 32 };
+}
+
+function confirmClose(title: string): boolean {
+    if (quitting) return true;
+    const choice = dialog.showMessageBoxSync({
+        type: 'question',
+        buttons: ['Close', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        message: `Close ${title}?`,
+        detail: "You'll be logged out."
+    });
+    return choice === 0;
+}
+
+const windows = new ServerWindows((spec, onClosed) => {
+    const sw = createServerWindow(
+        spec,
+        () => {
+            serverWindows.delete(spec.id);
+            byShell.delete(sw.shellContentsId);
+            log(`[main] closed ${spec.title}`);
+            onClosed();
+        },
+        { log, confirmClose, position: nextPosition() }
+    );
+    serverWindows.set(spec.id, sw);
+    byShell.set(sw.shellContentsId, sw);
+    log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
+    return sw;
+});
+
+function openServer(server: ServerDef): ServerWindow {
+    return serverWindows.get(windows.open(server).id)!;
+}
+
+function windowFor(sender: WebContents): ServerWindow | undefined {
+    return byShell.get(sender.id);
+}
+
+// ── the server list ───────────────────────────────────────────────────────
+
+function catalogMtime(): number {
+    return existsSync(catalog.file) ? statSync(catalog.file).mtimeMs : 0;
+}
+
+function loadCatalog(): void {
+    catalog.load();
+    catalogSeen = catalogMtime();
+    installMenu(catalog.list(), actions);
+    if (catalog.recovered) {
+        log(`[main] ${catalog.file} could not be read; the defaults were written and the old file kept beside it`);
+        void dialog.showMessageBox({
+            type: 'warning',
+            message: "Your server list couldn't be read and was reset to the defaults.",
+            detail: `The old file was kept beside ${catalog.file}.`
+        });
+    }
+}
+
+/** Re-read servers.json if it changed since the last load. Runs when the app regains focus. */
+function reloadCatalogIfChanged(): void {
+    if (catalogMtime() === catalogSeen) return;
+    loadCatalog();
+    log(`[main] server list reloaded: ${catalog.list().length} servers`);
+}
+
+const actions: MenuActions = {
+    newWindow: () => {
+        const focused = focusedServerWindow();
+        const server = focused ? (catalog.get(focused.state().server.id) ?? focused.state().server) : catalog.list()[0];
+        if (!server) {
+            void dialog.showMessageBox({ type: 'info', message: 'The server list is empty.', detail: 'Use File > Edit Server List… to add one.' });
+            return;
+        }
+        openServer(server);
+    },
+    newWindowFor: id => {
+        const server = catalog.get(id);
+        if (server) openServer(server);
+    },
+    editServers: () => {
+        void shell.openPath(catalog.file);
+    },
+    reloadServers: () => {
+        loadCatalog();
+        log(`[main] server list reloaded: ${catalog.list().length} servers`);
+    },
+    togglePanel: () => focusedServerWindow()?.togglePanel()
 };
 
-const xp = new XpTracker();
-let decoder: SessionDecoder | null = null;
-let xpKeyed = false;
-let xpDegraded: string | null = null;
+// ── ipc ───────────────────────────────────────────────────────────────────
 
-function pushXpState(): void {
-    if (!shellView || shellView.webContents.isDestroyed()) return;
-    const state: XpState = {
-        rows: xp.rows(),
-        totalGained: xp.totalGained(),
-        keyed: xpKeyed,
-        degraded: xpDegraded
-    };
-    shellView.webContents.send(IPC.xpState, state);
-}
+ipcMain.handle(IPC.shellGet, (event): ShellState | null => windowFor(event.sender)?.state() ?? null);
 
-// ── layout ────────────────────────────────────────────────────────────────
-
-function applyLayout(): void {
-    if (!win || !gameView || !shellView || win.isDestroyed()) return;
-
-    const current = win.getContentBounds();
-    const display = screen.getDisplayMatching(win.getBounds());
-    const result = computeLayout({
-        open: sidebarOpen,
-        window: current,
-        workArea: display.workArea,
-        gameWidth,
-        canResize: !win.isMaximized() && !win.isFullScreen()
-    });
-
-    sidebarMode = result.mode;
-
-    const w = result.window;
-    if (w.x !== current.x || w.y !== current.y || w.width !== current.width || w.height !== current.height) {
-        applyingLayout = true;
-        win.setContentBounds(w);
-        applyingLayout = false;
-    }
-
-    gameView.setBounds(result.game);
-    shellView.setBounds(result.shell);
-    pushSidebarState();
-}
-
-function sidebarState(): SidebarState {
-    return { open: sidebarOpen, mode: sidebarMode };
-}
-
-function pushSidebarState(): void {
-    shellView?.webContents.send(IPC.sidebarState, sidebarState());
-}
-
-function pushSessionState(): void {
-    if (!shellView || shellView.webContents.isDestroyed()) return;
-    const stats = tap?.gameStats() ?? { open: false, txFrames: 0, rxFrames: 0, txBytes: 0, rxBytes: 0 };
-    const state: SessionState = {
-        serverUrl: target.url,
-        socketOpen: stats.open,
-        txFrames: stats.txFrames,
-        rxFrames: stats.rxFrames,
-        txBytes: stats.txBytes,
-        rxBytes: stats.rxBytes,
-        revision: session_.revision,
-        seedRecovered: session_.seedRecovered
-    };
-    shellView.webContents.send(IPC.sessionState, state);
-}
-
-// ── decoding ──────────────────────────────────────────────────────────────
-
-/**
- * Local-only sanity check: if the server's private key is on disk, decrypt the
- * login block and confirm the seed we recovered by observing Math.random is the
- * real one. Never required to decode — it exists so the XP numbers are trusted
- * rather than assumed, and it silently does nothing for servers we don't run.
- */
-function crossCheckSeed(seeds: number[], rsaBlock: Uint8Array | null): void {
-    if (!rsaBlock) return;
-    const pemPath = resolve(target.serverRoot, 'engine/data/config/private.pem');
-    if (!existsSync(pemPath)) return;
-    try {
-        const { magic, seeds: truth } = decryptLoginBlock(rsaBlock, loadPrivateKey(pemPath));
-        const match = magic === 10 && truth.every((w, i) => w === seeds[i]);
-        log(`[seed] oracle cross-check: ${match ? 'MATCH' : `MISMATCH recovered ${seeds} vs true ${truth}`}`);
-    } catch (err) {
-        log(`[seed] oracle unavailable: ${(err as Error).message}`);
-    }
-}
-
-function createDecoder(): SessionDecoder {
-    return new SessionDecoder({
-        log,
-        onNeedRandoms: () => {
-            void (async () => {
-                let dump: RngDump | null = null;
-                try {
-                    dump = (await gameView!.webContents.executeJavaScript(
-                        'window.__swiftkitRng ? window.__swiftkitRng.dump() : null'
-                    )) as RngDump | null;
-                } catch {
-                    /* page gone */
-                }
-                decoder?.setRandoms(dump);
-                // The observer is only needed across the login window.
-                try {
-                    await gameView!.webContents.executeJavaScript('window.__swiftkitRng && window.__swiftkitRng.disarm()');
-                } catch {
-                    /* page gone */
-                }
-            })();
-        },
-        onKeyed: info => {
-            xpKeyed = true;
-            xpDegraded = null;
-            session_.revision = info.revision;
-            session_.seedRecovered = true;
-            log(`[seed] keyed on revision ${info.revision} from draw #${info.drawIndex} of ${info.totalDraws}`);
-            crossCheckSeed(info.seeds, info.rsaBlock);
-            pushSessionState();
-            pushXpState();
-        },
-        onStat: (skill, exp, level) => {
-            xp.update(skill, exp, level);
-            pushXpState();
-        },
-        onLogout: () => {
-            log('[session] logout');
-            xpKeyed = false;
-            pushXpState();
-        },
-        onDegraded: reason => {
-            xpKeyed = false;
-            xpDegraded = reason;
-            session_.seedRecovered = false;
-            log(`[session] degraded: ${reason}`);
-            pushSessionState();
-            pushXpState();
-        }
-    });
-}
+ipcMain.handle(IPC.shellTogglePanel, event => windowFor(event.sender)?.togglePanel());
 
 // ── dev capture ───────────────────────────────────────────────────────────
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Render the sidebar to PNGs and quit. Uses webContents.capturePage(), which
- * captures page content rather than the screen, so it works regardless of which
- * Space the window is on or whether it is occluded.
+ * Open every catalog server, wait for each game to load (or fail over to the
+ * offline page), let the clients draw, then write each window's shell and game
+ * views as PNGs. Then open the panel on a loaded window and capture it again
+ * (the layout engine), and open a second instance of that server (slots and
+ * partitions). A window's own webContents holds nothing, so the views are
+ * captured one by one, and a view with no frame yet is skipped rather than
+ * allowed to abort the run.
  */
 async function captureAndExit(dir: string): Promise<void> {
-    if (!shellView) return;
     mkdirSync(dir, { recursive: true });
+    const settleMs = Number(process.env.SWIFTKIT_CAPTURE_WAIT) || 15_000;
+    const loadTimeoutMs = 60_000;
 
-    const shot = async (name: string): Promise<void> => {
-        const image = await shellView!.webContents.capturePage();
-        writeFileSync(join(dir, `${name}.png`), image.toPNG());
-        log(`[capture] ${name}.png`);
+    const save = async (name: string, capture: () => Promise<NativeImage>): Promise<void> => {
+        try {
+            const image = await capture();
+            writeFileSync(join(dir, `${name}.png`), image.toPNG());
+            const { width, height } = image.getSize();
+            log(`[capture] ${name}.png ${width}x${height}`);
+        } catch (err) {
+            log(`[capture] ${name}.png skipped: ${(err as Error).message}`);
+        }
     };
-
-    sidebarOpen = false;
-    applyLayout();
-    await wait(350);
-    await shot('rail-closed');
-
-    sidebarOpen = true;
-    applyLayout();
-    await wait(350);
-    await shot('panel-empty');
-
-    const populated: SessionState = {
-        serverUrl: target.url,
-        socketOpen: true,
-        txFrames: 773,
-        rxFrames: 2694,
-        txBytes: 2100,
-        rxBytes: 11909,
-        revision: 289,
-        seedRecovered: true
+    const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
+        await save(`${name}-shell`, () => sw.captureShell());
+        await save(`${name}-game`, () => sw.captureGame());
     };
-    shellView.webContents.send(IPC.sessionState, populated);
+    const loaded = (sw: ServerWindow): Promise<'loaded' | 'failed' | 'timeout'> =>
+        Promise.race([sw.whenGameLoaded(), wait(loadTimeoutMs).then((): 'timeout' => 'timeout')]);
 
-    // Two passes: the first sets the baseline the way a login does, the second
-    // is the gain. One pass would correctly show zero everywhere.
-    const fixture = [[0, 4320, 42], [2, 1180, 38], [3, 1440, 44], [7, 275, 21], [14, 9860, 51]] as const;
-    for (const [id, , level] of fixture) xp.update(id, 100_000, level);
-    for (const [id, gained, level] of fixture) xp.update(id, 100_000 + gained, level);
-    xpKeyed = true;
-    pushXpState();
-    await wait(350);
-    await shot('panel-live');
+    try {
+        const started = Date.now();
+        const opened = catalog.list().map(openServer);
+        const results = await Promise.all(
+            opened.map(async sw => {
+                const result = await loaded(sw);
+                const text = result === 'timeout' ? `still loading after ${loadTimeoutMs}ms` : result;
+                log(`[capture] ${sw.state().title}: ${text} (+${Date.now() - started}ms)`);
+                return result;
+            })
+        );
+        log(`[capture] settling for ${settleMs}ms`);
+        await wait(settleMs);
 
-    await shellView.webContents.executeJavaScript(
-        "document.querySelectorAll('[role=tab]')[1].click()"
-    );
-    await wait(250);
-    await shot('panel-xp');
+        for (const sw of opened) await shoot(sw.state().server.id, sw);
 
-    app.quit();
-}
+        // The layout and slot checks use a window whose game actually loaded, if any did.
+        const first = opened[results.indexOf('loaded')] ?? opened[0];
+        if (!first) throw new Error('the server list is empty');
+        first.togglePanel();
+        await wait(500);
+        log(`[capture] panel open on ${first.state().title}: mode ${first.state().mode}`);
+        await shoot(`${first.state().server.id}-panel`, first);
 
-// ── views ─────────────────────────────────────────────────────────────────
-
-function createGameView(): WebContentsView {
-    const view = new WebContentsView({
-        webPreferences: {
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            webSecurity: true,
-            // No preload. Our code stays out of the game page entirely.
-            session: session.fromPartition('persist:swiftkit-game')
-        }
-    });
-
-    const allowedOrigin = `http://127.0.0.1:${target.port}`;
-    view.webContents.on('will-navigate', (event, url) => {
-        if (!url.startsWith(allowedOrigin) && !url.startsWith('about:')) {
-            event.preventDefault();
-            log(`[nav] blocked navigation to ${url}`);
-        }
-    });
-    view.webContents.setWindowOpenHandler(({ url }) => {
-        if (url.startsWith('http://') || url.startsWith('https://')) void shell.openExternal(url);
-        return { action: 'deny' };
-    });
-
-    return view;
-}
-
-function createShellView(): WebContentsView {
-    const view = new WebContentsView({
-        webPreferences: {
-            preload: join(__dirname, '../preload/index.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            webSecurity: true
-        }
-    });
-    view.setBackgroundColor('#0d0b09');
-    if (RENDERER_DEV_URL) {
-        void view.webContents.loadURL(RENDERER_DEV_URL);
-    } else {
-        void view.webContents.loadFile(join(__dirname, '../renderer/index.html'));
+        const second = openServer(first.state().server);
+        log(`[capture] ${second.state().title}: ${await loaded(second)}`);
+        await wait(Math.min(settleMs, 8_000));
+        await shoot(`${first.state().server.id}-2`, second);
+    } catch (err) {
+        log(`[capture] aborted: ${(err as Error).stack ?? String(err)}`);
+    } finally {
+        quitting = true;
+        app.quit();
     }
-    return view;
-}
-
-async function loadGameWhenReady(): Promise<void> {
-    if (!gameView) return;
-
-    if (await isReachable(target.url)) {
-        log(`[main] server reachable — loading ${target.url}`);
-        await gameView.webContents.loadURL(target.url);
-        return;
-    }
-
-    log(`[main] server not reachable at ${target.url} — waiting`);
-    pollTimer = setInterval(async () => {
-        if (!gameView || gameView.webContents.isDestroyed()) return;
-        if (await isReachable(target.url)) {
-            if (pollTimer) {
-                clearInterval(pollTimer);
-                pollTimer = null;
-            }
-            log(`[main] server came up — loading ${target.url}`);
-            await gameView.webContents.loadURL(target.url);
-        }
-    }, 2000);
 }
 
 // ── app ───────────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-    target = resolveServerTarget();
+    loadCatalog();
 
     log('');
     log('  SwiftKit');
-    log(`  server root : ${target.serverRoot}`);
-    log(`  target      : ${target.url}`);
-    log(`  seam        : ${SEAM_ENABLED ? 'ON (CDP, observe-only)' : 'OFF'}`);
+    log(`  catalog : ${catalog.file}`);
+    for (const server of catalog.list()) {
+        log(`  ${server.id.padEnd(16)} rev ${String(server.revision ?? '?').padEnd(4)} ${server.url}`);
+    }
     log('');
 
-    win = new BrowserWindow({
-        width: gameWidth + RAIL_WIDTH,
-        height: 700,
-        minWidth: MIN_GAME_WIDTH + RAIL_WIDTH,
-        minHeight: 480,
-        title: 'SwiftKit',
-        backgroundColor: '#0d0b09',
-        show: false
-    });
-
-    gameView = createGameView();
-    shellView = createShellView();
-    win.contentView.addChildView(gameView);
-    win.contentView.addChildView(shellView);
-
-    applyLayout();
-    win.once('ready-to-show', () => win?.show());
-    // The window itself has no web content, so nothing fires ready-to-show.
-    shellView.webContents.once('did-finish-load', () => {
-        win?.show();
-        pushSidebarState();
-        pushSessionState();
-        pushXpState();
-    });
-
-    win.on('resize', () => {
-        if (applyingLayout || !win) return;
-        gameWidth = Math.max(MIN_GAME_WIDTH, win.getContentBounds().width - sidebarWidth(sidebarOpen));
-        applyLayout();
-    });
-    // These change whether the window can be widened, so re-run the layout.
-    win.on('maximize', () => applyLayout());
-    win.on('unmaximize', () => applyLayout());
-    win.on('enter-full-screen', () => applyLayout());
-    win.on('leave-full-screen', () => applyLayout());
-    win.on('closed', () => {
-        win = null;
-        gameView = null;
-        shellView = null;
-    });
-
-    // CDP commands deadlock against a view with no renderer, so give it one first.
-    await gameView.webContents.loadURL('about:blank');
-
-    if (SEAM_ENABLED) {
-        tap = new WebSocketTap(gameView.webContents, log, RNG_PROBE_ENABLED);
-        decoder = createDecoder();
-        tap.onGameFrame = (dir, bytes) => decoder?.feed(dir, bytes);
-        tap.onGameSocketOpen = () => {
-            // Each connection gets fresh seeds, so start a fresh decoder.
-            decoder = createDecoder();
-            xp.reset();
-            xpKeyed = false;
-            xpDegraded = null;
-            pushXpState();
-        };
-        await tap.attach();
-    }
-
     if (CAPTURE_DIR) {
-        await new Promise<void>(resolve => shellView!.webContents.once('did-finish-load', () => resolve()));
         await captureAndExit(CAPTURE_DIR);
         return;
     }
-
-    statsTimer = setInterval(pushSessionState, 1000);
-    await loadGameWhenReady();
+    actions.newWindow();
 });
 
-ipcMain.handle(IPC.sidebarToggle, () => {
-    sidebarOpen = !sidebarOpen;
-    applyLayout();
-    return sidebarState();
+app.on('activate', () => {
+    if (serverWindows.size === 0) actions.newWindow();
 });
 
-ipcMain.handle(IPC.sidebarSetOpen, (_e, open: unknown) => {
-    sidebarOpen = open === true;
-    applyLayout();
-    return sidebarState();
-});
+app.on('browser-window-focus', () => reloadCatalogIfChanged());
 
-app.on('window-all-closed', () => app.quit());
 app.on('before-quit', () => {
-    if (pollTimer) clearInterval(pollTimer);
-    if (statsTimer) clearInterval(statsTimer);
-    tap?.detach();
+    quitting = true;
+});
+
+// macOS keeps running with no windows; the menu and the dock open the next one.
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
 });
