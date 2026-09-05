@@ -39,14 +39,16 @@ Tools have a **scope**, and the scope decides where their state lives:
 Top to bottom, left to right:
 
 1. **Tab strip** (36px). The first tab is the **game tab**: pinned, cannot be
-   closed, cannot be moved, labelled with the server name and revision. After
+   closed, cannot be moved, labelled with the server name and revision ("rev
+   unknown" when the catalog has none). After
    it come **page tabs**: wiki articles, the world map, anything on the
    server's allowed hosts. A `+` at the end opens a new page tab at the
    server's wiki home with the address box focused. The strip is the
    "browser": it tracks what reference pages this window has open.
 2. **Address row** (32px), shown only while a page tab is active: back,
-   forward, reload, an address/search box, and the note "wiki for rev N". Text
-   that is not a URL is sent to the server's wiki search URL.
+   forward, reload, an address/search box, and a note naming the revision and
+   wiki host, "rev 274 · 2004.losthq.rs". Text that is not a URL is sent to the
+   server's wiki search URL.
 3. **Content area**: the active tab's view. The game tab's view keeps running
    while a page tab is in front (background throttling off, as today). Page
    views are throttled normally.
@@ -100,7 +102,8 @@ interface ServerDef {
     id: string;          // slug, stable, used for partitions and folders
     name: string;        // "Zanaris — World 1"
     url: string;         // the game page
-    revision: number;    // 225, 254, 289 …
+    revision: number | null;  // 274, 289 …; null when the server does not say
+    notes: string | null;     // shown in the launcher, e.g. "May 2005 per Lost City Labs"
     wiki: {              // optional
         home: string;    // "https://2004.losthq.rs/"
         search: string;  // "https://2004.losthq.rs/w/index.php?search={query}"
@@ -110,20 +113,23 @@ interface ServerDef {
 }
 ```
 
-The launcher's add form asks for name, game address, revision and an optional
-wiki address; `hosts` is derived and `map` is left for the settings panel.
+The launcher's add form asks for name, game address, revision (which may be
+left unknown), an optional wiki address and a note; `hosts` is derived and
+`map` is left for the settings panel.
 Removing a server that has open windows is refused.
 
-Built-in entries: Zanaris W1 (rev 225, losthq wiki), Lost City W5 (rev 225,
-losthq wiki), Lost City Labs W1 (rev 254, no wiki), Local (rev 289, no wiki).
-The revisions for Zanaris and Labs are assumptions to confirm; see Open
-decisions.
+Built-in entries: Zanaris W1 (rev 274, losthq wiki), Lost City W5 (rev 274,
+losthq wiki), Lost City Labs W1 (revision unknown, note "May 2005 per Lost
+City Labs", no wiki), Local (rev 289, no wiki). A wiki is stored as a URL;
+nothing in the catalog claims which revision a wiki describes, since losthq
+moves on its own schedule.
 
 ### Data packs
 
 Bundled under `data/<revision>/`, loaded by main on demand, exposed read-only
 to server tools by revision. A pack may hold `clues.json` (step text to
-answer) and `presets.json` (timer presets). A missing pack is normal: server
+answer) and `presets.json` (timer presets). A missing pack is normal, and a
+server with no known revision never has one: server
 tools show "No data for rev N" and offer wiki search instead. Packs ship empty
 in the first milestones; the design reserves the slot.
 
@@ -150,15 +156,19 @@ shell.
 
 **Chat** (app). A real IRC client, one connection per app, in main. It exists
 whether or not any game is open; the panel is a view onto it. Channels: a
-lobby (`#04scape`) always, plus one per server (`#zanaris`, `#lostcity`,
-`#lostcitylabs`) joined while a window for that server is open. First version:
+lobby (`#04scape`) always, plus one per server (`#04scape-zanaris`,
+`#04scape-lostcity`, `#04scape-labs`) joined while a window for that server is
+open. The prefix matters on a public network, where bare names like
+`#zanaris` may already belong to someone else. First version:
 connect over TLS, join, say, `/me`, `/msg`, `/nick`, a nick list, highlight
 notifications with a rail badge. Reconnect with backoff. The protocol layer
 is a hand-written parser and serializer for the dozen commands and numerics
 needed (NICK, USER, JOIN, PART, PRIVMSG, PING/PONG, NAMES, QUIT; 001, 353,
 366, 433), tested as pure functions. No DCC, no CTCP beyond VERSION, no
-scripting. Server, port and nick live in settings; the default server is an
-open decision below.
+scripting. Server, port and nick live in settings. The default is Libera.Chat
+(`irc.libera.chat`, port 6697, TLS); the nick is the user's choice and is
+asked for the first time the panel opens. Registering it with NickServ is an
+ordinary `/msg`; SASL is added only if a channel turns out to need it.
 
 **Timers** (app). Named countdowns with absolute end times, persisted to
 `<userData>/timers.json` so they survive a restart. The panel lists them and
@@ -286,16 +296,20 @@ confirm distinct partitions.
    page tab out to its own window, the observe-only tap from `main` feeding an
    XP tracker as an instance tool, equipment-aware max hit.
 
-## Open decisions
+## Decisions
 
-1. **IRC server.** Own server on the fleet hub (ergo, one binary, TLS built
-   in) or a public network. Recommendation: own. Until decided, settings
-   default to empty and the chat panel shows "Set an IRC server in settings".
-2. **Revisions.** Zanaris W1 and Lost City Labs W1 are entered as rev 225 and
-   rev 254 from memory; confirm before the catalog ships.
-3. **Wiki per server.** losthq is assumed to be the reference for the rev 225
-   servers only. Servers without a wiki get no `+` default and the address row
-   still accepts a URL on an allowed host.
+Settled on 2026-09-05:
+
+1. **IRC server: a public network.** Libera.Chat by default, channels under
+   the `#04scape` prefix. No server of our own to run.
+2. **Revisions.** Zanaris W1 and Lost City W5 are rev 274. Lost City Labs W1
+   is unknown; their own description is "May 2005", kept as the entry's note.
+   Local is whatever `engine/data/config/world.json` says, 289 at the time of
+   writing.
+3. **Wiki per server.** losthq tracks rev 274 today and is the wiki for both
+   274 servers. Labs has none until its revision is known. A server without a
+   wiki gets no `+` default, and its address row still accepts a URL on an
+   allowed host.
 
 ## Out of scope
 
