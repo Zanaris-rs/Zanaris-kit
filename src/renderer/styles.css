@@ -1,25 +1,52 @@
 @import 'tailwindcss';
 
 /*
- * The launcher sits beside 765x503 software-rasterised game windows with
- * image-rendering: pixelated, so it is flat, square-cornered and hairline-ruled:
- * instrumentation beside pixel art rather than chrome on top of it. No radius,
- * no shadows, no gradients.
+ * The 2004 web, as the Lost City site still builds it: black ground, grey
+ * stone slabs with a 3px bevel, yellow headings and yellow-green links. The
+ * bevel is the whole system — `outset` and `inset` derive both the light and
+ * the dark edge from a single border-color, which is what gives the era its
+ * cheap, sturdy look and what a flat hairline can never fake.
  *
- * Palette abstracted from the era's own interface: oiled wood and tarnished
- * brass, with a desaturated moss for live state.
+ * Every colour here is taken from 2004.lostcity.rs and 2004.losthq.rs rather
+ * than invented, so the client sits beside the site it launches.
  */
-@theme {
-    --color-ink: #17120d;
-    --color-surface: #1f1810;
-    --color-line: #35291d;
-    --color-bone: #e6dccb;
-    --color-dim: #8a7a64;
-    --color-brass: #c8973f;
-    --color-live: #7fa650;
 
-    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-    --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+@font-face {
+    font-family: 'Pixelify Sans';
+    src: url('./fonts/pixelify-sans.woff2') format('woff2');
+    font-weight: 400 700;
+    font-style: normal;
+    /* Block rather than swap: a flash of Arial in a pixel interface is worse than a beat of nothing. */
+    font-display: block;
+}
+
+@theme {
+    --color-ink: #000000;
+    --color-stone: #474747;
+    --color-edge: #373737;
+    --color-sunken: #3d3d3d;
+    --color-row: #4e4e4e;
+
+    --color-bone: #ffffff;
+    --color-dim: #bdbdbd;
+    --color-faint: #8f8f8f;
+
+    --color-gold: #ffe139;
+    --color-link: #90c040;
+    --color-good: #04a800;
+    --color-warn: #ff981f;
+    --color-red: #a70700;
+    --color-red-edge: #570700;
+
+    /*
+     * Two roles. The pixel face is the period voice and carries headings and
+     * buttons; Arial carries everything that is data. That split is not
+     * decoration: in Pixelify Sans a 5 reads as an S and a 7 as a 1, so
+     * "W5" became "WS" on screen — unusable in a world switcher. Arial is
+     * also what 2004.lostcity.rs sets its own body text in.
+     */
+    --font-sans: Arial, Helvetica, sans-serif;
+    --font-pixel: 'Pixelify Sans', 'Trebuchet MS', Arial, sans-serif;
 }
 
 html,
@@ -34,7 +61,6 @@ body {
     color: var(--color-bone);
     font-family: var(--font-sans);
     font-size: 13px;
-    -webkit-font-smoothing: antialiased;
     user-select: none;
     cursor: default;
     overflow: hidden;
@@ -56,17 +82,48 @@ input {
 }
 
 :focus-visible {
-    outline: 1px solid var(--color-brass);
-    outline-offset: -1px;
+    outline: 1px solid var(--color-gold);
+    outline-offset: -2px;
 }
 
-/* Lists inside the panel scroll; the bar stays as flat as the rest. */
-::-webkit-scrollbar {
-    width: 8px;
+/* A raised stone slab: panels, tabs, buttons. */
+.slab {
+    border: 3px outset var(--color-edge);
+    background: var(--color-stone);
 }
-::-webkit-scrollbar-thumb {
-    background: var(--color-line);
+
+/* The same bevel pressed inward: wells that hold a list or a value. */
+.well {
+    border: 2px inset var(--color-edge);
+    background: var(--color-sunken);
+}
+
+/* A slab that takes a press. The site's own call to action is the red one. */
+.slab-button:active:not(:disabled) {
+    border-style: inset;
+}
+
+.slab-on {
+    border-color: var(--color-red-edge);
+    background: var(--color-red);
+}
+
+/* Links look like links here, as they did then. */
+.link {
+    color: var(--color-link);
+}
+.link:hover:not(:disabled) {
+    text-decoration: underline;
+}
+
+/* The scrollbar is a slab too, rather than a modern floating sliver. */
+::-webkit-scrollbar {
+    width: 12px;
 }
 ::-webkit-scrollbar-track {
-    background: transparent;
+    background: var(--color-sunken);
+}
+::-webkit-scrollbar-thumb {
+    border: 2px outset var(--color-edge);
+    background: var(--color-stone);
 }

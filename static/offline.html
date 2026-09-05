@@ -2,33 +2,58 @@
 <meta charset="utf-8" />
 <title>SwiftKit — can't reach server</title>
 <style>
+    /*
+     * Matches the shell: black ground, one stone slab, yellow heading,
+     * yellow-green links. The font sits beside this file so the page needs
+     * nothing from the network to look right — which is the whole point of
+     * a page that only appears when the network is the problem.
+     */
+    @font-face {
+        font-family: 'Pixelify Sans';
+        src: url('./pixelify-sans.woff2') format('woff2');
+        font-weight: 400 700;
+        font-display: block;
+    }
     :root { color-scheme: dark; }
     body {
         margin: 0; height: 100vh; display: grid; place-items: center;
-        background: #000; color: #d8ccb4;
-        font: 14px/1.6 ui-sans-serif, system-ui, sans-serif;
+        background: #000; color: #fff;
+        font-family: Arial, Helvetica, sans-serif; font-size: 13px;
         -webkit-user-select: none; user-select: none;
     }
-    .panel { max-width: 32rem; padding: 2rem; text-align: center; }
-    h1 { font-size: 1.1rem; margin: 0 0 .75rem; color: #f0e6d2; letter-spacing: .02em; }
-    code { background: #1f1810; padding: .15rem .4rem; color: #e8c88a; word-break: break-all; }
-    p { margin: .5rem 0; }
-    .reason { color: #8a7e6c; font-size: 13px; }
-    .hint { color: #8a7e6c; font-size: 13px; margin-top: 1.5rem; }
-    button {
-        margin-top: 1rem; padding: .35rem 1rem; font: inherit; font-size: 13px;
-        background: none; color: #c8973f; border: 1px solid #c8973f; cursor: pointer;
+    .slab {
+        border: 3px outset #373737; background: #474747;
+        max-width: 30rem; padding: 18px 22px; text-align: center;
     }
-    button:hover { background: #c8973f; color: #17120d; }
+    h1 {
+        font-family: 'Pixelify Sans', 'Trebuchet MS', Arial, sans-serif;
+        font-size: 18px; font-weight: normal; margin: 0 0 12px; color: #ffe139;
+    }
+    p { margin: 6px 0; line-height: 1.5; }
+    /* Block, not inline: an inline well breaks its bevel across wrapped lines. */
+    code {
+        display: block; margin: 6px auto 0; max-width: 100%;
+        border: 2px inset #373737; background: #3d3d3d; padding: 4px 8px;
+        color: #90c040; word-break: break-all;
+    }
+    .reason { color: #bdbdbd; }
+    .hint { color: #bdbdbd; margin-top: 16px; }
+    button {
+        font-family: 'Pixelify Sans', 'Trebuchet MS', Arial, sans-serif; font-size: 15px;
+        margin-top: 16px; padding: 5px 18px;
+        border: 3px outset #570700; background: #a70700; color: #fff; cursor: default;
+    }
+    button:active { border-style: inset; }
     .dots::after { content: ''; animation: dots 1.4s steps(4, end) infinite; }
     @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 </style>
-<div class="panel">
+<div class="slab">
     <h1>Can't reach <span id="name">the server</span></h1>
-    <p>Nothing answered at <code id="url"></code></p>
+    <p>Nothing answered at</p>
+    <code id="url"></code>
     <p class="reason" id="reason"></p>
     <button type="button" id="retry">Try again</button>
-    <p class="hint">Retrying on its own<span class="dots"></span> If this is your local server, start it and this window will connect once it is up.</p>
+    <p class="hint">Trying again on its own<span class="dots"></span> If this is your local server, start it and this window will connect once it is up.</p>
 </div>
 <script>
     const q = new URLSearchParams(location.search);

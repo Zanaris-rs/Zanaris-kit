@@ -43,6 +43,33 @@ both the most detectable thing we could ship and the most likely to be against
 server policy. LostKit 2 injects a preload for its screenshots, zoom and AFK
 detection; everything equivalent here is done from main or not at all.
 
+## How it looks
+
+The client is dressed as the site it launches. 2004.lostcity.rs and
+2004.losthq.rs still build the 2004 web: a black page, grey stone slabs with a
+3pt bevel, yellow headings, yellow-green links and a red call to action. Every
+colour in `src/renderer/styles.css` is taken from those two stylesheets rather
+than invented, so the panel beside the game reads as part of the same world.
+
+The bevel is the whole system. CSS `outset` and `inset` derive both the light
+and the dark edge from one `border-color`, which is what gives the era its
+cheap, sturdy look; a flat hairline cannot fake it. Raised things are `.slab`,
+sunken things are `.well`.
+
+Type has two roles. Headings and buttons are set in Pixelify Sans, bundled at
+`src/renderer/fonts/` under the SIL Open Font License and loaded from disk so
+the interface never waits on the network. Everything carrying data is Arial,
+which is what the Lost City site sets its own body text in. That split is not
+taste: in Pixelify Sans a 5 reads as an S and a 7 as a 1, so on the first
+build "W5" appeared on screen as "WS" and "59 online" as "S9 online". A world
+switcher cannot afford that.
+
+Latency colour marks the standout rather than grading everything. Most worlds
+sit in a band set by where you live, so colouring them all by absolute
+thresholds painted the whole column orange and said nothing. Green marks a
+world worth switching to, orange one that is genuinely far, and everything
+between is left as a plain number.
+
 ## Why a window keeps playing when it is not in front
 
 All three hosted clients drive their main loop with `setTimeout`; none of the
@@ -133,7 +160,7 @@ One capture run with every catalog server open at once:
 | Zanaris | login screen | "Zanaris · W1 · low · N ms" |
 | Lost City Labs | login screen | "Lost City Labs · W1 · N ms", no detail since Labs has no switch |
 | Local server | offline page, `ERR_CONNECTION_REFUSED`, auto-retry | "Local server", no worlds tool |
-| Lost City, Worlds open | untouched | five worlds with region, players and latency, W5 marked, Low / High switch; mode **widen** |
+| Lost City, Worlds open | untouched | five worlds with region, players and latency, W5 marked in gold, the red Low detail slab pressed; mode **widen** |
 | Lost City, after choosing W1 | login screen at World 1 | "Lost City · W1 · low · 294 ms", W1 marked; title "Lost City — World 1" |
 | Lost City (2), opened after the hop | login screen at World 1, the remembered world | slot 2, `persist:server:lostcity:2` |
 
@@ -147,6 +174,18 @@ template reproduces LostHQ's URLs exactly), the worlds service (cache, shared
 fetch, last-good-on-error, latency by host), the per-window switch state, the
 app state store, the navigation guard, and the latency probe against a local
 listener.
+
+## Known
+
+- **Latency measures the front door, not the game.** The probe is a TCP connect
+  to the world's web host, so for a server behind a CDN it times the nearest
+  edge rather than the game server. Lost City's Singapore world reads 45 ms
+  from the UK, which is the edge answering, not Singapore. Real game latency
+  would have to come off the websocket.
+- **Capture mode needs a waking display.** macOS refuses `capturePage` on an
+  occluded surface, and once the screen sleeps most shots come back "Current
+  display surface not available for capture". The run still completes and skips
+  those frames; rerun it with the display awake.
 
 ## Security posture
 

@@ -213,6 +213,11 @@ async function captureAndExit(dir: string): Promise<void> {
         log(`[capture] ${name}.png skipped: ${(lastError as Error).message}`);
     };
     const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
+        // Front the window first: macOS refuses to capture an occluded surface,
+        // and a page that is not painting would hand back a stale frame anyway.
+        sw.window.moveTop();
+        sw.focus();
+        await wait(400);
         await save(`${name}-shell`, () => sw.captureShell());
         await save(`${name}-game`, () => sw.captureGame());
     };
