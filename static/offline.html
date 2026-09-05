@@ -1,33 +1,53 @@
 <!doctype html>
 <meta charset="utf-8" />
-<title>SwiftKit — waiting for server</title>
+<title>SwiftKit — can't reach server</title>
 <style>
     :root { color-scheme: dark; }
     body {
         margin: 0; height: 100vh; display: grid; place-items: center;
-        background: #12100e; color: #d8ccb4;
+        background: #000; color: #d8ccb4;
         font: 14px/1.6 ui-sans-serif, system-ui, sans-serif;
         -webkit-user-select: none; user-select: none;
     }
-    .panel { max-width: 30rem; padding: 2rem; text-align: center; }
+    .panel { max-width: 32rem; padding: 2rem; text-align: center; }
     h1 { font-size: 1.1rem; margin: 0 0 .75rem; color: #f0e6d2; letter-spacing: .02em; }
-    code { background: #241f1a; padding: .15rem .4rem; border-radius: 3px; color: #e8c88a; }
+    code { background: #1f1810; padding: .15rem .4rem; color: #e8c88a; word-break: break-all; }
     p { margin: .5rem 0; }
+    .reason { color: #8a7e6c; font-size: 13px; }
     .hint { color: #8a7e6c; font-size: 13px; margin-top: 1.5rem; }
-    .dots::after {
-        content: ''; animation: dots 1.4s steps(4, end) infinite;
+    button {
+        margin-top: 1rem; padding: .35rem 1rem; font: inherit; font-size: 13px;
+        background: none; color: #c8973f; border: 1px solid #c8973f; cursor: pointer;
     }
+    button:hover { background: #c8973f; color: #17120d; }
+    .dots::after { content: ''; animation: dots 1.4s steps(4, end) infinite; }
     @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 </style>
 <div class="panel">
-    <h1>Waiting for the game server<span class="dots"></span></h1>
-    <p>Nothing is listening at <code id="url">the configured address</code> yet.</p>
-    <p class="hint">
-        Start it with <code>node start.js</code> in the Server directory, then choose
-        <strong>Start Server</strong>. SwiftKit will connect on its own once the server is up.
-    </p>
+    <h1>Can't reach <span id="name">the server</span></h1>
+    <p>Nothing answered at <code id="url"></code></p>
+    <p class="reason" id="reason"></p>
+    <button type="button" id="retry">Try again</button>
+    <p class="hint">Retrying on its own<span class="dots"></span> If this is your local server, start it and this window will connect once it is up.</p>
 </div>
 <script>
-    const u = new URLSearchParams(location.search).get('url');
-    if (u) document.getElementById('url').textContent = u;
+    const q = new URLSearchParams(location.search);
+    const url = q.get('url') || '';
+    document.getElementById('url').textContent = url;
+    if (q.get('name')) document.getElementById('name').textContent = q.get('name');
+    if (q.get('reason')) document.getElementById('reason').textContent = q.get('reason');
+
+    const go = () => location.replace(url);
+    document.getElementById('retry').addEventListener('click', go);
+
+    // Probe rather than reload: a failed navigation would land back here with a
+    // flash. An opaque no-cors response is enough to know something is listening.
+    setInterval(async () => {
+        try {
+            await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+            go();
+        } catch {
+            /* still down */
+        }
+    }, 5000);
 </script>
