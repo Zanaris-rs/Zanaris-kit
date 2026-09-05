@@ -13,8 +13,10 @@ import {
     createServer,
     isServerDef,
     serverMenuLabel,
+    migrateCatalog,
     Catalog
 } from './catalog.ts';
+import { isWorldsDef } from './worlds/sources.ts';
 import type { NewServerInput } from '../shared/catalog.ts';
 
 const input = (over: Partial<NewServerInput> = {}): NewServerInput => ({
@@ -26,16 +28,35 @@ const input = (over: Partial<NewServerInput> = {}): NewServerInput => ({
     ...over
 });
 
-test('the built-in list has the four servers with the settled revisions', () => {
+test('the built-in list is per server, Lost City first, with the settled revisions', () => {
+    assert.deepEqual(DEFAULT_SERVERS.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'local']);
     const byId = Object.fromEntries(DEFAULT_SERVERS.map(s => [s.id, s]));
-    assert.equal(byId['zanaris-w1']!.revision, 274);
-    assert.equal(byId['lostcity-w5']!.revision, 274);
-    assert.equal(byId['lostcitylabs-w1']!.revision, null);
-    assert.equal(byId['lostcitylabs-w1']!.notes, 'May 2005 per Lost City Labs');
+    assert.equal(byId['lostcity']!.revision, 274);
+    assert.equal(byId['zanaris']!.revision, 274);
+    assert.equal(byId['lostcitylabs']!.revision, null);
+    assert.equal(byId['lostcitylabs']!.notes, 'May 2005 per Lost City Labs');
     assert.equal(byId['local']!.revision, 289);
-    assert.equal(byId['zanaris-w1']!.wiki?.home, 'https://2004.losthq.rs/');
-    assert.equal(byId['lostcity-w5']!.wiki?.home, 'https://2004.losthq.rs/');
-    assert.equal(byId['lostcitylabs-w1']!.wiki, null);
+    assert.equal(byId['lostcity']!.wiki?.home, 'https://2004.losthq.rs/');
+    assert.equal(byId['zanaris']!.wiki?.home, 'https://2004.losthq.rs/');
+    assert.equal(byId['lostcitylabs']!.wiki, null);
+});
+
+test('the built-ins carry the worlds, bookmarks and hiscores they should', () => {
+    const byId = Object.fromEntries(DEFAULT_SERVERS.map(s => [s.id, s]));
+    assert.equal(byId['lostcity']!.worlds?.source.kind, 'losthq');
+    assert.equal(byId['lostcity']!.worlds?.defaultWorld, 5);
+    assert.equal(byId['lostcity']!.worlds?.detail, true);
+    assert.ok(byId['lostcity']!.hiscores?.includes('{name}'));
+    assert.ok(byId['lostcity']!.bookmarks.length >= 5);
+    assert.equal(byId['zanaris']!.worlds?.source.kind, 'zanaris');
+    assert.equal(byId['zanaris']!.worlds?.defaultWorld, 1);
+    assert.equal(byId['lostcitylabs']!.worlds?.source.kind, 'static');
+    assert.equal(byId['lostcitylabs']!.worlds?.detail, false);
+    assert.equal(byId['local']!.worlds, null);
+    for (const server of DEFAULT_SERVERS) {
+        if (server.worlds) assert.ok(isWorldsDef(server.worlds), `${server.id} worlds must validate`);
+        for (const b of server.bookmarks) assert.ok(parseServerUrl(b.url).ok, `${server.id} bookmark ${b.name}`);
+    }
 });
 
 test('every built-in entry validates and lists its own game host', () => {
@@ -84,6 +105,9 @@ test('createServer builds a valid entry from the form', () => {
     assert.deepEqual(r.server.hosts, ['play.example.com']);
     assert.equal(r.server.map, null);
     assert.equal(r.server.notes, null);
+    assert.equal(r.server.worlds, null);
+    assert.deepEqual(r.server.bookmarks, []);
+    assert.equal(r.server.hiscores, null);
     assert.ok(isServerDef(r.server));
 });
 
@@ -126,10 +150,84 @@ test('a later load that succeeds clears recovered', () => {
     assert.equal(catalog.recovered, false, 'the defaults it wrote are readable');
 });
 
-test('isServerDef rejects junk', () => {
-    for (const bad of [null, 1, {}, { id: 'a', name: 'b', url: 'x' }, { ...DEFAULT_SERVERS[0], revision: 'x' }, { ...DEFAULT_SERVERS[0], hosts: 'nope' }]) {
-        assert.equal(isServerDef(bad), false);
+test('isServerDef rejects junk, including bad worlds, bookmarks and hiscores', () => {
+    const good = DEFAULT_SERVERS[0]!;
+    for (const bad of [
+        null,
+        1,
+        {},
+        { id: 'a', name: 'b', url: 'x' },
+        { ...good, revision: 'x' },
+        { ...good, hosts: 'nope' },
+        { ...good, worlds: {} },
+        { ...good, bookmarks: 'nope' },
+        { ...good, bookmarks: [{ name: 'x', url: 'javascript:1' }] },
+        { ...good, hiscores: 'https://x.example/no-placeholder' }
+    ]) {
+        assert.equal(isServerDef(bad), false, `${JSON.stringify(bad).slice(0, 60)} must be rejected`);
     }
+});
+
+// ── migration ─────────────────────────────────────────────────────────────
+
+const OLD = (id: string, name: string, url: string): Record<string, unknown> => ({
+    id, name, url, revision: 274, wiki: null, map: null, hosts: [new URL(url).host], notes: null
+});
+const V1_BUILTINS = [
+    OLD('zanaris-w1', 'Zanaris — World 1', 'https://w1.04.zanaris.rs/rs2.cgi?lowmem=1'),
+    OLD('lostcity-w5', 'Lost City — World 5', 'https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1'),
+    OLD('lostcitylabs-w1', 'Lost City Labs — World 1', 'https://www.lostcitylabs.com/play/world-1/'),
+    OLD('local', 'Local server', 'http://127.0.0.1:8888/rs2.cgi?lowmem=1')
+];
+
+test('migrateCatalog turns a v1 file into the new built-ins in default order plus the custom entries', () => {
+    const custom = OLD('my-server', 'My Server', 'https://play.example.com/rs2.cgi');
+    const migrated = migrateCatalog({ version: 1, servers: [...V1_BUILTINS, custom] });
+    assert.ok(migrated);
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'local', 'my-server']);
+    assert.equal(migrated[0]!.worlds?.source.kind, 'losthq');
+    const mine = migrated[4]!;
+    assert.equal(mine.worlds, null);
+    assert.deepEqual(mine.bookmarks, []);
+    assert.equal(mine.hiscores, null);
+    assert.ok(isServerDef(mine));
+});
+
+test('migrateCatalog treats a missing version as v1 and passes a v2 file through', () => {
+    assert.ok(migrateCatalog({ servers: V1_BUILTINS }));
+    const v2 = migrateCatalog({ version: 2, servers: [...DEFAULT_SERVERS] });
+    assert.ok(v2);
+    assert.deepEqual(v2.map(s => s.id), DEFAULT_SERVERS.map(s => s.id));
+});
+
+test('migrateCatalog returns null for junk, an invalid entry, or a version it does not know', () => {
+    assert.equal(migrateCatalog(null), null);
+    assert.equal(migrateCatalog({ version: 3, servers: [] }), null);
+    assert.equal(migrateCatalog({ version: 1, servers: [{ id: 'x' }] }), null);
+    assert.equal(migrateCatalog({ version: 2, servers: [{ ...DEFAULT_SERVERS[0], worlds: 'nope' }] }), null);
+});
+
+test('Catalog.load migrates a v1 file in place and rewrites it as v2', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, servers: V1_BUILTINS }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false, 'a migration is not a recovery');
+    assert.deepEqual(catalog.list().map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'local']);
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(written.version, 2);
+    assert.equal(written.servers[0].id, 'lostcity');
+});
+
+test('list returns deep copies of the worlds block', () => {
+    const catalog = new Catalog(tempFile());
+    catalog.load();
+    const first = catalog.list()[0]!;
+    (first.worlds!.source as { url: string }).url = 'https://evil.example/';
+    first.bookmarks.push({ name: 'x', url: 'https://evil.example/' });
+    const again = catalog.list()[0]!;
+    assert.notEqual((again.worlds!.source as { url: string }).url, 'https://evil.example/');
+    assert.equal(again.bookmarks.some(b => b.url === 'https://evil.example/'), false);
 });
 
 // ── the file ──────────────────────────────────────────────────────────────
@@ -151,7 +249,7 @@ test('load writes the defaults when there is no file', () => {
     assert.equal(catalog.recovered, false);
     assert.deepEqual(catalog.list().map(s => s.id), DEFAULT_SERVERS.map(s => s.id));
     assert.ok(existsSync(file));
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 1);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 2);
 });
 
 test('add persists and a fresh load sees it', () => {

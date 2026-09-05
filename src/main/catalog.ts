@@ -1,40 +1,77 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { NewServerInput, ServerDef, WikiDef } from '../shared/catalog.ts';
+import type { Bookmark } from '../shared/worlds.ts';
+import { isWorldsDef } from './worlds/sources.ts';
 
 /** LostHQ has no discoverable search endpoint (its index.php?search= returns the homepage). */
 const LOSTHQ: WikiDef = { home: 'https://2004.losthq.rs/', search: null };
 
+/** Pages LostHQ serves today, plus the tools LostKit's nav bar links to. */
+const LOSTHQ_BOOKMARKS: Bookmark[] = [
+    { name: 'Quest guides', url: 'https://2004.losthq.rs/?p=questguides' },
+    { name: 'Skill guides', url: 'https://2004.losthq.rs/?p=skillguides' },
+    { name: 'Clue help', url: 'https://2004.losthq.rs/?p=clueguides' },
+    { name: 'Item database', url: 'https://2004.losthq.rs/?p=itemdb' },
+    { name: 'Skills calculator', url: 'https://2004.losthq.rs/?p=calculators' },
+    { name: 'Clue coordinates', url: 'https://tools.losthq.rs/cluecoordinator/' },
+    { name: 'World map', url: 'https://tools.losthq.rs/map' }
+];
+
 export const DEFAULT_SERVERS: readonly ServerDef[] = [
     {
-        id: 'zanaris-w1',
-        name: 'Zanaris — World 1',
-        url: 'https://w1.04.zanaris.rs/rs2.cgi?lowmem=1',
-        revision: 274,
-        wiki: LOSTHQ,
-        map: null,
-        hosts: ['w1.04.zanaris.rs', '2004.losthq.rs'],
-        notes: null
-    },
-    {
-        id: 'lostcity-w5',
-        name: 'Lost City — World 5',
+        id: 'lostcity',
+        name: 'Lost City',
         url: 'https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1',
         revision: 274,
         wiki: LOSTHQ,
-        map: null,
-        hosts: ['w5-2004.lostcity.rs', '2004.losthq.rs'],
-        notes: null
+        map: 'https://tools.losthq.rs/map',
+        hosts: ['w5-2004.lostcity.rs', '2004.losthq.rs', 'tools.losthq.rs', 'markets.lostcity.rs'],
+        notes: null,
+        worlds: {
+            source: { kind: 'losthq', url: 'https://2004.losthq.rs/pages/api/worlds.php' },
+            template: 'https://w{world}-2004.lostcity.rs/rs2.cgi?plugin=0&world={world}&lowmem={lowmem}',
+            detail: true,
+            defaultWorld: 5
+        },
+        bookmarks: [...LOSTHQ_BOOKMARKS, { name: 'Markets', url: 'https://markets.lostcity.rs' }],
+        hiscores: 'https://2004.lostcity.rs/api/hiscores/player/{name}'
     },
     {
-        id: 'lostcitylabs-w1',
-        name: 'Lost City Labs — World 1',
+        id: 'zanaris',
+        name: 'Zanaris',
+        url: 'https://w1.04.zanaris.rs/rs2.cgi?lowmem=1',
+        revision: 274,
+        wiki: LOSTHQ,
+        map: 'https://tools.losthq.rs/map',
+        hosts: ['w1.04.zanaris.rs', '2004.losthq.rs', 'tools.losthq.rs'],
+        notes: null,
+        worlds: {
+            source: { kind: 'zanaris', url: 'https://zanaris.rs/worlds.json' },
+            template: '{url}/rs2.cgi?lowmem={lowmem}',
+            detail: true,
+            defaultWorld: 1
+        },
+        bookmarks: [...LOSTHQ_BOOKMARKS],
+        hiscores: null
+    },
+    {
+        id: 'lostcitylabs',
+        name: 'Lost City Labs',
         url: 'https://www.lostcitylabs.com/play/world-1/',
         revision: null,
         wiki: null,
         map: null,
         hosts: ['www.lostcitylabs.com'],
-        notes: 'May 2005 per Lost City Labs'
+        notes: 'May 2005 per Lost City Labs',
+        worlds: {
+            source: { kind: 'static', worlds: [1, 2, 3, 4].map(id => ({ id, name: `World ${id}`, region: 'Germany', members: true })) },
+            template: 'https://www.lostcitylabs.com/play/world-{world}/',
+            detail: false,
+            defaultWorld: 1
+        },
+        bookmarks: [],
+        hiscores: null
     },
     {
         id: 'local',
@@ -44,7 +81,10 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         wiki: null,
         map: null,
         hosts: ['127.0.0.1:8888'],
-        notes: null
+        notes: null,
+        worlds: null,
+        bookmarks: [],
+        hiscores: null
     }
 ];
 
@@ -128,7 +168,10 @@ export function createServer(input: NewServerInput, existing: readonly ServerDef
     const id = uniqueId(slugify(name), new Set(existing.map(s => s.id)));
     const notes = input.notes && input.notes.trim() ? input.notes.trim() : null;
 
-    return { ok: true, server: { id, name, url: url.url, revision: input.revision, wiki, map: null, hosts, notes } };
+    return {
+        ok: true,
+        server: { id, name, url: url.url, revision: input.revision, wiki, map: null, hosts, notes, worlds: null, bookmarks: [], hiscores: null }
+    };
 }
 
 const isString = (x: unknown): x is string => typeof x === 'string';
@@ -147,12 +190,68 @@ export function isServerDef(x: unknown): x is ServerDef {
     }
     if (!isNullableString(s.map) || !isNullableString(s.notes)) return false;
     if (!Array.isArray(s.hosts) || !s.hosts.every(isString)) return false;
+    if (s.worlds !== null && !isWorldsDef(s.worlds)) return false;
+    if (!Array.isArray(s.bookmarks) || !s.bookmarks.every(isBookmark)) return false;
+    if (s.hiscores !== null && !(isString(s.hiscores) && s.hiscores.includes('{name}') && parseServerUrl(s.hiscores).ok)) return false;
     return true;
 }
 
+function isBookmark(x: unknown): x is Bookmark {
+    if (typeof x !== 'object' || x === null) return false;
+    const b = x as Record<string, unknown>;
+    return isString(b.name) && b.name.trim() !== '' && isString(b.url) && parseServerUrl(b.url).ok;
+}
+
 interface CatalogFile {
-    version: 1;
+    version: 2;
     servers: ServerDef[];
+}
+
+/** The ids the launcher-era catalog used, one per world. Each maps to the per-server entry that replaces it. */
+const LEGACY_IDS: Record<string, string> = {
+    'zanaris-w1': 'zanaris',
+    'lostcity-w5': 'lostcity',
+    'lostcitylabs-w1': 'lostcitylabs',
+    local: 'local'
+};
+
+function uniqueIds(servers: readonly ServerDef[]): boolean {
+    return new Set(servers.map(s => s.id)).size === servers.length;
+}
+
+/**
+ * Turns whatever was on disk into a usable list, or null when it cannot be
+ * used. A version 1 file (per-world entries, no worlds block) has its
+ * built-in entries replaced by the current built-ins, in default order, and
+ * keeps any custom entries with the new fields empty. A missing version is 1.
+ */
+export function migrateCatalog(parsed: unknown): ServerDef[] | null {
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const file = parsed as Record<string, unknown>;
+    const version = file.version === undefined ? 1 : file.version;
+    if (!Array.isArray(file.servers)) return null;
+
+    if (version === 2) {
+        return file.servers.every(isServerDef) && uniqueIds(file.servers) ? file.servers.map(copy) : null;
+    }
+    if (version !== 1) return null;
+
+    const builtIn = new Set<string>();
+    const custom: ServerDef[] = [];
+    for (const entry of file.servers) {
+        if (typeof entry !== 'object' || entry === null) return null;
+        const e = entry as Record<string, unknown>;
+        const replacement = typeof e.id === 'string' ? LEGACY_IDS[e.id] : undefined;
+        if (replacement) {
+            builtIn.add(replacement);
+            continue;
+        }
+        const upgraded = { ...e, worlds: null, bookmarks: [], hiscores: null };
+        if (!isServerDef(upgraded)) return null;
+        custom.push(copy(upgraded));
+    }
+    const servers = [...DEFAULT_SERVERS.filter(s => builtIn.has(s.id)).map(copy), ...custom];
+    return uniqueIds(servers) ? servers : null;
 }
 
 /**
@@ -179,11 +278,12 @@ export class Catalog {
             return;
         }
         try {
-            const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<CatalogFile> | null;
-            const servers = parsed?.servers;
-            if (!Array.isArray(servers) || !servers.every(isServerDef)) throw new Error('not a catalog');
-            if (new Set(servers.map(s => s.id)).size !== servers.length) throw new Error('duplicate ids');
-            this.servers = servers.map(copy);
+            const parsed: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
+            const migrated = migrateCatalog(parsed);
+            if (!migrated) throw new Error('not a catalog');
+            this.servers = migrated;
+            // An older file is rewritten in the current shape; that is an upgrade, not a recovery.
+            if ((parsed as { version?: unknown }).version !== 2) this.save();
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
             this.servers = DEFAULT_SERVERS.map(copy);
@@ -220,11 +320,11 @@ export class Catalog {
 
     private save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: CatalogFile = { version: 1, servers: this.servers };
+        const data: CatalogFile = { version: 2, servers: this.servers };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }
 
 function copy(s: ServerDef): ServerDef {
-    return { ...s, hosts: [...s.hosts], wiki: s.wiki ? { ...s.wiki } : null };
+    return structuredClone(s);
 }

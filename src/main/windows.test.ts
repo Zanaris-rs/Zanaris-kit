@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { ServerWindows, type ServerWindowFactory, type WindowSpec } from './windows.ts';
 import { DEFAULT_SERVERS } from './catalog.ts';
 
-const ZANARIS = DEFAULT_SERVERS[0]!;
-const LOSTCITY = DEFAULT_SERVERS[1]!;
+const ZANARIS = DEFAULT_SERVERS[1]!;
+const LOSTCITY = DEFAULT_SERVERS[0]!;
 
 interface FakeWindow {
     spec: WindowSpec;
@@ -41,8 +41,8 @@ test('opening a server creates a window in slot 1 with the plain title and parti
     const windows = new ServerWindows(factory);
     const opened = windows.open(ZANARIS);
     assert.equal(created.length, 1);
-    assert.deepEqual(opened, { id: 1, serverId: 'zanaris-w1', slot: 1, title: 'Zanaris — World 1' });
-    assert.equal(created[0]!.spec.partition, 'persist:server:zanaris-w1');
+    assert.deepEqual(opened, { id: 1, serverId: 'zanaris', slot: 1, title: 'Zanaris' });
+    assert.equal(created[0]!.spec.partition, 'persist:server:zanaris');
     assert.equal(created[0]!.spec.server, ZANARIS);
 });
 
@@ -53,9 +53,9 @@ test('opening the same server again makes a second window in slot 2', () => {
     const second = windows.open(ZANARIS);
     assert.equal(created.length, 2, 'a new window, not a focus');
     assert.equal(second.slot, 2);
-    assert.equal(second.title, 'Zanaris — World 1 (2)');
-    assert.equal(created[1]!.spec.partition, 'persist:server:zanaris-w1:2');
-    assert.equal(windows.countFor('zanaris-w1'), 2);
+    assert.equal(second.title, 'Zanaris (2)');
+    assert.equal(created[1]!.spec.partition, 'persist:server:zanaris:2');
+    assert.equal(windows.countFor('zanaris'), 2);
 });
 
 test('window ids are unique and increase', () => {
@@ -77,11 +77,11 @@ test('closing frees the slot, and the next open reuses it', () => {
     windows.open(ZANARIS);
     windows.open(ZANARIS);
     created[0]!.userCloses();
-    assert.equal(windows.countFor('zanaris-w1'), 1);
+    assert.equal(windows.countFor('zanaris'), 1);
     assert.equal(windows.list().length, 1);
     const third = windows.open(ZANARIS);
     assert.equal(third.slot, 1, 'slot 1 came back');
-    assert.equal(created[2]!.spec.partition, 'persist:server:zanaris-w1');
+    assert.equal(created[2]!.spec.partition, 'persist:server:zanaris');
 });
 
 test('get returns the handle for an open window and nothing after it closes', () => {
