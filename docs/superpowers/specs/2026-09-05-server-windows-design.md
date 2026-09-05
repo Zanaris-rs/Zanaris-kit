@@ -106,7 +106,7 @@ interface ServerDef {
     notes: string | null;     // shown in the launcher, e.g. "May 2005 per Lost City Labs"
     wiki: {              // optional
         home: string;    // "https://2004.losthq.rs/"
-        search: string;  // "https://2004.losthq.rs/w/index.php?search={query}"
+        search: string | null;  // search URL with {query}; null when the site has no known search endpoint
     } | null;
     map: string | null;  // a URL the map tool opens as a page tab
     hosts: string[];     // extra hosts page tabs may visit; always includes the game and wiki hosts
