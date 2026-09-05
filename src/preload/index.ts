@@ -12,6 +12,7 @@ const api: SwiftkitApi = {
     shell: {
         get: () => ipcRenderer.invoke(IPC.shellGet),
         togglePanel: () => ipcRenderer.invoke(IPC.shellTogglePanel),
+        selectTool: id => ipcRenderer.invoke(IPC.shellSelectTool, id),
         onState: cb => {
             const handler = (_event: unknown, state: ShellState): void => cb(state);
             ipcRenderer.on(IPC.shellState, handler);
@@ -19,6 +20,11 @@ const api: SwiftkitApi = {
                 ipcRenderer.off(IPC.shellState, handler);
             };
         }
+    },
+    worlds: {
+        refresh: () => ipcRenderer.invoke(IPC.worldsRefresh),
+        switch: world => ipcRenderer.invoke(IPC.worldsSwitch, world),
+        setDetail: detail => ipcRenderer.invoke(IPC.worldsSetDetail, detail)
     }
 };
 

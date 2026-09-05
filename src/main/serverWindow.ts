@@ -1,22 +1,39 @@
 import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
-import { IPC, type ShellState } from '../shared/ipc';
+import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
+import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import { computeLayout, sideWidth, splitWindow, type Rects } from './layout';
-import { originOf } from './catalog';
-import { TabModel } from './tabs';
+import { decideNavigation } from './guard';
+import { GAME_TAB_ID, TabModel } from './tabs';
 import { loadShell, preloadPath } from './renderer';
+import { windowTitle } from './slots';
+import { WorldSwitch } from './worlds/switch';
+import { worldEndpoint } from './worlds/sources';
+import type { WorldsService } from './worlds/service';
 import type { ServerWindowHandle, WindowSpec } from './windows';
 
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 /** The content area a new window opens with: the canvas plus the page's controls strip. */
 const DEFAULT_CONTENT = { width: 800, height: 640 };
+const PROBE_EVERY_MS = 10_000;
+const PROBE_TIMEOUT_MS = 3_000;
+
+export type LoadResult = 'loaded' | 'failed';
 
 export interface ServerWindowDeps {
     log: (msg: string) => void;
     /** Return false to keep the window open. Main returns true without asking while quitting. */
     confirmClose: (title: string) => boolean;
     position: { x: number; y: number } | null;
+    /** The server's shared world list and latency, or null when the server has one page. */
+    worlds: WorldsService | null;
+    /** What this server remembered from last time, if anything. */
+    remembered: RememberedWorld | null;
+    /** Called whenever this window's world or detail changes. */
+    remember: (remembered: RememberedWorld) => void;
+    /** Latency of one host, for the current world's readout. */
+    probe: (host: string, port: number, timeoutMs: number) => Promise<number | null>;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -25,9 +42,14 @@ export interface ServerWindow extends ServerWindowHandle {
     /** The shell view's webContents id, so IPC handlers can find the window from `event.sender`. */
     readonly shellContentsId: number;
     togglePanel(): void;
+    /** Opens the panel on a tool; null closes it. */
+    selectTool(id: ToolId | null): void;
     state(): ShellState;
-    /** Resolves when the game page finished loading, or failed over to the offline page. */
-    whenGameLoaded(): Promise<'loaded' | 'failed'>;
+    /** Resolves when the most recent load finished, or failed over to the offline page. */
+    whenGameLoaded(): Promise<LoadResult>;
+    switchWorld(world: number): Promise<LoadResult | 'unknown'>;
+    setDetail(detail: Detail): Promise<LoadResult | 'unchanged'>;
+    refreshWorlds(): Promise<void>;
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
@@ -39,20 +61,29 @@ export interface ServerWindow extends ServerWindowHandle {
  * the shell only draws where main says things are.
  *
  * The game view has no preload and no IPC. Its page is byte-for-byte what the
- * server served. `backgroundThrottling: false` keeps its setTimeout-driven loop
- * at full rate while another window or tab is in front.
+ * server served, and nothing the page does can replace it: the only way it
+ * changes page is `loadGame` here. `backgroundThrottling: false` keeps its
+ * setTimeout-driven loop at full rate while another window is in front.
  */
 export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps: ServerWindowDeps): ServerWindow {
     const { server } = spec;
     const tag = `[${spec.title}]`;
-    const origin = originOf(server.url);
     const tabs = new TabModel({ title: server.name, url: server.url });
+    const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
+    const tools: ToolId[] = worldSwitch ? ['worlds'] : [];
 
+    /** The URL main last asked the game view to load. The offline page may return to it; nothing else may navigate. */
+    let expected = worldSwitch ? worldSwitch.url : server.url;
+    let currentLatency: number | null = null;
     let panelOpen = false;
+    let activeTool: ToolId | null = null;
     let mode: LayoutMode = 'widen';
     let rects: Rects = splitWindow(DEFAULT_CONTENT.width + RAIL_WIDTH, STRIP_HEIGHT + DEFAULT_CONTENT.height, false, 'game');
     let contentWidth = DEFAULT_CONTENT.width;
     let applying = false;
+    let failedOver = false;
+    let loadWaiter: ((result: LoadResult) => void) | null = null;
+    let loadPromise: Promise<LoadResult> = Promise.resolve('loaded');
 
     const win = new BrowserWindow({
         width: DEFAULT_CONTENT.width + RAIL_WIDTH,
@@ -93,7 +124,28 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     win.contentView.addChildView(shellView);
     win.contentView.addChildView(gameView);
 
+    // ── labels ───────────────────────────────────────────────────────────
+
+    function gameLabel(): string {
+        return worldSwitch ? worldSwitch.label(server.name, currentLatency) : server.name;
+    }
+
+    function title(): string {
+        return worldSwitch ? windowTitle(worldSwitch.title(server.name), spec.slot) : spec.title;
+    }
+
+    function refreshLabels(): void {
+        tabs.setTitle(GAME_TAB_ID, gameLabel());
+        tabs.setUrl(GAME_TAB_ID, expected);
+        if (!win.isDestroyed()) win.setTitle(title());
+    }
+
     // ── state ────────────────────────────────────────────────────────────
+
+    function worldsView(): WorldsView | null {
+        if (!worldSwitch || !deps.worlds || !server.worlds) return null;
+        return { ...deps.worlds.view(), current: worldSwitch.world, detail: worldSwitch.detail, showDetail: server.worlds.detail };
+    }
 
     function state(): ShellState {
         const active = tabs.active.id;
@@ -101,16 +153,24 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             windowId: spec.id,
             server,
             slot: spec.slot,
-            title: spec.title,
+            title: title(),
             tabs: tabs.list().map(t => ({ ...t, active: t.id === active })),
             panelOpen,
             mode,
-            rects
+            rects,
+            tools,
+            activeTool,
+            worlds: worldsView()
         };
     }
 
     function pushState(): void {
-        if (!shellView.webContents.isDestroyed()) shellView.webContents.send(IPC.shellState, state());
+        if (shellView.webContents.isDestroyed()) return;
+        try {
+            shellView.webContents.send(IPC.shellState, state());
+        } catch (err) {
+            deps.log(`${tag} could not push state: ${(err as Error).message}`);
+        }
     }
 
     // ── layout ───────────────────────────────────────────────────────────
@@ -152,50 +212,101 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     win.on('enter-full-screen', () => applyLayout());
     win.on('leave-full-screen', () => applyLayout());
 
-    // ── lifecycle ────────────────────────────────────────────────────────
+    // ── the panel and its tool ───────────────────────────────────────────
 
-    // The page keeps its own title; the window keeps the server's name.
-    win.on('page-title-updated', event => event.preventDefault());
-    win.on('close', event => {
-        if (!deps.confirmClose(spec.title)) event.preventDefault();
-    });
-    win.on('closed', onClosed);
+    let panelProbe: NodeJS.Timeout | null = null;
 
-    shellView.webContents.once('did-finish-load', () => {
-        if (win.isDestroyed()) return;
+    /** The whole list is probed only while this window shows the Worlds panel. */
+    function syncPanelProbe(): void {
+        const wanted = panelOpen && activeTool === 'worlds' && worldSwitch !== null && deps.worlds !== null;
+        if (wanted && !panelProbe) {
+            const probeAll = (): void => {
+                if (deps.worlds && worldSwitch) void deps.worlds.probeAll(worldSwitch.detail);
+            };
+            void deps.worlds!.list().then(probeAll);
+            panelProbe = setInterval(probeAll, PROBE_EVERY_MS);
+        } else if (!wanted && panelProbe) {
+            clearInterval(panelProbe);
+            panelProbe = null;
+        }
+    }
+
+    function selectTool(id: ToolId | null): void {
+        if (id !== null && !tools.includes(id)) return;
+        if (id === null) {
+            panelOpen = false;
+        } else {
+            activeTool = id;
+            panelOpen = true;
+        }
         applyLayout();
-        win.show();
-    });
+        syncPanelProbe();
+    }
+
+    function togglePanel(): void {
+        panelOpen = !panelOpen;
+        if (panelOpen && activeTool === null) activeTool = tools[0] ?? null;
+        deps.log(`${tag} panel ${panelOpen ? 'opened' : 'closed'}`);
+        applyLayout();
+        syncPanelProbe();
+    }
 
     // ── the game view ────────────────────────────────────────────────────
 
-    // The view is for this server only. Anything else the page tries to
-    // navigate to goes to the system browser instead of replacing the game.
+    /** The one way the game view changes page. Each load gets its own promise. */
+    function loadGame(url: string): Promise<LoadResult> {
+        expected = url;
+        failedOver = false;
+        loadPromise = new Promise<LoadResult>(resolve => {
+            loadWaiter = resolve;
+        });
+        refreshLabels();
+        pushState();
+        void gameView.webContents.loadURL(url);
+        return loadPromise;
+    }
+
+    function settleLoad(result: LoadResult): void {
+        const waiter = loadWaiter;
+        loadWaiter = null;
+        waiter?.(result);
+    }
+
+    // Nothing the page does may replace the game. The one exception is our
+    // own offline page returning to the page main asked for.
     gameView.webContents.on('will-navigate', (event, url) => {
-        if (url === origin || url.startsWith(`${origin}/`)) return;
+        const decision = decideNavigation({ current: gameView.webContents.getURL(), target: url, expected });
+        if (decision === 'allow') return;
         event.preventDefault();
-        deps.log(`${tag} sent ${url} to the system browser`);
-        if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+        if (decision === 'open-external') {
+            deps.log(`${tag} sent ${url} to the system browser`);
+            void shell.openExternal(url);
+        } else {
+            deps.log(`${tag} blocked navigation to ${url}`);
+        }
     });
     gameView.webContents.setWindowOpenHandler(({ url }) => {
         if (/^https?:\/\//.test(url)) void shell.openExternal(url);
         return { action: 'deny' };
     });
-
-    const gameLoaded = new Promise<'loaded' | 'failed'>(resolve => {
-        gameView.webContents.once('did-finish-load', () => resolve('loaded'));
-        gameView.webContents.on('did-fail-load', (_event, code, _description, _url, isMainFrame) => {
-            if (isMainFrame && code !== -3) resolve('failed');
-        });
+    gameView.webContents.on('context-menu', event => event.preventDefault());
+    // Mouse back and forward buttons would walk the history of world switches.
+    win.on('app-command', (event, command) => {
+        if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
     });
-    let failedOver = false;
+
+    gameView.webContents.on('did-start-navigation', (_event, url) => {
+        // A retry from the offline page is a fresh attempt.
+        if (!url.startsWith('file:')) failedOver = false;
+    });
     gameView.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
         // -3 is ERR_ABORTED: a load superseded by another, not a failure.
         if (!isMainFrame || code === -3) return;
         failedOver = true;
         deps.log(`${tag} could not load ${url}: ${description} (${code})`);
+        settleLoad('failed');
         void gameView.webContents.loadFile(OFFLINE_PAGE, {
-            query: { url: server.url, name: server.name, reason: description }
+            query: { url: expected, name: gameLabel(), reason: description }
         });
     });
     gameView.webContents.on('did-finish-load', () => {
@@ -206,16 +317,61 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         }
         // Chromium commits its own error page under the failed URL before the offline page replaces it.
         if (failedOver) return;
-        if (url.startsWith(origin)) deps.log(`${tag} loaded ${url}`);
+        deps.log(`${tag} loaded ${url}`);
+        // Every load adds a history entry; none of them is somewhere to go back to.
+        gameView.webContents.navigationHistory.clear();
+        settleLoad('loaded');
+        void probeCurrent();
     });
-    // A retry from the offline page is a fresh attempt.
-    gameView.webContents.on('did-start-navigation', (_event, url) => {
-        if (url.startsWith(origin)) failedOver = false;
+
+    // ── the current world's latency ──────────────────────────────────────
+
+    let currentProbe: NodeJS.Timeout | null = null;
+    let probingCurrent = false;
+
+    async function probeCurrent(): Promise<void> {
+        if (!worldSwitch || probingCurrent || win.isDestroyed()) return;
+        probingCurrent = true;
+        try {
+            const { host, port } = worldEndpoint(expected);
+            currentLatency = await deps.probe(host, port, PROBE_TIMEOUT_MS);
+        } catch {
+            currentLatency = null;
+        } finally {
+            probingCurrent = false;
+        }
+        if (win.isDestroyed()) return;
+        refreshLabels();
+        pushState();
+    }
+
+    if (worldSwitch) currentProbe = setInterval(() => void probeCurrent(), PROBE_EVERY_MS);
+    const unsubscribeWorlds = deps.worlds?.subscribe(() => pushState()) ?? null;
+
+    // ── lifecycle ────────────────────────────────────────────────────────
+
+    // The page keeps its own title; the window keeps the server's name and world.
+    win.on('page-title-updated', event => event.preventDefault());
+    win.on('close', event => {
+        if (!deps.confirmClose(spec.title)) event.preventDefault();
+    });
+    win.on('closed', () => {
+        if (currentProbe) clearInterval(currentProbe);
+        if (panelProbe) clearInterval(panelProbe);
+        unsubscribeWorlds?.();
+        onClosed();
+    });
+
+    shellView.webContents.once('did-finish-load', () => {
+        if (win.isDestroyed()) return;
+        applyLayout();
+        win.show();
     });
 
     applyLayout();
+    refreshLabels();
     loadShell(shellView.webContents);
-    void gameView.webContents.loadURL(server.url);
+    void loadGame(expected);
 
     return {
         id: spec.id,
@@ -226,13 +382,39 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             win.focus();
         },
         close: () => win.close(),
-        togglePanel: () => {
-            panelOpen = !panelOpen;
-            deps.log(`${tag} panel ${panelOpen ? 'opened' : 'closed'}`);
-            applyLayout();
-        },
+        togglePanel,
+        selectTool,
         state,
-        whenGameLoaded: () => gameLoaded,
+        whenGameLoaded: () => loadPromise,
+        switchWorld: async world => {
+            if (!worldSwitch || !deps.worlds) return 'unknown';
+            const target = deps.worlds.view().worlds.find(w => w.id === world);
+            if (!target) return 'unknown';
+            let url: string;
+            try {
+                url = worldSwitch.select(target);
+            } catch (err) {
+                deps.log(`${tag} cannot address world ${world}: ${(err as Error).message}`);
+                return 'unknown';
+            }
+            currentLatency = null;
+            deps.remember(worldSwitch.remembered());
+            deps.log(`${tag} switching to world ${world} (${worldSwitch.detail}) — ${url}`);
+            return loadGame(url);
+        },
+        setDetail: async detail => {
+            if (!worldSwitch) return 'unchanged';
+            const url = worldSwitch.setDetail(detail);
+            if (!url) return 'unchanged';
+            deps.remember(worldSwitch.remembered());
+            deps.log(`${tag} reloading world ${worldSwitch.world} at ${detail} detail`);
+            return loadGame(url);
+        },
+        refreshWorlds: async () => {
+            if (!deps.worlds || !worldSwitch) return;
+            await deps.worlds.list(true);
+            await deps.worlds.probeAll(worldSwitch.detail);
+        },
         captureShell: () => shellView.webContents.capturePage(),
         captureGame: () => gameView.webContents.capturePage()
     };
