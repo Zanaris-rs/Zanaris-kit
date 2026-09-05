@@ -28,8 +28,9 @@ export interface ServerWindow extends ServerWindowHandle {
     state(): ShellState;
     /** Resolves when the game page finished loading, or failed over to the offline page. */
     whenGameLoaded(): Promise<'loaded' | 'failed'>;
-    /** Page content of each view, for capture mode. A window's own webContents holds nothing. */
-    captureViews(): Promise<{ shell: NativeImage; game: NativeImage }>;
+    /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
+    captureShell(): Promise<NativeImage>;
+    captureGame(): Promise<NativeImage>;
 }
 
 /**
@@ -187,9 +188,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (isMainFrame && code !== -3) resolve('failed');
         });
     });
+    let failedOver = false;
     gameView.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
         // -3 is ERR_ABORTED: a load superseded by another, not a failure.
         if (!isMainFrame || code === -3) return;
+        failedOver = true;
         deps.log(`${tag} could not load ${url}: ${description} (${code})`);
         void gameView.webContents.loadFile(OFFLINE_PAGE, {
             query: { url: server.url, name: server.name, reason: description }
@@ -197,6 +200,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     });
     gameView.webContents.on('did-finish-load', () => {
         const url = gameView.webContents.getURL();
+        // Chromium commits its own error page under the failed URL before the offline page replaces it.
+        if (failedOver) return;
         if (url.startsWith(origin)) deps.log(`${tag} loaded ${url}`);
     });
 
@@ -219,9 +224,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         },
         state,
         whenGameLoaded: () => gameLoaded,
-        captureViews: async () => ({
-            shell: await shellView.webContents.capturePage(),
-            game: await gameView.webContents.capturePage()
-        })
+        captureShell: () => shellView.webContents.capturePage(),
+        captureGame: () => gameView.webContents.capturePage()
     };
 }
