@@ -1,0 +1,11 @@
+{
+    "engine": {
+        "repo": "https://github.com/Zanaris-rs/Engine-TS.git",
+        "commit": "c5c45f88c048f1ca50610de895dff87e0ca7b9cd"
+    },
+    "content": {
+        "repo": "https://github.com/Zanaris-rs/Content.git",
+        "commit": "2b62ae68dfed02b441bae47987a01d6bcbaeb358"
+    },
+    "revision": 274
+}
