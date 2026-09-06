@@ -15,6 +15,13 @@ files:
 extraResources:
   - from: engine-dist
     to: engine
+  # electron-builder's file filter drops the top-level node_modules of a copy
+  # root unconditionally (app-builder-lib/out/util/filter.js: `if (relative ===
+  # "node_modules") return false`), so the entry above ships the engine without
+  # a single dependency. The dependencies are copied from their own root, where
+  # they are no longer the root's node_modules and the guard does not fire.
+  - from: engine-dist/node_modules
+    to: engine/node_modules
 asar: true
 # No native dependencies anywhere: nothing to rebuild.
 npmRebuild: false

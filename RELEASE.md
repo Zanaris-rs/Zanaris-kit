@@ -20,6 +20,10 @@ publishing. Download the three artifacts from the run.
 
 ## 2. Try each artifact on a clean profile
 
+On each artifact, before anything else, confirm the engine came across whole:
+under the app's `resources/engine` there must be a `node_modules` directory
+beside `src` (on macOS, inside the bundle at `Zanaris Kit.app/Contents/Resources/engine`).
+
 - macOS, on this Mac: mount the DMG, drag the app to Applications. It has no
   Developer ID: the first launch is refused, then System Settings > Privacy &
   Security > Open Anyway opens it. Open a server window; it should load.
