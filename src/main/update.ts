@@ -31,11 +31,16 @@ export function compareVersions(a: string, b: string): number | null {
  * Reads the body of GitHub's releases/latest endpoint. Null for anything that
  * is not a release with a parseable tag: an error body, a rate-limit message,
  * a tag that is not a version. Never throws; the caller swallows everything.
+ *
+ * The url ends up at the OS handler, so its scheme is checked here rather than
+ * trusted: a release page is always https, and remote data must not choose a
+ * scheme of its own — file:// would open a local path.
  */
 export function checkLatest(body: unknown, current: string): LatestRelease | null {
     if (typeof body !== 'object' || body === null) return null;
     const { tag_name: tag, html_url: url } = body as Record<string, unknown>;
     if (typeof tag !== 'string' || typeof url !== 'string') return null;
+    if (!url.startsWith('https://')) return null;
     const order = compareVersions(current, tag);
     if (order === null) return null;
     return { latest: tag, url, newer: order < 0 };

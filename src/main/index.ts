@@ -100,7 +100,9 @@ async function checkForUpdate(): Promise<void> {
         installAppMenu();
         log(`[main] update available: ${found.latest} (this is ${app.getVersion()})`);
     } catch (err) {
-        log(`[main] update check skipped: ${(err as Error).message}`);
+        // String(err), not .message: a rejection need not be an Error, and a
+        // check that swallows everything must not throw out of its own catch.
+        log(`[main] update check failed: ${String(err)}`);
     }
 }
 
@@ -256,7 +258,14 @@ const actions: MenuActions = {
     },
     togglePanel: () => focusedServerWindow()?.togglePanel(),
     setWarnOnSwitch,
+    // Only https reaches the system browser, as in serverWindow's window-open
+    // handler: this opens whatever the menu carries, and the update item's url
+    // came off the network.
     openExternal: url => {
+        if (!/^https:\/\//.test(url)) {
+            log(`[main] refused to open ${url}: not https`);
+            return;
+        }
         void shell.openExternal(url);
     }
 };

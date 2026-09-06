@@ -31,3 +31,11 @@ test('checkLatest returns null for anything that is not a release', () => {
     assert.equal(checkLatest({ tag_name: 'draft', html_url: 'https://example.invalid' }, '0.2.0'), null);
     assert.equal(checkLatest({ message: 'API rate limit exceeded' }, '0.2.0'), null);
 });
+
+test('checkLatest refuses a release page that is not https', () => {
+    // The url goes to the OS handler. Remote data never reaches it with a
+    // scheme of its own choosing: file:// would open a local path, and a
+    // release page is always https.
+    assert.equal(checkLatest({ tag_name: 'v0.3.0', html_url: 'file:///etc/passwd' }, '0.2.0'), null);
+    assert.equal(checkLatest({ tag_name: 'v0.3.0', html_url: 'http://github.com/x/y/releases/tag/v0.3.0' }, '0.2.0'), null);
+});
