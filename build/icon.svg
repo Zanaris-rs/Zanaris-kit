@@ -7,6 +7,7 @@
         <feFuncA type="linear" slope="0.34"/>
       </feComponentTransfer>
       <feBlend in="SourceGraphic" in2="fineSoft" mode="overlay"/>
+      <feComposite operator="in" in2="SourceGraphic"/>
     </filter>
   </defs>
   <!-- the stone slab: base colour, then its grain -->
