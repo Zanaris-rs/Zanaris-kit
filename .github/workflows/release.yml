@@ -1,8 +1,9 @@
 name: Release
 
-# A tag v<version> builds every platform and drafts a GitHub Release holding
-# the artifacts; the owner publishes it. A manual dispatch is the dry run:
-# the same build, the artifacts on the workflow run, no release.
+# A push of tag v<version> builds every platform and drafts a GitHub Release
+# holding the artifacts; the owner publishes it. A manual dispatch is always
+# the dry run, whatever ref it runs on: the same build, the artifacts on the
+# workflow run, no release.
 on:
   push:
     tags: ['v*']
@@ -35,6 +36,8 @@ jobs:
     needs: engine
     strategy:
       fail-fast: false
+      # One draft release, which electron-builder creates when it finds none: the legs must not race.
+      max-parallel: 1
       matrix:
         os: [macos-14, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
@@ -50,7 +53,7 @@ jobs:
           name: engine-dist
           path: engine-dist
       - name: Tag matches package.json
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push'
         shell: bash
         run: |
           version=$(node -p "require('./package.json').version")
@@ -60,15 +63,15 @@ jobs:
           fi
       - run: npm run build
       - name: Package and draft the release
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push'
         run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Package (dry run)
-        if: github.ref_type != 'tag'
+        if: github.event_name != 'push'
         run: npx electron-builder --publish never
       - uses: actions/upload-artifact@v4
-        if: github.ref_type != 'tag'
+        if: github.event_name != 'push'
         with:
           name: zanaris-kit-${{ matrix.os }}
           path: |
