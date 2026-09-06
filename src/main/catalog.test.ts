@@ -234,7 +234,7 @@ test('list returns deep copies of the worlds block', () => {
 
 const dirs: string[] = [];
 const tempFile = (): string => {
-    const dir = mkdtempSync(join(tmpdir(), 'swiftkit-catalog-'));
+    const dir = mkdtempSync(join(tmpdir(), 'zanaris-kit-catalog-'));
     dirs.push(dir);
     return join(dir, 'servers.json');
 };

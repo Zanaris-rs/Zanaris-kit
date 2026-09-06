@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC, type ShellState, type SwiftkitApi } from '../shared/ipc';
+import { IPC, type ShellState, type ZanarisApi } from '../shared/ipc';
 
 /**
  * The only bridge between the shell and main. Deliberately narrow: no raw
@@ -8,7 +8,7 @@ import { IPC, type ShellState, type SwiftkitApi } from '../shared/ipc';
  *
  * Game views get no preload at all. This file is never loaded into them.
  */
-const api: SwiftkitApi = {
+const api: ZanarisApi = {
     shell: {
         get: () => ipcRenderer.invoke(IPC.shellGet),
         togglePanel: () => ipcRenderer.invoke(IPC.shellTogglePanel),
@@ -28,4 +28,4 @@ const api: SwiftkitApi = {
     }
 };
 
-contextBridge.exposeInMainWorld('swiftkit', api);
+contextBridge.exposeInMainWorld('zanaris', api);

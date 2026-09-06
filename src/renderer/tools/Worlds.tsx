@@ -33,7 +33,7 @@ function DetailSwitch({ detail }: { detail: Detail }): ReactNode {
         <button
             type="button"
             aria-pressed={detail === value}
-            onClick={() => detail !== value && void window.swiftkit.worlds.setDetail(value)}
+            onClick={() => detail !== value && void window.zanaris.worlds.setDetail(value)}
             style={detail === value ? undefined : MUTED}
             className={`btn flex-1${detail === value ? ' btn-red' : ''}`}
         >
@@ -54,7 +54,7 @@ function Row({ world, current }: { world: WorldRow; current: boolean }): ReactNo
             <button
                 type="button"
                 aria-current={current ? 'true' : undefined}
-                onClick={() => !current && void window.swiftkit.worlds.switch(world.id)}
+                onClick={() => !current && void window.zanaris.worlds.switch(world.id)}
                 className={`flex w-full items-center gap-2.5 px-2 py-[5px] text-left ${current ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}
             >
                 <span className={`w-[32px] shrink-0 ${current ? 'text-gold' : 'text-dim'}`}>W{world.id}</span>
@@ -101,7 +101,7 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
                 {view.worlds.length === 0 && !loading && (
                     <li className="px-2 py-2 text-[13px] text-dim">
                         No worlds listed.{' '}
-                        <button type="button" onClick={() => void window.swiftkit.worlds.refresh()} className="link">
+                        <button type="button" onClick={() => void window.zanaris.worlds.refresh()} className="link">
                             Try again
                         </button>
                     </li>
@@ -112,7 +112,7 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
             <div className="flex items-center gap-2 px-2.5 pt-2 pb-1.5">
                 <button
                     type="button"
-                    onClick={() => void window.swiftkit.worlds.refresh()}
+                    onClick={() => void window.zanaris.worlds.refresh()}
                     disabled={loading}
                     style={loading ? SPENT : undefined}
                     className="btn shrink-0"

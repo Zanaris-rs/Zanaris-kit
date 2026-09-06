@@ -7,7 +7,7 @@ import { AppState } from './appState.ts';
 
 const dirs: string[] = [];
 const tempFile = (): string => {
-    const dir = mkdtempSync(join(tmpdir(), 'swiftkit-state-'));
+    const dir = mkdtempSync(join(tmpdir(), 'zanaris-kit-state-'));
     dirs.push(dir);
     return join(dir, 'state.json');
 };

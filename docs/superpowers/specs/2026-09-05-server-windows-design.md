@@ -1,4 +1,4 @@
-# SwiftKit: server windows, a page strip, and shared tools
+# Zanaris Kit: server windows, a page strip, and shared tools
 
 **Status:** proposed, 2026-09-05. Supersedes the launcher-only layout on the
 `multi-server` branch.
@@ -228,7 +228,7 @@ minutes plus any from the data pack. A timer that fires posts a system
 notification and badges the rail icon in every window until acknowledged.
 
 **Screenshot** (instance). `capturePage()` of the window's game view, written
-to `<Pictures>/SwiftKit/<server-id>/<ISO timestamp>.png`, confirmed by a toast
+to `<Pictures>/Zanaris Kit/<server-id>/<ISO timestamp>.png`, confirmed by a toast
 in the shell. Rail icon and shortcut. This is the same call capture mode
 already uses.
 
@@ -315,7 +315,7 @@ Slot numbers are reused once a window closes.
 | Timers | `<userData>/timers.json` | on every edit |
 | Settings | `<userData>/settings.json` | on every edit |
 | Last world and detail per server | `<userData>/state.json` | on every switch |
-| Screenshots | `<Pictures>/SwiftKit/<server-id>/` | on capture |
+| Screenshots | `<Pictures>/Zanaris Kit/<server-id>/` | on capture |
 | Game and page storage | Chromium partitions | by Chromium |
 
 Open page tabs are not restored across launches in this design; that is a
@@ -386,7 +386,7 @@ view with an injected preload, a chat view loading LostHQ's hosted web IRC
 client, and one view per reference-page tab. Tabs reorder, detach to their
 own window, and are restored at launch.
 
-| LostKit feature | How it does it | SwiftKit |
+| LostKit feature | How it does it | Zanaris Kit |
 |---|---|---|
 | World switcher | LostHQ world API, free/members filter, HD checkbox, per-world latency by HEAD fetch, last world remembered, window title "W2 HD \| 43ms" | Worlds tool, per server through adapters; same API for Lost City; latency by TCP connect from main; last world and detail per server; tab label and title carry the world |
 | Game-view guard | Blocks all page-initiated navigation and the context menu | Adopted as written |

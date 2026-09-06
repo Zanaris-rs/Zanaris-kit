@@ -30,7 +30,7 @@
 |---|---|
 | `src/shared/layout.ts` | Geometry constants and the `LayoutMode` / `TabKind` types, used by main and the shell |
 | `src/shared/catalog.ts` | `ServerDef`, `WikiDef`, `NewServerInput` types |
-| `src/shared/ipc.ts` | Channel names, `ShellState`, `CatalogState`, the `SwiftkitApi` contract |
+| `src/shared/ipc.ts` | Channel names, `ShellState`, `CatalogState`, the `ZanarisApi` contract |
 | `src/main/layout.ts` | Pure: window rect and view rects from panel state, tab kind and screen |
 | `src/main/catalog.ts` | Pure validation and `createServer`; `Catalog` class with file load / save / recover |
 | `src/main/slots.ts` | Pure: per-server slot numbers, partition names, window titles |
@@ -41,7 +41,7 @@
 | `src/main/launcher.ts` | Electron: the launcher window |
 | `src/main/menu.ts` | Electron: application menu and shortcuts |
 | `src/main/index.ts` | Electron: wiring, IPC handlers, capture mode |
-| `src/preload/index.ts` | The `window.swiftkit` bridge |
+| `src/preload/index.ts` | The `window.zanaris` bridge |
 | `src/renderer/main.tsx` | Picks `Launcher` or `Shell` from `?view=` |
 | `src/renderer/Launcher.tsx` | Catalog list, open buttons, add form |
 | `src/renderer/Shell.tsx` | Tab strip, rail, panel placeholder |
@@ -486,7 +486,7 @@ test('isServerDef rejects junk', () => {
 
 const dirs: string[] = [];
 const tempFile = (): string => {
-    const dir = mkdtempSync(join(tmpdir(), 'swiftkit-catalog-'));
+    const dir = mkdtempSync(join(tmpdir(), 'zanaris-kit-catalog-'));
     dirs.push(dir);
     return join(dir, 'servers.json');
 };
@@ -1384,7 +1384,7 @@ git commit -m "feat: tab model with a pinned game tab"
 
 **Interfaces:**
 - Consumes: `ServerDef`, `NewServerInput` (Task 2); `LayoutMode`, `TabKind` (Task 1); `Rects` (Task 1).
-- Produces: `IPC` channel names, `ServerInfo`, `CatalogState`, `TabInfo`, `ShellState`, `Result`, `SwiftkitApi`; `window.swiftkit.launcher.*` and `window.swiftkit.shell.*`.
+- Produces: `IPC` channel names, `ServerInfo`, `CatalogState`, `TabInfo`, `ShellState`, `Result`, `ZanarisApi`; `window.zanaris.launcher.*` and `window.zanaris.shell.*`.
 
 No unit test: the check is `npm run typecheck`.
 
@@ -1397,15 +1397,15 @@ import type { NewServerInput, ServerDef } from './catalog';
 import type { LayoutMode, TabKind } from './layout';
 
 export const IPC = {
-    catalogState: 'swiftkit:catalog-state',
-    catalogGet: 'swiftkit:catalog-get',
-    catalogAdd: 'swiftkit:catalog-add',
-    catalogRemove: 'swiftkit:catalog-remove',
-    windowOpen: 'swiftkit:window-open',
-    launcherShow: 'swiftkit:launcher-show',
-    shellState: 'swiftkit:shell-state',
-    shellGet: 'swiftkit:shell-get',
-    shellTogglePanel: 'swiftkit:shell-toggle-panel'
+    catalogState: 'zanaris:catalog-state',
+    catalogGet: 'zanaris:catalog-get',
+    catalogAdd: 'zanaris:catalog-add',
+    catalogRemove: 'zanaris:catalog-remove',
+    windowOpen: 'zanaris:window-open',
+    launcherShow: 'zanaris:launcher-show',
+    shellState: 'zanaris:shell-state',
+    shellGet: 'zanaris:shell-get',
+    shellTogglePanel: 'zanaris:shell-toggle-panel'
 } as const;
 
 export interface Rect {
@@ -1454,7 +1454,7 @@ export interface ShellState {
 
 export type Result = { ok: true } | { ok: false; error: string };
 
-export interface SwiftkitApi {
+export interface ZanarisApi {
     launcher: {
         get(): Promise<CatalogState>;
         /** Adds the server and opens a window for it. */
@@ -1481,7 +1481,7 @@ export interface SwiftkitApi {
 ```ts
 // src/preload/index.ts
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC, type CatalogState, type ShellState, type SwiftkitApi } from '../shared/ipc';
+import { IPC, type CatalogState, type ShellState, type ZanarisApi } from '../shared/ipc';
 
 /**
  * The only bridge between a renderer and main. Deliberately narrow: no raw
@@ -1498,7 +1498,7 @@ function subscribe<T>(channel: string, cb: (value: T) => void): () => void {
     };
 }
 
-const api: SwiftkitApi = {
+const api: ZanarisApi = {
     launcher: {
         get: () => ipcRenderer.invoke(IPC.catalogGet),
         add: input => ipcRenderer.invoke(IPC.catalogAdd, input),
@@ -1514,7 +1514,7 @@ const api: SwiftkitApi = {
     }
 };
 
-contextBridge.exposeInMainWorld('swiftkit', api);
+contextBridge.exposeInMainWorld('zanaris', api);
 ```
 
 - [ ] **Step 3: Route the renderer and stub both views**
@@ -1879,10 +1879,10 @@ export default function Shell(): ReactNode {
 
     useEffect(() => {
         let alive = true;
-        void window.swiftkit.shell.get().then(s => {
+        void window.zanaris.shell.get().then(s => {
             if (alive && s) setState(s);
         });
-        const unsubscribe = window.swiftkit.shell.onState(setState);
+        const unsubscribe = window.zanaris.shell.onState(setState);
         return () => {
             alive = false;
             unsubscribe();
@@ -1902,7 +1902,7 @@ export default function Shell(): ReactNode {
                 ))}
                 <button
                     type="button"
-                    onClick={() => void window.swiftkit.shell.togglePanel()}
+                    onClick={() => void window.zanaris.shell.togglePanel()}
                     aria-label={state.panelOpen ? 'Close panel' : 'Open panel'}
                     aria-pressed={state.panelOpen}
                     className="ml-auto flex h-[26px] w-[30px] items-center justify-center border border-transparent text-dim hover:border-line hover:text-bone"
@@ -1969,7 +1969,7 @@ git commit -m "feat: server window with a shell view over the game view"
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: a runnable app. `SWIFTKIT_CAPTURE=<dir>` opens every catalog server, captures each window's two views, opens the panel on the first, opens a second instance of the first server, and exits.
+- Produces: a runnable app. `ZANARIS_CAPTURE=<dir>` opens every catalog server, captures each window's two views, opens the panel on the first, opens a second instance of the first server, and exits.
 
 - [ ] **Step 1: The launcher window**
 
@@ -1985,7 +1985,7 @@ export function createLauncherWindow(onClosed: () => void): BrowserWindow {
         minWidth: 400,
         minHeight: 440,
         useContentSize: true,
-        title: 'SwiftKit',
+        title: 'Zanaris Kit',
         backgroundColor: '#17120d',
         show: false,
         webPreferences: {
@@ -2059,7 +2059,7 @@ import { createLauncherWindow } from './launcher';
 import { installMenu } from './menu';
 
 /** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
-const CAPTURE_DIR = process.env.SWIFTKIT_CAPTURE;
+const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
 
 const log = (msg: string): void => console.log(msg);
 
@@ -2211,7 +2211,7 @@ const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(re
  */
 async function captureAndExit(dir: string): Promise<void> {
     mkdirSync(dir, { recursive: true });
-    const settleMs = Number(process.env.SWIFTKIT_CAPTURE_WAIT) || 15_000;
+    const settleMs = Number(process.env.ZANARIS_CAPTURE_WAIT) || 15_000;
 
     const save = (name: string, image: NativeImage): void => {
         writeFileSync(join(dir, `${name}.png`), image.toPNG());
@@ -2253,7 +2253,7 @@ app.whenReady().then(async () => {
     catalog.load();
 
     log('');
-    log('  SwiftKit');
+    log('  Zanaris Kit');
     log(`  catalog : ${catalog.file}${catalog.recovered ? ' (recovered — the old file was kept beside it)' : ''}`);
     for (const server of catalog.list()) {
         log(`  ${server.id.padEnd(16)} rev ${String(server.revision ?? '?').padEnd(4)} ${server.url}`);
@@ -2340,10 +2340,10 @@ export default function Launcher(): ReactNode {
 
     useEffect(() => {
         let alive = true;
-        void window.swiftkit.launcher.get().then(s => {
+        void window.zanaris.launcher.get().then(s => {
             if (alive) setState(s);
         });
-        const unsubscribe = window.swiftkit.launcher.onState(setState);
+        const unsubscribe = window.zanaris.launcher.onState(setState);
         return () => {
             alive = false;
             unsubscribe();
@@ -2360,7 +2360,7 @@ export default function Launcher(): ReactNode {
         event.preventDefault();
         const rev = revision.trim();
         const ok = await run(
-            window.swiftkit.launcher.add({
+            window.zanaris.launcher.add({
                 name,
                 url,
                 revision: rev === '' ? null : Number(rev),
@@ -2380,7 +2380,7 @@ export default function Launcher(): ReactNode {
     return (
         <div className="flex h-full flex-col">
             <header className="border-b border-line px-4 pt-4 pb-3">
-                <h1 className="text-[15px] font-medium text-bone">SwiftKit</h1>
+                <h1 className="text-[15px] font-medium text-bone">Zanaris Kit</h1>
                 <p className="mt-1 text-[12px] text-dim">Open a server in a new window. Each window knows its server and keeps playing while you use the others.</p>
                 {state?.recovered && (
                     <p className="mt-2 border border-brass/50 px-2 py-1 text-[11px] text-brass">
@@ -2394,8 +2394,8 @@ export default function Launcher(): ReactNode {
                     <ServerRow
                         key={server.id}
                         server={server}
-                        onOpen={() => void run(window.swiftkit.launcher.open(server.id))}
-                        onRemove={() => void run(window.swiftkit.launcher.remove(server.id))}
+                        onOpen={() => void run(window.zanaris.launcher.open(server.id))}
+                        onRemove={() => void run(window.zanaris.launcher.remove(server.id))}
                     />
                 ))}
             </ul>
@@ -2433,7 +2433,7 @@ Expected: no type errors; 51 tests pass; `out/main/index.js`, `out/preload/index
 - [ ] **Step 6: Run capture mode and inspect**
 
 ```bash
-SWIFTKIT_CAPTURE=/tmp/swiftkit-captures npx electron .
+ZANARIS_CAPTURE=/tmp/zanaris-kit-captures npx electron .
 ```
 Expected log lines: one `[main] opened … (persist:server:…)` per catalog entry; `[capture] <title>: loaded` for the three remote servers and `failed` for Local; `[capture] panel open on Zanaris — World 1: mode widen`; `[main] opened Zanaris — World 1 (2) … (persist:server:zanaris-w1:2)`. Open the PNGs: every `*-shell.png` shows the strip with the game tab and revision, `zanaris-w1-panel-shell.png` shows the panel, every remote `*-game.png` shows a title screen, `local-game.png` shows the offline page.
 

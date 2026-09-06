@@ -1,4 +1,4 @@
-# SwiftKit for 04scape
+# Zanaris Kit for 04scape
 
 An Electron client that opens several 04scape servers at once, one window per
 server, where every window knows which server it is running and can hop
@@ -32,7 +32,7 @@ window; flipping detail reloads the current world. The world and detail you
 chose are remembered per server; the next window for that server opens there.
 
 Either switch asks first. The dialog names where you are going and says the
-switch happens whether or not you are logged in: SwiftKit loads the page
+switch happens whether or not you are logged in: Zanaris Kit loads the page
 straight away, and if you are in game that logs you out. Switch goes, Cancel
 changes nothing. The dialog carries a "don't ask again" checkbox, and ticking
 it is reversible from View > Warn Before Switching Worlds, which shows the
@@ -102,8 +102,9 @@ a second, which would stall any game you were not looking at.
 
 ## The catalog
 
-`<userData>/servers.json` (on macOS, `~/Library/Application Support/swiftkit/`),
+`<userData>/servers.json` (on macOS, `~/Library/Application Support/zanaris-kit/`),
 seeded on first run, one entry per server:
+
 
 | id | revision | worlds from | detail switch | wiki |
 |---|---|---|---|---|
@@ -118,6 +119,14 @@ Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 guides, the clue coordinator, the world map, markets), an optional `hiscores`
 API, the `hosts` page tabs may visit, and a wiki URL that never claims which
 revision it describes, since losthq moves on its own schedule.
+
+The app was called SwiftKit until the rename, and `userData` follows the
+package name, so that directory used to be `.../Application Support/swiftkit/`.
+The first launch after the rename carries the old profile over — `servers.json`,
+`state.json`, and the game logins and caches under `Partitions/` — taking each
+of the three only if the new directory has not got it already, since Chromium
+builds that directory during startup before any of our code runs. See the note
+at the top of `src/main/index.ts`.
 
 Until the settings panel arrives, the list is edited as a file: File > Edit
 Server List… opens it in your editor, and the app re-reads it when it regains
@@ -164,7 +173,7 @@ npm run typecheck
 npm run capture      # open every server, screenshot every view, hop a world, exit
 ```
 
-Capture mode (`SWIFTKIT_CAPTURE=<dir>`, settle time `SWIFTKIT_CAPTURE_WAIT` in
+Capture mode (`ZANARIS_CAPTURE=<dir>`, settle time `ZANARIS_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,
 because a window's own webContents holds nothing when its content lives in
 child views. It opens the panel on a loaded window, opens the Worlds tool,
@@ -242,12 +251,13 @@ src/main/worlds/service.ts  per-server world list and latency over injected IO  
 src/main/worlds/switch.ts   pure: one window's world, detail, url and labels        (tested)
 src/main/worlds/probe.ts    TCP connect latency, node-only                          (tested)
 src/main/worlds/warning.ts  pure: what the switch confirmation says                 (tested)
+src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
 src/main/menu.ts            application menu: new windows, the server list, the panel,
                             the switch warning
 src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
-src/preload/index.ts        the window.swiftkit bridge
+src/preload/index.ts        the window.zanaris bridge
 src/renderer/Shell.tsx      strip, rail, panel
 src/renderer/tools/Worlds.tsx
 static/offline.html         shown when a server can't be reached

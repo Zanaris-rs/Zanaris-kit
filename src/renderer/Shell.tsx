@@ -58,10 +58,10 @@ export default function Shell(): ReactNode {
 
     useEffect(() => {
         let alive = true;
-        void window.swiftkit.shell.get().then(s => {
+        void window.zanaris.shell.get().then(s => {
             if (alive && s) setState(s);
         });
-        const unsubscribe = window.swiftkit.shell.onState(setState);
+        const unsubscribe = window.zanaris.shell.onState(setState);
         return () => {
             alive = false;
             unsubscribe();
@@ -84,7 +84,7 @@ export default function Shell(): ReactNode {
                     ))}
                     <button
                         type="button"
-                        onClick={() => void window.swiftkit.shell.togglePanel()}
+                        onClick={() => void window.zanaris.shell.togglePanel()}
                         aria-label={state.panelOpen ? 'Close panel' : 'Open panel'}
                         aria-pressed={state.panelOpen}
                         className="tile ml-auto flex h-[26px] w-[32px] shrink-0 items-center justify-center text-dim"
@@ -123,7 +123,7 @@ export default function Shell(): ReactNode {
                         title={tool.label}
                         aria-label={tool.label}
                         aria-pressed={active === tool.id}
-                        onClick={() => void window.swiftkit.shell.selectTool(active === tool.id ? null : tool.id)}
+                        onClick={() => void window.zanaris.shell.selectTool(active === tool.id ? null : tool.id)}
                         className={`tab${active === tool.id ? ' tab-on' : ''}`}
                     >
                         {tool.icon}

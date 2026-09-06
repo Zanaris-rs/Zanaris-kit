@@ -14,11 +14,11 @@ export function switchWarning(intent: SwitchIntent): { message: string; detail: 
     if (intent.kind === 'world') {
         return {
             message: `Switch to World ${intent.to}?`,
-            detail: `SwiftKit loads World ${intent.to} straight away, whether or not you are logged in. If you are in game on World ${intent.from}, that logs you out.`
+            detail: `Zanaris Kit loads World ${intent.to} straight away, whether or not you are logged in. If you are in game on World ${intent.from}, that logs you out.`
         };
     }
     return {
         message: `Switch to ${intent.to} detail?`,
-        detail: `SwiftKit reloads World ${intent.world} at ${intent.to} detail straight away, whether or not you are logged in. If you are in game, that logs you out.`
+        detail: `Zanaris Kit reloads World ${intent.world} at ${intent.to} detail straight away, whether or not you are logged in. If you are in game, that logs you out.`
     };
 }

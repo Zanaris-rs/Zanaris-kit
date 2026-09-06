@@ -4,13 +4,13 @@ import type { LayoutMode, TabKind } from './layout';
 import type { Detail, WorldsView } from './worlds';
 
 export const IPC = {
-    shellState: 'swiftkit:shell-state',
-    shellGet: 'swiftkit:shell-get',
-    shellTogglePanel: 'swiftkit:shell-toggle-panel',
-    shellSelectTool: 'swiftkit:shell-select-tool',
-    worldsRefresh: 'swiftkit:worlds-refresh',
-    worldsSwitch: 'swiftkit:worlds-switch',
-    worldsSetDetail: 'swiftkit:worlds-set-detail'
+    shellState: 'zanaris:shell-state',
+    shellGet: 'zanaris:shell-get',
+    shellTogglePanel: 'zanaris:shell-toggle-panel',
+    shellSelectTool: 'zanaris:shell-select-tool',
+    worldsRefresh: 'zanaris:worlds-refresh',
+    worldsSwitch: 'zanaris:worlds-switch',
+    worldsSetDetail: 'zanaris:worlds-set-detail'
 } as const;
 
 /** The tools a window can offer. One so far; a registry is worth it when the second lands. */
@@ -56,7 +56,7 @@ export interface ShellState {
     worlds: WorldsView | null;
 }
 
-export interface SwiftkitApi {
+export interface ZanarisApi {
     shell: {
         /** Null when the calling view is not a server window's shell. */
         get(): Promise<ShellState | null>;

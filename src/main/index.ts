@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, net, shell, type NativeImage, type WebContents } from 'electron';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
 import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
 import { Catalog } from './catalog';
@@ -11,16 +11,60 @@ import { installMenu, type MenuActions } from './menu';
 import { WorldsService } from './worlds/service';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
-
-/** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
-const CAPTURE_DIR = process.env.SWIFTKIT_CAPTURE;
+import { migrationPlan } from './migrate';
 
 const log = (msg: string): void => console.log(msg);
 
+// ── the userData move, from the old name to this one ──────────────────────
+//
+// Electron derives app.getPath('userData') from the package name, so calling
+// the app zanaris-kit instead of swiftkit points it at a directory with
+// nothing of the user's in it. Everything they have is in the old one:
+// servers.json, the worlds and the warning preference in state.json, and —
+// under Partitions/ — the game session cookies that keep them logged in and
+// the client each server downloaded. Left alone they would find a fresh app:
+// empty server list, logged out of every world, every asset re-fetched.
+//
+// This moves entry by entry rather than renaming the whole directory across,
+// because the new directory cannot be assumed absent. Electron and Chromium
+// build it during their own startup, before this module runs: a launch on the
+// renamed package left a zanaris-kit holding a defaults servers.json and five
+// partition entries. There is no moment at which the new directory is
+// reliably missing, so a whole-directory rename would simply never fire — and
+// renameSync onto a directory with anything in it fails anyway.
+//
+// Per entry holds whatever Chromium has already scaffolded, and degrades the
+// way you would want: a user who has built up a new profile keeps it, while
+// anything they have not got yet comes across. renameSync moves Partitions
+// exactly as it moves the two files, and each entry gets its own try/catch so
+// one failure does not abandon the rest. A partly fresh profile is
+// survivable; refusing to launch over it would not be.
+//
+// It still runs at module load, above the constants below, because those name
+// servers.json and state.json — the entries have to be in place before
+// anything reads them.
+const userData = app.getPath('userData');
+const legacyUserData = join(dirname(userData), 'swiftkit');
+const migrated: string[] = [];
+for (const entry of migrationPlan(legacyUserData, userData, existsSync)) {
+    try {
+        // Normally Chromium has already made it; recursive, so a no-op when it has.
+        mkdirSync(userData, { recursive: true });
+        renameSync(join(legacyUserData, entry), join(userData, entry));
+        migrated.push(entry);
+    } catch (err) {
+        log(`[main] could not move ${entry} from ${legacyUserData}: ${(err as Error).message}`);
+    }
+}
+if (migrated.length > 0) log(`[main] moved ${migrated.join(', ')} from ${legacyUserData} into ${userData}`);
+
+/** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
+const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
+
 let quitting = false;
-const catalog = new Catalog(join(app.getPath('userData'), 'servers.json'));
+const catalog = new Catalog(join(userData, 'servers.json'));
 /** Capture mode keeps its state beside its screenshots, so a test switch never changes what the next real launch opens. */
-const appState = new AppState(join(CAPTURE_DIR ?? app.getPath('userData'), 'state.json'));
+const appState = new AppState(join(CAPTURE_DIR ?? userData, 'state.json'));
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
 
@@ -234,7 +278,7 @@ const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(re
  */
 async function captureAndExit(dir: string): Promise<void> {
     mkdirSync(dir, { recursive: true });
-    const settleMs = Number(process.env.SWIFTKIT_CAPTURE_WAIT) || 15_000;
+    const settleMs = Number(process.env.ZANARIS_CAPTURE_WAIT) || 15_000;
     const loadTimeoutMs = 60_000;
 
     const save = async (name: string, capture: () => Promise<NativeImage>): Promise<void> => {
@@ -339,7 +383,7 @@ app.whenReady().then(async () => {
     loadCatalog();
 
     log('');
-    log('  SwiftKit');
+    log('  Zanaris Kit');
     log(`  catalog : ${catalog.file}`);
     for (const server of catalog.list()) {
         log(`  ${server.id.padEnd(16)} rev ${String(server.revision ?? '?').padEnd(4)} ${server.url}`);
