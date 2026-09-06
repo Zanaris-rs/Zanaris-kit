@@ -215,9 +215,11 @@ async function captureAndExit(dir: string): Promise<void> {
     const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
         // Front the window first: macOS refuses to capture an occluded surface,
         // and a page that is not painting would hand back a stale frame anyway.
+        // The wait is generous because an occluded shell can be several state
+        // pushes behind — a shorter one caught the world list mid-load.
         sw.window.moveTop();
         sw.focus();
-        await wait(400);
+        await wait(1_400);
         await save(`${name}-shell`, () => sw.captureShell());
         await save(`${name}-game`, () => sw.captureGame());
     };

@@ -6,3 +6,6 @@ out/
 
 # npm run capture
 captures/
+
+# the seeded design canvas: 2.5MB of editor payload, rebuilt by design/build.mjs + seed-canvas
+design/swiftkit-interface.html

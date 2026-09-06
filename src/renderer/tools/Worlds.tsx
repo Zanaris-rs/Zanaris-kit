@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Detail, WorldRow, WorldsView } from '../../shared/worlds';
 
 function age(fetchedAt: number | null, now: number): string {
@@ -20,13 +20,22 @@ function latencyClass(ms: number | null): string {
     return 'text-dim';
 }
 
+/*
+ * .btn is hand-written CSS carrying the gold label, so a button that wants a
+ * quieter colour overrides it inline. A utility class of equal specificity
+ * would be settled by stylesheet order rather than by intent.
+ */
+const MUTED: CSSProperties = { color: 'var(--color-dim)' };
+const SPENT: CSSProperties = { color: 'var(--color-faint)' };
+
 function DetailSwitch({ detail }: { detail: Detail }): ReactNode {
     const option = (value: Detail, label: string): ReactNode => (
         <button
             type="button"
             aria-pressed={detail === value}
             onClick={() => detail !== value && void window.swiftkit.worlds.setDetail(value)}
-            className={`slab slab-button font-pixel flex-1 py-0.5 text-[14px] ${detail === value ? 'slab-on text-bone' : 'text-dim'}`}
+            style={detail === value ? undefined : MUTED}
+            className={`btn flex-1${detail === value ? ' btn-red' : ''}`}
         >
             {label}
         </button>
@@ -46,9 +55,9 @@ function Row({ world, current }: { world: WorldRow; current: boolean }): ReactNo
                 type="button"
                 aria-current={current ? 'true' : undefined}
                 onClick={() => !current && void window.swiftkit.worlds.switch(world.id)}
-                className={`flex w-full items-center gap-2.5 px-2 py-1.5 text-left ${current ? 'bg-row' : 'hover:bg-row/50'}`}
+                className={`flex w-full items-center gap-2.5 px-2 py-[5px] text-left ${current ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}
             >
-                <span className={`w-[34px] shrink-0 ${current ? 'text-gold' : 'text-dim'}`}>W{world.id}</span>
+                <span className={`w-[32px] shrink-0 ${current ? 'text-gold' : 'text-dim'}`}>W{world.id}</span>
                 <span className="min-w-0 flex-1">
                     <span className="block truncate">{world.region ?? world.name}</span>
                     <span className="block text-[12px] text-dim">
@@ -76,33 +85,16 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
     const loading = view.status === 'loading';
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between gap-2 px-3 pt-2 pb-1.5">
-                <h2 className="font-pixel text-[17px] text-gold">Worlds</h2>
-                <button
-                    type="button"
-                    onClick={() => void window.swiftkit.worlds.refresh()}
-                    disabled={loading}
-                    className="link font-pixel text-[14px] disabled:text-faint"
-                >
-                    {loading ? 'loading' : 'refresh'}
-                </button>
-            </div>
+            {/* The client centres a panel's title over its contents, so this one is centred too. */}
+            <h2 className="title">Worlds</h2>
 
             {view.showDetail && (
-                <div className="px-3 pb-1.5">
+                <div className="px-2.5 pb-[7px]">
                     <DetailSwitch detail={view.detail} />
                 </div>
             )}
 
-            <p className="px-3 pb-1.5 text-[12px]" aria-live="polite">
-                {view.error ? (
-                    <span className="text-warn">Couldn't load the list: {view.error}</span>
-                ) : (
-                    <span className="text-dim">{age(view.fetchedAt, now) || (loading ? 'Loading the list' : '')}</span>
-                )}
-            </p>
-
-            <ul className="well mx-3 min-h-0 flex-1 overflow-y-auto">
+            <ul className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto">
                 {view.worlds.map(world => (
                     <Row key={world.id} world={world} current={world.id === view.current} />
                 ))}
@@ -116,7 +108,27 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
                 )}
             </ul>
 
-            <p className="px-3 py-2 text-[12px] text-dim">Switching reloads the game and logs you out.</p>
+            {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
+            <div className="flex items-center gap-2 px-2.5 pt-2 pb-1.5">
+                <button
+                    type="button"
+                    onClick={() => void window.swiftkit.worlds.refresh()}
+                    disabled={loading}
+                    style={loading ? SPENT : undefined}
+                    className="btn shrink-0"
+                >
+                    {loading ? 'loading' : 'refresh'}
+                </button>
+                <p className="min-w-0 flex-1 text-[12px]" aria-live="polite">
+                    {view.error ? (
+                        <span className="text-warn">Couldn't load the list: {view.error}</span>
+                    ) : (
+                        <span className="text-dim">{age(view.fetchedAt, now) || (loading ? 'Loading the list' : '')}</span>
+                    )}
+                </p>
+            </div>
+
+            <p className="px-2.5 pb-2 text-[12px] text-dim">Switching reloads the game and logs you out.</p>
         </div>
     );
 }

@@ -45,30 +45,46 @@ detection; everything equivalent here is done from main or not at all.
 
 ## How it looks
 
-The client is dressed as the site it launches. 2004.lostcity.rs and
-2004.losthq.rs still build the 2004 web: a black page, grey stone slabs with a
-3pt bevel, yellow headings, yellow-green links and a red call to action. Every
-colour in `src/renderer/styles.css` is taken from those two stylesheets rather
-than invented, so the panel beside the game reads as part of the same world.
+The client is dressed as the game it launches. The 2004 interface is built from
+warm olive stone: panels around `#443d31`, tabs cut into it at `#342e24`, lists
+recessed to `#37311f`, gold headings, cream text and yellow-green values. Those
+numbers were sampled out of a screenshot of the running client, quantising each
+region so the stone separated from the text, rather than guessed.
 
-The bevel is the whole system. CSS `outset` and `inset` derive both the light
-and the dark edge from one `border-color`, which is what gives the era its
-cheap, sturdy look; a flat hairline cannot fake it. Raised things are `.slab`,
-sunken things are `.well`.
+Three things carry the period feel, and all three are load-bearing rather than
+decorative:
+
+- **Bevels are explicit.** Light above and left, shadow below and right, on
+  every raised surface, inverted for every recess. CSS `outset` derives its
+  edges from a single colour and always reads flat by comparison.
+- **Stone has grain.** Two layers of noise, a fine one and a slower blotch,
+  blended over the base colour. Overlay blending lightens as much as it
+  darkens, so the base sits below the sampled mid to compensate.
+- **Every glyph has a hard black shadow.** The client does this, and without it
+  text fights the grain and loses.
+
+The rail is not a row of buttons on a dark strip: its tabs are cut *into* the
+stone, resting ones sunk with an inner shadow and the open one raised and lit.
+That is how the client draws its inventory and friends tabs, and it is what
+makes the open tool obvious.
 
 Type has two roles. Headings and buttons are set in Pixelify Sans, bundled at
 `src/renderer/fonts/` under the SIL Open Font License and loaded from disk so
-the interface never waits on the network. Everything carrying data is Arial,
-which is what the Lost City site sets its own body text in. That split is not
-taste: in Pixelify Sans a 5 reads as an S and a 7 as a 1, so on the first
-build "W5" appeared on screen as "WS" and "59 online" as "S9 online". A world
-switcher cannot afford that.
+the interface never waits on the network. Everything carrying data is Arial.
+That split is forced rather than chosen: in Pixelify Sans a 5 reads as an S and
+a 7 as a 1, so an early build showed "W5" as "WS" and "59 online" as "S9
+online". A world switcher cannot afford that.
 
 Latency colour marks the standout rather than grading everything. Most worlds
 sit in a band set by where you live, so colouring them all by absolute
 thresholds painted the whole column orange and said nothing. Green marks a
 world worth switching to, orange one that is genuinely far, and everything
 between is left as a plain number.
+
+The mockups this was ported from live in `design/`: `build.mjs` generates the
+artboards, and `seed-canvas.mjs` from the design skill packages them into a
+canvas. The seeded output is gitignored because it is 2.5 MB of editor payload;
+regenerate it rather than committing it.
 
 ## Why a window keeps playing when it is not in front
 

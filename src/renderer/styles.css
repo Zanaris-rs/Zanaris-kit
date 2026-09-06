@@ -1,14 +1,20 @@
 @import 'tailwindcss';
 
 /*
- * The 2004 web, as the Lost City site still builds it: black ground, grey
- * stone slabs with a 3px bevel, yellow headings and yellow-green links. The
- * bevel is the whole system — `outset` and `inset` derive both the light and
- * the dark edge from a single border-color, which is what gives the era its
- * cheap, sturdy look and what a flat hairline can never fake.
+ * The 2004 client's own interface, not the website that links to it: warm olive
+ * stone with visible grain, a hard two-colour bevel on every surface, gold pixel
+ * headings, and a black shadow under every glyph.
  *
- * Every colour here is taken from 2004.lostcity.rs and 2004.losthq.rs rather
- * than invented, so the client sits beside the site it launches.
+ * The bevel is the whole system, and it is explicit rather than derived. CSS
+ * `outset`/`inset` compute both edges from one border-color, which browsers do
+ * differently and which cannot produce the client's asymmetry — a bright warm
+ * highlight above and left, a near-black shadow below and right, both chosen
+ * rather than calculated. So each edge is named: `border` sets the shadow, then
+ * `border-top-color` and `border-left-color` overwrite the lit pair.
+ *
+ * Every colour here was sampled from the 2004 client's own interface (quantised
+ * region samples off a screenshot) rather than invented, so the shell reads as
+ * the same object as the game it wraps.
  */
 
 @font-face {
@@ -21,15 +27,17 @@
 }
 
 @theme {
-    --color-ink: #000000;
-    --color-stone: #474747;
-    --color-edge: #373737;
-    --color-sunken: #3d3d3d;
-    --color-row: #4e4e4e;
+    --color-ink: #1a1710;
+    --color-stone: #443d31;
+    --color-stone-lit: #655c4b;
+    --color-tab: #342e24;
+    --color-well: #37311f;
+    --color-edge-lit: #7d7463;
+    --color-edge-dark: #211d16;
 
-    --color-bone: #ffffff;
-    --color-dim: #bdbdbd;
-    --color-faint: #8f8f8f;
+    --color-cream: #ece7dc;
+    --color-dim: #a89c86;
+    --color-faint: #7d735f;
 
     --color-gold: #ffe139;
     --color-link: #90c040;
@@ -42,11 +50,28 @@
      * Two roles. The pixel face is the period voice and carries headings and
      * buttons; Arial carries everything that is data. That split is not
      * decoration: in Pixelify Sans a 5 reads as an S and a 7 as a 1, so
-     * "W5" became "WS" on screen — unusable in a world switcher. Arial is
-     * also what 2004.lostcity.rs sets its own body text in.
+     * "W5" became "WS" on screen — unusable in a world switcher.
      */
     --font-sans: Arial, Helvetica, sans-serif;
     --font-pixel: 'Pixelify Sans', 'Trebuchet MS', Arial, sans-serif;
+}
+
+/*
+ * The grain, defined once and worn by every stone surface. Two turbulence
+ * layers: a fine one for the tooth you see at arm's length, a coarse one at a
+ * ~190px period so large panels do not visibly tile.
+ *
+ * They are grey noise composited with `overlay`, which lightens wherever the
+ * noise sits above mid-grey and darkens below it — and with fractal noise the
+ * lightening wins, so the result reads brighter than its base. That is why the
+ * bases below are darker than the values sampled off the client: #443d31 is the
+ * panel mid (#504d3b–#565344) minus what the grain will add back. Change a base
+ * to the sampled value and the surface comes out washed out.
+ */
+:root {
+    --stone-grain:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='9'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='70' height='70' filter='url(%23g)' opacity='0.34'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='190' height='190'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.055' numOctaves='2' seed='21'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='190' height='190' filter='url(%23b)' opacity='0.3'/%3E%3C/svg%3E");
 }
 
 html,
@@ -58,7 +83,7 @@ body,
 body {
     margin: 0;
     background: var(--color-ink);
-    color: var(--color-bone);
+    color: var(--color-cream);
     font-family: var(--font-sans);
     font-size: 13px;
     user-select: none;
@@ -86,26 +111,154 @@ input {
     outline-offset: -2px;
 }
 
-/* A raised stone slab: panels, tabs, buttons. */
-.slab {
-    border: 3px outset var(--color-edge);
-    background: var(--color-stone);
+/*
+ * Grain is texture, never contrast — it eats the bottom of the value range and
+ * a thin glyph with it. The hard black shadow is what holds text off the noise,
+ * which is why it is applied to the surfaces themselves rather than opted into
+ * per label: any text that lands on stone gets it. Remove it and cream on
+ * #443d31 goes soft at 13px.
+ */
+.tile,
+.sunk,
+.rail,
+.btn,
+.title {
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.78);
 }
 
-/* The same bevel pressed inward: wells that hold a list or a value. */
-.well {
-    border: 2px inset var(--color-edge);
-    background: var(--color-sunken);
+/* Raised interface stone: panels, tab strips, the frame itself. */
+.tile {
+    background-color: var(--color-stone);
+    background-image: var(--stone-grain);
+    background-blend-mode: overlay, overlay;
+    border: 2px solid var(--color-edge-dark);
+    border-top-color: var(--color-edge-lit);
+    border-left-color: var(--color-edge-lit);
 }
 
-/* A slab that takes a press. The site's own call to action is the red one. */
-.slab-button:active:not(:disabled) {
-    border-style: inset;
+/* The same bevel inverted: a recess that holds a list, a field or a value. */
+.sunk {
+    background-color: var(--color-well);
+    background-image: var(--stone-grain);
+    background-blend-mode: overlay, overlay;
+    border: 2px solid var(--color-edge-lit);
+    border-top-color: var(--color-edge-dark);
+    border-left-color: var(--color-edge-dark);
 }
 
-.slab-on {
+/*
+ * An interface tab. Its face is darker than the panel it sits in and the inner
+ * shadow falls above-left, so it reads as cut into the stone rather than laid
+ * on top — the client's own tabs are holes, not buttons.
+ */
+.tab {
+    width: 36px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-tab);
+    background-image: var(--stone-grain);
+    background-blend-mode: overlay, overlay;
+    border: 1px solid var(--color-edge-dark);
+    box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Open: the face lifts to the lit stone and the inner shadow flips outward. */
+.tab-on {
+    background-color: var(--color-stone-lit);
+    box-shadow:
+        inset 1px 1px 0 rgba(255, 255, 255, 0.18),
+        inset -1px -1px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Icons sit back until their tab is the open one; the tab does the dimming so
+   the icon components stay a single flat sprite. */
+.tab svg {
+    opacity: 0.78;
+}
+.tab-on svg {
+    opacity: 1;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 12px;
+    background-color: var(--color-stone);
+    background-image: var(--stone-grain);
+    background-blend-mode: overlay, overlay;
+    border: 2px solid var(--color-edge-dark);
+    border-top-color: var(--color-edge-lit);
+    border-left-color: var(--color-edge-lit);
+    color: var(--color-gold);
+    font-family: var(--font-pixel);
+    font-size: 15px;
+}
+
+/* The one loud button per panel, as the client paints its own confirmations. */
+.btn-red {
+    background-color: var(--color-red);
     border-color: var(--color-red-edge);
-    background: var(--color-red);
+    border-top-color: #c8503f;
+    border-left-color: #c8503f;
+    color: #fff;
+}
+
+/*
+ * Pressed: the light source has not moved, the surface has — so the lit and
+ * shadow edges trade places. Each variant inverts within its own pair, or a
+ * pressed red button would sprout olive edges.
+ */
+.btn:active:not(:disabled) {
+    border-color: var(--color-edge-lit);
+    border-top-color: var(--color-edge-dark);
+    border-left-color: var(--color-edge-dark);
+}
+
+.btn-red:active:not(:disabled) {
+    border-color: #c8503f;
+    border-top-color: var(--color-red-edge);
+    border-left-color: var(--color-red-edge);
+}
+
+/* A tab is already sunk, so a press pushes it deeper rather than flipping it. */
+.tab:active {
+    background-color: #332d24;
+    box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.title {
+    text-align: center;
+    font-family: var(--font-pixel);
+    font-size: 18px;
+    color: var(--color-gold);
+    padding: 7px 0 6px;
+}
+
+/*
+ * The tool rail. It is a tile, except on its left edge: that edge meets the
+ * panel rather than the window, so the highlight would draw a bright seam down
+ * the middle of the chrome. Dark border plus an inset shadow makes a groove
+ * there instead, and the rail reads as part of the same slab.
+ */
+.rail {
+    background-color: var(--color-stone);
+    background-image: var(--stone-grain);
+    background-blend-mode: overlay, overlay;
+    border: 2px solid var(--color-edge-dark);
+    border-top-color: var(--color-edge-lit);
+    box-shadow: inset 2px 0 0 rgba(0, 0, 0, 0.28);
+}
+
+/* A divider scored into the rail: the cut, then a hairline of light under it. */
+.sep {
+    width: 32px;
+    height: 2px;
+    background: var(--color-edge-dark);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    margin: 2px 0;
 }
 
 /* Links look like links here, as they did then. */
@@ -116,14 +269,19 @@ input {
     text-decoration: underline;
 }
 
-/* The scrollbar is a slab too, rather than a modern floating sliver. */
+/* The scrollbar is stone too, rather than a modern floating sliver: a channel
+   cut through the panel with a tile running in it. */
 ::-webkit-scrollbar {
     width: 12px;
 }
 ::-webkit-scrollbar-track {
-    background: var(--color-sunken);
+    background: var(--color-edge-dark);
 }
 ::-webkit-scrollbar-thumb {
-    border: 2px outset var(--color-edge);
-    background: var(--color-stone);
+    background-color: var(--color-stone);
+    background-image: var(--stone-grain);
+    background-blend-mode: overlay, overlay;
+    border: 2px solid var(--color-edge-dark);
+    border-top-color: var(--color-edge-lit);
+    border-left-color: var(--color-edge-lit);
 }

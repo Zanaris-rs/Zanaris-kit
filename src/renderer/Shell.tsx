@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Rect, ShellState, TabInfo, ToolId } from '../shared/ipc';
+import { Globe, PanelToggle } from './icons';
 import Worlds from './tools/Worlds';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
@@ -8,12 +9,25 @@ function revisionOf(state: ShellState): string {
     return state.server.revision === null ? 'rev unknown' : `rev ${state.server.revision}`;
 }
 
+/*
+ * The stone is hand-written CSS, not utilities, so the handful of places that
+ * have to contradict it say so inline. A utility of equal specificity would be
+ * decided by stylesheet order, which is not something to leave to chance.
+ */
+
+/** Strip tabs hug their label instead of taking the rail tab's fixed 36x34 square. */
+const TAB_BOX: CSSProperties = { height: 26, width: 'auto' };
+/** The bar spans the window, so only its underside is bevelled. */
+const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
+
+/** The open tab is a raised tile; the rest are tabs cut into the strip. */
 function Tab({ tab, revision }: { tab: TabInfo; revision: string }): ReactNode {
     return (
         <div
             role="tab"
             aria-selected={tab.active}
-            className={`flex h-[26px] items-center gap-2 px-2.5 ${tab.active ? 'slab' : 'border-3 border-transparent text-dim'}`}
+            style={TAB_BOX}
+            className={`flex items-center gap-[7px] px-2.5 ${tab.active ? 'tile' : 'tab text-dim'}`}
         >
             <span className="truncate">{tab.title}</span>
             {tab.kind === 'game' && <span className="shrink-0 text-[12px] text-faint">{revision}</span>}
@@ -29,21 +43,11 @@ const MODE_NOTE: Record<ShellState['mode'], string | null> = {
 
 /**
  * The rail's tools, in order. Main says which of these a window offers. The
- * icons are drawn with a heavy square-capped stroke so they sit with the
- * pixel type rather than looking like a modern icon set dropped in.
+ * icons are flat sprites on one dark outline, the way the client draws its own
+ * interface tabs, so they sit with the pixel type rather than looking like a
+ * modern icon set dropped in.
  */
-const TOOLS: { id: ToolId; label: string; icon: ReactNode }[] = [
-    {
-        id: 'worlds',
-        label: 'Worlds',
-        icon: (
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" shapeRendering="crispEdges">
-                <circle cx="9" cy="9" r="7" />
-                <path d="M2 9h14M9 2c2.5 2.5 2.5 11.5 0 14M9 2c-2.5 2.5-2.5 11.5 0 14" />
-            </svg>
-        )
-    }
-];
+const TOOLS: { id: ToolId; label: string; icon: ReactNode }[] = [{ id: 'worlds', label: 'Worlds', icon: <Globe /> }];
 
 /**
  * The chrome around the game: strip, rail and panel, drawn exactly where main
@@ -72,44 +76,46 @@ export default function Shell(): ReactNode {
     const active = state.panelOpen ? state.activeTool : null;
 
     return (
-        <div className="relative h-full overflow-hidden bg-ink text-bone">
-            <header style={at(rects.strip)} className="flex items-center gap-1 px-1.5" role="tablist">
-                {state.tabs.map(tab => (
-                    <Tab key={tab.id} tab={tab} revision={revisionOf(state)} />
-                ))}
-                <button
-                    type="button"
-                    onClick={() => void window.swiftkit.shell.togglePanel()}
-                    aria-label={state.panelOpen ? 'Close panel' : 'Open panel'}
-                    aria-pressed={state.panelOpen}
-                    className="slab slab-button ml-auto flex h-[26px] w-[32px] items-center justify-center text-dim"
-                >
-                    <svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" shapeRendering="crispEdges">
-                        <rect x="1" y="1" width="12" height="10" />
-                        <path d="M9.5 1v10" />
-                    </svg>
-                </button>
-            </header>
+        <div className="relative h-full overflow-hidden bg-ink text-cream">
+            <div style={at(rects.strip)} className="flex flex-col">
+                <header role="tablist" style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
+                    {state.tabs.map(tab => (
+                        <Tab key={tab.id} tab={tab} revision={revisionOf(state)} />
+                    ))}
+                    <button
+                        type="button"
+                        onClick={() => void window.swiftkit.shell.togglePanel()}
+                        aria-label={state.panelOpen ? 'Close panel' : 'Open panel'}
+                        aria-pressed={state.panelOpen}
+                        className="tile ml-auto flex h-[26px] w-[32px] shrink-0 items-center justify-center text-dim"
+                    >
+                        <PanelToggle />
+                    </button>
+                </header>
+                {/* The client parts its bars with a dark rule lit along the top, never a flat hairline. */}
+                <div className="h-[2px] shrink-0 bg-edge-dark shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]" />
+            </div>
 
             <div style={at(rects.content)} className="bg-ink" aria-hidden="true" />
 
             {rects.panel && (
-                <aside style={at(rects.panel)} className="slab flex flex-col">
+                <aside style={{ ...at(rects.panel), borderRight: 'none' }} className="tile flex flex-col">
                     {active === 'worlds' && state.worlds ? (
                         <Worlds view={state.worlds} />
                     ) : (
-                        <div className="px-3 py-2.5">
-                            <h2 className="font-pixel text-[17px] text-gold">Tools</h2>
-                            <p className="mt-1.5 text-[12px] text-dim">
+                        <div className="px-2.5">
+                            <h2 className="title">Tools</h2>
+                            <p className="text-[12px] text-dim">
                                 {tools.length === 0 ? 'This server has one page, so there is nothing to switch.' : 'Pick a tool on the rail.'}
                             </p>
                         </div>
                     )}
-                    {note && <p className="mt-auto px-3 py-2 text-[12px] text-warn">{note}</p>}
+                    {note && <p className="mt-auto px-2.5 py-2 text-[12px] text-warn">{note}</p>}
                 </aside>
             )}
 
-            <nav style={at(rects.rail)} className="flex flex-col items-center gap-1.5 pt-1.5" aria-label="Tools">
+            {/* .rail paints the stone; main sizes it, so the stack of tabs is laid out here. */}
+            <nav style={at(rects.rail)} className="rail flex flex-col items-center gap-1 py-[5px]" aria-label="Tools">
                 {tools.map(tool => (
                     <button
                         key={tool.id}
@@ -118,8 +124,7 @@ export default function Shell(): ReactNode {
                         aria-label={tool.label}
                         aria-pressed={active === tool.id}
                         onClick={() => void window.swiftkit.shell.selectTool(active === tool.id ? null : tool.id)}
-                        className={`slab slab-button flex h-[34px] w-[34px] items-center justify-center ${active === tool.id ? 'text-gold' : 'text-dim'}`}
-                        style={active === tool.id ? { borderStyle: 'inset' } : undefined}
+                        className={`tab${active === tool.id ? ' tab-on' : ''}`}
                     >
                         {tool.icon}
                     </button>
