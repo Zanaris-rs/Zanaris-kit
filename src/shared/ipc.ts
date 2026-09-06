@@ -2,6 +2,7 @@
 import type { ServerDef } from './catalog';
 import type { LayoutMode, TabKind } from './layout';
 import type { Detail, WorldsView } from './worlds';
+import type { ChatView } from './chat';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -10,11 +11,16 @@ export const IPC = {
     shellSelectTool: 'zanaris:shell-select-tool',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
-    worldsSetDetail: 'zanaris:worlds-set-detail'
+    worldsSetDetail: 'zanaris:worlds-set-detail',
+    chatState: 'zanaris:chat-state',
+    chatGet: 'zanaris:chat-get',
+    chatSend: 'zanaris:chat-send',
+    chatSelect: 'zanaris:chat-select',
+    chatSetNick: 'zanaris:chat-set-nick'
 } as const;
 
 /** The tools a window can offer. One so far; a registry is worth it when the second lands. */
-export const TOOL_IDS = ['worlds'] as const;
+export const TOOL_IDS = ['worlds', 'chat'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
@@ -54,6 +60,8 @@ export interface ShellState {
     activeTool: ToolId | null;
     /** Null when the server has one page. */
     worlds: WorldsView | null;
+    /** One connection serves every window, so this is the same in all of them. */
+    chat: ChatView;
 }
 
 export interface ZanarisApi {
@@ -64,6 +72,14 @@ export interface ZanarisApi {
         /** Opens the panel on a tool; null closes it. */
         selectTool(id: ToolId | null): Promise<void>;
         onState(cb: (state: ShellState) => void): () => void;
+    };
+    chat: {
+        /** Sends a line. Text beginning with / is a command: /me, /msg, /nick, /join, /part. */
+        send(text: string): Promise<void>;
+        /** Shows a channel in the panel and marks it read. */
+        select(channel: string): Promise<void>;
+        /** Chooses the nick and connects. */
+        setNick(nick: string): Promise<void>;
     };
     worlds: {
         refresh(): Promise<void>;

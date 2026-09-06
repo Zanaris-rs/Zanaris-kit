@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppState } from './appState.ts';
+import { DEFAULT_CHAT } from '../shared/chat.ts';
 
 const dirs: string[] = [];
 const tempFile = (): string => {
@@ -103,4 +104,91 @@ test('setWarnOnSwitch leaves the remembered worlds alone', () => {
     b.load();
     assert.deepEqual(b.world('lostcity'), REMEMBERED);
     assert.equal(b.warnOnSwitch(), false);
+});
+
+test('chat starts at the Libera defaults when there is no file', () => {
+    const state = new AppState(tempFile());
+    state.load();
+    assert.deepEqual(state.chat(), DEFAULT_CHAT);
+});
+
+test('a file written before chat existed still loads, at the chat defaults', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, warnOnSwitch: false }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.chat(), DEFAULT_CHAT);
+    assert.deepEqual(state.world('lostcity'), REMEMBERED);
+    assert.equal(state.warnOnSwitch(), false);
+});
+
+test('setChat saves, and a fresh instance reads it back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setChat({ nick: 'lumbridge', server: 'irc.example.net', port: 6667 });
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.chat(), { nick: 'lumbridge', server: 'irc.example.net', port: 6667 });
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(written.version, 1);
+    assert.deepEqual(written.chat, { nick: 'lumbridge', server: 'irc.example.net', port: 6667 });
+});
+
+test('a partial patch leaves the other fields alone', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setChat({ nick: 'lumbridge' });
+    assert.deepEqual(a.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
+    a.setChat({ port: 6667 });
+    assert.deepEqual(a.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', port: 6667 });
+});
+
+test('each invalid chat field falls back on its own, keeping the valid ones', () => {
+    const cases: Array<[unknown, keyof typeof DEFAULT_CHAT]> = [
+        [{ nick: '', server: 'irc.example.net', port: 6667 }, 'nick'],
+        [{ nick: 7, server: 'irc.example.net', port: 6667 }, 'nick'],
+        [{ nick: 'lumbridge', server: '', port: 6667 }, 'server'],
+        [{ nick: 'lumbridge', server: null, port: 6667 }, 'server'],
+        [{ nick: 'lumbridge', server: 'irc.example.net', port: 0 }, 'port'],
+        [{ nick: 'lumbridge', server: 'irc.example.net', port: 65536 }, 'port'],
+        [{ nick: 'lumbridge', server: 'irc.example.net', port: 6667.5 }, 'port'],
+        [{ nick: 'lumbridge', server: 'irc.example.net', port: '6667' }, 'port']
+    ];
+    for (const [chat, bad] of cases) {
+        const file = tempFile();
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+        const state = new AppState(file);
+        state.load();
+        const stored = chat as Record<string, unknown>;
+        const expected = { nick: stored.nick, server: stored.server, port: stored.port, [bad]: DEFAULT_CHAT[bad] };
+        assert.deepEqual(state.chat(), expected, `expected only ${bad} to fall back`);
+        assert.deepEqual(state.world('lostcity'), REMEMBERED);
+        assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false);
+    }
+});
+
+test('a chat block that is not an object falls back whole', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat: 'irc.example.net' }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.chat(), DEFAULT_CHAT);
+    assert.deepEqual(state.world('lostcity'), REMEMBERED);
+    assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false);
+});
+
+test('setChat leaves the remembered worlds and the warning alone', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setWorld('lostcity', REMEMBERED);
+    a.setWarnOnSwitch(false);
+    a.setChat({ nick: 'lumbridge' });
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.world('lostcity'), REMEMBERED);
+    assert.equal(b.warnOnSwitch(), false);
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
 });

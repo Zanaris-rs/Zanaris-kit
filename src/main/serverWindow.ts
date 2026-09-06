@@ -2,6 +2,7 @@ import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
+import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import { computeLayout, sideWidth, splitWindow, type Rects } from './layout';
 import { decideNavigation } from './guard';
@@ -28,6 +29,12 @@ export interface ServerWindowDeps {
     position: { x: number; y: number } | null;
     /** The server's shared world list and latency, or null when the server has one page. */
     worlds: WorldsService | null;
+    /**
+     * The one conversation, which is the app's rather than this window's: every
+     * window shows the same one. A getter rather than the service itself, since
+     * the window only ever reads it — main pushes when it changes.
+     */
+    chat: () => ChatView;
     /** What this server remembered from last time, if anything. */
     remembered: RememberedWorld | null;
     /** Called whenever this window's world or detail changes. */
@@ -45,11 +52,20 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Opens the panel on a tool; null closes it. */
     selectTool(id: ToolId | null): void;
     state(): ShellState;
+    /** Sends the current state to the shell. For app-wide changes main hears about, not the window. */
+    pushState(): void;
     /** Resolves when the most recent load finished, or failed over to the offline page. */
     whenGameLoaded(): Promise<LoadResult>;
     switchWorld(world: number): Promise<LoadResult | 'unknown'>;
     setDetail(detail: Detail): Promise<LoadResult | 'unchanged'>;
     refreshWorlds(): Promise<void>;
+    /**
+     * Resolves once the shell has actually painted what main last pushed.
+     * capturePage hands back the last composited frame, so without this a
+     * capture taken right after a state change photographs the previous one —
+     * which had capture mode reporting a stale panel three times over.
+     */
+    settle(): Promise<void>;
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
@@ -70,7 +86,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const tag = `[${spec.title}]`;
     const tabs = new TabModel({ title: server.name, url: server.url });
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
-    const tools: ToolId[] = worldSwitch ? ['worlds'] : [];
+    // Chat is app-scoped, so every window offers it, and first: it is there
+    // whether or not the server has worlds to hop between.
+    const tools: ToolId[] = worldSwitch ? ['chat', 'worlds'] : ['chat'];
 
     /** The URL main last asked the game view to load. The offline page may return to it; nothing else may navigate. */
     let expected = worldSwitch ? worldSwitch.url : server.url;
@@ -160,7 +178,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             rects,
             tools,
             activeTool,
-            worlds: worldsView()
+            worlds: worldsView(),
+            chat: deps.chat()
         };
     }
 
@@ -385,6 +404,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         togglePanel,
         selectTool,
         state,
+        pushState,
         whenGameLoaded: () => loadPromise,
         switchWorld: async world => {
             if (!worldSwitch || !deps.worlds) return 'unknown';
@@ -414,6 +434,16 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (!deps.worlds || !worldSwitch) return;
             await deps.worlds.list(true);
             await deps.worlds.probeAll(worldSwitch.detail);
+        },
+        settle: async () => {
+            // Two frames: the first schedules the render, the second proves it
+            // composited. Raced against a timeout because requestAnimationFrame
+            // does not fire at all in an occluded window — waiting on it alone
+            // hangs forever, which is exactly what it did.
+            const painted = shellView.webContents
+                .executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
+                .catch(() => undefined);
+            await Promise.race([painted, new Promise(resolve => setTimeout(resolve, 1_500))]);
         },
         captureShell: () => shellView.webContents.capturePage(),
         captureGame: () => gameView.webContents.capturePage()

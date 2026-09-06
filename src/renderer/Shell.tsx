@@ -1,6 +1,7 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Rect, ShellState, TabInfo, ToolId } from '../shared/ipc';
-import { Globe, PanelToggle } from './icons';
+import { Chat as ChatIcon, Globe, PanelToggle } from './icons';
+import Chat from './tools/Chat';
 import Worlds from './tools/Worlds';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
@@ -19,6 +20,9 @@ function revisionOf(state: ShellState): string {
 const TAB_BOX: CSSProperties = { height: 26, width: 'auto' };
 /** The bar spans the window, so only its underside is bevelled. */
 const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
+/* A tab is not one of the surfaces that carry the stone's text shadow, and a gold
+   digit on a lit sprite needs one of its own to stay a digit. */
+const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
 
 /** The open tab is a raised tile; the rest are tabs cut into the strip. */
 function Tab({ tab, revision }: { tab: TabInfo; revision: string }): ReactNode {
@@ -46,8 +50,21 @@ const MODE_NOTE: Record<ShellState['mode'], string | null> = {
  * icons are flat sprites on one dark outline, the way the client draws its own
  * interface tabs, so they sit with the pixel type rather than looking like a
  * modern icon set dropped in.
+ *
+ * A tool is either the app's or this window's server's, and the rail scores a
+ * divider where one becomes the other: chat is one conversation shared by every
+ * window, while worlds only means anything for the server in front of you.
  */
-const TOOLS: { id: ToolId; label: string; icon: ReactNode }[] = [{ id: 'worlds', label: 'Worlds', icon: <Globe /> }];
+const TOOLS: { id: ToolId; label: string; group: 'app' | 'server'; icon: ReactNode }[] = [
+    { id: 'chat', label: 'Chat', group: 'app', icon: <ChatIcon /> },
+    { id: 'worlds', label: 'Worlds', group: 'server', icon: <Globe /> }
+];
+
+/** Highlights are lines that named you, so the count is worth carrying on the rail. */
+function unreadChat(state: ShellState): number {
+    if (!state.chat) return 0;
+    return state.chat.channels.reduce((total, channel) => total + channel.highlights, 0);
+}
 
 /**
  * The chrome around the game: strip, rail and panel, drawn exactly where main
@@ -74,6 +91,7 @@ export default function Shell(): ReactNode {
     const note = MODE_NOTE[state.mode];
     const tools = TOOLS.filter(t => state.tools.includes(t.id));
     const active = state.panelOpen ? state.activeTool : null;
+    const unread = unreadChat(state);
 
     return (
         <div className="relative h-full overflow-hidden bg-ink text-cream">
@@ -100,7 +118,9 @@ export default function Shell(): ReactNode {
 
             {rects.panel && (
                 <aside style={{ ...at(rects.panel), borderRight: 'none' }} className="tile flex flex-col">
-                    {active === 'worlds' && state.worlds ? (
+                    {active === 'chat' && state.chat ? (
+                        <Chat view={state.chat} />
+                    ) : active === 'worlds' && state.worlds ? (
                         <Worlds view={state.worlds} />
                     ) : (
                         <div className="px-2.5">
@@ -116,19 +136,31 @@ export default function Shell(): ReactNode {
 
             {/* .rail paints the stone; main sizes it, so the stack of tabs is laid out here. */}
             <nav style={at(rects.rail)} className="rail flex flex-col items-center gap-1 py-[5px]" aria-label="Tools">
-                {tools.map(tool => (
-                    <button
-                        key={tool.id}
-                        type="button"
-                        title={tool.label}
-                        aria-label={tool.label}
-                        aria-pressed={active === tool.id}
-                        onClick={() => void window.zanaris.shell.selectTool(active === tool.id ? null : tool.id)}
-                        className={`tab${active === tool.id ? ' tab-on' : ''}`}
-                    >
-                        {tool.icon}
-                    </button>
-                ))}
+                {tools.map((tool, i) => {
+                    const badge = tool.id === 'chat' ? unread : 0;
+                    const previous = tools[i - 1];
+                    return (
+                        <Fragment key={tool.id}>
+                            {previous && previous.group !== tool.group && <div className="sep" aria-hidden="true" />}
+                            <button
+                                type="button"
+                                title={tool.label}
+                                aria-label={badge > 0 ? `${tool.label}, ${badge} unread` : tool.label}
+                                aria-pressed={active === tool.id}
+                                onClick={() => void window.zanaris.shell.selectTool(active === tool.id ? null : tool.id)}
+                                className={`tab relative ${active === tool.id ? 'tab-on' : ''}`}
+                            >
+                                {tool.icon}
+                                {/* The count sits on the tab rather than beside it: the rail is 48px wide. */}
+                                {badge > 0 && (
+                                    <span style={BADGE} className="absolute top-0 right-[3px] font-pixel text-[12px] leading-none text-gold">
+                                        {badge > 99 ? '99+' : badge}
+                                    </span>
+                                )}
+                            </button>
+                        </Fragment>
+                    );
+                })}
             </nav>
         </div>
     );

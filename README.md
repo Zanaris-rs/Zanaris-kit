@@ -8,7 +8,7 @@ between that server's worlds.
 the pinned game tab, the rail and panel, the widen / shift / push layout
 engine, and now the Worlds tool: a world list with players and latency, a
 low / high detail switch, and the last world remembered per server. Page tabs,
-chat, timers, screenshots and the other tools follow. The design is in
+timers, screenshots and the other tools follow. The design is in
 `docs/superpowers/specs/2026-09-05-server-windows-design.md`, which also maps
 LostHQ's LostKit 2 onto it; the plans are under `docs/superpowers/plans/`.
 
@@ -48,6 +48,33 @@ that runs is byte-for-byte the page the server served. A modified client is
 both the most detectable thing we could ship and the most likely to be against
 server policy. LostKit 2 injects a preload for its screenshots, zoom and AFK
 detection; everything equivalent here is done from main or not at all.
+
+## Chat
+
+Chat is one IRC connection for the whole app, not one per window: it stays up
+while you open and close game windows, and every window shows the same
+conversation. It joins Libera.Chat over TLS, the shared `#04scape` lobby
+always, plus a room per server while you have a window on it — `#04scape-lostcity`,
+`#04scape-zanaris`, `#04scape-labs`. Those names are prefixed because this is a
+public network where a bare `#zanaris` may already belong to someone else. A
+local or self-added server gets no room, since it would be a room of one.
+
+The first time you open the panel it asks for a nick, because there is nothing
+sensible to default to and a name others see should be chosen rather than
+assigned. Nothing connects until you pick one, which is also why an unattended
+capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join` and `/part`
+work; an unrecognised slash command is refused rather than sent.
+
+The protocol layer is hand-written and tested rather than a dependency: a
+parser and serializer for the dozen commands and numerics this needs, and a
+client that is pure over an injected `send`, so the whole conversation can be
+driven in tests without a socket. The service around it owns the TLS socket
+and the reconnect backoff, which grows and caps — a client that retries harder
+the longer a network is down is a client that gets banned.
+
+Not carried over from LostKit, which reaches LostHQ's hosted web client
+instead: that host exposes no public IRC port, so this is a different room
+rather than the same one.
 
 ## How it looks
 

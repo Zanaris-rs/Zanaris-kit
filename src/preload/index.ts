@@ -21,6 +21,11 @@ const api: ZanarisApi = {
             };
         }
     },
+    chat: {
+        send: text => ipcRenderer.invoke(IPC.chatSend, text),
+        select: channel => ipcRenderer.invoke(IPC.chatSelect, channel),
+        setNick: nick => ipcRenderer.invoke(IPC.chatSetNick, nick)
+    },
     worlds: {
         refresh: () => ipcRenderer.invoke(IPC.worldsRefresh),
         switch: world => ipcRenderer.invoke(IPC.worldsSwitch, world),

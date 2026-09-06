@@ -1,11 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { RememberedWorld } from '../shared/worlds.ts';
+import type { ChatSettings } from '../shared/chat.ts';
+import { DEFAULT_CHAT } from '../shared/chat.ts';
 
 interface StateFile {
     version: 1;
     worlds: Record<string, RememberedWorld>;
     warnOnSwitch: boolean;
+    chat: ChatSettings;
 }
 
 function isRemembered(x: unknown): x is RememberedWorld {
@@ -23,17 +26,37 @@ function isRemembered(x: unknown): x is RememberedWorld {
 }
 
 /**
- * Small per-user state: choices the user made in passing rather than settings
- * they configured — the last world and detail chosen per server, and whether
- * they still want warning before a switch reloads the game. Loading never
- * fails and never complains; a file that cannot be read is kept aside and the
- * state starts empty, since nothing here is worth interrupting a launch for.
+ * Reads a stored chat block one field at a time, so a single bad value costs
+ * only its own field. Nothing in here is worth rejecting the whole file for:
+ * a nick that came back as a number leaves the user unnamed, not logged out of
+ * their remembered worlds.
+ */
+function readChat(x: unknown): ChatSettings {
+    const chat = { ...DEFAULT_CHAT };
+    if (typeof x !== 'object' || x === null) return chat;
+    const c = x as Record<string, unknown>;
+    if (c.nick === null || (typeof c.nick === 'string' && c.nick !== '')) chat.nick = c.nick;
+    if (typeof c.server === 'string' && c.server !== '') chat.server = c.server;
+    if (typeof c.port === 'number' && Number.isInteger(c.port) && c.port >= 1 && c.port <= 65535) chat.port = c.port;
+    return chat;
+}
+
+/**
+ * Small per-user state. Mostly choices the user made in passing rather than
+ * settings they configured — the last world and detail chosen per server, and
+ * whether they still want warning before a switch reloads the game — and, now,
+ * the one thing here that really is configuration: the chat nick and the IRC
+ * server to reach it on, which live alongside the rest for want of a second
+ * file worth keeping. Loading never fails and never complains; a file that
+ * cannot be read is kept aside and the state starts empty, since nothing here
+ * is worth interrupting a launch for.
  */
 export class AppState {
     readonly file: string;
     private worlds = new Map<string, RememberedWorld>();
     // An opt-out: the warning shows until the user has ticked "don't ask again".
     private warn = true;
+    private chatSettings: ChatSettings = { ...DEFAULT_CHAT };
 
     constructor(file: string) {
         this.file = file;
@@ -42,6 +65,7 @@ export class AppState {
     load(): void {
         this.worlds = new Map();
         this.warn = true;
+        this.chatSettings = { ...DEFAULT_CHAT };
         if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
@@ -52,6 +76,7 @@ export class AppState {
             }
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.warnOnSwitch === 'boolean') this.warn = parsed.warnOnSwitch;
+            this.chatSettings = readChat(parsed?.chat);
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
         }
@@ -77,9 +102,19 @@ export class AppState {
         this.save();
     }
 
+    /** Where chat connects, and as whom. Falls back to Libera field by field. */
+    chat(): ChatSettings {
+        return { ...this.chatSettings };
+    }
+
+    setChat(patch: Partial<ChatSettings>): void {
+        this.chatSettings = { ...this.chatSettings, ...patch };
+        this.save();
+    }
+
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: StateFile = { version: 1, worlds: Object.fromEntries(this.worlds), warnOnSwitch: this.warn };
+        const data: StateFile = { version: 1, worlds: Object.fromEntries(this.worlds), warnOnSwitch: this.warn, chat: this.chatSettings };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }

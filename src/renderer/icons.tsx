@@ -12,6 +12,20 @@ import type { ReactNode } from 'react';
 /** The outline every sprite shares, as sprite art does. */
 const OUTLINE = '#3a3428';
 
+/**
+ * Chat. A cream speech bubble with its two lines cut out of the fill rather
+ * than laid over it, so the glyph stays one flat shape on the shared outline —
+ * the same trick the client's own sprites use to read at 18px.
+ */
+export function Chat(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
+            <path d="M2 3h14v9H9l-4 3v-3H2z" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M5 6.5h8M5 9.5h5" stroke={OUTLINE} strokeWidth="1.3" />
+        </svg>
+    );
+}
+
 /** Worlds. A lit sea with pale meridians, so it stays legible at 78% opacity when the tab is shut. */
 export function Globe(): ReactNode {
     return (

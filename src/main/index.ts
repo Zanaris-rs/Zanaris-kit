@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, net, shell, type NativeImage, type
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
+import type { ChatView } from '../shared/chat';
 import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
 import { Catalog } from './catalog';
 import { AppState } from './appState';
@@ -9,6 +10,7 @@ import { ServerWindows } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
 import { installMenu, type MenuActions } from './menu';
 import { WorldsService } from './worlds/service';
+import { ChatService, offlineChat, tlsConnect } from './chat/service';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
@@ -67,6 +69,13 @@ const catalog = new Catalog(join(userData, 'servers.json'));
 const appState = new AppState(join(CAPTURE_DIR ?? userData, 'state.json'));
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
+/** One chat connection for the whole app, built at ready because its nick comes out of the profile. */
+let chat: ChatService | null = null;
+
+/** The conversation as it stands. Nothing opens a window before the service exists, but state() always needs a view. */
+function chatView(): ChatView {
+    return chat?.view() ?? offlineChat(null);
+}
 
 async function fetchJson(url: string): Promise<unknown> {
     const response = await net.fetch(url, { signal: AbortSignal.timeout(8_000) });
@@ -130,6 +139,7 @@ const windows = new ServerWindows((spec, onClosed) => {
             confirmClose,
             position: nextPosition(),
             worlds: worldsServiceFor(spec.server),
+            chat: chatView,
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency
@@ -139,7 +149,16 @@ const windows = new ServerWindows((spec, onClosed) => {
     byShell.set(sw.shellContentsId, sw);
     log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
     return sw;
-});
+}, syncChatChannels);
+
+/**
+ * Chat follows the windows: the rooms are those of the servers currently open,
+ * alongside the lobby. Called on every open and close, so a room is joined with
+ * the first window on its server and left with the last.
+ */
+function syncChatChannels(): void {
+    chat?.setServers(windows.list().map(w => w.serverId));
+}
 
 function openServer(server: ServerDef): ServerWindow {
     return serverWindows.get(windows.open(server).id)!;
@@ -263,6 +282,31 @@ ipcMain.handle(IPC.worldsSetDetail, async (event, detail: unknown) => {
     await sw.setDetail(detail);
 });
 
+// ── chat ──────────────────────────────────────────────────────────────────
+//
+// One conversation for the app, so these take no window: any window's panel
+// drives the same connection, and every window is shown the result.
+
+ipcMain.handle(IPC.chatGet, (): ChatView => chatView());
+
+ipcMain.handle(IPC.chatSend, (_event, text: unknown) => {
+    if (typeof text !== 'string') return;
+    chat?.send(text);
+});
+
+ipcMain.handle(IPC.chatSelect, (_event, channel: unknown) => {
+    if (typeof channel !== 'string') return;
+    chat?.select(channel);
+});
+
+ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
+    if (typeof nick !== 'string' || nick.trim() === '') return;
+    const chosen = nick.trim();
+    // Remembered, so the next launch connects without asking again.
+    appState.setChat({ nick: chosen });
+    chat?.setNick(chosen);
+});
+
 // ── dev capture ───────────────────────────────────────────────────────────
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -304,7 +348,8 @@ async function captureAndExit(dir: string): Promise<void> {
         // pushes behind — a shorter one caught the world list mid-load.
         sw.window.moveTop();
         sw.focus();
-        await wait(1_400);
+        await wait(400);
+        await sw.settle();
         await save(`${name}-shell`, () => sw.captureShell());
         await save(`${name}-game`, () => sw.captureGame());
     };
@@ -380,6 +425,19 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // Offline until a nick is set, which is why a capture run — whose profile has
+    // none — never opens a socket.
+    chat = new ChatService(appState.chat(), {
+        connect: tlsConnect,
+        now: Date.now,
+        setTimer: (fn, ms) => {
+            const timer = setTimeout(fn, ms);
+            return () => clearTimeout(timer);
+        }
+    });
+    chat.subscribe(() => {
+        for (const sw of serverWindows.values()) sw.pushState();
+    });
     loadCatalog();
 
     log('');
@@ -405,6 +463,8 @@ app.on('browser-window-focus', () => reloadCatalogIfChanged());
 
 app.on('before-quit', () => {
     quitting = true;
+    // Our own close, so nothing waits to reconnect a connection the app is leaving.
+    chat?.stop();
 });
 
 // macOS keeps running with no windows; the menu and the dock open the next one.
