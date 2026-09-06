@@ -56,6 +56,14 @@ fetchAt(lock.content.repo, lock.content.commit, content);
 
 log('npm ci in the engine checkout');
 run(npm, ['ci'], engine);
+// The previous pack goes first. A checkout already at the pin is not fetched
+// again, so a re-stage packs on top of whatever the last run left, and the
+// packer appends to main_file_cache.dat rather than rewriting it: 8.8 MB cold,
+// 16.9 MB after a second pack, and a stage that ships different bytes every
+// time it runs. The engine's own clean (tools/pack/Clean.ts) removes
+// data/pack/ along with the regenerable .pack files beside the content.
+log('cleaning the previous pack (npm run clean) so this stage packs from cold');
+run(npm, ['run', 'clean'], engine);
 log('packing the cache (npm run build - a few minutes)');
 run(npm, ['run', 'build'], engine);
 
@@ -178,6 +186,11 @@ async function bootCheck() {
     mkdirSync(join(home, 'data', 'config'), { recursive: true });
     for (const pem of ['private.pem', 'public.pem']) cpSync(join(dist, 'data', 'config', pem), join(home, 'data', 'config', pem));
     const [web, managementPort, tcp] = await Promise.all([freePort(), freePort(), freePort()]);
+    // No bind host: this engine listens on every interface for the length of
+    // the check, because the setting that confines it to loopback arrives with
+    // the single-player engine patches. Login, friend and logger are off and
+    // the ports are ephemeral, so what is briefly reachable is one unpopulated
+    // world on a random port.
     writeFileSync(
         join(home, 'data', 'config', 'world.json'),
         JSON.stringify(
