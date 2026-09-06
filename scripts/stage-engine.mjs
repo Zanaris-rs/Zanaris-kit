@@ -28,7 +28,14 @@ const started = Date.now();
 
 function fetchAt(repo, commit, dir) {
     if (existsSync(join(dir, '.git'))) {
-        const head = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD']).toString().trim();
+        // An interrupted fetch leaves .git behind with no HEAD: no head is a mismatch, so the
+        // checkout is thrown away and fetched again rather than wedging every later run here.
+        let head;
+        try {
+            head = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD']).toString().trim();
+        } catch {
+            head = null;
+        }
         if (head === commit) {
             log(`${relative(root, dir)} already at ${commit.slice(0, 8)}`);
             return;
