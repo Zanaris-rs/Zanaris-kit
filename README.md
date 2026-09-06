@@ -30,7 +30,11 @@ once before running something it cannot attribute:
   PC": choose **More info**, then **Run anyway**. It installs for your user
   only and needs no administrator password.
 - **Linux.** `chmod +x Zanaris-Kit-<version>.AppImage` and run it. If it
-  complains about FUSE, install `libfuse2` from your distribution.
+  complains about FUSE, install `libfuse2` from your distribution. On Ubuntu
+  24.04 it may instead refuse to start with a sandbox error, because AppArmor
+  there restricts unprivileged user namespaces: run it once with
+  `--no-sandbox`, or allow them with
+  `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
 
 The kit checks the releases page once each time it starts and, when there is
 a newer version, adds Help > Update Available, which opens that page. Set
@@ -256,7 +260,7 @@ One capture run with every catalog server open at once:
 The version 1 `servers.json` on disk migrated in place during that run, with
 no recovery prompt, and the state file recorded the hop.
 
-107 tests cover the pure modules: layout, catalog (validation, defaults, file
+222 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, v1 to v2 migration), slots, tabs, the window registry, the world
 sources against the real API payloads (including a check that the Lost City
 template reproduces LostHQ's URLs exactly), the worlds service (cache, shared

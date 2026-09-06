@@ -23,6 +23,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Before the stage, which takes minutes: a release that cannot pass its
+      # own checks should fail in the first job, not after three packagings.
+      - run: npm run typecheck
+      - run: npm test
       - run: node scripts/stage-engine.mjs
       - uses: actions/upload-artifact@v4
         with:

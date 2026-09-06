@@ -6,8 +6,15 @@ Release; publishing the draft is the last step and is done by hand. The order:
 ## 0. Before you tag
 
 - `engine.lock.json` points at the engine commit the fleet runs and the
-  content commit beside it. Both must be on the public repositories:
-  `git ls-remote https://github.com/Zanaris-rs/Engine-TS.git` shows the branch.
+  content commit beside it. Both commits must be reachable on the public
+  repositories, or CI cannot fetch them — a commit that exists only in a local
+  checkout stages here and fails on the runner. Each of these must print a
+  line:
+
+  ```sh
+  git ls-remote https://github.com/Zanaris-rs/Engine-TS.git | grep "$(node -p "require('./engine.lock.json').engine.commit")"
+  git ls-remote https://github.com/Zanaris-rs/Content.git   | grep "$(node -p "require('./engine.lock.json').content.commit")"
+  ```
 - Bump `version` in `package.json`. The tag must be `v` followed by exactly
   that version; the workflow refuses anything else.
 - Commit. `git status` clean.
