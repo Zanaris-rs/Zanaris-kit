@@ -1,17 +1,3 @@
-<!--
-  The source of build/icon.png, which electron-builder turns into the .icns and
-  .ico. To re-render after changing this file:
-
-  1. Load it in a transparent 1024x1024 Electron BrowserWindow and capture the
-     page. Launch Electron with --force-device-scale-factor=1, or a Retina
-     display doubles the capture to 2048 and the icon comes out soft.
-  2. Strip the display profile the capture inherits, so the gold is the same
-     colour everywhere:
-     sips --matchTo '/System/Library/ColorSync/Profiles/sRGB Profile.icc' build/icon.png --out build/icon.png
-
-  Nothing in the build does this: icon.png is committed, and re-rendering is a
-  deliberate step taken when the artwork changes.
--->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
     <filter id="grain" x="0" y="0" width="100%" height="100%">

@@ -48,8 +48,8 @@ run(['exec', '--', 'electron-builder', '--publish', 'never']);
 //
 // electron-builder drops the top-level node_modules of a copy root, so an
 // engine can be packaged with every source file and no dependency at all and
-// nothing complains until a user launches it. Both a source file and a
-// dependency are checked, in the app this run just built.
+// nothing complains until a user launches it. A source file, a dependency and
+// the pack's hidden cache are checked, in the app this run just built.
 function packagedEngine() {
     if (process.platform === 'darwin') return join('release', 'mac-universal', 'Zanaris Kit.app', 'Contents', 'Resources', 'engine');
     const unpacked = existsSync('release')
@@ -60,10 +60,13 @@ function packagedEngine() {
 }
 
 const engine = packagedEngine();
-const app = join(engine, 'src', 'app.js');
-const fastify = join(engine, 'node_modules', 'fastify', 'package.json');
-const missing = [app, fastify].filter(path => !existsSync(path));
+const required = [
+    join('src', 'app.js'),
+    join('node_modules', 'fastify', 'package.json'),
+    join('data', 'pack', '.cache', 'maps-server.zip')
+].map(path => join(engine, path));
+const missing = required.filter(path => !existsSync(path));
 if (missing.length > 0) {
     throw new Error(`the packaged engine in ${engine} is incomplete: ${missing.join(', ')} missing. Check extraResources in electron-builder.yml.`);
 }
-log(`packaged engine complete in ${engine}: ${app} and ${fastify} present`);
+log(`packaged engine complete in ${engine}: ${required.join(', ')} present`);
