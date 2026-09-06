@@ -12,6 +12,30 @@ timers, screenshots and the other tools follow. The design is in
 `docs/superpowers/specs/2026-09-05-server-windows-design.md`, which also maps
 LostHQ's LostKit 2 onto it; the plans are under `docs/superpowers/plans/`.
 
+## Download
+
+Installers for macOS, Windows and Linux are on the
+[releases page](https://github.com/Zanaris-rs/swiftkit/releases/latest):
+`Zanaris-Kit-<version>-universal.dmg`, `Zanaris-Kit-Setup-<version>.exe` and
+`Zanaris-Kit-<version>.AppImage`.
+
+The builds are not signed with a developer certificate, so each system asks
+once before running something it cannot attribute:
+
+- **macOS.** Open the DMG and drag Zanaris Kit to Applications. The first
+  launch is refused with "Apple could not verify". Open System Settings >
+  Privacy & Security, scroll to the message about Zanaris Kit, and choose
+  **Open Anyway**. It asks once more; after that it opens like any app.
+- **Windows.** Run the installer. SmartScreen says "Windows protected your
+  PC": choose **More info**, then **Run anyway**. It installs for your user
+  only and needs no administrator password.
+- **Linux.** `chmod +x Zanaris-Kit-<version>.AppImage` and run it. If it
+  complains about FUSE, install `libfuse2` from your distribution.
+
+The kit checks the releases page once each time it starts and, when there is
+a newer version, adds Help > Update Available, which opens that page. Set
+`ZANARIS_NO_UPDATE_CHECK=1` to turn the check off.
+
 ## What it does
 
 There is no launcher or management window; there are only game windows. New
@@ -198,7 +222,13 @@ npm start            # build + launch
 npm test             # the pure modules, no Electron
 npm run typecheck
 npm run capture      # open every server, screenshot every view, hop a world, exit
+npm run stage:engine # fetch the pinned engine and content, pack, precompile into engine-dist/
+npm run dist         # package this platform into release/ (stages first if needed)
 ```
+
+`engine.lock.json` pins the engine and content commits the kit carries; see
+`RELEASE.md` for how a release is cut. Everything under `engine-dist/`,
+`.engine-work/` and `release/` is build output.
 
 Capture mode (`ZANARIS_CAPTURE=<dir>`, settle time `ZANARIS_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,

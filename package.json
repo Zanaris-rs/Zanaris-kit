@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "description": "Zanaris Kit for 04scape — Electron wrapper that opens several 04scape servers side by side",
+  "license": "MIT",
+  "author": "Zanaris Kit contributors",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
