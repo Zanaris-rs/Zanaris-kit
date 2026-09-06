@@ -78,13 +78,7 @@ async function transpileTree(name) {
     let copied = 0;
     for (const abs of walk(from)) {
         const rel = relative(from, abs);
-        // Two of the engine's `index.d.ts` files are modules, not ambient declarations:
-        // World imports the login response type guards as values from
-        // '#/server/login/index.d.js', and tsx runs that file today. classify() skips
-        // every .d.ts, as a stage of an ordinary TypeScript project should, so they are
-        // transpiled here instead - `index.d.ts` becomes the `index.d.js` the imports name.
-        const kind = rel.endsWith('.d.ts') ? 'transform' : classify(rel);
-        if (kind === 'skip') continue;
+        const kind = classify(rel);
         const outPath = join(to, kind === 'transform' ? rel.replace(/\.ts$/, '.js') : rel);
         mkdirSync(dirname(outPath), { recursive: true });
         if (kind === 'copy') {

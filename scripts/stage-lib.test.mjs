@@ -24,8 +24,8 @@ test('rewriteWorkerUrls turns .ts worker entries into .js, only inside new URL()
     assert.equal(hasTsUrl(before), true);
 });
 
-test('classify: d.ts skipped, ts transformed, everything else copied', () => {
-    assert.equal(classify('server/login/index.d.ts'), 'skip');
+test('classify: every .ts transformed, including .d.ts; everything else copied', () => {
+    assert.equal(classify('server/login/index.d.ts'), 'transform');
     assert.equal(classify('app.ts'), 'transform');
     assert.equal(classify('3rdparty/bzip2-wasm/bzip2.wasm'), 'copy');
     assert.equal(classify('3rdparty/ws-sync/ws-sync.js'), 'copy');

@@ -17,9 +17,17 @@ export function hasTsUrl(code) {
     return /new URL\(\s*['"`][^'"`]+\.ts['"`]/.test(code);
 }
 
-/** What to do with one file under src/ or tools/, by its path relative to that root. */
+/**
+ * What to do with one file under src/ or tools/, by its path relative to that root:
+ * 'transform' every .ts, 'copy' everything else.
+ *
+ * .d.ts files are transformed like any other .ts rather than skipped, because the
+ * engine's are not ambient declarations: World imports the login response type
+ * guards as values from '#/server/login/index.d.js', so that file has to ship as
+ * JavaScript. A types-only declaration transpiles to an empty module, which is
+ * harmless - `index.d.ts` becomes the `index.d.js` the imports already name.
+ */
 export function classify(relPath) {
-    if (relPath.endsWith('.d.ts')) return 'skip';
     if (relPath.endsWith('.ts')) return 'transform';
     return 'copy';
 }
