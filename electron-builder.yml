@@ -1,0 +1,57 @@
+# Packaging for Zanaris Kit. electron-vite builds into out/; this packs it
+# with the staged engine (engine-dist/, from npm run stage:engine) as an
+# extra resource, outside asar, where a child process reads it as files.
+# Spec: docs/superpowers/specs/2026-09-06-packaging-and-single-player-design.md, Part 1.
+appId: rs.zanaris.kit
+productName: Zanaris Kit
+copyright: Zanaris Kit contributors
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - static/**
+  - package.json
+extraResources:
+  - from: engine-dist
+    to: engine
+asar: true
+# No native dependencies anywhere: nothing to rebuild.
+npmRebuild: false
+# Ad-hoc signs the macOS bundle when no identity signed it (see the script).
+afterSign: scripts/after-sign.cjs
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - universal
+  category: public.app-category.games
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  artifactName: Zanaris-Kit-${version}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Zanaris-Kit-Setup-${version}.${ext}
+
+nsis:
+  oneClick: true
+  perMachine: false
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Game
+  artifactName: Zanaris-Kit-${version}.${ext}
+
+publish:
+  provider: github
+  owner: Zanaris-rs
+  repo: swiftkit
+  releaseType: draft

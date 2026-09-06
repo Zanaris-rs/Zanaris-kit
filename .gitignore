@@ -13,3 +13,6 @@ design/swiftkit-interface.html
 # the staged engine and its working checkouts (npm run stage:engine)
 engine-dist/
 .engine-work/
+
+# electron-builder output (npm run dist)
+release/
