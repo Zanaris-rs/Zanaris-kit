@@ -1,0 +1,78 @@
+name: Release
+
+# A tag v<version> builds every platform and drafts a GitHub Release holding
+# the artifacts; the owner publishes it. A manual dispatch is the dry run:
+# the same build, the artifacts on the workflow run, no release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  engine:
+    name: Stage the engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/stage-engine.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-dist
+          path: engine-dist
+          retention-days: 7
+          compression-level: 1
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: engine
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-dist
+          path: engine-dist
+      - name: Tag matches package.json
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+      - run: npm run build
+      - name: Package and draft the release
+        if: github.ref_type == 'tag'
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package (dry run)
+        if: github.ref_type != 'tag'
+        run: npx electron-builder --publish never
+      - uses: actions/upload-artifact@v4
+        if: github.ref_type != 'tag'
+        with:
+          name: zanaris-kit-${{ matrix.os }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+          if-no-files-found: error
