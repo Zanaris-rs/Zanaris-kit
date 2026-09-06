@@ -28,9 +28,15 @@ world's host, measured every ten seconds. A rail runs down the right edge; its
 first tool is **Worlds**. The panel it opens (or Cmd/Ctrl+\) shows Low / High
 detail, then every world with region, players online, members or free, and
 latency, the current world marked. Choosing a world loads it in the same
-window, which logs you out, so the list is the whole gesture and nothing asks
-twice. Flipping detail reloads the current world. The world and detail you
+window; flipping detail reloads the current world. The world and detail you
 chose are remembered per server; the next window for that server opens there.
+
+Either switch asks first. The dialog names where you are going and says the
+switch happens whether or not you are logged in: SwiftKit loads the page
+straight away, and if you are in game that logs you out. Switch goes, Cancel
+changes nothing. The dialog carries a "don't ask again" checkbox, and ticking
+it is reversible from View > Warn Before Switching Worlds, which shows the
+current setting.
 
 Opening the same server twice gives the second window its own storage
 partition (`persist:server:<id>:2`) and the title "Lost City — World 5 (2)",
@@ -124,7 +130,8 @@ it, so each server's storage partition starts fresh once. A window keeps its
 own copy of its server, so editing the file never affects windows already
 open.
 
-`<userData>/state.json` remembers the last world and detail per server. It is
+`<userData>/state.json` remembers the last world and detail per server, and
+whether the switch confirmation still shows. It is
 not configuration and never interrupts a launch: a broken file is kept aside
 and the state starts empty.
 
@@ -234,8 +241,10 @@ src/main/worlds/sources.ts  pure: LostHQ, Zanaris and static parsers, url templa
 src/main/worlds/service.ts  per-server world list and latency over injected IO      (tested)
 src/main/worlds/switch.ts   pure: one window's world, detail, url and labels        (tested)
 src/main/worlds/probe.ts    TCP connect latency, node-only                          (tested)
+src/main/worlds/warning.ts  pure: what the switch confirmation says                 (tested)
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
-src/main/menu.ts            application menu: new windows, the server list, the panel
+src/main/menu.ts            application menu: new windows, the server list, the panel,
+                            the switch warning
 src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.swiftkit bridge

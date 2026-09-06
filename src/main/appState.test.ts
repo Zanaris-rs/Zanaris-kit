@@ -53,3 +53,54 @@ test('an invalid entry is ignored while the rest load', () => {
     assert.equal(state.world('zanaris'), null);
     assert.equal(state.world('labs'), null);
 });
+
+test('warnOnSwitch is on until it is turned off', () => {
+    const state = new AppState(tempFile());
+    state.load();
+    assert.equal(state.warnOnSwitch(), true);
+});
+
+test('a file written before the preference existed still loads, warning on', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED } }));
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.warnOnSwitch(), true);
+    assert.deepEqual(state.world('lostcity'), REMEMBERED);
+});
+
+test('setWarnOnSwitch saves, and a fresh instance reads it back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setWarnOnSwitch(false);
+    assert.equal(a.warnOnSwitch(), false);
+    const b = new AppState(file);
+    b.load();
+    assert.equal(b.warnOnSwitch(), false);
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(written.version, 1);
+    assert.equal(written.warnOnSwitch, false);
+});
+
+test('a non-boolean preference is ignored, like an invalid world entry', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, warnOnSwitch: 'no' }));
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.warnOnSwitch(), true);
+    assert.deepEqual(state.world('lostcity'), REMEMBERED);
+    assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false);
+});
+
+test('setWarnOnSwitch leaves the remembered worlds alone', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setWorld('lostcity', REMEMBERED);
+    a.setWarnOnSwitch(false);
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.world('lostcity'), REMEMBERED);
+    assert.equal(b.warnOnSwitch(), false);
+});

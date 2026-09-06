@@ -5,6 +5,7 @@ import type { RememberedWorld } from '../shared/worlds.ts';
 interface StateFile {
     version: 1;
     worlds: Record<string, RememberedWorld>;
+    warnOnSwitch: boolean;
 }
 
 function isRemembered(x: unknown): x is RememberedWorld {
@@ -22,14 +23,17 @@ function isRemembered(x: unknown): x is RememberedWorld {
 }
 
 /**
- * Small per-user state that is not configuration: the last world and detail
- * chosen per server. Loading never fails and never complains; a file that
- * cannot be read is kept aside and the state starts empty, since nothing here
- * is worth interrupting a launch for.
+ * Small per-user state: choices the user made in passing rather than settings
+ * they configured — the last world and detail chosen per server, and whether
+ * they still want warning before a switch reloads the game. Loading never
+ * fails and never complains; a file that cannot be read is kept aside and the
+ * state starts empty, since nothing here is worth interrupting a launch for.
  */
 export class AppState {
     readonly file: string;
     private worlds = new Map<string, RememberedWorld>();
+    // An opt-out: the warning shows until the user has ticked "don't ask again".
+    private warn = true;
 
     constructor(file: string) {
         this.file = file;
@@ -37,6 +41,7 @@ export class AppState {
 
     load(): void {
         this.worlds = new Map();
+        this.warn = true;
         if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
@@ -45,6 +50,8 @@ export class AppState {
             for (const [id, value] of Object.entries(worlds)) {
                 if (isRemembered(value)) this.worlds.set(id, { ...value });
             }
+            // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
+            if (typeof parsed?.warnOnSwitch === 'boolean') this.warn = parsed.warnOnSwitch;
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
         }
@@ -60,9 +67,19 @@ export class AppState {
         this.save();
     }
 
+    /** Whether to confirm before a world or detail switch reloads the game. */
+    warnOnSwitch(): boolean {
+        return this.warn;
+    }
+
+    setWarnOnSwitch(value: boolean): void {
+        this.warn = value;
+        this.save();
+    }
+
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: StateFile = { version: 1, worlds: Object.fromEntries(this.worlds) };
+        const data: StateFile = { version: 1, worlds: Object.fromEntries(this.worlds), warnOnSwitch: this.warn };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }

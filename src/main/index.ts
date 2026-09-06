@@ -10,6 +10,7 @@ import { createServerWindow, type ServerWindow } from './serverWindow';
 import { installMenu, type MenuActions } from './menu';
 import { WorldsService } from './worlds/service';
 import { probeLatency } from './worlds/probe';
+import { switchWarning, type SwitchIntent } from './worlds/warning';
 
 /** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
 const CAPTURE_DIR = process.env.SWIFTKIT_CAPTURE;
@@ -113,7 +114,7 @@ function catalogMtime(): number {
 function loadCatalog(): void {
     catalog.load();
     catalogSeen = catalogMtime();
-    installMenu(catalog.list(), actions);
+    installMenu(catalog.list(), actions, appState.warnOnSwitch());
     if (catalog.recovered) {
         log(`[main] ${catalog.file} could not be read; the defaults were written and the old file kept beside it`);
         void dialog.showMessageBox({
@@ -129,6 +130,12 @@ function reloadCatalogIfChanged(): void {
     if (catalogMtime() === catalogSeen) return;
     loadCatalog();
     log(`[main] server list reloaded: ${catalog.list().length} servers`);
+}
+
+/** The one writer of the preference: saves it, then rebuilds the menu so its checkbox agrees. */
+function setWarnOnSwitch(value: boolean): void {
+    appState.setWarnOnSwitch(value);
+    installMenu(catalog.list(), actions, appState.warnOnSwitch());
 }
 
 const actions: MenuActions = {
@@ -152,7 +159,8 @@ const actions: MenuActions = {
         loadCatalog();
         log(`[main] server list reloaded: ${catalog.list().length} servers`);
     },
-    togglePanel: () => focusedServerWindow()?.togglePanel()
+    togglePanel: () => focusedServerWindow()?.togglePanel(),
+    setWarnOnSwitch
 };
 
 // ── ipc ───────────────────────────────────────────────────────────────────
@@ -168,14 +176,47 @@ ipcMain.handle(IPC.shellSelectTool, (event, id: unknown) => {
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
 
+/**
+ * Ask before a switch reloads the game and throws the player out. A sheet on
+ * the window, not an app-modal box, so the other windows keep running. The
+ * checkbox says what the user wants of the warning rather than of this switch,
+ * so it is honoured whichever button they pressed. Capture mode never arrives
+ * here: it drives switchWorld directly rather than over IPC.
+ */
+async function confirmSwitch(sw: ServerWindow, intent: SwitchIntent): Promise<boolean> {
+    if (!appState.warnOnSwitch()) return true;
+    const { message, detail } = switchWarning(intent);
+    const { response, checkboxChecked } = await dialog.showMessageBox(sw.window, {
+        type: 'question',
+        buttons: ['Switch', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        message,
+        detail,
+        checkboxLabel: "Don't ask again",
+        checkboxChecked: false
+    });
+    if (checkboxChecked) setWarnOnSwitch(false);
+    return response === 0;
+}
+
 ipcMain.handle(IPC.worldsSwitch, async (event, world: unknown) => {
     if (typeof world !== 'number' || !Number.isInteger(world)) return;
-    await windowFor(event.sender)?.switchWorld(world);
+    const sw = windowFor(event.sender);
+    const worlds = sw?.state().worlds;
+    // Nothing to confirm when the window has no worlds, or is on that world already.
+    if (!sw || !worlds || worlds.current === world) return;
+    if (!(await confirmSwitch(sw, { kind: 'world', to: world, from: worlds.current }))) return;
+    await sw.switchWorld(world);
 });
 
 ipcMain.handle(IPC.worldsSetDetail, async (event, detail: unknown) => {
     if (detail !== 'low' && detail !== 'high') return;
-    await windowFor(event.sender)?.setDetail(detail);
+    const sw = windowFor(event.sender);
+    const worlds = sw?.state().worlds;
+    if (!sw || !worlds || worlds.detail === detail) return;
+    if (!(await confirmSwitch(sw, { kind: 'detail', to: detail, world: worlds.current }))) return;
+    await sw.setDetail(detail);
 });
 
 // ── dev capture ───────────────────────────────────────────────────────────
@@ -293,8 +334,9 @@ async function captureAndExit(dir: string): Promise<void> {
 // ── app ───────────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-    loadCatalog();
+    // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    loadCatalog();
 
     log('');
     log('  SwiftKit');
