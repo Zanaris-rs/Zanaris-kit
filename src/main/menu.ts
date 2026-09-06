@@ -1,6 +1,7 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
+import type { LatestRelease } from './update';
 
 export interface MenuActions {
     /** Another window of the focused window's server, or of the first server when none is focused. */
@@ -12,16 +13,18 @@ export interface MenuActions {
     togglePanel(): void;
     /** Whether a world or detail switch is confirmed before it reloads the game. */
     setWarnOnSwitch(value: boolean): void;
+    /** Opens a web page in the system browser: the release page, the repository. */
+    openExternal(url: string): void;
 }
 
 /**
  * The application menu is where new windows come from; there is no launcher.
- * Rebuilt whenever the catalog changes so the server submenu stays current,
- * and whenever the switch warning is turned on or off so its checkbox agrees.
  * Native menus follow the platform's Title Case; everything the renderer
- * draws is sentence case.
+ * draws is sentence case. Rebuilt whenever the catalog changes so the server
+ * submenu stays current, whenever the switch warning is turned on or off so
+ * its checkbox agrees, and once more when a newer release is found.
  */
-export function installMenu(servers: readonly ServerDef[], actions: MenuActions, warnOnSwitch: boolean): void {
+export function installMenu(servers: readonly ServerDef[], actions: MenuActions, warnOnSwitch: boolean, update: LatestRelease | null): void {
     const isMac = process.platform === 'darwin';
     const serverItems = (): MenuItemConstructorOptions[] =>
         servers.length === 0
@@ -55,7 +58,14 @@ export function installMenu(servers: readonly ServerDef[], actions: MenuActions,
                 { role: 'toggleDevTools' }
             ]
         },
-        { role: 'windowMenu' }
+        { role: 'windowMenu' },
+        {
+            role: 'help',
+            submenu: [
+                ...(update?.newer ? [{ label: `Update Available: ${update.latest}`, click: () => actions.openExternal(update.url) }] : []),
+                { label: 'Zanaris Kit on GitHub', click: () => actions.openExternal('https://github.com/Zanaris-rs/swiftkit') }
+            ]
+        }
     ];
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 

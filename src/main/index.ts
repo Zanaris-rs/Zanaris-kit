@@ -14,6 +14,7 @@ import { ChatService, offlineChat, tlsConnect } from './chat/service';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
+import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -71,6 +72,37 @@ const appState = new AppState(join(CAPTURE_DIR ?? userData, 'state.json'));
 const worldsServices = new Map<string, WorldsService>();
 /** One chat connection for the whole app, built at ready because its nick comes out of the profile. */
 let chat: ChatService | null = null;
+
+/** The newer release the update check found, if any; the menu shows it. */
+let update: LatestRelease | null = null;
+
+/** The one way the menu is (re)built, so every rebuild carries the same inputs. */
+function installAppMenu(): void {
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update);
+}
+
+/**
+ * One request per launch for the newest release. Every failure is swallowed:
+ * offline, rate limited, malformed. Nothing is downloaded; the Help menu
+ * gets an item that opens the release page.
+ */
+async function checkForUpdate(): Promise<void> {
+    if (CAPTURE_DIR || process.env.ZANARIS_NO_UPDATE_CHECK) return;
+    try {
+        const res = await net.fetch(RELEASES_LATEST, {
+            signal: AbortSignal.timeout(5000),
+            headers: { Accept: 'application/vnd.github+json', 'User-Agent': `zanaris-kit/${app.getVersion()}` }
+        });
+        if (!res.ok) return;
+        const found = checkLatest(await res.json(), app.getVersion());
+        if (!found?.newer) return;
+        update = found;
+        installAppMenu();
+        log(`[main] update available: ${found.latest} (this is ${app.getVersion()})`);
+    } catch (err) {
+        log(`[main] update check skipped: ${(err as Error).message}`);
+    }
+}
 
 /** The conversation as it stands. Nothing opens a window before the service exists, but state() always needs a view. */
 function chatView(): ChatView {
@@ -177,7 +209,7 @@ function catalogMtime(): number {
 function loadCatalog(): void {
     catalog.load();
     catalogSeen = catalogMtime();
-    installMenu(catalog.list(), actions, appState.warnOnSwitch());
+    installAppMenu();
     if (catalog.recovered) {
         log(`[main] ${catalog.file} could not be read; the defaults were written and the old file kept beside it`);
         void dialog.showMessageBox({
@@ -198,7 +230,7 @@ function reloadCatalogIfChanged(): void {
 /** The one writer of the preference: saves it, then rebuilds the menu so its checkbox agrees. */
 function setWarnOnSwitch(value: boolean): void {
     appState.setWarnOnSwitch(value);
-    installMenu(catalog.list(), actions, appState.warnOnSwitch());
+    installAppMenu();
 }
 
 const actions: MenuActions = {
@@ -223,7 +255,10 @@ const actions: MenuActions = {
         log(`[main] server list reloaded: ${catalog.list().length} servers`);
     },
     togglePanel: () => focusedServerWindow()?.togglePanel(),
-    setWarnOnSwitch
+    setWarnOnSwitch,
+    openExternal: url => {
+        void shell.openExternal(url);
+    }
 };
 
 // ── ipc ───────────────────────────────────────────────────────────────────
@@ -439,6 +474,7 @@ app.whenReady().then(async () => {
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();
+    void checkForUpdate();
 
     log('');
     log('  Zanaris Kit');
