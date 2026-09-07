@@ -17,8 +17,8 @@ jobs:
     name: Stage the engine
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -28,11 +28,12 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: node scripts/stage-engine.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: engine-dist
           path: engine-dist
-          # The pack's .cache directory is load-bearing engine data, and v4 drops hidden files.
+          # The pack's .cache directory is load-bearing engine data, and the action
+          # drops hidden files unless told otherwise.
           include-hidden-files: true
           retention-days: 7
           compression-level: 1
@@ -48,13 +49,13 @@ jobs:
         os: [macos-14, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: engine-dist
           path: engine-dist
@@ -88,7 +89,7 @@ jobs:
             [ -f "$engine/$f" ] || { echo "packaged engine is incomplete: missing $f under $engine"; exit 1; }
           done
           echo "packaged engine complete at $engine"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name != 'push'
         with:
           name: zanaris-kit-${{ matrix.os }}
