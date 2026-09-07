@@ -9,6 +9,7 @@ interface StateFile {
     worlds: Record<string, RememberedWorld>;
     warnOnSwitch: boolean;
     chat: ChatSettings;
+    singlePlayer: { cheats: boolean };
 }
 
 function isRemembered(x: unknown): x is RememberedWorld {
@@ -57,6 +58,8 @@ export class AppState {
     // An opt-out: the warning shows until the user has ticked "don't ask again".
     private warn = true;
     private chatSettings: ChatSettings = { ...DEFAULT_CHAT };
+    // Developer commands in the single-player world: off until asked for.
+    private cheats = false;
 
     constructor(file: string) {
         this.file = file;
@@ -66,6 +69,7 @@ export class AppState {
         this.worlds = new Map();
         this.warn = true;
         this.chatSettings = { ...DEFAULT_CHAT };
+        this.cheats = false;
         if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
@@ -77,6 +81,8 @@ export class AppState {
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.warnOnSwitch === 'boolean') this.warn = parsed.warnOnSwitch;
             this.chatSettings = readChat(parsed?.chat);
+            const sp = parsed?.singlePlayer;
+            if (typeof sp === 'object' && sp !== null && typeof (sp as { cheats?: unknown }).cheats === 'boolean') this.cheats = (sp as { cheats: boolean }).cheats;
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
         }
@@ -112,9 +118,19 @@ export class AppState {
         this.save();
     }
 
+    /** Whether the single-player world grants developer commands. Off until asked for. */
+    singlePlayerCheats(): boolean {
+        return this.cheats;
+    }
+
+    setSinglePlayerCheats(on: boolean): void {
+        this.cheats = on;
+        this.save();
+    }
+
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: StateFile = { version: 1, worlds: Object.fromEntries(this.worlds), warnOnSwitch: this.warn, chat: this.chatSettings };
+        const data: StateFile = { version: 1, worlds: Object.fromEntries(this.worlds), warnOnSwitch: this.warn, chat: this.chatSettings, singlePlayer: { cheats: this.cheats } };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }

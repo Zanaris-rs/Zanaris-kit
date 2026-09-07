@@ -1,0 +1,87 @@
+/*
+ * Matches the shell: the 2004 client's own interface palette — warm
+ * near-black ground, one raised stone slab, gold heading, green links.
+ * The font sits beside this file so the page needs nothing from the
+ * network to look right — which is the whole point of a page that only
+ * appears when the network is the problem.
+ */
+@font-face {
+    font-family: 'Pixelify Sans';
+    src: url('./pixelify-sans.woff2') format('woff2');
+    font-weight: 400 700;
+    font-display: block;
+}
+:root { color-scheme: dark; }
+body {
+    margin: 0; height: 100vh; display: grid; place-items: center;
+    background: #1a1710; color: #ece7dc;
+    font-family: Arial, Helvetica, sans-serif; font-size: 13px;
+    /* Inherited by every glyph on the page: the client shadows its text,
+       and it is what keeps letters legible over the stone grain. */
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, .78);
+    -webkit-user-select: none; user-select: none;
+}
+/* Raised interface stone: warm bevel, light above-left, shadow below-right. */
+.slab {
+    background-color: #443d31;
+    border: 2px solid #211d16; border-top-color: #7d7463; border-left-color: #7d7463;
+    max-width: 30rem; padding: 18px 22px; text-align: center;
+}
+/* The stone grain the rest of the app uses: two turbulence layers overlaid
+   on the flat colour. Both stone surfaces take it, so it is declared once. */
+.slab, code {
+    background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='9'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='70' height='70' filter='url(%23g)' opacity='0.34'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='190' height='190'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.055' numOctaves='2' seed='21'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='190' height='190' filter='url(%23b)' opacity='0.3'/%3E%3C/svg%3E");
+    background-blend-mode: overlay, overlay;
+}
+h1 {
+    font-family: 'Pixelify Sans', 'Trebuchet MS', Arial, sans-serif;
+    font-size: 18px; font-weight: normal; margin: 0 0 12px; color: #ffe139;
+}
+/* Arial, not the pixel face: the URL and the error code are data, and
+   Pixelify Sans makes digits hard to tell apart. */
+p { margin: 6px 0; line-height: 1.5; }
+/* Block, not inline: an inline well breaks its bevel across wrapped lines.
+   The same bevel as the slab, inverted — a recess that holds a field. */
+code {
+    display: block; margin: 6px auto 0; max-width: 100%;
+    background-color: #37311f;
+    border: 2px solid #7d7463; border-top-color: #211d16; border-left-color: #211d16;
+    padding: 4px 8px;
+    color: #90c040; word-break: break-all;
+}
+.reason { color: #a89c86; }
+.hint { color: #a89c86; margin-top: 16px; }
+/* The client's red action button: flat red, no grain, lit above-left. */
+button {
+    font-family: 'Pixelify Sans', 'Trebuchet MS', Arial, sans-serif; font-size: 15px;
+    margin-top: 16px; padding: 5px 18px;
+    background: #a70700;
+    border: 2px solid #570700; border-top-color: #c8503f; border-left-color: #c8503f;
+    color: #fff; cursor: default;
+}
+/* Pressed: the bevel flips, so the face reads as pushed in. */
+button:active {
+    border-color: #c8503f; border-top-color: #570700; border-left-color: #570700;
+}
+.dots::after { content: ''; animation: dots 1.4s steps(4, end) infinite; }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+
+/* The starting page's log well: the recessed field, scrolling, left-aligned, smaller. */
+pre {
+    display: block; margin: 8px 0 0; max-height: 9em; overflow: auto; text-align: left;
+    font: 12px/1.4 Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word;
+    background-color: #37311f;
+    border: 2px solid #7d7463; border-top-color: #211d16; border-left-color: #211d16;
+    padding: 4px 8px; color: #a89c86;
+    /* The one place on these pages worth selecting: body turns selection off
+       for the whole page, and this well holds the error a player wants to
+       paste into a bug report. */
+    -webkit-user-select: text; user-select: text;
+}
+.version { color: #a89c86; font-size: 12px; margin-top: 12px; }
+/* The pre rule above sets display, and an author display beats the UA's
+   [hidden] rule — without this the empty log well shows on every state that
+   hides it. Restated so the page's own hidden attribute keeps working. */
+[hidden] { display: none; }

@@ -192,3 +192,24 @@ test('setChat leaves the remembered worlds and the warning alone', () => {
     assert.equal(b.warnOnSwitch(), false);
     assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
 });
+
+test('single-player cheats are off by default, persist, and survive a file without the key', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'state-'));
+    const file = join(dir, 'state.json');
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.singlePlayerCheats(), false);
+    state.setSinglePlayerCheats(true);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).singlePlayer.cheats, true);
+    const again = new AppState(file);
+    again.load();
+    assert.equal(again.singlePlayerCheats(), true);
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, warnOnSwitch: true }));
+    const older = new AppState(file);
+    older.load();
+    assert.equal(older.singlePlayerCheats(), false);
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, singlePlayer: { cheats: 'yes' } }));
+    const odd = new AppState(file);
+    odd.load();
+    assert.equal(odd.singlePlayerCheats(), false);
+});

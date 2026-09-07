@@ -4,18 +4,19 @@ An Electron client that opens several 04scape servers at once, one window per
 server, where every window knows which server it is running and can hop
 between that server's worlds.
 
-**Status: milestone two of the server-windows design.** Server windows with
-the pinned game tab, the rail and panel, the widen / shift / push layout
-engine, and now the Worlds tool: a world list with players and latency, a
-low / high detail switch, and the last world remembered per server. Page tabs,
-timers, screenshots and the other tools follow. The design is in
+**Status: single player — a world this computer runs — on top of milestone
+two of the server-windows design.** Server windows with the pinned game tab,
+the rail and panel, the widen / shift / push layout engine, and the Worlds
+tool: a world list with players and latency, a low / high detail switch, and
+the last world remembered per server. Page tabs, timers, screenshots and the
+other tools follow. The design is in
 `docs/superpowers/specs/2026-09-05-server-windows-design.md`, which also maps
 LostHQ's LostKit 2 onto it; the plans are under `docs/superpowers/plans/`.
 
 ## Download
 
 Installers for macOS, Windows and Linux are on the
-[releases page](https://github.com/Zanaris-rs/swiftkit/releases/latest):
+[releases page](https://github.com/Zanaris-rs/Zanaris-kit/releases/latest):
 `Zanaris-Kit-<version>-universal.dmg`, `Zanaris-Kit-Setup-<version>.exe` and
 `Zanaris-Kit-<version>.AppImage`.
 
@@ -70,6 +71,18 @@ Opening the same server twice gives the second window its own storage
 partition (`persist:server:<id>:2`) and the title "Lost City — World 5 (2)",
 so two accounts on one server never share cookies or client prefs. Slot
 numbers are reused once a window closes.
+
+**Single player** needs no server at all: the kit carries the Lost City engine
+and the game's files, and File > New Window For > Single player starts a world
+on this computer. There is no account and nothing to sign up for — any name
+typed at the login screen becomes a character, and its saves live in the app's
+own data folder: `Application Support/zanaris-kit/singleplayer/data/players/main`
+on macOS, `%APPDATA%\zanaris-kit\singleplayer\...` on Windows,
+`~/.config/zanaris-kit/singleplayer/...` on Linux. The rail's Single player
+tool says what the world is doing, and opens that saves folder or the world's
+log. Its Cheats switch turns the engine's developer commands, `::tele` and
+`::give`, on for the whole world; that takes a restart of the world, so it
+logs you out and asks first.
 
 Nothing is injected into a game page: no preload, no main-world code. The page
 that runs is byte-for-byte the page the server served. A modified client is
@@ -166,6 +179,7 @@ seeded on first run, one entry per server:
 | `lostcity` | 274 | LostHQ's world API (`2004.losthq.rs/pages/api/worlds.php`), which carries players and both detail URLs | yes | losthq |
 | `zanaris` | 274 | `zanaris.rs/worlds.json`, players from each world's `world.json` | yes | losthq |
 | `lostcitylabs` | unknown, "May 2005 per Lost City Labs" | a static list, worlds 1 to 4 | no parameter found | none |
+| `singleplayer` | 274, the bundled engine | none | | losthq |
 | `local` | 289, as `engine/data/config/world.json` sets it | none | | none |
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
@@ -234,12 +248,18 @@ npm run dist         # package this platform into release/ (stages first if need
 `RELEASE.md` for how a release is cut. Everything under `engine-dist/`,
 `.engine-work/` and `release/` is build output.
 
+Single player runs from `engine-dist/` in dev, so `npm run stage:engine` has
+to have run once before it works: without it the window says "Engine not
+staged: run npm run stage:engine", and a capture run skips the entry rather
+than failing on it. A packaged build stages the engine for you.
+
 Capture mode (`ZANARIS_CAPTURE=<dir>`, settle time `ZANARIS_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,
 because a window's own webContents holds nothing when its content lives in
 child views. It opens the panel on a loaded window, opens the Worlds tool,
-waits for the list, switches to another world and captures that, then opens
-a second instance of that server. It keeps its own `state.json` beside the
+waits for the list, switches to another world and captures that, opens the
+Single player tool on the window running the bundled world, then opens a
+second instance of that server. It keeps its own `state.json` beside the
 screenshots so a test switch never changes what the next real launch opens.
 A view that has no frame yet is retried, then skipped.
 
@@ -260,7 +280,7 @@ One capture run with every catalog server open at once:
 The version 1 `servers.json` on disk migrated in place during that run, with
 no recovery prompt, and the state file recorded the hop.
 
-222 tests cover the pure modules: layout, catalog (validation, defaults, file
+250 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, v1 to v2 migration), slots, tabs, the window registry, the world
 sources against the real API payloads (including a check that the Lost City
 template reproduces LostHQ's URLs exactly), the worlds service (cache, shared

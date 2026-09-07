@@ -15,8 +15,27 @@ import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
+import { SinglePlayerService } from './singleplayer/service';
+import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
 
 const log = (msg: string): void => console.log(msg);
+
+// ── one instance ──────────────────────────────────────────────────────────
+//
+// Two instances would share one world. Both resolve the same
+// <userData>/singleplayer, both write data/config/world.json over each other,
+// both spawn an engine with that working directory, and both save the same
+// character into data/players/main — two worlds, one set of saves, last
+// logout wins, and nothing tells the player. The userData move below and
+// servers.json have the same problem in miniature. macOS refuses the second
+// launch itself; Windows and Linux happily run two.
+//
+// app.exit rather than quit-and-return: a module body cannot return, and
+// app.quit() is a request — it comes back, and everything below would run in
+// an instance that is on its way out, moving the profile's files and touching
+// the world directory before it goes. exit(0) leaves immediately, which is
+// what an instance owning nothing should do.
+if (!app.requestSingleInstanceLock()) app.exit(0);
 
 // ── the userData move, from the old name to this one ──────────────────────
 //
@@ -75,6 +94,9 @@ let chat: ChatService | null = null;
 
 /** The newer release the update check found, if any; the menu shows it. */
 let update: LatestRelease | null = null;
+
+/** The one world this computer runs; built at ready, when the paths and the catalog exist. */
+let singlePlayer: SinglePlayerService | null = null;
 
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
@@ -176,7 +198,8 @@ const windows = new ServerWindows((spec, onClosed) => {
             chat: chatView,
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
-            probe: probeLatency
+            probe: probeLatency,
+            singlePlayer
         }
     );
     serverWindows.set(spec.id, sw);
@@ -351,6 +374,48 @@ ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
     chat?.setNick(chosen);
 });
 
+// ── single player ─────────────────────────────────────────────────────────
+
+async function confirmCheats(sw: ServerWindow, on: boolean): Promise<boolean> {
+    const { response } = await dialog.showMessageBox(sw.window, {
+        type: 'question',
+        buttons: ['Restart', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Turning cheats ${on ? 'on' : 'off'} restarts your world and logs you out.`,
+        detail: on ? 'Developer commands such as ::tele and ::give will work.' : 'The world will play as the servers do.'
+    });
+    return response === 0;
+}
+
+ipcMain.handle(IPC.singlePlayerSetCheats, async (event, on: unknown) => {
+    if (typeof on !== 'boolean' || !singlePlayer) return;
+    const sw = windowFor(event.sender);
+    if (!sw || sw.state().server.kind !== 'singleplayer') return;
+    if (singlePlayer.view().cheats === on) return;
+    const running = singlePlayer.view().status !== 'stopped' && singlePlayer.view().status !== 'failed';
+    if (running && !(await confirmCheats(sw, on))) return;
+    await singlePlayer.setCheats(on);
+});
+
+ipcMain.handle(IPC.singlePlayerRetry, async event => {
+    const sw = windowFor(event.sender);
+    if (!sw || sw.state().server.kind !== 'singleplayer' || !singlePlayer) return;
+    await singlePlayer.retry().catch(() => undefined);
+});
+
+ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {
+    const saves = join(singlePlayerHome(), 'data', 'players', 'main');
+    mkdirSync(saves, { recursive: true });
+    await shell.openPath(saves);
+});
+
+ipcMain.handle(IPC.singlePlayerShowLog, async () => {
+    const logPath = join(singlePlayerHome(), 'world.log');
+    if (!existsSync(logPath)) writeFileSync(logPath, '');
+    await shell.openPath(logPath);
+});
+
 // ── dev capture ───────────────────────────────────────────────────────────
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -402,7 +467,11 @@ async function captureAndExit(dir: string): Promise<void> {
 
     try {
         const started = Date.now();
-        const opened = catalog.list().map(openServer);
+        // Single player needs the engine staged; on a machine where it is not,
+        // the entry is dropped rather than left to fail the run.
+        const servers = catalog.list().filter(s => s.kind !== 'singleplayer' || existsSync(join(engineResources(), 'VERSION.json')));
+        if (servers.length < catalog.list().length) log('[capture] singleplayer skipped: engine not staged');
+        const opened = servers.map(openServer);
         const results = await Promise.all(
             opened.map(async sw => {
                 const result = await loaded(sw);
@@ -452,6 +521,22 @@ async function captureAndExit(dir: string): Promise<void> {
             }
         }
 
+        // The Single player tool: the world is up by the time the game loaded,
+        // so this is the panel as a player finds it — status, port and cheats.
+        const single = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.kind === 'singleplayer');
+        if (single) {
+            // Fronted before the tool opens, as the Worlds tool is: the panel's
+            // pixel font is only fetched once the shell paints, and until it
+            // arrives `font-display: block` leaves every label blank.
+            single.window.moveTop();
+            single.focus();
+            await wait(500);
+            single.selectTool('singleplayer');
+            await wait(500);
+            await shoot('singleplayer-tool', single);
+            log(`[capture] singleplayer: ${single.state().singlePlayer?.status} on port ${single.state().singlePlayer?.port}`);
+        }
+
         const second = openServer(first.state().server);
         log(`[capture] ${second.state().title}: ${await loaded(second)}`);
         await wait(Math.min(settleMs, 8_000));
@@ -483,6 +568,16 @@ app.whenReady().then(async () => {
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();
+    singlePlayer = new SinglePlayerService(
+        electronDeps({
+            baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
+            cheats: { get: () => appState.singlePlayerCheats(), set: on => appState.setSinglePlayerCheats(on) },
+            log
+        })
+    );
+    singlePlayer.subscribe(() => {
+        for (const sw of serverWindows.values()) if (sw.state().server.kind === 'singleplayer') sw.pushState();
+    });
     void checkForUpdate();
 
     log('');
@@ -504,12 +599,40 @@ app.on('activate', () => {
     if (serverWindows.size === 0) actions.newWindow();
 });
 
+/**
+ * Someone launched the kit again while this instance holds the lock. That
+ * launch has already exited, so surface this one rather than let the click do
+ * nothing: the window they were last on, restored if they had minimised it.
+ */
+app.on('second-instance', () => {
+    const window = (focusedServerWindow() ?? [...serverWindows.values()].at(-1))?.window ?? BrowserWindow.getAllWindows()[0];
+    if (!window || window.isDestroyed()) {
+        actions.newWindow();
+        return;
+    }
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+});
+
 app.on('browser-window-focus', () => reloadCatalogIfChanged());
 
-app.on('before-quit', () => {
+/** Set once the world has been stopped for the quit, so the second quit goes through. */
+let worldStoppedForQuit = false;
+app.on('before-quit', event => {
     quitting = true;
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
+    // The world writes the player's saves as it shuts down, so the quit waits for
+    // it — bounded by the service's own ten-second grace before it kills the world.
+    const status = singlePlayer?.view().status;
+    if (singlePlayer && !worldStoppedForQuit && status !== 'stopped' && status !== 'failed' && status !== undefined) {
+        event.preventDefault();
+        void singlePlayer.stop().finally(() => {
+            worldStoppedForQuit = true;
+            app.quit();
+        });
+    }
 });
 
 // macOS keeps running with no windows; the menu and the dock open the next one.

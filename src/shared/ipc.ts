@@ -3,6 +3,7 @@ import type { ServerDef } from './catalog';
 import type { LayoutMode, TabKind } from './layout';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatView } from './chat';
+import type { SinglePlayerView } from './singleplayer';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -16,11 +17,15 @@ export const IPC = {
     chatGet: 'zanaris:chat-get',
     chatSend: 'zanaris:chat-send',
     chatSelect: 'zanaris:chat-select',
-    chatSetNick: 'zanaris:chat-set-nick'
+    chatSetNick: 'zanaris:chat-set-nick',
+    singlePlayerSetCheats: 'zanaris:singleplayer-set-cheats',
+    singlePlayerRetry: 'zanaris:singleplayer-retry',
+    singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
+    singlePlayerShowLog: 'zanaris:singleplayer-show-log'
 } as const;
 
-/** The tools a window can offer. One so far; a registry is worth it when the second lands. */
-export const TOOL_IDS = ['worlds', 'chat'] as const;
+/** The tools a window can offer. Three so far; a registry is worth it when the list grows. */
+export const TOOL_IDS = ['worlds', 'chat', 'singleplayer'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
@@ -62,6 +67,8 @@ export interface ShellState {
     worlds: WorldsView | null;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
+    /** The world this computer runs; null for every other kind of window. */
+    singlePlayer: SinglePlayerView | null;
 }
 
 export interface ZanarisApi {
@@ -87,5 +94,12 @@ export interface ZanarisApi {
         switch(world: number): Promise<void>;
         /** Reloads the current world at the given detail. */
         setDetail(detail: Detail): Promise<void>;
+    };
+    singlePlayer: {
+        /** Asks first when the world is running, since it restarts. */
+        setCheats(on: boolean): Promise<void>;
+        retry(): Promise<void>;
+        openSaves(): Promise<void>;
+        showLog(): Promise<void>;
     };
 }

@@ -65,3 +65,14 @@ export function PanelToggle(): ReactNode {
         </svg>
     );
 }
+
+/** Single player. A lit hearth on the stone: a warm flame over a dark grate, one flat sprite on the shared outline. */
+export function Hearth(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
+            <rect x="3" y="12" width="12" height="3.5" fill="#5a4a38" stroke={OUTLINE} strokeWidth="1.3" />
+            <path d="M9 2.5c1.2 2 3.6 3.4 3.6 6.2A3.6 3.6 0 0 1 9 12.2a3.6 3.6 0 0 1-3.6-3.5c0-1.4.6-2.2 1.3-3 .1 1.1.6 1.7 1.3 1.9C7.7 5.4 8.2 3.8 9 2.5z" fill="#ffe139" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M9 7.4c.6 1 1.4 1.6 1.4 2.6A1.4 1.4 0 0 1 9 11.3a1.4 1.4 0 0 1-1.4-1.3c0-.9.8-1.6 1.4-2.6z" fill="#a70700" />
+        </svg>
+    );
+}

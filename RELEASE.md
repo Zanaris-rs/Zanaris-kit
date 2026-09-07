@@ -34,9 +34,13 @@ beside `src` (on macOS, inside the bundle at `Zanaris Kit.app/Contents/Resources
 - macOS, on this Mac: mount the DMG, drag the app to Applications. It has no
   Developer ID: the first launch is refused, then System Settings > Privacy &
   Security > Open Anyway opens it. Open a server window; it should load.
-  (From the single-player release on: open Single player, log in as a new
-  name, log out, and confirm a `.sav` appeared under
-  `~/Library/Application Support/zanaris-kit/singleplayer/data/players/main/`.)
+  Then File > New Window For > Single player: wait for the login screen, log
+  in as a new name, log out, and confirm the `.sav` appeared under
+  `~/Library/Application Support/zanaris-kit/singleplayer/data/players/main/`.
+  Turn Cheats on in the Single player tool, accept the restart, log in again
+  and confirm `::tele 0,50,50,22,18` moves the character to 3222, 3218. The
+  engine wants one comma-separated argument, `level,mapx,mapz,localx,localz`;
+  a space-separated pair parses as one coordinate and silently does nothing.
 - Windows, in a VM or on a spare machine: run the installer, pass SmartScreen
   with More info > Run anyway, same checks. Saves live under
   `%APPDATA%\zanaris-kit\singleplayer\`.
