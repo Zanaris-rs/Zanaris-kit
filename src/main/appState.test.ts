@@ -248,6 +248,25 @@ test('setChat with dock and dockHeight saves, and a fresh instance reads them ba
     assert.deepEqual(written.chat, { ...DEFAULT_CHAT, dock: 'side', dockHeight: 260 });
 });
 
+test('stageChat applies in memory and writes nothing until save is called', () => {
+    // What the dock drag leans on: a height arrives once an animation frame,
+    // so the layout must see it immediately while the profile is written once,
+    // when the drag settles. A stageChat that saved would be sixty rewrites of
+    // the whole file a second; one that did not apply would leave every
+    // window laying out against the old height.
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setChat({ nick: 'lumbridge' });
+    a.stageChat({ dockHeight: 260 });
+    assert.equal(a.chat().dockHeight, 260, 'the staged height is live in memory at once');
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).chat.dockHeight, DEFAULT_CHAT.dockHeight, 'and nothing has been written yet');
+    a.save();
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', dockHeight: 260 }, 'the save writes the staged height alongside everything else');
+});
+
 test('single-player cheats are off by default, persist, and survive a file without the key', () => {
     const dir = mkdtempSync(join(tmpdir(), 'state-'));
     const file = join(dir, 'state.json');

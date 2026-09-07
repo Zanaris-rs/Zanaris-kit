@@ -434,6 +434,42 @@ ipcMain.handle(IPC.chatSetHome, (event, home: unknown) => {
 });
 
 /**
+ * How long the dock's height must sit still before it is written to the
+ * profile. Long enough that a drag — one height per animation frame, so around
+ * sixty a second — writes once when the user lets go, short enough that
+ * nothing plausible happens between the release and the write.
+ */
+const DOCK_HEIGHT_SETTLE_MS = 400;
+let dockHeightWrite: NodeJS.Timeout | null = null;
+
+/**
+ * The height applies to every window's layout on the frame it arrives; only
+ * the *write* waits for the drag to finish. AppState.save() is a synchronous
+ * rewrite of the whole of state.json, and one per frame is two costs: on
+ * Windows, where userData sits in a roamed and antivirus-scanned
+ * AppData\Roaming, a multi-millisecond write per frame stutters the very drag
+ * it is recording; and every write is a moment in which a kill truncates the
+ * file, which load() then quarantines, taking the user's remembered worlds and
+ * nick with it. (The write is not atomic, which is what makes that window a
+ * real one — that predates the dock and is left alone here.)
+ */
+function writeDockHeightWhenItSettles(): void {
+    if (dockHeightWrite) clearTimeout(dockHeightWrite);
+    dockHeightWrite = setTimeout(() => {
+        dockHeightWrite = null;
+        appState.save();
+    }, DOCK_HEIGHT_SETTLE_MS);
+}
+
+/** Writes a staged height now rather than on the timer. For the quit, which would otherwise leave the last drag of a session unremembered. */
+function flushDockHeight(): void {
+    if (!dockHeightWrite) return;
+    clearTimeout(dockHeightWrite);
+    dockHeightWrite = null;
+    appState.save();
+}
+
+/**
  * The dock's height, as the user drags its top edge or steps it by keyboard.
  * Clamping is main's job — the preload passes the number through untouched,
  * and a renderer is not something to take arithmetic on trust from. The
@@ -458,8 +494,9 @@ ipcMain.handle(IPC.chatSetDockHeight, (event, px: unknown): number => {
     const workArea = screen.getDisplayMatching(sw.window.getBounds()).workArea;
     const height = Math.round(Math.min(Math.max(px, DOCK_HEIGHT_MIN), workArea.height / 2));
     if (height === current) return height;
-    appState.setChat({ dockHeight: height });
+    appState.stageChat({ dockHeight: height });
     for (const other of serverWindows.values()) other.relayout();
+    writeDockHeightWhenItSettles();
     return height;
 });
 
@@ -827,6 +864,8 @@ app.on('browser-window-focus', () => {
 let worldStoppedForQuit = false;
 app.on('before-quit', event => {
     quitting = true;
+    // A height dragged and immediately quit on is still on the settle timer.
+    flushDockHeight();
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
     // The world writes the player's saves as it shuts down, so the quit waits for

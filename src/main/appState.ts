@@ -120,8 +120,19 @@ export class AppState {
     }
 
     setChat(patch: Partial<ChatSettings>): void {
-        this.chatSettings = { ...this.chatSettings, ...patch };
+        this.stageChat(patch);
         this.save();
+    }
+
+    /**
+     * The in-memory half of setChat, for a field that moves far faster than a
+     * file should be rewritten: the dock's height arrives once an animation
+     * frame for as long as a drag lasts, and save() below rewrites the whole
+     * profile synchronously. Whoever stages a value owns writing it — index.ts
+     * debounces one save() per drag rather than sixty a second.
+     */
+    stageChat(patch: Partial<ChatSettings>): void {
+        this.chatSettings = { ...this.chatSettings, ...patch };
     }
 
     /** Whether the single-player world grants developer commands. Off until asked for. */
