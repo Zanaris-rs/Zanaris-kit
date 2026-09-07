@@ -37,6 +37,16 @@ test("the rail's chat tab closes the panel when chat is already open on the side
     assert.equal(r.activeTool, 'chat', 'chat stays remembered as the panel occupant');
 });
 
+test("the rail's chat tab reopens the panel when chat is remembered but not currently shown", () => {
+    // Same activeTool as the "already open" case above, but panelOpen is
+    // false: chat is remembered, not showing. This must fall through to the
+    // "otherwise" branch and open the panel, not stay closed — the close
+    // branch requires panelOpen too, not just activeTool === 'chat'.
+    const r = reduce(base({ home: 'side', activeTool: 'chat', panelOpen: false }), { kind: 'rail-chat' }, TOOLS);
+    assert.equal(r.panelOpen, true, 'a closed panel opens rather than staying shut');
+    assert.equal(r.activeTool, 'chat');
+});
+
 test("the rail's chat tab opens chat on the side when the panel is closed", () => {
     const r = reduce(base({ home: 'side', activeTool: null, panelOpen: false }), { kind: 'rail-chat' }, TOOLS);
     assert.equal(r.activeTool, 'chat');
@@ -55,6 +65,21 @@ test("a tool's rail tab closes the panel when that tool is already open", () => 
     const r = reduce(base({ home: 'side', activeTool: 'worlds', panelOpen: true }), { kind: 'rail-tool', tool: 'worlds' }, TOOLS);
     assert.equal(r.panelOpen, false, 'the panel closes');
     assert.equal(r.activeTool, 'worlds', 'the remembered tool stays');
+});
+
+test("a tool's rail tab reopens the panel when that tool is remembered but not currently shown", () => {
+    // Mirrors the rail-chat case above: activeTool already matches the
+    // requested tool, but panelOpen is false. The close branch must require
+    // panelOpen too, or this would wrongly stay closed instead of reopening.
+    const r = reduce(base({ home: 'side', activeTool: 'worlds', panelOpen: false }), { kind: 'rail-tool', tool: 'worlds' }, TOOLS);
+    assert.equal(r.panelOpen, true, 'a closed panel opens rather than staying shut');
+    assert.equal(r.activeTool, 'worlds');
+});
+
+test("a tool's rail tab switches to a different tool while the panel stays open", () => {
+    const r = reduce(base({ home: 'side', activeTool: 'worlds', panelOpen: true }), { kind: 'rail-tool', tool: 'singleplayer' }, TOOLS);
+    assert.equal(r.activeTool, 'singleplayer', 'the panel switches to the newly selected tool');
+    assert.equal(r.panelOpen, true, 'the panel stays open across the switch, it never blinks closed');
 });
 
 test("a tool's rail tab opens the panel on that tool otherwise, leaving the dock alone", () => {
@@ -96,6 +121,16 @@ test('moving chat to the side evicts whatever tool held the column', () => {
     assert.equal(r.panelOpen, true);
 });
 
+test('moving chat to the side opens the panel even if the evicted tool was only remembered, not shown', () => {
+    // panelOpen starts false here, unlike the eviction test above. The result
+    // must still open the panel on chat unconditionally — 'move to side'
+    // does not carry panelOpen forward from the prior state.
+    const r = reduce(base({ home: 'bottom', dockOpen: true, activeTool: 'worlds', panelOpen: false }), { kind: 'move', to: 'side' }, TOOLS);
+    assert.equal(r.panelOpen, true, 'the panel opens on chat regardless of whether it was open before the move');
+    assert.equal(r.activeTool, 'chat');
+    assert.equal(r.dockOpen, false);
+});
+
 // ── toggle-panel ─────────────────────────────────────────────────────────
 
 test('the panel toggle closes an open panel without touching anything else', () => {
@@ -114,7 +149,15 @@ test('the panel toggle reopens on the remembered tool when there is one', () => 
 test('the panel toggle picks the first legal side occupant when nothing is remembered', () => {
     const r = reduce(base({ home: 'bottom', activeTool: null, panelOpen: false }), { kind: 'toggle-panel' }, TOOLS);
     assert.equal(r.panelOpen, true);
-    assert.equal(r.activeTool, 'worlds', "chat is skipped because it isn't a legal side occupant while home is 'bottom'");
+    assert.equal(r.activeTool, 'worlds', "'worlds' is the first entry in the rail order passed in");
+});
+
+test('the panel toggle skips chat and keeps scanning for the next legal tool while home is bottom', () => {
+    // Chat is first in this rail order, so this exercises the "skip, then
+    // keep looking" path specifically — as opposed to the previous test,
+    // where the winning tool was already first and the skip never ran.
+    const r = reduce(base({ home: 'bottom', activeTool: null, panelOpen: false }), { kind: 'toggle-panel' }, ['chat', 'worlds']);
+    assert.equal(r.activeTool, 'worlds', "chat is skipped because it isn't a legal side occupant while home is 'bottom', and the scan continues");
 });
 
 test('the panel toggle offers chat as the default once home is the side column', () => {
