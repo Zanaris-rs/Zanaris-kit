@@ -257,9 +257,17 @@ induce each other once the game view is shorter than the page's natural
 height — the bare-canvas floor, and the dock pushing the content rect below
 it while maximised, both land there. Main injects a small stylesheet into the
 game view's `dom-ready` (the kit's own offline and starting pages are left
-alone) that hides the scrollbar, swaps that `100vh` for a percentage of the
-view's own height, and centres safely — so the page clips its controls strip
-instead of ever scrolling.
+alone) that hides the scrollbar — a hidden bar reserves no gutter, which is
+what actually stops the two axes inducing each other — and separately swaps
+that `100vh` for a percentage of the view's own height, which keeps the
+canvas centred in an oversized window now that `vh` is gone rather than
+fixing anything itself. When the page does overflow anyway, it clips its
+controls strip at the bottom rather than the canvas at the top for an
+unrelated reason: `overflow: auto` rests scrolled to zero by default, so the
+visible window onto the content starts at its top edge. The stylesheet also
+centres `safe`, a no-op on the stock markup today — `center` only ever
+carries `min-height`, so it can never end up shorter than its own content —
+kept as a guard against a future change to the served page.
 
 Opening the panel or the dock is supposed to grow the window rather than
 shrink the game underneath it, and now that both exist that has to be true on

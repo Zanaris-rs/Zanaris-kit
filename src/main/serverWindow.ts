@@ -27,10 +27,22 @@ const PROBE_TIMEOUT_MS = 3_000;
  * Injected into every game page. The stock client is `body{overflow:auto}` around
  * a fixed 765x503 canvas plus a controls strip, inside a `center{min-height:100vh}`
  * flex column — and Chromium's vh ignores the scrollbar gutter, so one scrollbar
- * induces the other. Three fixes, in order: hide the bars so they never take a
- * gutter (which alone breaks the induction), swap 100vh for a percentage of a
- * definite height, and make the centring `safe` so an overflowing page clips its
- * controls strip at the bottom instead of shaving the top off the canvas.
+ * induces the other. Hiding the bars is the actual fix: a bar with no box reserves
+ * no gutter, so there is nothing left for the other axis to react to.
+ *
+ * The other two rules do not touch that fix. `html, body { height: 100% }` and
+ * `center { min-height: 100% }` replace the stock `100vh` with a percentage chain
+ * — which needs a definite ancestor height to resolve at all, hence the
+ * `height: 100%` — so the pre-existing "canvas centred in an oversized window"
+ * look survives the swap. `justify-content: safe` is, on the current markup, a
+ * no-op: `center` is body's only child and only ever carries `min-height`, never a
+ * smaller fixed height, so it can never end up shorter than its own content for
+ * `safe` to redirect. It stays as a guard against a future markup change, not
+ * because it does anything today. When the page does overflow, it clips at the
+ * bottom rather than the top for an unrelated, pre-existing reason: `overflow:
+ * auto`'s resting scroll position is zero, so the visible window onto the content
+ * starts at its top edge regardless of any of this.
+ *
  * Scrolling still works, so 2x/3x Size stay pannable by wheel and trackpad.
  */
 const GAME_PAGE_CSS = `
