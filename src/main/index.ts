@@ -16,7 +16,7 @@ import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
-import { electronDeps, singlePlayerHome } from './singleplayer/electron';
+import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -450,7 +450,11 @@ async function captureAndExit(dir: string): Promise<void> {
 
     try {
         const started = Date.now();
-        const opened = catalog.list().map(openServer);
+        // Single player needs the engine staged; on a machine where it is not,
+        // the entry is dropped rather than left to fail the run.
+        const servers = catalog.list().filter(s => s.kind !== 'singleplayer' || existsSync(join(engineResources(), 'VERSION.json')));
+        if (servers.length < catalog.list().length) log('[capture] singleplayer skipped: engine not staged');
+        const opened = servers.map(openServer);
         const results = await Promise.all(
             opened.map(async sw => {
                 const result = await loaded(sw);
@@ -498,6 +502,22 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] tab now reads "${hopper.state().tabs[0]?.title}", title "${hopper.window.getTitle()}"`);
                 log(`[capture] state file: ${existsSync(appState.file) ? readFileSync(appState.file, 'utf8').replace(/\s+/g, ' ') : '(none)'}`);
             }
+        }
+
+        // The Single player tool: the world is up by the time the game loaded,
+        // so this is the panel as a player finds it — status, port and cheats.
+        const single = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.kind === 'singleplayer');
+        if (single) {
+            // Fronted before the tool opens, as the Worlds tool is: the panel's
+            // pixel font is only fetched once the shell paints, and until it
+            // arrives `font-display: block` leaves every label blank.
+            single.window.moveTop();
+            single.focus();
+            await wait(500);
+            single.selectTool('singleplayer');
+            await wait(500);
+            await shoot('singleplayer-tool', single);
+            log(`[capture] singleplayer: ${single.state().singlePlayer?.status} on port ${single.state().singlePlayer?.port}`);
         }
 
         const second = openServer(first.state().server);

@@ -71,6 +71,18 @@ partition (`persist:server:<id>:2`) and the title "Lost City — World 5 (2)",
 so two accounts on one server never share cookies or client prefs. Slot
 numbers are reused once a window closes.
 
+**Single player** needs no server at all: the kit carries the Lost City engine
+and the game's files, and File > New Window For > Single player starts a world
+on this computer. There is no account and nothing to sign up for — any name
+typed at the login screen becomes a character, and its saves live in the app's
+own data folder: `Application Support/zanaris-kit/singleplayer/data/players/main`
+on macOS, `%APPDATA%\zanaris-kit\singleplayer\...` on Windows,
+`~/.config/zanaris-kit/singleplayer/...` on Linux. The rail's Single player
+tool says what the world is doing, and opens that saves folder or the world's
+log. Its Cheats switch turns the engine's developer commands, `::tele` and
+`::give`, on for the whole world; that takes a restart of the world, so it
+logs you out and asks first.
+
 Nothing is injected into a game page: no preload, no main-world code. The page
 that runs is byte-for-byte the page the server served. A modified client is
 both the most detectable thing we could ship and the most likely to be against
@@ -166,6 +178,7 @@ seeded on first run, one entry per server:
 | `lostcity` | 274 | LostHQ's world API (`2004.losthq.rs/pages/api/worlds.php`), which carries players and both detail URLs | yes | losthq |
 | `zanaris` | 274 | `zanaris.rs/worlds.json`, players from each world's `world.json` | yes | losthq |
 | `lostcitylabs` | unknown, "May 2005 per Lost City Labs" | a static list, worlds 1 to 4 | no parameter found | none |
+| `singleplayer` | 274, the bundled engine | none | | losthq |
 | `local` | 289, as `engine/data/config/world.json` sets it | none | | none |
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
@@ -233,6 +246,11 @@ npm run dist         # package this platform into release/ (stages first if need
 `engine.lock.json` pins the engine and content commits the kit carries; see
 `RELEASE.md` for how a release is cut. Everything under `engine-dist/`,
 `.engine-work/` and `release/` is build output.
+
+Single player runs from `engine-dist/` in dev, so `npm run stage:engine` has
+to have run once before it works: without it the window says "Engine not
+staged: run npm run stage:engine", and a capture run skips the entry rather
+than failing on it. A packaged build stages the engine for you.
 
 Capture mode (`ZANARIS_CAPTURE=<dir>`, settle time `ZANARIS_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,
