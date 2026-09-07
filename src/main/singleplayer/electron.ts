@@ -15,7 +15,12 @@ export function singlePlayerHome(): string {
     return join(app.getPath('userData'), 'singleplayer');
 }
 
-export function freePort(): Promise<number> {
+const PORT_REUSE_WINDOW_MS = 10_000;
+
+/** Ports handed out lately, so the world's three ports cannot collide with each other. */
+const recentPorts = new Map<number, number>();
+
+function listenForPort(): Promise<number> {
     return new Promise((resolve, reject) => {
         const server = createServer();
         server.unref();
@@ -26,6 +31,24 @@ export function freePort(): Promise<number> {
             server.close(() => resolve(port));
         });
     });
+}
+
+/**
+ * A port nothing is listening on. Each socket is closed before the next one
+ * binds, so the OS is free to hand the same ephemeral port back twice in a
+ * row; a port returned in the last ten seconds is refused and asked for again.
+ */
+export async function freePort(): Promise<number> {
+    for (const [port, at] of recentPorts) {
+        if (Date.now() - at >= PORT_REUSE_WINDOW_MS) recentPorts.delete(port);
+    }
+    for (;;) {
+        const port = await listenForPort();
+        const at = recentPorts.get(port);
+        if (at !== undefined && Date.now() - at < PORT_REUSE_WINDOW_MS) continue;
+        recentPorts.set(port, Date.now());
+        return port;
+    }
 }
 
 async function httpStatus(url: string): Promise<number | null> {
@@ -50,6 +73,8 @@ async function httpPost(url: string): Promise<number | null> {
  */
 function spawnWorld(spec: SpawnSpec): WorldProcess {
     const child = utilityProcess.fork(spec.entry, [], { cwd: spec.cwd, stdio: 'pipe', serviceName: 'single-player-world' });
+    // A V8 fault the child cannot continue from; unhandled it would throw in the main process.
+    child.on('error', (type, location) => spec.onLine(`[world ${type}] ${location}`));
     for (const stream of [child.stdout, child.stderr]) {
         if (stream) createInterface({ input: stream }).on('line', spec.onLine);
     }
@@ -59,7 +84,9 @@ function spawnWorld(spec: SpawnSpec): WorldProcess {
     return {
         exited,
         kill: () => {
-            child.kill();
+            // kill() answers false until the child has a pid, so a stop that lands
+            // in the moments after the fork has to wait for 'spawn' and ask again.
+            if (!child.kill()) child.once('spawn', () => { child.kill(); });
         }
     };
 }
