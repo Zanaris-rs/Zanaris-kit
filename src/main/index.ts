@@ -15,6 +15,8 @@ import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
+import { SinglePlayerService } from './singleplayer/service';
+import { electronDeps, singlePlayerHome } from './singleplayer/electron';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -75,6 +77,9 @@ let chat: ChatService | null = null;
 
 /** The newer release the update check found, if any; the menu shows it. */
 let update: LatestRelease | null = null;
+
+/** The one world this computer runs; built at ready, when the paths and the catalog exist. */
+let singlePlayer: SinglePlayerService | null = null;
 
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
@@ -176,7 +181,8 @@ const windows = new ServerWindows((spec, onClosed) => {
             chat: chatView,
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
-            probe: probeLatency
+            probe: probeLatency,
+            singlePlayer
         }
     );
     serverWindows.set(spec.id, sw);
@@ -351,6 +357,48 @@ ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
     chat?.setNick(chosen);
 });
 
+// ── single player ─────────────────────────────────────────────────────────
+
+async function confirmCheats(sw: ServerWindow, on: boolean): Promise<boolean> {
+    const { response } = await dialog.showMessageBox(sw.window, {
+        type: 'question',
+        buttons: ['Restart', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Turning cheats ${on ? 'on' : 'off'} restarts your world and logs you out.`,
+        detail: on ? 'Developer commands such as ::tele and ::give will work.' : 'The world will play as the servers do.'
+    });
+    return response === 0;
+}
+
+ipcMain.handle(IPC.singlePlayerSetCheats, async (event, on: unknown) => {
+    if (typeof on !== 'boolean' || !singlePlayer) return;
+    const sw = windowFor(event.sender);
+    if (!sw || sw.state().server.kind !== 'singleplayer') return;
+    if (singlePlayer.view().cheats === on) return;
+    const running = singlePlayer.view().status !== 'stopped' && singlePlayer.view().status !== 'failed';
+    if (running && !(await confirmCheats(sw, on))) return;
+    await singlePlayer.setCheats(on);
+});
+
+ipcMain.handle(IPC.singlePlayerRetry, async event => {
+    const sw = windowFor(event.sender);
+    if (!sw || sw.state().server.kind !== 'singleplayer' || !singlePlayer) return;
+    await singlePlayer.retry().catch(() => undefined);
+});
+
+ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {
+    const saves = join(singlePlayerHome(), 'data', 'players', 'main');
+    mkdirSync(saves, { recursive: true });
+    await shell.openPath(saves);
+});
+
+ipcMain.handle(IPC.singlePlayerShowLog, async () => {
+    const logPath = join(singlePlayerHome(), 'world.log');
+    if (!existsSync(logPath)) writeFileSync(logPath, '');
+    await shell.openPath(logPath);
+});
+
 // ── dev capture ───────────────────────────────────────────────────────────
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -483,6 +531,16 @@ app.whenReady().then(async () => {
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();
+    singlePlayer = new SinglePlayerService(
+        electronDeps({
+            baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
+            cheats: { get: () => appState.singlePlayerCheats(), set: on => appState.setSinglePlayerCheats(on) },
+            log
+        })
+    );
+    singlePlayer.subscribe(() => {
+        for (const sw of serverWindows.values()) if (sw.state().server.kind === 'singleplayer') sw.pushState();
+    });
     void checkForUpdate();
 
     log('');
@@ -506,10 +564,22 @@ app.on('activate', () => {
 
 app.on('browser-window-focus', () => reloadCatalogIfChanged());
 
-app.on('before-quit', () => {
+/** Set once the world has been stopped for the quit, so the second quit goes through. */
+let worldStoppedForQuit = false;
+app.on('before-quit', event => {
     quitting = true;
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
+    // The world writes the player's saves as it shuts down, so the quit waits for
+    // it — bounded by the service's own ten-second grace before it kills the world.
+    const status = singlePlayer?.view().status;
+    if (singlePlayer && !worldStoppedForQuit && status !== 'stopped' && status !== 'failed' && status !== undefined) {
+        event.preventDefault();
+        void singlePlayer.stop().finally(() => {
+            worldStoppedForQuit = true;
+            app.quit();
+        });
+    }
 });
 
 // macOS keeps running with no windows; the menu and the dock open the next one.

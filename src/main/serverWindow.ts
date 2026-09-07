@@ -4,6 +4,7 @@ import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
+import type { SinglePlayerView } from '../shared/singleplayer';
 import { computeLayout, sideWidth, splitWindow, type Rects } from './layout';
 import { decideNavigation } from './guard';
 import { GAME_TAB_ID, TabModel } from './tabs';
@@ -15,12 +16,35 @@ import type { WorldsService } from './worlds/service';
 import type { ServerWindowHandle, WindowSpec } from './windows';
 
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
+const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /** The content area a new window opens with: the canvas plus the page's controls strip. */
 const DEFAULT_CONTENT = { width: 800, height: 640 };
 const PROBE_EVERY_MS = 10_000;
 const PROBE_TIMEOUT_MS = 3_000;
 
 export type LoadResult = 'loaded' | 'failed';
+
+/** What a single-player window needs of the service; the service itself satisfies it. */
+export interface SinglePlayerHandle {
+    view(): SinglePlayerView;
+    subscribe(fn: () => void): () => void;
+    acquire(): Promise<string>;
+    release(): void;
+    retry(): Promise<string>;
+}
+
+const STATUS_WORD: Record<SinglePlayerView['status'], string> = {
+    stopped: 'stopped',
+    preparing: 'getting ready',
+    starting: 'starting',
+    ready: 'running',
+    stopping: 'stopping',
+    failed: 'failed'
+};
+
+function statusWord(status: SinglePlayerView['status']): string {
+    return STATUS_WORD[status];
+}
 
 export interface ServerWindowDeps {
     log: (msg: string) => void;
@@ -41,6 +65,8 @@ export interface ServerWindowDeps {
     remember: (remembered: RememberedWorld) => void;
     /** Latency of one host, for the current world's readout. */
     probe: (host: string, port: number, timeoutMs: number) => Promise<number | null>;
+    /** The world this computer runs, for a window of kind singleplayer; null otherwise. */
+    singlePlayer: SinglePlayerHandle | null;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -88,7 +114,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
     // Chat is app-scoped, so every window offers it, and first: it is there
     // whether or not the server has worlds to hop between.
-    const tools: ToolId[] = worldSwitch ? ['chat', 'worlds'] : ['chat'];
+    const single = server.kind === 'singleplayer' ? deps.singlePlayer : null;
+    const tools: ToolId[] = single ? ['chat', 'singleplayer'] : worldSwitch ? ['chat', 'worlds'] : ['chat'];
 
     /** The URL main last asked the game view to load. The offline page may return to it; nothing else may navigate. */
     let expected = worldSwitch ? worldSwitch.url : server.url;
@@ -145,6 +172,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     // ── labels ───────────────────────────────────────────────────────────
 
     function gameLabel(): string {
+        if (single) return `${server.name} · rev ${server.revision ?? '?'} · ${statusWord(single.view().status)}`;
         return worldSwitch ? worldSwitch.label(server.name, currentLatency) : server.name;
     }
 
@@ -180,7 +208,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             activeTool,
             worlds: worldsView(),
             chat: deps.chat(),
-            singlePlayer: null
+            singlePlayer: single?.view() ?? null
         };
     }
 
@@ -273,17 +301,60 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     // ── the game view ────────────────────────────────────────────────────
 
-    /** The one way the game view changes page. Each load gets its own promise. */
+    /**
+     * The one way the game view changes page. Each load gets its own promise,
+     * and settles the one before it: a waiter left pending by a load this one
+     * supersedes — the starting page, then the game — is settled by this
+     * load's result rather than left hanging.
+     */
     function loadGame(url: string): Promise<LoadResult> {
         expected = url;
         failedOver = false;
+        const previous = loadWaiter;
         loadPromise = new Promise<LoadResult>(resolve => {
-            loadWaiter = resolve;
+            loadWaiter = result => {
+                resolve(result);
+                previous?.(result);
+            };
         });
         refreshLabels();
         pushState();
         void gameView.webContents.loadURL(url);
         return loadPromise;
+    }
+
+    /** The starting page in the state the service is in. Only a single-player window shows it. */
+    function showStarting(override?: { state: SinglePlayerView['status']; reason: string }): void {
+        if (!single || win.isDestroyed()) return;
+        const view = single.view();
+        const version = view.version ? `engine ${view.version.engine.slice(0, 8)} · content ${view.version.content.slice(0, 8)} · rev ${view.version.revision}` : '';
+        failedOver = true;
+        void gameView.webContents.loadFile(STARTING_PAGE, {
+            query: {
+                state: override?.state ?? view.status,
+                version,
+                reason: override?.reason ?? view.reason ?? '',
+                log: view.logTail.slice(-20).join('\n')
+            }
+        });
+    }
+
+    /** The world changed state: load the game when it is ready, show the page otherwise. */
+    let loadedGameUrl: string | null = null;
+    function syncSinglePlayer(): void {
+        if (!single) return;
+        const view = single.view();
+        refreshLabels();
+        pushState();
+        if (view.status === 'ready' && view.url) {
+            if (loadedGameUrl !== view.url) {
+                loadedGameUrl = view.url;
+                void loadGame(view.url);
+            }
+            return;
+        }
+        loadedGameUrl = null;
+        showStarting();
     }
 
     function settleLoad(result: LoadResult): void {
@@ -298,6 +369,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         const decision = decideNavigation({ current: gameView.webContents.getURL(), target: url, expected });
         if (decision === 'allow') return;
         event.preventDefault();
+        if (decision === 'retry') {
+            deps.log(`${tag} retrying the world`);
+            void single?.retry().catch(() => undefined);
+            return;
+        }
         if (decision === 'open-external') {
             deps.log(`${tag} sent ${url} to the system browser`);
             void shell.openExternal(url);
@@ -325,6 +401,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         failedOver = true;
         deps.log(`${tag} could not load ${url}: ${description} (${code})`);
         settleLoad('failed');
+        if (single) {
+            // The service's own view says why the world is not there. When it says
+            // the world is running, the page itself is what failed, and the starting
+            // page has to say so rather than claim the world is up.
+            const running = single.view().status === 'ready';
+            showStarting(running ? { state: 'failed', reason: 'The game page did not load, though the world is running.' } : undefined);
+            return;
+        }
         void gameView.webContents.loadFile(OFFLINE_PAGE, {
             query: { url: expected, name: gameLabel(), reason: description }
         });
@@ -332,7 +416,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     gameView.webContents.on('did-finish-load', () => {
         const url = gameView.webContents.getURL();
         if (url.startsWith('file:')) {
-            deps.log(`${tag} showing the offline page`);
+            deps.log(`${tag} showing a kit page`);
             return;
         }
         // Chromium commits its own error page under the failed URL before the offline page replaces it.
@@ -379,6 +463,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (currentProbe) clearInterval(currentProbe);
         if (panelProbe) clearInterval(panelProbe);
         unsubscribeWorlds?.();
+        unsubscribeSingle?.();
+        single?.release();
         onClosed();
     });
 
@@ -391,7 +477,25 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     applyLayout();
     refreshLabels();
     loadShell(shellView.webContents);
-    void loadGame(expected);
+
+    let unsubscribeSingle: (() => void) | null = null;
+    if (single) {
+        // The load promise stays pending until the game itself loads, or the world fails.
+        loadPromise = new Promise<LoadResult>(resolve => {
+            loadWaiter = resolve;
+        });
+        unsubscribeSingle = single.subscribe(syncSinglePlayer);
+        showStarting();
+        void single.acquire().then(
+            () => syncSinglePlayer(),
+            () => {
+                syncSinglePlayer();
+                settleLoad('failed');
+            }
+        );
+    } else {
+        void loadGame(expected);
+    }
 
     return {
         id: spec.id,
