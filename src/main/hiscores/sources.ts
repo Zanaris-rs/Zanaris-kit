@@ -41,6 +41,28 @@ function skillsArray(json: unknown, where: string): unknown[] {
     return json.skills;
 }
 
+/**
+ * Zanaris and Labs each answer a name nobody holds with a 404 carrying a small
+ * JSON object — `{"error":"not_found"}` and `{"error":"Unknown player."}`. The
+ * wording differs per server and is deliberately not checked; the shape is,
+ * and being an object with a string `error` is as much as the two have in
+ * common.
+ *
+ * The status on its own cannot carry that answer, because a 404 is equally
+ * what a moved endpoint returns — the very case `Catalog.refreshHiscores`
+ * exists to recover from. Reading one as "nobody by that name" would answer
+ * every lookup on that server with "No hiscores entry for that name.", which
+ * blames the player for a stale URL and hides a broken kit behind a plausible
+ * sentence. A host's HTML error page arrives here as `undefined` (main's
+ * `fetchStatus` passes on whatever `response.json()` parsed, and it parsed
+ * nothing), so it fails this check like any other body that is not the
+ * server's own, and throws rather than being mistaken for an answer.
+ */
+function notFoundFrom404(json: unknown, where: string): typeof NOT_FOUND {
+    if (isRecord(json) && typeof json.error === 'string') return NOT_FOUND;
+    throw new Error(`${where}: a 404 without a not-found body`);
+}
+
 // ── Lost City ─────────────────────────────────────────────────────────────
 
 /**
@@ -86,9 +108,10 @@ function parseLostCityPlayer(status: number, json: unknown): PlayerSkill[] | typ
 
 /** Zanaris indexes its rows by `category`, not `type` — verified live; not a typo. */
 function parseZanarisPlayer(status: number, json: unknown): PlayerSkill[] | typeof NOT_FOUND {
-    if (status === 404) return NOT_FOUND;
-    // Only 200 and 404 carry an answer; a 429, a 5xx, or a proxy's HTML
-    // error page fall through to this throw, for H3 to turn into a message.
+    if (status === 404) return notFoundFrom404(json, 'Zanaris hiscores');
+    // Only 200 and a 404 in the server's own not-found shape carry an answer;
+    // a 429, a 5xx, or a proxy's HTML error page fall through to this throw
+    // (or the one above), for H3 to turn into a message.
     if (status !== 200) throw new Error(`Zanaris hiscores: unexpected status ${status}`);
     const skills = skillsArray(json, 'Zanaris hiscores');
     return skills.map((row, i): PlayerSkill => {
@@ -113,9 +136,10 @@ function parseZanarisPlayer(status: number, json: unknown): PlayerSkill[] | type
  * unexpected `mode` must never trip a parser that never looks at either.
  */
 function parseLabsPlayer(status: number, json: unknown): PlayerSkill[] | typeof NOT_FOUND {
-    if (status === 404) return NOT_FOUND;
-    // Only 200 and 404 carry an answer; a 429, a 5xx, or a proxy's HTML
-    // error page fall through to this throw, for H3 to turn into a message.
+    if (status === 404) return notFoundFrom404(json, 'Labs hiscores');
+    // Only 200 and a 404 in the server's own not-found shape carry an answer;
+    // a 429, a 5xx, or a proxy's HTML error page fall through to this throw
+    // (or the one above), for H3 to turn into a message.
     if (status !== 200) throw new Error(`Labs hiscores: unexpected status ${status}`);
     const skills = skillsArray(json, 'Labs hiscores');
     return skills.map((row, i): PlayerSkill => {
@@ -134,11 +158,12 @@ function parseLabsPlayer(status: number, json: unknown): PlayerSkill[] | typeof 
 
 /**
  * One server's answer, as rows. NOT_FOUND when the server said so in its own
- * way — Lost City's empty 200, or a 404 from Zanaris or Labs. Throws when
- * the body is not the shape this server promises, or when the status is
- * neither a success nor this server's own not-found (a 429, a 5xx, a
- * proxy's HTML error page): none of those carry an answer, so guessing at
- * one here would only hide the problem from H3, which is where it belongs.
+ * way — Lost City's empty 200, or a 404 from Zanaris or Labs carrying that
+ * server's own not-found body. Throws when the body is not the shape this
+ * server promises, when a 404 does not carry that body, or when the status is
+ * neither a success nor this server's own not-found (a 429, a 5xx, a proxy's
+ * HTML error page): none of those carry an answer, so guessing at one here
+ * would only hide the problem from H3, which is where it belongs.
  */
 export function parsePlayer(source: HiscoresSource, status: number, json: unknown): PlayerSkill[] | typeof NOT_FOUND {
     switch (source.kind) {

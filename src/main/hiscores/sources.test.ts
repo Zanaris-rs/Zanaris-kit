@@ -104,8 +104,20 @@ test('parsePlayer reads Zanaris\'s skills, indexed by category (not type)', () =
     assert.deepEqual(rows[0], { type: raw.skills[0]!.category, rank: raw.skills[0]!.rank, level: raw.skills[0]!.level, xp: raw.skills[0]!.xp });
 });
 
-test('Zanaris: a real 404 body is NOT_FOUND', () => {
+test("Zanaris: a 404 carrying the server's own not-found body is NOT_FOUND", () => {
     assert.equal(parsePlayer(ZANARIS, 404, fixture('zanaris-player-notfound.json')), NOT_FOUND);
+});
+
+test('Zanaris: a 404 carrying anything else is a failure, not a missing player', () => {
+    // The pair this test and the one above make is the point: a 404 is also
+    // what a moved endpoint answers with, so reading the status alone would
+    // turn a broken URL into "No hiscores entry for that name." for every name
+    // anyone ever typed. A host's own 404 page reaches the parser as undefined
+    // — `fetchStatus` passes on what `response.json()` parsed, and an HTML
+    // page parses as nothing — which is why that is the first case here.
+    assert.throws(() => parsePlayer(ZANARIS, 404, undefined), /404/, 'an HTML error page arrives as undefined');
+    assert.throws(() => parsePlayer(ZANARIS, 404, '<!doctype html><title>404 Not Found</title>'), /404/, 'and a body that did parse but is not an object is no better');
+    assert.throws(() => parsePlayer(ZANARIS, 404, { message: 'not_found' }), /404/, 'an object without a string error is not this server\'s not-found');
 });
 
 test('Zanaris: a status that is neither 200 nor 404 throws', () => {
@@ -141,8 +153,17 @@ test('Labs: kills, mode and board are ignored rather than tripping the parser', 
     assert.equal(rows.length, 22);
 });
 
-test('Labs: a real 404 body is NOT_FOUND', () => {
+test("Labs: a 404 carrying the server's own not-found body is NOT_FOUND", () => {
+    // Labs words it differently from Zanaris — `Unknown player.` against
+    // `not_found` — which is why the shared check reads the shape and not the
+    // text.
     assert.equal(parsePlayer(LABS, 404, { error: 'Unknown player.' }), NOT_FOUND);
+});
+
+test('Labs: a 404 carrying anything else is a failure, not a missing player', () => {
+    assert.throws(() => parsePlayer(LABS, 404, undefined), /404/, 'an HTML error page arrives as undefined');
+    assert.throws(() => parsePlayer(LABS, 404, '<!doctype html><title>404 Not Found</title>'), /404/, 'and a body that did parse but is not an object is no better');
+    assert.throws(() => parsePlayer(LABS, 404, { error: 404 }), /404/, 'a non-string error is not this server\'s not-found either');
 });
 
 test('Labs: a status that is neither 200 nor 404 throws', () => {
