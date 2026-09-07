@@ -1,5 +1,6 @@
 import { app, net, utilityProcess } from 'electron';
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cp } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -16,6 +17,8 @@ export function singlePlayerHome(): string {
 }
 
 const PORT_REUSE_WINDOW_MS = 10_000;
+/** A machine that keeps handing back the same port must not spin forever; the last one is taken. */
+const PORT_ATTEMPTS = 8;
 
 /** Ports handed out lately, so the world's three ports cannot collide with each other. */
 const recentPorts = new Map<number, number>();
@@ -36,19 +39,22 @@ function listenForPort(): Promise<number> {
 /**
  * A port nothing is listening on. Each socket is closed before the next one
  * binds, so the OS is free to hand the same ephemeral port back twice in a
- * row; a port returned in the last ten seconds is refused and asked for again.
+ * row; a port returned in the last ten seconds is refused and asked for again,
+ * eight times over. After that the last one is taken rather than spun on: a
+ * collision costs the world one failed bind, an unbounded loop costs the launch.
  */
 export async function freePort(): Promise<number> {
     for (const [port, at] of recentPorts) {
         if (Date.now() - at >= PORT_REUSE_WINDOW_MS) recentPorts.delete(port);
     }
-    for (;;) {
-        const port = await listenForPort();
+    let port = 0;
+    for (let attempt = 0; attempt < PORT_ATTEMPTS; attempt++) {
+        port = await listenForPort();
         const at = recentPorts.get(port);
-        if (at !== undefined && Date.now() - at < PORT_REUSE_WINDOW_MS) continue;
-        recentPorts.set(port, Date.now());
-        return port;
+        if (at === undefined || Date.now() - at >= PORT_REUSE_WINDOW_MS) break;
     }
+    recentPorts.set(port, Date.now());
+    return port;
 }
 
 async function httpStatus(url: string): Promise<number | null> {
@@ -106,7 +112,9 @@ export function electronDeps(over: { baseUrl: string; cheats: SinglePlayerDeps['
             mkdir: path => mkdirSync(path, { recursive: true }),
             rm: path => rmSync(path, { recursive: true, force: true }),
             rename: renameSync,
-            copyDir: (from, to) => cpSync(from, to, { recursive: true })
+            // Asynchronous on purpose: cpSync here froze the main process for the
+            // whole of the first launch's 42 MB.
+            copyDir: (from, to) => cp(from, to, { recursive: true })
         },
         freePort,
         spawn: spawnWorld,

@@ -31,7 +31,8 @@ export interface SinglePlayerDeps {
         /** Recursive, and quiet when the path is absent. */
         rm(path: string): void;
         rename(from: string, to: string): void;
-        copyDir(from: string, to: string): void;
+        /** Asynchronous: the trees are tens of megabytes, and the main process has to stay live. */
+        copyDir(from: string, to: string): Promise<void>;
     };
     freePort(): Promise<number>;
     spawn(spec: SpawnSpec): WorldProcess;
@@ -43,6 +44,8 @@ export interface SinglePlayerDeps {
 }
 
 const ASSET_TREES = ['data/pack', 'data/raw', 'public', 'view'];
+/** One name, not a timestamped one: a copy that died leaves this behind, and the next prepare removes it. */
+const STAGING_DIR = '.staging';
 const PEMS = ['data/config/private.pem', 'data/config/public.pem'];
 const READY_TIMEOUT_MS = 60_000;
 const POLL_MS = 250;
@@ -136,7 +139,9 @@ export class SinglePlayerService {
         if (this.starting) return this.starting;
         // A stop in flight owns the world's state until it finishes; queue behind it,
         // or its tail would clear the ports and url this start is about to establish.
-        if (this.stopping) return this.stopping.then(() => this.ensure());
+        // The window that queued this can close while the stop runs, and a world
+        // started for nobody would never be released — so refuse when none is left.
+        if (this.stopping) return this.stopping.then(() => (this.windows === 0 ? Promise.reject(new Failure('No window is waiting for the world')) : this.ensure()));
         this.starting = this.start().finally(() => {
             this.starting = null;
         });
@@ -191,7 +196,7 @@ export class SinglePlayerService {
             const stamp = fs.exists(stampPath) ? fs.readText(stampPath) : null;
             if (!stampMatches(stamp, versionText)) {
                 try {
-                    this.copyAssets(versionText);
+                    await this.copyAssets(versionText);
                 } catch (err) {
                     this.fail(`Could not copy the engine's files: ${String(err)}`);
                 }
@@ -212,7 +217,15 @@ export class SinglePlayerService {
                 onLine: line => {
                     this.logTail.push(line);
                     if (this.logTail.length > LOG_TAIL_LINES) this.logTail.shift();
-                    fs.appendText(logPath, `${line}\n`);
+                    // This runs inside readline's 'line' event: a full disk, or an editor
+                    // holding world.log open on Windows, would otherwise throw out of a
+                    // stream handler and take the main process — every window — down.
+                    // The tail above still has the line, which is what the panel shows.
+                    try {
+                        fs.appendText(logPath, `${line}\n`);
+                    } catch {
+                        // nothing to do but keep the world running
+                    }
                 }
             });
             spawned = process;
@@ -259,12 +272,17 @@ export class SinglePlayerService {
         }
     }
 
-    /** Copies the four trees and the pems into a staging directory, then swaps them into place. */
-    private copyAssets(versionText: string): void {
+    /**
+     * Copies the four trees and the pems into a staging directory, then swaps them
+     * into place. The copy is asynchronous — 42 MB of it, on the first launch, would
+     * otherwise freeze the main process. The swap stays synchronous: it is a handful
+     * of renames, and nothing may interleave between them.
+     */
+    private async copyAssets(versionText: string): Promise<void> {
         const { fs, join, home, resources } = this.deps;
-        const staging = join(home, `.staging-${this.deps.now()}`);
+        const staging = join(home, STAGING_DIR);
         fs.rm(staging);
-        for (const tree of ASSET_TREES) fs.copyDir(join(resources, tree), join(staging, tree));
+        for (const tree of ASSET_TREES) await fs.copyDir(join(resources, tree), join(staging, tree));
         for (const pem of PEMS) {
             fs.mkdir(join(staging, 'data', 'config'));
             fs.writeText(join(staging, pem), fs.readText(join(resources, pem)));

@@ -83,7 +83,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
                     files.set(to, text);
                 }
             },
-            copyDir: (from, to) => {
+            copyDir: async (from, to) => {
                 copies.push([from, to]);
                 dirs.add(to);
             }
@@ -124,7 +124,7 @@ test('the first acquire prepares the working directory, writes world.json, spawn
     assert.deepEqual(service.view().version, { engine: 'e1', content: 'c1', revision: 274, built: '2026-09-06T00:00:00.000Z' });
     // the four trees were copied through a staging directory and renamed into place
     assert.equal(h.copies.length, 4);
-    assert.ok(h.copies.every(([from, to]) => from.startsWith('/res/') && to.includes('/.staging-')));
+    assert.ok(h.copies.every(([from, to]) => from.startsWith('/res/') && to.startsWith('/home/.staging/')));
     for (const tree of ['/home/data/pack', '/home/data/raw', '/home/public', '/home/view']) assert.ok(h.dirs.has(tree), tree);
     assert.equal(h.files.get('/home/data/config/private.pem'), 'priv');
     assert.equal(h.files.get('/home/engine.stamp'), VERSION);
@@ -303,6 +303,64 @@ test('a window that arrives while the world is stopping gets a world of its own'
     assert.equal(service.view().url, url);
     assert.ok(h.processes[0]!.killed === 1 || h.posts.length > 0, 'the old world was asked to stop');
     assert.equal(h.processes[1]!.killed, 0);
+});
+
+test('a window that closes again during the grace leaves no world behind', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    service.release();
+    await tick();
+    assert.equal(service.view().status, 'stopping');
+    // Reopened during the grace, then closed again before the queued start could run.
+    const queued = service.acquire();
+    service.release();
+    h.processes[0]!.exit(0);
+    await assert.rejects(queued, /No window is waiting/);
+    await tick();
+    await tick();
+    assert.equal(h.processes.length, 1, 'no second world was spawned');
+    assert.equal(service.view().status, 'stopped');
+});
+
+test('a log write that throws leaves the world running, and the tail keeps the line', async () => {
+    const h = harness({ stamp: true });
+    h.deps.fs.appendText = () => {
+        throw new Error('ENOSPC: no space left on device');
+    };
+    const service = new SinglePlayerService(h.deps);
+    const pending = service.acquire();
+    await tick();
+    h.processes[0]!.print('Starting world');
+    h.statusQueue.push(200);
+    const url = await pending;
+    assert.equal(url, 'http://127.0.0.1:40001/rs2.cgi?lowmem=1');
+    assert.equal(service.view().status, 'ready');
+    assert.deepEqual(service.view().logTail, ['Starting world']);
+});
+
+test('a stop while the engine is being copied leaves the service stopped with nothing spawned', async () => {
+    const h = harness();
+    let letCopyFinish!: () => void;
+    const gate = new Promise<void>(resolve => {
+        letCopyFinish = resolve;
+    });
+    h.deps.fs.copyDir = async (from, to) => {
+        h.copies.push([from, to]);
+        h.dirs.add(to);
+        await gate;
+    };
+    const service = new SinglePlayerService(h.deps);
+    const pending = service.acquire();
+    await tick();
+    assert.equal(service.view().status, 'preparing', 'the copy is in flight');
+    const stopped = service.stop();
+    letCopyFinish();
+    await assert.rejects(pending, /Stopped while getting ready/);
+    await stopped;
+    assert.equal(service.view().status, 'stopped');
+    assert.equal(h.processes.length, 0);
 });
 
 test('a world that answers and dies in the same turn fails with the exit, not the stop', async () => {
