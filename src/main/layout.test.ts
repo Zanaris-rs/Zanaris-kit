@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeLayout, fitAxis, splitWindow, type LayoutInput } from './layout.ts';
+import { computeLayout, dockOnFloor, fitAxis, splitWindow, type LayoutInput } from './layout.ts';
 import { ADDRESS_HEIGHT, DOCK_HEIGHT_MIN, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, PANEL_WIDTH, RAIL_WIDTH, STRIP_HEIGHT } from '../shared/layout.ts';
 
 const WORK_AREA = { x: 0, y: 0, width: 1920, height: 1080 };
@@ -242,4 +242,34 @@ test('rects tile the height exactly in every mode', () => {
         const dockH = r.dock?.height ?? 0;
         assert.equal(r.strip.height + addressH + r.content.height + dockH, r.window.height, 'strip, address, content and dock account for the whole window');
     }
+});
+
+// ── the height floor the window is given, in dock pixels ────────────────────
+// What serverWindow.ts hands setMinimumSize. Tested here rather than there
+// because it is arithmetic over the layout's own numbers, and serverWindow.ts
+// has no Electron-free surface to test through.
+
+test('the floor carries the dock the layout granted, not the height that was asked for', () => {
+    // A 1366x768 laptop with a taskbar: about 728px of window, so the default
+    // 200px dock does not fit and the fit lands in push with 137 granted.
+    const workArea = { x: 0, y: 0, width: 1366, height: 728 };
+    const r = computeLayout(base({ dockHeight: 200, workArea, contentHeight: 640, window: { x: 0, y: 0, width: 800 + RAIL_WIDTH, height: 640 + STRIP_HEIGHT } }));
+    assert.equal(r.mode.y, 'push', '640 + 36 + 200 does not fit in 728');
+    assert.equal(r.dock!.height, 137, 'the dock is granted only what the window has spare');
+    assert.equal(dockOnFloor(r.dock!.height, r.window.height), 137, 'a granted dock the window has room for is carried whole');
+    assert.equal(
+        STRIP_HEIGHT + MIN_CONTENT_HEIGHT + dockOnFloor(r.dock!.height, r.window.height),
+        r.window.height,
+        'the floor lands exactly on the window the layout produced — 778 (the floor built from the 200 asked for) would be 50px past the whole work area'
+    );
+});
+
+test('the floor gives up the dock as the content itself drops below its own floor', () => {
+    // The window from 'past the dock floor, content gives way…' above: the
+    // dock holds at DOCK_HEIGHT_MIN and the content is already below
+    // MIN_CONTENT_HEIGHT, so there is nothing left for the floor to protect.
+    const r = computeLayout(base({ canResize: false, dockHeight: 200, window: { x: 0, y: 0, width: 800 + RAIL_WIDTH, height: STRIP_HEIGHT + MIN_CONTENT_HEIGHT } }));
+    assert.equal(r.dock!.height, DOCK_HEIGHT_MIN, 'the dock is still drawn at its own floor');
+    assert.equal(dockOnFloor(r.dock!.height, r.window.height), 0, 'but the height floor claims none of it');
+    assert.equal(dockOnFloor(DOCK_HEIGHT_MIN, STRIP_HEIGHT + MIN_CONTENT_HEIGHT - 39), 0, 'and never goes negative on a window shorter still');
 });

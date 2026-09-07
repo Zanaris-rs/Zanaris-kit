@@ -148,6 +148,30 @@ export function splitWindow(width: number, height: number, panelOpen: boolean, d
     };
 }
 
+/**
+ * How much of the dock a window's minimum *height* may carry.
+ *
+ * That minimum exists for one reason: to stop the window being dragged short
+ * enough to crush the content below MIN_CONTENT_HEIGHT while the dock holds
+ * pixels of its own. So it is built from the dock the layout actually granted
+ * — `splitWindow` above clamps the request whenever the window is too short
+ * for it — and never from more room than the window it just produced has
+ * above that floor.
+ *
+ * Both halves bite on a short display. A 1366x768 screen with a taskbar
+ * leaves about 728px of window: the default 200px dock cannot fit, so the fit
+ * lands in `push` and the grant is 137, exactly the slack the window has. A
+ * floor built from the 200 would stand some 40px taller than the whole work
+ * area, and the next drag would carry the composer and the grip off the
+ * bottom of the screen. Shorter still and the content is already below
+ * MIN_CONTENT_HEIGHT by design — on y the dock outranks it — and a floor
+ * cannot protect a floor that has already given way, so the shortfall comes
+ * off the dock's share rather than out of the screen.
+ */
+export function dockOnFloor(dockHeight: number, windowHeight: number): number {
+    return Math.max(0, Math.min(dockHeight, windowHeight - STRIP_HEIGHT - MIN_CONTENT_HEIGHT));
+}
+
 export function computeLayout(input: LayoutInput): LayoutResult {
     const addressHeight = input.activeTabKind === 'page' ? ADDRESS_HEIGHT : 0;
 

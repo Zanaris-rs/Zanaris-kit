@@ -5,7 +5,7 @@ import { ADDRESS_HEIGHT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRI
 import type { ChatHome, ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
-import { computeLayout, sideWidth, splitWindow, type Rects } from './layout';
+import { computeLayout, dockOnFloor, sideWidth, splitWindow, type Rects } from './layout';
 import { reduce, type Action, type Placement } from './chatDock';
 import { decideNavigation } from './guard';
 import { GAME_TAB_ID, TabModel } from './tabs';
@@ -278,8 +278,16 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * construction-time height, dragging the window short with the dock open
      * would crush the game below MIN_CONTENT_HEIGHT — the one thing the floor
      * exists to prevent.
+     *
+     * What it carries is the dock the layout *granted*, in the window the
+     * layout granted it in — not the height the drag asked for. `dockOnFloor`
+     * has the arithmetic and the reason: a floor built from the request is a
+     * floor taller than the whole work area on any display too short for the
+     * dock, and the next drag would take the composer and the grip under the
+     * taskbar.
      */
-    function syncMinimumSize(dock: number): void {
+    function syncMinimumSize(granted: number, windowHeight: number): void {
+        const dock = dockOnFloor(granted, windowHeight);
         if (dock === minimumDock) return;
         minimumDock = dock;
         // Under `applying` for the same reason setContentBounds is. macOS does
@@ -296,10 +304,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function applyLayout(): void {
         if (win.isDestroyed()) return;
         const dock = dockHeight();
-        // The floor moves before the bounds are read and set: closing the dock
-        // has to lower it first, or the minimum that was carrying the dock
-        // clamps setContentBounds and the window never shrinks back.
-        syncMinimumSize(dock);
         const current = win.getContentBounds();
         const display = screen.getDisplayMatching(win.getBounds());
         const result = computeLayout({
@@ -316,6 +320,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         mode = result.mode;
         rects = result;
         const w = result.window;
+        // The floor moves before the bounds are set and after they are solved:
+        // closing the dock has to lower it first, or the minimum that was
+        // carrying the dock clamps setContentBounds and the window never
+        // shrinks back — and only the solved layout knows how much dock there
+        // turned out to be room for.
+        syncMinimumSize(result.dock?.height ?? 0, w.height);
         if (w.x !== current.x || w.y !== current.y || w.width !== current.width || w.height !== current.height) {
             applying = true;
             win.setContentBounds(w);
