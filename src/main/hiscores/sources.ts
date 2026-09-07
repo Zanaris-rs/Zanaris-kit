@@ -44,13 +44,20 @@ function skillsArray(json: unknown, where: string): unknown[] {
 // ── Lost City ─────────────────────────────────────────────────────────────
 
 /**
- * Lost City's rows carry xp as tenths in `value` — verified live: a maxed
+ * Lost City's rows carry xp as tenths in `value` — confirmed by reading the
+ * engine (`Player.ts`): `levelExperience[i]` is accumulated as
+ * `Math.floor(acc / 4) * 10`, a genuine fixed-point value with one decimal
+ * of precision the client keeps internally. Verified live too: a maxed
  * account's Attack row (level 99, roughly 13.07m xp) came back as
- * `value: 130731598`, which is not a multiple of ten. Individual xp drops
- * are themselves fractional at this precision, so a running total lands on
- * a whole `value` no more reliably than it lands on a whole `xp`. Dividing
- * by ten and keeping whatever comes out is the correct read of the field,
- * not a case to reject or round.
+ * `value: 130731598`, which is not a multiple of ten — that decimal is real
+ * and non-multiples are the common case at high xp, not malformed data.
+ *
+ * Nothing in this feature reads that decimal: there is no xp-to-next-level
+ * bar in scope, and `toLocaleString` would render it as a stray
+ * "13,073,159.8" that no hiscores site shows. So it is discarded here,
+ * once, rather than left for the panel to notice and floor on its own —
+ * `Math.floor(value / 10)` keeps `PlayerSkill.xp` a whole number from all
+ * three sources, matching Zanaris and Labs, which already send whole xp.
  */
 function parseLostCityPlayer(status: number, json: unknown): PlayerSkill[] | typeof NOT_FOUND {
     // Lost City has no not-found status of its own — a missing player is a
@@ -70,7 +77,7 @@ function parseLostCityPlayer(status: number, json: unknown): PlayerSkill[] | typ
             type: asNumber(row.type, where, 'type'),
             rank: asNumber(row.rank, where, 'rank'),
             level: asNumber(row.level, where, 'level'),
-            xp: value / 10
+            xp: Math.floor(value / 10)
         };
     });
 }
@@ -80,6 +87,8 @@ function parseLostCityPlayer(status: number, json: unknown): PlayerSkill[] | typ
 /** Zanaris indexes its rows by `category`, not `type` — verified live; not a typo. */
 function parseZanarisPlayer(status: number, json: unknown): PlayerSkill[] | typeof NOT_FOUND {
     if (status === 404) return NOT_FOUND;
+    // Only 200 and 404 carry an answer; a 429, a 5xx, or a proxy's HTML
+    // error page fall through to this throw, for H3 to turn into a message.
     if (status !== 200) throw new Error(`Zanaris hiscores: unexpected status ${status}`);
     const skills = skillsArray(json, 'Zanaris hiscores');
     return skills.map((row, i): PlayerSkill => {
@@ -105,6 +114,8 @@ function parseZanarisPlayer(status: number, json: unknown): PlayerSkill[] | type
  */
 function parseLabsPlayer(status: number, json: unknown): PlayerSkill[] | typeof NOT_FOUND {
     if (status === 404) return NOT_FOUND;
+    // Only 200 and 404 carry an answer; a 429, a 5xx, or a proxy's HTML
+    // error page fall through to this throw, for H3 to turn into a message.
     if (status !== 200) throw new Error(`Labs hiscores: unexpected status ${status}`);
     const skills = skillsArray(json, 'Labs hiscores');
     return skills.map((row, i): PlayerSkill => {

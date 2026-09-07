@@ -51,18 +51,20 @@ test('parsePlayer reads Lost City\'s real payload, dividing value by ten for xp'
     const attack = rows.find(r => r.type === 1)!;
     const rawAttack = raw.find(r => r.type === 1)!;
     assert.equal(rawAttack.value, 130731598, 'sanity check on the fixture itself: this is the row the divisibility question turned on');
-    assert.deepEqual(attack, { type: 1, rank: rawAttack.rank, level: rawAttack.level, xp: 13073159.8 });
+    assert.deepEqual(attack, { type: 1, rank: rawAttack.rank, level: rawAttack.level, xp: 13073159 });
     // The assertion this whole file exists for: a mutation turning `value / 10`
-    // back into plain `value` must fail this line, not just look slightly off.
-    assert.equal(attack.xp, rawAttack.value / 10);
+    // back into plain `value` (or dropping the floor) must fail this line, not
+    // just look slightly off. 130731598 / 10 is 13073159.8 — floored, not rounded.
+    assert.equal(attack.xp, Math.floor(rawAttack.value / 10));
 });
 
 test('Lost City\'s value is not always a multiple of ten, and parsing it is not an error', () => {
     // Verified live: granny_grunt's Attack row is level 99 (~13.07m xp) with
-    // value 130731598 — one decimal place of xp, not a whole ten. Rejecting
-    // or rounding a value like this would reject data the live server itself
-    // considers valid. This catches a stricter parser that throws on the
-    // remainder instead of just dividing.
+    // value 130731598 — one decimal place of xp, not a whole ten. The engine
+    // (Player.ts) confirms this decimal is genuine fixed-point precision, not
+    // noise, so rejecting or rounding a value like this would reject data the
+    // live server itself considers valid. This catches a stricter parser that
+    // throws on the remainder instead of flooring past it.
     const raw = fixture('lostcity-player.json') as { type: number; value: number }[];
     const attack = raw.find(r => r.type === 1)!;
     assert.notEqual(attack.value % 10, 0);
@@ -89,6 +91,9 @@ test('Lost City: malformed bodies throw instead of coercing', () => {
 // ── Zanaris ───────────────────────────────────────────────────────────────
 // zanaris-player.json is hand-built: no player was found to capture a real
 // success body from, so it is constructed from the plan's documented shape.
+// It deliberately carries only 4 of the ~22 possible skill rows — enough to
+// exercise the parser, not a snapshot of a real account, so its row count
+// should never be compared against the two real captures below.
 // zanaris-player-notfound.json IS a real capture (404 for a name that does
 // not exist on the live server).
 
