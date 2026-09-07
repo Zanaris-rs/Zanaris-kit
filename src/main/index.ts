@@ -582,6 +582,47 @@ async function captureAndExit(dir: string): Promise<void> {
             const view = hopper.state().worlds;
             log(`[capture] ${id} worlds: ${view?.status} ${view?.worlds.map(w => `W${w.id}=${w.players ?? '?'}p/${w.latencyMs ?? '?'}ms`).join(' ')}${view?.error ? ` error: ${view.error}` : ''}`);
             await shoot(`${id}-worlds`, hopper);
+
+            // Dock beneath the still-open Worlds panel: the single most
+            // regression-prone geometry in this feature (the dock painting
+            // over the panel's bottom rows, hiding the worlds list's tail,
+            // was a real bug found and fixed earlier on this branch) and no
+            // other capture shows both regions open at once. selectTool('chat')
+            // toggles dockOpen in place without touching panelOpen or
+            // activeTool while home is 'bottom' — see the 'rail-chat' branch
+            // of reduce — so Worlds stays exactly as the shot above left it.
+            hopper.selectTool('chat');
+            await wait(500);
+            // Maximising forces canResize false, which fitAxis turns into
+            // 'push' on both axes unconditionally (see fitAxis's first
+            // branch) — the only way to put the composed two-axis note in
+            // front of a capture, since Shell.tsx renders it only inside the
+            // open side panel. Waited out rather than assumed: macOS's zoom
+            // is an animated, OS-driven transition, and proceeding while it
+            // is still in flight left a genuinely racy run — one in several
+            // — with a stray maximize/resize event landing after `second`
+            // opened a few steps below, and this shot's PNG showed it: a
+            // brand new window neither this function nor `reduce` ever
+            // touched came up with its own dock open. isMaximized() polled
+            // to true is what "settled" actually means here; a fixed wait is
+            // a guess at how long that takes.
+            hopper.window.maximize();
+            const maximised = Date.now() + 5_000;
+            while (Date.now() < maximised && !hopper.window.isMaximized()) await wait(100);
+            await wait(500);
+            const withPanel = hopper.state();
+            log(`[capture] ${withPanel.title}: dock ${withPanel.dockOpen ? 'open' : 'closed'} over the worlds panel, mode x ${withPanel.mode.x}, y ${withPanel.mode.y}`);
+            await shoot(`${id}-dock-with-panel`, hopper);
+            // Undone immediately, and waited out the same way: the shots
+            // below must start from a genuinely restored window, not one
+            // mid-animation back down, or the same race runs again on
+            // whatever opens next.
+            hopper.window.unmaximize();
+            const restored = Date.now() + 5_000;
+            while (Date.now() < restored && hopper.window.isMaximized()) await wait(100);
+            hopper.selectTool('chat');
+            await wait(500);
+
             const target = view?.worlds.find(w => w.id !== view.current);
             if (target) {
                 const result = await Promise.race([hopper.switchWorld(target.id), wait(loadTimeoutMs).then((): 'timeout' => 'timeout')]);
