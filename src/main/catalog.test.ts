@@ -281,6 +281,24 @@ test('Catalog.load migrates a v1 file in place and rewrites it as v3', () => {
     assert.equal(written.servers[0].id, 'lostcity');
 });
 
+test('a stored single-player entry follows the pinned engine, keeping the rest of the entry', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    const stored = servers.find(s => s.id === 'singleplayer')!;
+    stored.revision = 1;
+    stored.bookmarks = [{ name: 'Mine', url: 'https://example.com/' }];
+    writeFileSync(file, JSON.stringify({ version: 3, servers }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false);
+    const loaded = catalog.get('singleplayer')!;
+    assert.equal(loaded.revision, engineRevision());
+    assert.deepEqual(loaded.bookmarks, [{ name: 'Mine', url: 'https://example.com/' }]);
+    // and the file was rewritten, so the menu agrees on the next launch too
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
+    assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, engineRevision());
+});
+
 test('list returns deep copies of the worlds block', () => {
     const catalog = new Catalog(tempFile());
     catalog.load();

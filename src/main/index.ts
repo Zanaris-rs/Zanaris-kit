@@ -20,6 +20,23 @@ import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/
 
 const log = (msg: string): void => console.log(msg);
 
+// ── one instance ──────────────────────────────────────────────────────────
+//
+// Two instances would share one world. Both resolve the same
+// <userData>/singleplayer, both write data/config/world.json over each other,
+// both spawn an engine with that working directory, and both save the same
+// character into data/players/main — two worlds, one set of saves, last
+// logout wins, and nothing tells the player. The userData move below and
+// servers.json have the same problem in miniature. macOS refuses the second
+// launch itself; Windows and Linux happily run two.
+//
+// app.exit rather than quit-and-return: a module body cannot return, and
+// app.quit() is a request — it comes back, and everything below would run in
+// an instance that is on its way out, moving the profile's files and touching
+// the world directory before it goes. exit(0) leaves immediately, which is
+// what an instance owning nothing should do.
+if (!app.requestSingleInstanceLock()) app.exit(0);
+
 // ── the userData move, from the old name to this one ──────────────────────
 //
 // Electron derives app.getPath('userData') from the package name, so calling
@@ -580,6 +597,22 @@ app.whenReady().then(async () => {
 
 app.on('activate', () => {
     if (serverWindows.size === 0) actions.newWindow();
+});
+
+/**
+ * Someone launched the kit again while this instance holds the lock. That
+ * launch has already exited, so surface this one rather than let the click do
+ * nothing: the window they were last on, restored if they had minimised it.
+ */
+app.on('second-instance', () => {
+    const window = (focusedServerWindow() ?? [...serverWindows.values()].at(-1))?.window ?? BrowserWindow.getAllWindows()[0];
+    if (!window || window.isDestroyed()) {
+        actions.newWindow();
+        return;
+    }
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
 });
 
 app.on('browser-window-focus', () => reloadCatalogIfChanged());
