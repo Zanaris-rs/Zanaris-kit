@@ -1,7 +1,7 @@
 import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
+import { ADDRESS_HEIGHT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
@@ -259,7 +259,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     win.on('resize', () => {
         if (applying) return;
-        contentWidth = Math.max(MIN_CONTENT_WIDTH, win.getContentBounds().width - sideWidth(panelOpen));
+        const bounds = win.getContentBounds();
+        contentWidth = Math.max(MIN_CONTENT_WIDTH, bounds.width - sideWidth(panelOpen));
+        // The y-axis twin of the line above: without it contentHeight would sit
+        // stale at its construction-time value forever, and computeLayout would
+        // fit the window back to that stale height on every layout event,
+        // fighting the user's own resize. dockHeight is always 0 here (Task 4
+        // owns dock state), so nothing is subtracted for it yet.
+        const addressHeight = tabs.active.kind === 'page' ? ADDRESS_HEIGHT : 0;
+        contentHeight = Math.max(MIN_CONTENT_HEIGHT, bounds.height - STRIP_HEIGHT - addressHeight);
         applyLayout();
     });
     // These change whether the window can be widened, so re-run the layout.

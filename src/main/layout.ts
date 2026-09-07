@@ -1,5 +1,6 @@
 import {
     ADDRESS_HEIGHT,
+    DOCK_HEIGHT_MIN,
     MIN_CONTENT_HEIGHT,
     MIN_CONTENT_WIDTH,
     PANEL_WIDTH,
@@ -39,7 +40,7 @@ export interface AxisInput {
     workSize: number; // the work area's width or height
     content: number; // the content extent to preserve on this axis
     extra: number; // chrome on this axis
-    minContent: number;
+    minContent: number; // unused by fitAxis itself, by design: floor logic lives in splitWindow, not here
     canResize: boolean;
 }
 
@@ -121,11 +122,15 @@ export function splitWindow(width: number, height: number, panelOpen: boolean, d
     const top = STRIP_HEIGHT + addressH;
     const below = Math.max(0, height - STRIP_HEIGHT);
 
-    // Mirrors contentW/sideW above: content claims what it needs down to its
-    // floor, and the dock — not the rail, which always keeps its full height —
-    // absorbs whatever a too-short window can't give both.
-    const contentH = Math.max(MIN_CONTENT_HEIGHT, height - top - dockHeight);
-    const dockH = Math.min(dockHeight, Math.max(0, height - top - contentH));
+    // Unlike x, where the panel is one of several tools and gives way first,
+    // the dock is the conversation the user just asked to see: a chat window
+    // silently reduced to nothing is worse than a game canvas scaled down by
+    // the pixels involved. So the dock shrinks from its request first, but
+    // never below DOCK_HEIGHT_MIN, while content holds at MIN_CONTENT_HEIGHT;
+    // only once the dock is at its own floor does content give way below its.
+    const belowTop = Math.max(0, height - top);
+    const dockH = dockHeight === 0 ? 0 : Math.max(DOCK_HEIGHT_MIN, Math.min(dockHeight, belowTop - MIN_CONTENT_HEIGHT));
+    const contentH = Math.max(0, belowTop - dockH);
 
     return {
         strip: { x: 0, y: 0, width, height: STRIP_HEIGHT },

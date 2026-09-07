@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeLayout, fitAxis, splitWindow, type LayoutInput } from './layout.ts';
-import { ADDRESS_HEIGHT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, PANEL_WIDTH, RAIL_WIDTH, STRIP_HEIGHT } from '../shared/layout.ts';
+import { ADDRESS_HEIGHT, DOCK_HEIGHT_MIN, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, PANEL_WIDTH, RAIL_WIDTH, STRIP_HEIGHT } from '../shared/layout.ts';
 
 const WORK_AREA = { x: 0, y: 0, width: 1920, height: 1080 };
 const base = (over: Partial<LayoutInput> = {}): LayoutInput => ({
@@ -170,16 +170,33 @@ test('push on y when the window cannot resize: content gives way, the dock keeps
     assert.equal(r.dock!.height, 200, 'the dock keeps its full requested height');
 });
 
-test('content floors at MIN_CONTENT_HEIGHT; past that point the dock is what gives way', () => {
+test('the dock shrinks toward its own floor while content holds exactly at MIN_CONTENT_HEIGHT', () => {
     const r = computeLayout(
         base({
             canResize: false,
             dockHeight: 200,
-            window: { x: 0, y: 0, width: 800 + RAIL_WIDTH, height: 650 }
+            window: { x: 0, y: 0, width: 800 + RAIL_WIDTH, height: 700 }
         })
     );
-    assert.equal(r.content.height, MIN_CONTENT_HEIGHT, 'content never shrinks past its floor');
-    assert.equal(r.dock!.height, 650 - STRIP_HEIGHT - MIN_CONTENT_HEIGHT, 'the dock absorbs the rest, short of its full request');
+    assert.equal(r.content.height, MIN_CONTENT_HEIGHT, 'content holds at its floor rather than the dock vanishing');
+    assert.equal(r.dock!.height, 700 - STRIP_HEIGHT - MIN_CONTENT_HEIGHT, 'the dock gives up only what content needs to reach its floor');
+    assert.ok(r.dock!.height > DOCK_HEIGHT_MIN, 'the dock still has slack above its own floor at this height');
+});
+
+test('past the dock floor, content gives way below MIN_CONTENT_HEIGHT rather than the dock vanishing', () => {
+    // At this height the old (wrong) priority gave dockH = 0 -- a requested,
+    // nonzero dock reduced to nothing. The dock must hold at DOCK_HEIGHT_MIN
+    // instead, with content the one that gives way further.
+    const r = computeLayout(
+        base({
+            canResize: false,
+            dockHeight: 200,
+            window: { x: 0, y: 0, width: 800 + RAIL_WIDTH, height: 539 }
+        })
+    );
+    assert.ok(r.dock, 'a requested dock is never dropped for want of room');
+    assert.equal(r.dock!.height, DOCK_HEIGHT_MIN);
+    assert.ok(r.content.height < MIN_CONTENT_HEIGHT, 'content is what gives way once the dock is at its floor');
 });
 
 test('the two axes fit independently: both widen when the panel and the dock are both open', () => {
