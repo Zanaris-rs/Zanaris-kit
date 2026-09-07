@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Zanaris Kit — single player</title>
+<link rel="stylesheet" href="./page.css" />
+<div class="slab">
+    <h1 id="title">Starting your world<span class="dots"></span></h1>
+    <p id="text"></p>
+    <pre id="log" hidden></pre>
+    <button type="button" id="retry" hidden>Try again</button>
+    <p class="version" id="version"></p>
+</div>
+<script>
+    const q = new URLSearchParams(location.search);
+    const state = q.get('state') || 'starting';
+    const title = document.getElementById('title');
+    const text = document.getElementById('text');
+    const log = document.getElementById('log');
+    const retry = document.getElementById('retry');
+
+    const copy = {
+        preparing: ['Getting the world ready', 'The first start copies the game files. This takes a moment.'],
+        starting: ['Starting your world', 'Loading the map and everyone in it.'],
+        stopping: ['Stopping the world', 'Saving and shutting down.'],
+        stopped: ['The world is stopped', 'Open it again from the panel.'],
+        failed: ["The world couldn't start", q.get('reason') || 'No reason was given.']
+    };
+    const [heading, detail] = copy[state] || copy.starting;
+    title.textContent = heading;
+    if (state === 'preparing' || state === 'starting' || state === 'stopping') {
+        const dots = document.createElement('span');
+        dots.className = 'dots';
+        title.appendChild(dots);
+    }
+    text.textContent = detail;
+    if (q.get('version')) document.getElementById('version').textContent = q.get('version');
+
+    if (state === 'failed') {
+        const lines = q.get('log') || '';
+        if (lines) {
+            log.textContent = lines;
+            log.hidden = false;
+        }
+        retry.hidden = false;
+        // A navigation to ourselves with ?retry=1: main sees it and starts the world again.
+        retry.addEventListener('click', () => location.replace('starting.html?retry=1'));
+    }
+</script>
