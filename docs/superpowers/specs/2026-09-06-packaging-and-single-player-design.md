@@ -433,7 +433,19 @@ Rail tool `singleplayer`, panel content in `src/renderer/tools/SinglePlayer.tsx`
 - The last twenty log lines, read-only, when failed.
 
 What cheats means, in the panel's own words: "Developer commands such as
-::tele and ::give. Off, the world plays as the servers do."
+::tele and ::give. Off, they are refused. Your world is still a development
+one either way, so the guide offers to skip the tutorial."
+
+Corrected 2026-09-07: the first wording claimed the world plays as the servers
+do with cheats off, and it does not. `node.production` stays false whatever the
+toggle says — Decision 9 — and content asks `map_live`, which is exactly
+`node.production`, in places the toggle knows nothing about. The tutorial guide
+is the one a player meets first: `runescape_guide.rs2` offers to skip the
+tutorial `if (map_live = false)`. Production cannot simply be turned on to fix
+it: `ClientCheatHandler` gates every developer command on
+`!production && staffModLevel >= 4`, so a production world could never have
+cheats at all. The switch is honest about what it controls; the copy now is
+too.
 
 ### IPC and persistence
 

@@ -60,7 +60,7 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
                     >
                         Cheats {view.cheats ? 'on' : 'off'}
                     </button>
-                    <span id="cheats-note" className="text-[12px] text-dim">Developer commands such as ::tele and ::give. Off, the world plays as the servers do.</span>
+                    <span id="cheats-note" className="text-[12px] text-dim">Developer commands such as ::tele and ::give. Off, they are refused. Your world is still a development one either way, so the guide offers to skip the tutorial.</span>
                 </div>
             </div>
 
