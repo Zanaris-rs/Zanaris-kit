@@ -441,12 +441,27 @@ export class Catalog {
      * The entry must also be the same kind and already point at one of the
      * built-in's own hosts — a private world called Zanaris keeps its null and
      * never learns to look players up on someone else's server.
+     *
+     * A built-in entry hand-edited onto another world's host is skipped and
+     * simply never gains a lookup: there is nothing to tell the user here, and
+     * a wrong endpoint would be worse than none. An entry whose lookup is
+     * hand-edited or deleted, on the other hand, has it put back on the next
+     * launch — the block belongs to the kit, so there is no way to turn a
+     * built-in's Hiscores tool off by editing the file.
      */
     private refreshHiscores(): boolean {
         let changed = false;
         for (const stored of this.servers) {
             const builtIn = DEFAULT_SERVERS.find(s => s.id === stored.id && s.kind === stored.kind);
-            if (!builtIn || !builtIn.hosts.includes(hostOf(stored.url))) continue;
+            if (!builtIn) continue;
+            // The stored url is only known to satisfy parseServerUrl, which reads
+            // a scheme-less address as https rather than rewriting it, so the
+            // string on disk may have no scheme at all — and hostOf, which parses
+            // it raw, would throw. A throw here escapes into load's catch, which
+            // renames the file aside and hands the user the defaults: the whole
+            // catalog lost to a refresh that was only ever an improvement.
+            const url = parseServerUrl(stored.url);
+            if (!url.ok || !builtIn.hosts.includes(hostOf(url.url))) continue;
             if (sameHiscores(stored.hiscores, builtIn.hiscores)) continue;
             stored.hiscores = builtIn.hiscores === null ? null : structuredClone(builtIn.hiscores);
             changed = true;

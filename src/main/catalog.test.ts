@@ -515,6 +515,19 @@ test('a stored built-in whose lookup has moved is brought up to date, and the fi
     assert.equal(written.servers.find(s => s.id === 'lostcitylabs')!.hiscores!.site, 'https://www.lostcitylabs.com/hiscores');
 });
 
+test('a built-in entry whose stored url has no scheme costs the user nothing', () => {
+    const file = tempFile();
+    const zanaris = { ...structuredClone(V3_ZANARIS), url: 'w1.04.zanaris.rs/rs2.cgi?lowmem=1' };
+    writeFileSync(file, JSON.stringify({ version: 4, servers: [zanaris, structuredClone(V3_CUSTOM)] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false, 'a hand-edited address must not cost the user their catalog');
+    assert.deepEqual(catalog.list().map(s => s.id), ['zanaris', 'my-server']);
+    assert.equal(catalog.get('my-server')!.notes, 'the one I run for friends', "and the user's own entry is still there");
+    assert.deepEqual(catalog.get('zanaris')!.hiscores, DEFAULT_SERVERS.find(s => s.id === 'zanaris')!.hiscores, 'read as https, the host matches');
+    assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('servers.json.broken-')), false, 'nothing was renamed aside');
+});
+
 test("an entry that claims a built-in's id and host but is a different kind of server keeps its own", () => {
     const file = tempFile();
     const theirs = { ...structuredClone(V3_LOSTCITY), kind: 'singleplayer', hiscores: null };
