@@ -5,8 +5,8 @@ import type { ToolId } from '../shared/ipc.ts';
  * Where chat lives, and what the side column shows because of it.
  *
  * Until chat could dock, a window had one rule: exactly one tool is open in
- * the side column, because all three tools competed for the same 320px. Chat
- * now competes for a second region that nothing else can use, so there are
+ * the side column, because every tool competed for the same 320px. Chat now
+ * competes for a second region that nothing else can use, so there are
  * two regions and a set of rules about which one chat occupies — and those
  * rules have corners. Moving chat to the side must evict whatever held the
  * column; moving it to the bottom must close the panel rather than leave it

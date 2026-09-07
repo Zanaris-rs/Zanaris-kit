@@ -124,7 +124,7 @@ export function splitWindow(width: number, height: number, panelOpen: boolean, d
 
     // Unlike x, where the panel is one of several tools and gives way first,
     // the dock is the conversation the user just asked to see: a chat window
-    // silently reduced to nothing is worse than a game canvas scaled down by
+    // silently reduced to nothing is worse than a game canvas shorter by
     // the pixels involved. So the dock shrinks from its request first, but
     // never below DOCK_HEIGHT_MIN, while content holds at MIN_CONTENT_HEIGHT;
     // only once the dock is at its own floor does content give way below its.

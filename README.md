@@ -313,10 +313,18 @@ to two different edges, and both get said.
 |---|---|---|
 | widen | there is room to grow, on that axis | the window grows |
 | shift | growing would run the window off the screen | the window grows and slides back onto it |
-| push | maximised, fullscreen, or no room on the display | the content rect shrinks on that axis and the page's own auto-scaling follows it down |
+| push | maximised, fullscreen, or no room on the display | the content rect shrinks on that axis and the page does not rescale to follow, so part of the canvas can end up out of view |
+
+Nothing in the served page scales the canvas down to match: its `setSize` fits
+the canvas to the window only for someone who has picked **Auto Sizing** from
+the controls under the game, and the default is a fixed 765×503 at 1x. So a
+`push` that eats into the 503 leaves the bottom of the canvas out of view —
+still reachable by scrolling, but with no bar to hint that there is anything
+to scroll to, since the stylesheet above hides them. The notes under the panel
+and the dock say that, rather than claiming a rescale that did not happen.
 
 The active mode is stated per axis rather than silently substituted — "the
-window moved left" and "the game is scaled down to fit the dock" are
+window moved left" and "the height came out of the game area" are
 different sentences, and hitting both at once deserves both.
 
 The two axes disagree, on purpose, about who gives way first. On x, `push`

@@ -30,18 +30,28 @@ const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
  * What fitting the chrome cost, per axis, in plain words — null where it cost
  * nothing worth saying. The axes are two sentences rather than one because
  * they are two events: the panel can slide the window left in the same breath
- * as the dock scales the game down, and somebody who hits both is owed both.
+ * as the dock takes height off the game, and somebody who hits both is owed
+ * both.
+ *
+ * Neither push sentence promises the page will scale to follow, because it
+ * will not: the served client is a fixed 765x503 canvas, and its fit-to-window
+ * branch runs only for someone who has picked "Auto Sizing" from the controls
+ * under the game. The default is 1x, so what actually happens is that the view
+ * gets shorter than the page: first the controls strip below the canvas goes
+ * out of view, then the canvas's own bottom — behind no scrollbar, since we
+ * hide those. The note has to say that, and say scrolling still reaches it,
+ * rather than describe a rescale that never happened.
  */
 const MODE_NOTE: Record<'x' | 'y', Record<LayoutMode, string | null>> = {
     x: {
         widen: null,
         shift: 'The window moved left to make room.',
-        push: 'No room to widen, so the game area is narrower than the canvas and the page scales it down.'
+        push: 'No room to widen, so the width came out of the game area, down to the canvas width — past that, the panel is what gives way.'
     },
     y: {
         widen: null,
         shift: 'The window moved up to make room.',
-        push: 'No room to grow taller, so the game area is shorter than the canvas and the page scales it down.'
+        push: 'No room to grow taller, so the height came out of the game area and the bottom of the canvas can fall out of view. Scrolling still reaches it; "Auto Sizing" under the game scales the page to fit instead.'
     }
 };
 
@@ -57,11 +67,14 @@ function modeNotes(mode: { x: LayoutMode; y: LayoutMode }, axes: readonly ('x' |
  * owns it is closed, which is what keeps a note from having nowhere to go.
  *
  * Both open and both axes pushed is therefore two regions with one note each,
- * never the same sentence twice; the dock alone, which is the common case (at
- * the default content height 640 + 36 + 200 already overflows most laptop work
- * areas the first time the dock opens), carries both. Neither region open
- * leaves both undrawn, as it always has: there is no chrome on screen to hang
- * them from.
+ * never the same sentence twice; whichever one is open alone carries both.
+ * That second half is not a nicety, because an axis can push with its own
+ * region shut: the rail costs width whether or not the panel is open, the
+ * strip costs height whether or not the dock is, and a maximised window has
+ * neither to spare. So the axis with nothing of its own on screen is exactly
+ * the one whose note would otherwise be dropped, and the region that is open
+ * is the only place left to hang it. Neither region open leaves both undrawn,
+ * as it always has: there is no chrome on screen to hang them from.
  */
 function noteAxes(otherRegionOpen: boolean, own: 'x' | 'y'): readonly ('x' | 'y')[] {
     return otherRegionOpen ? [own] : ['x', 'y'];

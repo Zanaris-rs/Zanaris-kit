@@ -32,8 +32,11 @@ export const IPC = {
 /**
  * The tools a window can offer. Four so far; a registry is worth it when the
  * list grows. This is the set, not the rail order — which tools a given window
- * offers and in what order is `serverWindow`'s to say, and the rail it builds
- * runs chat · divider · worlds, hiscores, singleplayer.
+ * offers and in what order is `serverWindow`'s to say, and it is deliberately
+ * not spelled out again here: that order already lives in three places that
+ * have to be edited together, and a fourth copy sitting in a docstring none of
+ * them cross-reference is the one that would go stale first and be believed
+ * longest.
  */
 export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
