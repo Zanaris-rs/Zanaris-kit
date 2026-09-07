@@ -15,6 +15,13 @@ import type { ToolId } from '../shared/ipc.ts';
  * point at. So the transition lives here, as a pure function over a small
  * state, in a file with no Electron import — the one shape `npm test` can
  * reach directly and prove exhaustively.
+ *
+ * Chat's home is app-wide, but a window's chrome is not: 'move' and
+ * 'sync-home' both change `home`, but only 'move' is allowed to touch what
+ * *this* window has open. 'move' is what the window the user is looking at
+ * fires; 'sync-home' is the echo every other open window receives so they
+ * agree on where chat goes without a window that never touched chat losing
+ * whatever it had open.
  */
 
 /** Where chat is and what the side column holds. The whole of a window's tool placement. */
@@ -30,8 +37,10 @@ export type Action =
     | { kind: 'rail-chat' }
     /** The rail's Worlds or Single player tab. */
     | { kind: 'rail-tool'; tool: ToolId }
-    /** The →| control, in either home. */
+    /** The →| control, in either home. Fired only by the window the user is looking at. */
     | { kind: 'move'; to: ChatHome }
+    /** Every other window's echo of a 'move' fired elsewhere: same target home, but this window never asked to be touched. */
+    | { kind: 'sync-home'; to: ChatHome }
     /** The strip's panel toggle. */
     | { kind: 'toggle-panel' };
 
@@ -95,10 +104,39 @@ export function reduce(state: Placement, action: Action, tools: readonly ToolId[
             return { home: 'side', dockOpen: false, activeTool: 'chat', panelOpen: true };
         }
 
+        case 'sync-home': {
+            if (action.to === 'side') {
+                // Every window agrees where chat goes, not whether it is open
+                // here. This window did not ask for chat, so its own column
+                // is untouched — only the dock closes, because invariant 2
+                // forbids it once home is 'side'.
+                return { ...state, home: 'side', dockOpen: false };
+            }
+            // to === 'bottom': the dock is not opened on this window's
+            // behalf — only a window that asked for chat gets that. The one
+            // thing that must give way is chat itself, which invariant 1
+            // forbids from the column once home is 'bottom'; losing it as
+            // the active tool leaves nothing to show, so the panel closes
+            // with it. Any other occupant is untouched.
+            if (state.activeTool === 'chat') {
+                return { ...state, home: 'bottom', activeTool: null, panelOpen: false };
+            }
+            return { ...state, home: 'bottom' };
+        }
+
         case 'toggle-panel': {
             if (state.panelOpen) return { ...state, panelOpen: false };
             if (state.activeTool !== null) return { ...state, panelOpen: true };
-            return { ...state, panelOpen: true, activeTool: firstLegalSideOccupant(tools, state.home) };
+            const first = firstLegalSideOccupant(tools, state.home);
+            if (first === null) {
+                // An empty column the user has no way to fill is not a state
+                // worth having: opening it would widen the window by 320px
+                // onto nothing, and the message the shell would show beside
+                // it — pick a tool on the rail — is a lie when there is no
+                // such tool. Leave the toggle a no-op instead.
+                return state;
+            }
+            return { ...state, panelOpen: true, activeTool: first };
         }
     }
 }

@@ -96,6 +96,9 @@ test("rail-tool with 'chat' is a caller mistake and returns the state unchanged"
 });
 
 // ── move ─────────────────────────────────────────────────────────────────
+// 'move' is fired only by the window the user is looking at, and is allowed
+// to rearrange that window's own chrome. Contrast with 'sync-home' below,
+// which every OTHER open window receives instead.
 
 test('moving chat to the bottom closes the panel and clears activeTool if chat held it', () => {
     const r = reduce(base({ home: 'side', activeTool: 'chat', panelOpen: true }), { kind: 'move', to: 'bottom' }, TOOLS);
@@ -129,6 +132,43 @@ test('moving chat to the side opens the panel even if the evicted tool was only 
     assert.equal(r.panelOpen, true, 'the panel opens on chat regardless of whether it was open before the move');
     assert.equal(r.activeTool, 'chat');
     assert.equal(r.dockOpen, false);
+});
+
+// ── sync-home ────────────────────────────────────────────────────────────
+// What every window OTHER than the one that fired 'move' receives. Openness
+// is per-window; only the home itself is meant to be shared, so these must
+// never install chat in a column that never asked for it and never open a
+// dock nobody here touched.
+
+test("sync-home to 'side' leaves a window's own Worlds panel alone, closing only the dock", () => {
+    const r = reduce(base({ home: 'bottom', dockOpen: true, activeTool: 'worlds', panelOpen: true }), { kind: 'sync-home', to: 'side' }, TOOLS);
+    assert.equal(r.home, 'side');
+    assert.equal(r.dockOpen, false, "invariant 2 forces the dock closed once home is 'side'");
+    assert.equal(r.activeTool, 'worlds', 'this window never asked for chat, so its own tool is untouched — not evicted the way move does it');
+    assert.equal(r.panelOpen, true, 'the panel stays open on whatever it already showed');
+});
+
+test("sync-home to 'side' closes this window's dock without installing chat in an untouched column", () => {
+    const r = reduce(base({ home: 'bottom', dockOpen: true, activeTool: null, panelOpen: false }), { kind: 'sync-home', to: 'side' }, TOOLS);
+    assert.equal(r.dockOpen, false, 'the dock closes');
+    assert.equal(r.activeTool, null, 'chat is not installed on this window’s behalf');
+    assert.equal(r.panelOpen, false, 'an untouched column stays untouched, it does not spring open');
+});
+
+test("sync-home to 'bottom' vacates a window's own chat from the column without opening its dock", () => {
+    const r = reduce(base({ home: 'side', dockOpen: false, activeTool: 'chat', panelOpen: true }), { kind: 'sync-home', to: 'bottom' }, TOOLS);
+    assert.equal(r.home, 'bottom');
+    assert.equal(r.activeTool, null, "chat cannot stay in the column once home is 'bottom' (invariant 1)");
+    assert.equal(r.panelOpen, false, 'nothing is left in the panel to show, so it closes with chat');
+    assert.equal(r.dockOpen, false, "the dock does not open on this window's behalf");
+});
+
+test("sync-home to 'bottom' leaves a window's own Worlds panel completely untouched", () => {
+    const r = reduce(base({ home: 'side', dockOpen: false, activeTool: 'worlds', panelOpen: true }), { kind: 'sync-home', to: 'bottom' }, TOOLS);
+    assert.equal(r.home, 'bottom', 'only home changes');
+    assert.equal(r.activeTool, 'worlds');
+    assert.equal(r.panelOpen, true);
+    assert.equal(r.dockOpen, false, 'sync-home never opens the dock on this window’s behalf');
 });
 
 // ── toggle-panel ─────────────────────────────────────────────────────────
@@ -165,10 +205,32 @@ test('the panel toggle offers chat as the default once home is the side column',
     assert.equal(r.activeTool, 'chat', 'chat is a legal side occupant once it is not competing with the dock');
 });
 
-test('the panel toggle opens empty when no tool in the rail is a legal side occupant', () => {
-    const r = reduce(base({ home: 'bottom', activeTool: null, panelOpen: false }), { kind: 'toggle-panel' }, ['chat']);
-    assert.equal(r.panelOpen, true, 'the panel still opens');
-    assert.equal(r.activeTool, null, 'an empty panel is a real state, not an error, and Shell.tsx renders it');
+test("the panel toggle opens on chat alone when it is the window's only tool and home is the side column", () => {
+    // Same single-tool rail as the "does not open" test below, but home is
+    // 'side' here, so chat itself is the legal occupant. Distinguishes "no
+    // tool available" from "home makes chat unavailable".
+    const r = reduce(base({ home: 'side', activeTool: null, panelOpen: false }), { kind: 'toggle-panel' }, ['chat']);
+    assert.equal(r.panelOpen, true);
+    assert.equal(r.activeTool, 'chat');
+});
+
+test('the panel toggle does not open onto an empty column when no tool in the rail is a legal side occupant', () => {
+    // A server with no worlds list ships with tools === ['chat'], and the
+    // default home is 'bottom' — exactly the every-user-added-server case
+    // the review caught. Opening here would widen the window onto a column
+    // nothing can fill, so the toggle must be a complete no-op instead.
+    const state = base({ home: 'bottom', activeTool: null, panelOpen: false });
+    const r = reduce(state, { kind: 'toggle-panel' }, ['chat']);
+    assert.equal(r.panelOpen, false, 'the panel stays closed rather than opening onto nothing');
+    assert.deepEqual(r, state, 'the whole placement is unchanged, not just panelOpen');
+});
+
+test('the panel toggle can still close an open panel even when no tool would be a legal side occupant', () => {
+    // Closing must never consult legality at all — only opening onto an
+    // empty column is refused.
+    const r = reduce(base({ home: 'bottom', activeTool: 'singleplayer', panelOpen: true }), { kind: 'toggle-panel' }, ['chat']);
+    assert.equal(r.panelOpen, false, 'closing works regardless of what tools says');
+    assert.equal(r.activeTool, 'singleplayer', 'the remembered tool is untouched');
 });
 
 // ── the two headline scenarios from the design ──────────────────────────
@@ -205,6 +267,8 @@ test('reduce does not mutate the state object it is given', () => {
         { kind: 'rail-tool', tool: 'singleplayer' },
         { kind: 'move', to: 'bottom' },
         { kind: 'move', to: 'side' },
+        { kind: 'sync-home', to: 'bottom' },
+        { kind: 'sync-home', to: 'side' },
         { kind: 'toggle-panel' }
     ];
     const starts = [
@@ -249,7 +313,13 @@ test('the three invariants hold after every action, from every representative st
     ];
     const homes: ChatHome[] = ['bottom', 'side'];
     const toolActions: Action[] = TOOL_IDS.map((tool) => ({ kind: 'rail-tool', tool }));
-    const actions: Action[] = [{ kind: 'rail-chat' }, { kind: 'toggle-panel' }, ...toolActions, ...homes.map((to): Action => ({ kind: 'move', to }))];
+    const actions: Action[] = [
+        { kind: 'rail-chat' },
+        { kind: 'toggle-panel' },
+        ...toolActions,
+        ...homes.map((to): Action => ({ kind: 'move', to })),
+        ...homes.map((to): Action => ({ kind: 'sync-home', to }))
+    ];
 
     for (const start of starts) {
         assertInvariants(start, 'sanity: the starting placement itself');
