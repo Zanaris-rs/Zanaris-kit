@@ -106,15 +106,28 @@ const DOCK_STEP_COARSE = 50;
  * than a renderer-side clamp of our own. The effect below folds the same
  * confirmed value in whenever `height` changes for a reason that was not this
  * component's own request — another window dragging the shared height, most
- * plausibly.
+ * plausibly — except while a drag of this component's own is in flight, where
+ * the pointer is the one that knows where the height is going.
  */
 function DockGrip({ height }: { height: number }): ReactNode {
     const requested = useRef(height);
+    const drag = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+    /*
+     * Every frame of a drag ends in a layout, and every layout pushes state, so
+     * this fires once a frame while the pointer is down — and while it is down
+     * the pointer owns `requested`, not the echo. A push landing between a
+     * pointermove and its frame would otherwise overwrite the position being
+     * aimed at with the one already applied, spending that frame on a request
+     * for the height the dock is already at; one landing just before pointerup
+     * would lose the release position outright. The echo is authoritative
+     * again the moment the drag ends, which is when this effect has something
+     * to say: a height that moved for a reason that was not this pointer.
+     */
     useEffect(() => {
+        if (drag.current) return;
         requested.current = height;
     }, [height]);
 
-    const drag = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
     /* The id of a scheduled frame, or null when none is pending. */
     const frame = useRef<number | null>(null);
     /* A pending frame calling back into an unmounted component would still reach main; nothing here needs that after the grip is gone. */
