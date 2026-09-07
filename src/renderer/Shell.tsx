@@ -308,6 +308,18 @@ export default function Shell(): ReactNode {
     const tools = TOOLS.filter(t => state.tools.includes(t.id));
     const active = state.panelOpen ? state.activeTool : null;
     const unread = unreadChat(state);
+    /*
+     * Main says whether the side column has anything that could open in it; on
+     * a chat-only server with chat in the dock it has not, and main would
+     * refuse the open. The button says so rather than looking live, and names
+     * the reason: an unexplained dead control is the same bug wearing a
+     * different face.
+     */
+    const panelLabel = !state.panelAvailable
+        ? 'Nothing can open in the panel here: chat is docked at the bottom and this window has no other tool'
+        : state.panelOpen
+          ? 'Close panel'
+          : 'Open panel';
 
     return (
         <div className="relative h-full overflow-hidden bg-ink text-cream">
@@ -325,9 +337,11 @@ export default function Shell(): ReactNode {
                     <button
                         type="button"
                         onClick={() => void window.zanaris.shell.togglePanel()}
-                        aria-label={state.panelOpen ? 'Close panel' : 'Open panel'}
+                        disabled={!state.panelAvailable}
+                        title={panelLabel}
+                        aria-label={panelLabel}
                         aria-pressed={state.panelOpen}
-                        className="tile ml-auto flex h-[26px] w-[32px] shrink-0 items-center justify-center text-dim"
+                        className="tile ml-auto flex h-[26px] w-[32px] shrink-0 items-center justify-center text-dim disabled:opacity-60"
                     >
                         <PanelToggle />
                     </button>

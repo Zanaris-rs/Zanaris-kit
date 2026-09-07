@@ -6,7 +6,7 @@ import type { ChatHome, ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
 import { computeLayout, dockOnFloor, sideWidth, splitWindow, type Rects } from './layout';
-import { reduce, type Action, type Placement } from './chatDock';
+import { firstLegalSideOccupant, reduce, type Action, type Placement } from './chatDock';
 import { decideNavigation } from './guard';
 import { GAME_TAB_ID, TabModel } from './tabs';
 import { loadShell, preloadPath } from './renderer';
@@ -248,6 +248,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             rects,
             tools,
             activeTool: placement.activeTool,
+            panelAvailable: firstLegalSideOccupant(tools, placement.home) !== null,
             worlds: worldsView(),
             chat: deps.chat(),
             chatHome: placement.home,

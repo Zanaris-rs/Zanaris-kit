@@ -22,9 +22,15 @@ export interface MenuActions {
  * Native menus follow the platform's Title Case; everything the renderer
  * draws is sentence case. Rebuilt whenever the catalog changes so the server
  * submenu stays current, whenever the switch warning is turned on or off so
- * its checkbox agrees, and once more when a newer release is found.
+ * its checkbox agrees, when the focused window's panel becomes available or
+ * stops being, and once more when a newer release is found.
+ *
+ * `panelAvailable` is the one input here that belongs to a window rather than
+ * the app: there is one menu for every window, so it tracks whichever window
+ * has focus, and is false when none does — the toggle acts on the focused
+ * window and there is nothing for it to act on.
  */
-export function installMenu(servers: readonly ServerDef[], actions: MenuActions, warnOnSwitch: boolean, update: LatestRelease | null): void {
+export function installMenu(servers: readonly ServerDef[], actions: MenuActions, warnOnSwitch: boolean, update: LatestRelease | null, panelAvailable: boolean): void {
     const isMac = process.platform === 'darwin';
     const serverItems = (): MenuItemConstructorOptions[] =>
         servers.length === 0
@@ -52,7 +58,10 @@ export function installMenu(servers: readonly ServerDef[], actions: MenuActions,
                 // The only way back once the switch dialog's "Don't ask again" has been ticked.
                 { label: 'Warn Before Switching Worlds', type: 'checkbox', checked: warnOnSwitch, click: item => actions.setWarnOnSwitch(item.checked) },
                 { type: 'separator' },
-                { label: 'Toggle Panel', accelerator: 'CmdOrCtrl+\\', click: () => actions.togglePanel() },
+                // Disabled rather than hidden where the panel has no legal
+                // occupant — a chat-only server with chat in the dock — so the
+                // shortcut reads as unavailable here instead of broken.
+                { label: 'Toggle Panel', accelerator: 'CmdOrCtrl+\\', enabled: panelAvailable, click: () => actions.togglePanel() },
                 { type: 'separator' },
                 { role: 'togglefullscreen' },
                 { role: 'toggleDevTools' }

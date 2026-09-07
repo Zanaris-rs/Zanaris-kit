@@ -51,8 +51,15 @@ export type Action =
  * rules exist to prevent, so it is skipped rather than offered as a default.
  * Null means no tool in `tools` can currently open there — a real, empty-panel
  * state, not an error.
+ *
+ * Exported because the same answer decides whether the panel toggle is worth
+ * offering at all: null here is a window where `reduce` will refuse to open
+ * the panel, so its strip button and its menu item say unavailable rather than
+ * looking live and doing nothing. The UI asks this rather than working it out,
+ * because a second copy of the rule in the renderer is exactly how the two
+ * come to disagree.
  */
-function firstLegalSideOccupant(tools: readonly ToolId[], home: ChatHome): ToolId | null {
+export function firstLegalSideOccupant(tools: readonly ToolId[], home: ChatHome): ToolId | null {
     for (const tool of tools) {
         if (tool === 'chat' && home === 'bottom') continue;
         return tool;

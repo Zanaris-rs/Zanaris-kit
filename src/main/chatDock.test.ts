@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reduce, type Action, type Placement } from './chatDock.ts';
+import { firstLegalSideOccupant, reduce, type Action, type Placement } from './chatDock.ts';
 import type { ChatHome } from '../shared/chat.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import { TOOL_IDS } from '../shared/ipc.ts';
@@ -231,6 +231,19 @@ test('the panel toggle can still close an open panel even when no tool would be 
     const r = reduce(base({ home: 'bottom', activeTool: 'singleplayer', panelOpen: true }), { kind: 'toggle-panel' }, ['chat']);
     assert.equal(r.panelOpen, false, 'closing works regardless of what tools says');
     assert.equal(r.activeTool, 'singleplayer', 'the remembered tool is untouched');
+});
+
+// ── firstLegalSideOccupant, asked directly ───────────────────────────────
+// The toggle-panel cases above prove what reduce does with the answer; these
+// prove the answer itself, which main now also reads to decide whether the
+// panel toggle is offered at all.
+
+test('the legal side occupant is the first tool in rail order, chat skipped only while it lives at the bottom', () => {
+    assert.equal(firstLegalSideOccupant(['chat', 'worlds'], 'bottom'), 'worlds', 'chat is skipped at the bottom and the scan carries on past it');
+    assert.equal(firstLegalSideOccupant(['chat', 'worlds'], 'side'), 'chat', 'chat is legal again once the side column is its home');
+    assert.equal(firstLegalSideOccupant(['chat'], 'side'), 'chat', 'one tool is enough when it is a legal one');
+    assert.equal(firstLegalSideOccupant(['chat'], 'bottom'), null, 'a chat-only window with chat docked has no legal occupant — the state that makes the panel toggle a dead control');
+    assert.equal(firstLegalSideOccupant([], 'side'), null, 'and an empty rail has none either');
 });
 
 // ── the two headline scenarios from the design ──────────────────────────

@@ -68,6 +68,14 @@ export interface ShellState {
     /** Tools this window offers, in rail order. */
     tools: ToolId[];
     activeTool: ToolId | null;
+    /**
+     * Whether the side column has a tool that could legally open in it. False
+     * on a window whose only tool is chat while chat lives at the bottom —
+     * main refuses to open the panel onto an empty column — and the strip's
+     * toggle and the View menu's item are disabled to match. Main works it out
+     * from the placement rules so the UI never has to.
+     */
+    panelAvailable: boolean;
     /** Null when the server has one page. */
     worlds: WorldsView | null;
     /** One connection serves every window, so this is the same in all of them. */

@@ -99,9 +99,34 @@ let update: LatestRelease | null = null;
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
 let singlePlayer: SinglePlayerService | null = null;
 
+/**
+ * Whether the focused window's panel could open at all. Main decides it, from
+ * the same rules that would refuse the open — a window whose only tool is chat,
+ * with chat living in the dock, has no legal occupant for the side column — and
+ * both the strip's toggle and the menu item below take their enabled state from
+ * it rather than working it out a second time.
+ */
+function panelAvailable(): boolean {
+    return focusedServerWindow()?.state().panelAvailable ?? false;
+}
+
+/** What the menu was last built with, so the rebuild below only runs when the item would actually change. */
+let menuPanelAvailable = false;
+
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
-    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update);
+    menuPanelAvailable = panelAvailable();
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuPanelAvailable);
+}
+
+/**
+ * One menu, many windows: the Toggle Panel item belongs to whichever window has
+ * focus, so it is re-examined when focus moves, when a window closes out from
+ * under it, and when chat's home changes app-wide — the three ways the answer
+ * moves without the catalog, the warning or the update doing anything.
+ */
+function syncMenuPanelItem(): void {
+    if (panelAvailable() !== menuPanelAvailable) installAppMenu();
 }
 
 /**
@@ -190,6 +215,10 @@ const windows = new ServerWindows((spec, onClosed) => {
             byShell.delete(sw.shellContentsId);
             log(`[main] closed ${spec.title}`);
             onClosed();
+            // Focus lands somewhere else, or nowhere, and the menu's panel item
+            // belongs to whoever has it now. Closing the last window on macOS
+            // fires no focus event at all, so it is done here as well.
+            syncMenuPanelItem();
         },
         {
             log,
@@ -399,6 +428,9 @@ ipcMain.handle(IPC.chatSetHome, (event, home: unknown) => {
         if (sw === asked) sw.moveChat(home);
         else sw.syncChatHome(home);
     }
+    // A home of 'bottom' takes chat out of the side column, which on a window
+    // with no other tool leaves the panel with nothing it could open onto.
+    syncMenuPanelItem();
 });
 
 /**
@@ -786,7 +818,10 @@ app.on('second-instance', () => {
     window.focus();
 });
 
-app.on('browser-window-focus', () => reloadCatalogIfChanged());
+app.on('browser-window-focus', () => {
+    reloadCatalogIfChanged();
+    syncMenuPanelItem();
+});
 
 /** Set once the world has been stopped for the quit, so the second quit goes through. */
 let worldStoppedForQuit = false;
