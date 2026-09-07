@@ -276,8 +276,22 @@ function uniqueIds(servers: readonly ServerDef[]): boolean {
     return new Set(servers.map(s => s.id)).size === servers.length;
 }
 
-const isLocalEntry = (entry: unknown): boolean =>
-    typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).id === 'local';
+/** Where the built-in local server pointed, kept only so the migration can recognise the entry it drops. */
+const LOCAL_URL = 'http://127.0.0.1:8888/rs2.cgi?lowmem=1';
+
+/**
+ * The built-in local server as an older file stored it. The id alone does not
+ * say so: with the built-in gone, `slugify('Local')` is free, so an entry that
+ * merely took the id back is the user's own. Matching the address too makes
+ * the check fail towards keeping an entry rather than dropping one — a hand
+ * edited local entry survives as a leftover, which is the cheaper mistake.
+ */
+function isBuiltInLocal(entry: unknown): boolean {
+    if (typeof entry !== 'object' || entry === null) return false;
+    const e = entry as Record<string, unknown>;
+    // Version 1 predates `kind`; a missing one is the remote it was about to become.
+    return e.id === 'local' && (e.kind === 'remote' || e.kind === undefined) && e.url === LOCAL_URL;
+}
 
 /**
  * Turns whatever was on disk into a usable list, or null when it cannot be
@@ -294,16 +308,20 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
     const version = file.version === undefined ? 1 : file.version;
     if (!Array.isArray(file.servers)) return null;
 
-    // Single player superseded the built-in local server, so version 4 has no
-    // entry for it — and every older version shipped one, which is why it goes
-    // here rather than inside one version's step. Dropping it before anything
-    // is validated also keeps a stale local entry from condemning the whole
-    // file, and with it the user's own entries.
-    const servers: unknown[] = file.servers.filter((entry: unknown) => !isLocalEntry(entry));
-
     if (version === 4) {
-        return servers.every(isServerDef) && uniqueIds(servers) ? servers.map(copy) : null;
+        return file.servers.every(isServerDef) && uniqueIds(file.servers) ? file.servers.map(copy) : null;
     }
+
+    // Single player superseded the built-in local server, so version 4 has no
+    // entry for it. Every older version shipped one, which is why the drop sits
+    // above their three steps rather than inside one of them — but strictly
+    // below the version 4 branch: version 4 never held the built-in, so an entry
+    // with that id in one of those files is the user's own, and deleting it
+    // would be the very thing this migration must not do. Dropping before
+    // anything is validated also keeps a stale local entry from condemning the
+    // whole file, and with it the user's other entries.
+    const servers: unknown[] = file.servers.filter((entry: unknown) => !isBuiltInLocal(entry));
+
     if (version === 3) {
         return fromV3(servers);
     }
@@ -355,10 +373,16 @@ function fromV3(servers: readonly unknown[]): ServerDef[] | null {
     return uniqueIds(upgraded) ? upgraded : null;
 }
 
-/** Adds the built-in single-player entry to a list that lacks it. */
+/** Adds the built-in single-player entry to a list that lacks it, after the last built-in, where the menu has always shown it. */
 function withSinglePlayer(servers: ServerDef[]): ServerDef[] {
     if (servers.some(s => s.id === 'singleplayer')) return servers;
-    return [...servers, copy(DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!)];
+    const entry = copy(DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!);
+    const builtInIds = new Set(DEFAULT_SERVERS.map(s => s.id));
+    let after = -1;
+    for (let i = servers.length - 1; i >= 0 && after < 0; i--) {
+        if (builtInIds.has(servers[i]!.id)) after = i;
+    }
+    return after < 0 ? [...servers, entry] : [...servers.slice(0, after + 1), entry, ...servers.slice(after + 1)];
 }
 
 /**
@@ -390,14 +414,44 @@ export class Catalog {
             if (!migrated) throw new Error('not a catalog');
             this.servers = migrated;
             const refreshed = this.refreshSinglePlayer();
+            const adopted = this.refreshHiscores();
             // An older file is rewritten in the current shape; that is an upgrade, not a recovery.
-            if (refreshed || (parsed as { version?: unknown }).version !== 4) this.save();
+            if (refreshed || adopted || (parsed as { version?: unknown }).version !== 4) this.save();
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
             this.servers = DEFAULT_SERVERS.map(copy);
             this.recovered = true;
             this.save();
         }
+    }
+
+    /**
+     * Where a built-in server's hiscores live is the kit's own knowledge, not a
+     * choice the user made — the add form has never offered the field — so a
+     * stored entry must not freeze it, for the same reason the single-player
+     * entry must not freeze its revision. Version 3 knew only Lost City's
+     * lookup, and left Zanaris and Labs with the null they were written with;
+     * without this, every install that already exists would keep that null
+     * forever, since a version 4 file never passes through the migration again.
+     * It also means an endpoint that moves is picked up on the next launch
+     * rather than at the next migration, of which there may not be one.
+     *
+     * The id alone cannot say an entry is that built-in: with the local server
+     * gone, a user can add a server whose name slugifies onto a built-in's id.
+     * The entry must also be the same kind and already point at one of the
+     * built-in's own hosts — a private world called Zanaris keeps its null and
+     * never learns to look players up on someone else's server.
+     */
+    private refreshHiscores(): boolean {
+        let changed = false;
+        for (const stored of this.servers) {
+            const builtIn = DEFAULT_SERVERS.find(s => s.id === stored.id && s.kind === stored.kind);
+            if (!builtIn || !builtIn.hosts.includes(hostOf(stored.url))) continue;
+            if (sameHiscores(stored.hiscores, builtIn.hiscores)) continue;
+            stored.hiscores = builtIn.hiscores === null ? null : structuredClone(builtIn.hiscores);
+            changed = true;
+        }
+        return changed;
     }
 
     /**
@@ -460,4 +514,10 @@ export class Catalog {
 
 function copy(s: ServerDef): ServerDef {
     return structuredClone(s);
+}
+
+/** Whether two hiscores blocks say the same thing, field by field, so a refresh only rewrites the file when it must. */
+function sameHiscores(a: HiscoresDef | null, b: HiscoresDef | null): boolean {
+    if (a === null || b === null) return a === b;
+    return a.source.kind === b.source.kind && a.source.url === b.source.url && a.site === b.site;
 }
