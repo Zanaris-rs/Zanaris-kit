@@ -35,7 +35,6 @@ const api: ZanarisApi = {
     },
     hiscores: {
         lookup: name => ipcRenderer.invoke(IPC.hiscoresLookup, name),
-        clear: () => ipcRenderer.invoke(IPC.hiscoresClear),
         openSite: () => ipcRenderer.invoke(IPC.hiscoresOpenSite)
     },
     singlePlayer: {

@@ -15,7 +15,6 @@ export const IPC = {
     worldsSwitch: 'zanaris:worlds-switch',
     worldsSetDetail: 'zanaris:worlds-set-detail',
     hiscoresLookup: 'zanaris:hiscores-lookup',
-    hiscoresClear: 'zanaris:hiscores-clear',
     hiscoresOpenSite: 'zanaris:hiscores-open-site',
     chatState: 'zanaris:chat-state',
     chatGet: 'zanaris:chat-get',
@@ -138,8 +137,6 @@ export interface ZanarisApi {
     hiscores: {
         /** Looks a player up on this window's server. One request per press: these servers rate-limit. */
         lookup(name: string): Promise<void>;
-        /** Empties the table, back to the state before anything was looked up. Keeps the name in the box. */
-        clear(): Promise<void>;
         /** Opens the server's own hiscores page. */
         openSite(): Promise<void>;
     };

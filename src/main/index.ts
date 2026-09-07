@@ -440,12 +440,6 @@ ipcMain.handle(IPC.worldsSetDetail, async (event, detail: unknown) => {
 // hiscores has no service and no tool to send these from, so every one of them
 // is a no-op there rather than an error.
 
-/** The lookup belonging to the window that sent this, or null when that server has none. */
-function hiscoresFor(sender: WebContents): HiscoresService | null {
-    const sw = windowFor(sender);
-    return sw ? hiscoresServiceFor(sw.state().server) : null;
-}
-
 /**
  * The longest name a lookup will carry, deliberately the same number
  * `appState` refuses to store a remembered name past. Agreeing is the whole
@@ -458,10 +452,18 @@ function hiscoresFor(sender: WebContents): HiscoresService | null {
 const HISCORES_NAME_MAX = 30;
 
 /**
- * Awaited rather than fired and forgotten. Nothing comes back over the wire —
- * every row the panel draws arrives by pushState — so this promise resolving
- * is the only signal the caller gets that the lookup is over, and a panel that
- * means to stop a rate-limited server being asked twice needs one.
+ * Awaited rather than fired and forgotten, though nothing is waiting on it
+ * today. Nothing comes back over the wire — every row the panel draws arrives
+ * by pushState — and the panel does not hold this promise at all: it `void`s
+ * the call and gates the Look up button, and the submit behind it, on
+ * `loading` from the pushed view. What the await buys is that the handler's
+ * own promise means what the channel name says, settling when the lookup is
+ * over rather than the moment the request goes out. It is what the handlers
+ * around it that do real work do — `worldsRefresh` hands back
+ * `refreshWorlds()`'s promise, the switch and single-player handlers await
+ * theirs — and one layer down capture mode leans on that settle directly,
+ * awaiting `service.lookup` because it is the only "the lookup has finished"
+ * this feature has to offer.
  *
  * A box with no name in it is not a lookup, and the test for that is
  * `normaliseName`'s own: it keeps only [a-z0-9_], so `   ` and `!!!` alike come
@@ -491,8 +493,6 @@ ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
     appState.setHiscoresName(server.id, wanted);
     await service.lookup(wanted);
 });
-
-ipcMain.handle(IPC.hiscoresClear, event => hiscoresFor(event.sender)?.clear());
 
 /**
  * "Full hiscores" opens the server's own page in the system browser.
