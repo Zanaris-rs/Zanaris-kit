@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, net, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, screen, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
 import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
+import { DOCK_HEIGHT_MIN } from '../shared/layout';
 import { Catalog } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows } from './windows';
@@ -196,6 +197,8 @@ const windows = new ServerWindows((spec, onClosed) => {
             position: nextPosition(),
             worlds: worldsServiceFor(spec.server),
             chat: chatView,
+            chatHome: () => appState.chat().dock,
+            chatDockHeight: () => appState.chat().dockHeight,
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
@@ -304,6 +307,8 @@ ipcMain.handle(IPC.shellSelectTool, (event, id: unknown) => {
     windowFor(event.sender)?.selectTool(id as ToolId | null);
 });
 
+ipcMain.handle(IPC.shellToggleDock, event => windowFor(event.sender)?.toggleDock());
+
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
 
 /**
@@ -372,6 +377,37 @@ ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
     // Remembered, so the next launch connects without asking again.
     appState.setChat({ nick: chosen });
     chat?.setNick(chosen);
+});
+
+/**
+ * Where chat lives, for the whole app: one conversation cannot be at the bottom
+ * of one window and down the side of another without being two chats in the
+ * user's head. Moving it changes geometry rather than only what is drawn, so
+ * every window lays itself out again — relayout pushes the new state itself,
+ * which is why nothing here follows it with a pushState.
+ */
+ipcMain.handle(IPC.chatSetHome, (_event, home: unknown) => {
+    if (home !== 'bottom' && home !== 'side') return;
+    appState.setChat({ dock: home });
+    for (const sw of serverWindows.values()) sw.setChatHome(home);
+});
+
+/**
+ * The dock's height, as the user drags its top edge. Clamping is main's job —
+ * the preload passes the number through untouched, and a renderer is not
+ * something to take arithmetic on trust from. The ceiling is half the work area
+ * of the display the dragging window is on, since that is the only screen this
+ * request has anything to do with.
+ */
+ipcMain.handle(IPC.chatSetDockHeight, (event, px: unknown) => {
+    if (typeof px !== 'number' || !Number.isFinite(px)) return;
+    const sw = windowFor(event.sender);
+    if (!sw) return;
+    const workArea = screen.getDisplayMatching(sw.window.getBounds()).workArea;
+    const height = Math.round(Math.min(Math.max(px, DOCK_HEIGHT_MIN), workArea.height / 2));
+    if (height === appState.chat().dockHeight) return;
+    appState.setChat({ dockHeight: height });
+    for (const other of serverWindows.values()) other.relayout();
 });
 
 // ── single player ─────────────────────────────────────────────────────────
@@ -462,6 +498,17 @@ async function captureAndExit(dir: string): Promise<void> {
         await save(`${name}-shell`, () => sw.captureShell());
         await save(`${name}-game`, () => sw.captureGame());
     };
+    /**
+     * Open the panel on a tool the way the rail does — which toggles, so asking
+     * for the tool already on show would close the panel this run came to
+     * photograph. The panel capture below opens the panel on whatever tool can
+     * legally hold the column, which is often this one.
+     */
+    const showTool = (sw: ServerWindow, tool: ToolId): void => {
+        const state = sw.state();
+        if (state.panelOpen && state.activeTool === tool) return;
+        sw.selectTool(tool);
+    };
     const loaded = (sw: ServerWindow): Promise<'loaded' | 'failed' | 'timeout'> =>
         Promise.race([sw.whenGameLoaded(), wait(loadTimeoutMs).then((): 'timeout' => 'timeout')]);
 
@@ -490,7 +537,7 @@ async function captureAndExit(dir: string): Promise<void> {
         if (!first) throw new Error('the server list is empty');
         first.togglePanel();
         await wait(500);
-        log(`[capture] panel open on ${first.state().title}: mode ${first.state().mode}`);
+        log(`[capture] panel open on ${first.state().title}: mode x ${first.state().mode.x}, y ${first.state().mode.y}`);
         await shoot(`${first.state().server.id}-panel`, first);
 
         // The Worlds tool: open it on a loaded window that has worlds, wait for
@@ -503,7 +550,7 @@ async function captureAndExit(dir: string): Promise<void> {
             hopper.window.moveTop();
             hopper.focus();
             await wait(500);
-            hopper.selectTool('worlds');
+            showTool(hopper, 'worlds');
             const until = Date.now() + 20_000;
             while (Date.now() < until && hopper.state().worlds?.status === 'loading') await wait(250);
             await wait(4_000);
@@ -531,7 +578,7 @@ async function captureAndExit(dir: string): Promise<void> {
             single.window.moveTop();
             single.focus();
             await wait(500);
-            single.selectTool('singleplayer');
+            showTool(single, 'singleplayer');
             await wait(500);
             await shoot('singleplayer-tool', single);
             log(`[capture] singleplayer: ${single.state().singlePlayer?.status} on port ${single.state().singlePlayer?.port}`);

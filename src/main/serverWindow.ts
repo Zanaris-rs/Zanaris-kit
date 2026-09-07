@@ -1,11 +1,12 @@
 import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { ADDRESS_HEIGHT, DOCK_HEIGHT_DEFAULT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
-import type { ChatView } from '../shared/chat';
+import { ADDRESS_HEIGHT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
+import type { ChatHome, ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
 import { computeLayout, sideWidth, splitWindow, type Rects } from './layout';
+import { reduce, type Action, type Placement } from './chatDock';
 import { decideNavigation } from './guard';
 import { GAME_TAB_ID, TabModel } from './tabs';
 import { loadShell, preloadPath } from './renderer';
@@ -59,6 +60,13 @@ export interface ServerWindowDeps {
      * the window only ever reads it — main pushes when it changes.
      */
     chat: () => ChatView;
+    /**
+     * Where chat lives and how tall its dock is. Read through functions rather
+     * than passed as values: both are the app's rather than this window's, and
+     * they change under the window's feet while it is open.
+     */
+    chatHome: () => ChatHome;
+    chatDockHeight: () => number;
     /** What this server remembered from last time, if anything. */
     remembered: RememberedWorld | null;
     /** Called whenever this window's world or detail changes. */
@@ -77,6 +85,12 @@ export interface ServerWindow extends ServerWindowHandle {
     togglePanel(): void;
     /** Opens the panel on a tool; null closes it. */
     selectTool(id: ToolId | null): void;
+    /** The rail's Chat tab: opens or closes the dock, or the panel while chat lives on the side. */
+    toggleDock(): void;
+    /** Follows the app-wide home. Moving chat is a geometry change, so it lays the window out again. */
+    setChatHome(home: ChatHome): void;
+    /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
+    relayout(): void;
     state(): ShellState;
     /** Sends the current state to the shell. For app-wide changes main hears about, not the window. */
     pushState(): void;
@@ -120,8 +134,18 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /** The URL main last asked the game view to load. The offline page may return to it; nothing else may navigate. */
     let expected = worldSwitch ? worldSwitch.url : server.url;
     let currentLatency: number | null = null;
-    let panelOpen = false;
-    let activeTool: ToolId | null = null;
+    /**
+     * Where chat is and what the side column holds. Every transition of it goes
+     * through `reduce`, which owns the rules and is tested on its own.
+     *
+     * The dock starts closed on every launch, whatever home the profile
+     * remembers. Chat does not connect until someone opens it and picks a nick
+     * — the property that keeps a capture run from ever opening a socket — so a
+     * dock that opened itself would either break that or greet a new user with
+     * a nick prompt they never asked for. Opening chat stays a deliberate act;
+     * only where it opens changed.
+     */
+    let placement: Placement = { home: deps.chatHome(), dockOpen: false, activeTool: null, panelOpen: false };
     let mode: { x: LayoutMode; y: LayoutMode } = { x: 'widen', y: 'widen' };
     let rects: Rects = splitWindow(DEFAULT_CONTENT.width + RAIL_WIDTH, STRIP_HEIGHT + DEFAULT_CONTENT.height, false, 0, 'game');
     let contentWidth = DEFAULT_CONTENT.width;
@@ -144,6 +168,21 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         backgroundColor: '#17120d',
         show: false
     });
+
+    /**
+     * The floor the window may be dragged to, in the units setMinimumSize
+     * speaks. `useContentSize` made the constructor's minWidth and minHeight
+     * *content* constraints, while setMinimumSize takes a *window* size, frame
+     * and all — so rather than guess at the frame, this reads back what
+     * Electron made of the constructor's numbers and offsets from it. The dock
+     * is the same number of pixels in either space.
+     */
+    const minimum = win.getMinimumSize();
+    // The fallbacks are the two numbers just passed in, and are there only for the index type: Electron always returns both.
+    const minWindowWidth = minimum[0] ?? MIN_CONTENT_WIDTH + RAIL_WIDTH;
+    const minWindowHeight = minimum[1] ?? STRIP_HEIGHT + MIN_CONTENT_HEIGHT;
+    /** How much of the dock the current minimum already accounts for, so it is only set when it moves. */
+    let minimumDock = 0;
 
     const shellView = new WebContentsView({
         webPreferences: {
@@ -204,18 +243,16 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             slot: spec.slot,
             title: title(),
             tabs: tabs.list().map(t => ({ ...t, active: t.id === active })),
-            panelOpen,
+            panelOpen: placement.panelOpen,
             mode,
             rects,
             tools,
-            activeTool,
+            activeTool: placement.activeTool,
             worlds: worldsView(),
             chat: deps.chat(),
-            // Fixed at the shipped default until Task 4 (the dock toggle) and
-            // Task 5 (the home switch) read and update these from AppState.
-            chatHome: 'bottom',
-            dockOpen: false,
-            dockHeight: DOCK_HEIGHT_DEFAULT,
+            chatHome: placement.home,
+            dockOpen: placement.dockOpen,
+            dockHeight: deps.chatDockHeight(),
             singlePlayer: single?.view() ?? null
         };
     }
@@ -231,18 +268,39 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     // ── layout ───────────────────────────────────────────────────────────
 
+    /** What the dock takes from the window: its remembered height while it is open, nothing while it is not. */
+    function dockHeight(): number {
+        return placement.dockOpen ? deps.chatDockHeight() : 0;
+    }
+
+    /**
+     * The window's floor has to carry the dock too. Left alone at the
+     * construction-time height, dragging the window short with the dock open
+     * would crush the game below MIN_CONTENT_HEIGHT — the one thing the floor
+     * exists to prevent.
+     */
+    function syncMinimumSize(dock: number): void {
+        if (dock === minimumDock) return;
+        minimumDock = dock;
+        win.setMinimumSize(minWindowWidth, minWindowHeight + dock);
+    }
+
     function applyLayout(): void {
         if (win.isDestroyed()) return;
+        const dock = dockHeight();
+        // Before the bounds are read, since raising the floor can grow the
+        // window and lowering it is what lets the window shrink again.
+        syncMinimumSize(dock);
         const current = win.getContentBounds();
         const display = screen.getDisplayMatching(win.getBounds());
         const result = computeLayout({
-            panelOpen,
+            panelOpen: placement.panelOpen,
             activeTabKind: tabs.active.kind,
             window: current,
             workArea: display.workArea,
             contentWidth,
             contentHeight,
-            dockHeight: 0,
+            dockHeight: dock,
             canResize: !win.isMaximized() && !win.isFullScreen()
         });
 
@@ -262,14 +320,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     win.on('resize', () => {
         if (applying) return;
         const bounds = win.getContentBounds();
-        contentWidth = Math.max(MIN_CONTENT_WIDTH, bounds.width - sideWidth(panelOpen));
+        contentWidth = Math.max(MIN_CONTENT_WIDTH, bounds.width - sideWidth(placement.panelOpen));
         // The y-axis twin of the line above: without it contentHeight would sit
         // stale at its construction-time value forever, and computeLayout would
         // fit the window back to that stale height on every layout event,
-        // fighting the user's own resize. dockHeight is always 0 here (Task 4
-        // owns dock state), so nothing is subtracted for it yet.
+        // fighting the user's own resize. The dock comes off here exactly as it
+        // is added in applyLayout, or a resize with the dock open would hand
+        // the dock's pixels to the content and grow the window by them again.
         const addressHeight = tabs.active.kind === 'page' ? ADDRESS_HEIGHT : 0;
-        contentHeight = Math.max(MIN_CONTENT_HEIGHT, bounds.height - STRIP_HEIGHT - addressHeight);
+        contentHeight = Math.max(MIN_CONTENT_HEIGHT, bounds.height - STRIP_HEIGHT - addressHeight - dockHeight());
         applyLayout();
     });
     // These change whether the window can be widened, so re-run the layout.
@@ -284,7 +343,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     /** The whole list is probed only while this window shows the Worlds panel. */
     function syncPanelProbe(): void {
-        const wanted = panelOpen && activeTool === 'worlds' && worldSwitch !== null && deps.worlds !== null;
+        const wanted = placement.panelOpen && placement.activeTool === 'worlds' && worldSwitch !== null && deps.worlds !== null;
         if (wanted && !panelProbe) {
             const probeAll = (): void => {
                 if (deps.worlds && worldSwitch) void deps.worlds.probeAll(worldSwitch.detail);
@@ -297,24 +356,46 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         }
     }
 
-    function selectTool(id: ToolId | null): void {
-        if (id !== null && !tools.includes(id)) return;
-        if (id === null) {
-            panelOpen = false;
-        } else {
-            activeTool = id;
-            panelOpen = true;
-        }
+    /**
+     * The one way placement moves. Every rule about which region chat ends up
+     * in lives in `reduce`; this end of it only names the gesture and redraws.
+     */
+    function place(action: Action): void {
+        placement = reduce(placement, action, tools);
         applyLayout();
         syncPanelProbe();
     }
 
+    function selectTool(id: ToolId | null): void {
+        // Null is the shell asking for the panel shut: it works out the toggle
+        // itself and sends null rather than the tool already on show.
+        if (id === null) {
+            if (placement.panelOpen) place({ kind: 'toggle-panel' });
+            return;
+        }
+        if (!tools.includes(id)) return;
+        place(id === 'chat' ? { kind: 'rail-chat' } : { kind: 'rail-tool', tool: id });
+    }
+
     function togglePanel(): void {
-        panelOpen = !panelOpen;
-        if (panelOpen && activeTool === null) activeTool = tools[0] ?? null;
-        deps.log(`${tag} panel ${panelOpen ? 'opened' : 'closed'}`);
-        applyLayout();
-        syncPanelProbe();
+        place({ kind: 'toggle-panel' });
+        deps.log(`${tag} panel ${placement.panelOpen ? 'opened' : 'closed'}`);
+    }
+
+    /**
+     * The rail's Chat tab. It is a dock toggle only while chat lives at the
+     * bottom — with chat on the side the same tab opens the panel on it — and
+     * which of those it is belongs to the rules, not here.
+     */
+    function toggleDock(): void {
+        place({ kind: 'rail-chat' });
+        deps.log(`${tag} chat tab: dock ${placement.dockOpen ? 'open' : 'closed'}, panel ${placement.panelOpen ? 'open' : 'closed'}`);
+    }
+
+    /** The home is app-wide: main moves every window, not just the one that asked. */
+    function setChatHome(home: ChatHome): void {
+        place({ kind: 'move', to: home });
+        deps.log(`${tag} chat moved to the ${home}`);
     }
 
     // ── the game view ────────────────────────────────────────────────────
@@ -545,6 +626,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         close: () => win.close(),
         togglePanel,
         selectTool,
+        toggleDock,
+        setChatHome,
+        relayout: applyLayout,
         state,
         pushState,
         whenGameLoaded: () => loadPromise,
