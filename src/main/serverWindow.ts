@@ -129,6 +129,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     let failedOver = false;
     let loadWaiter: ((result: LoadResult) => void) | null = null;
     let loadPromise: Promise<LoadResult> = Promise.resolve('loaded');
+    /** True between a loadGame and its result, so a kit page can tell it is superseding one. */
+    let gameLoadPending = false;
 
     const win = new BrowserWindow({
         width: DEFAULT_CONTENT.width + RAIL_WIDTH,
@@ -310,6 +312,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function loadGame(url: string): Promise<LoadResult> {
         expected = url;
         failedOver = false;
+        gameLoadPending = true;
         const previous = loadWaiter;
         loadPromise = new Promise<LoadResult>(resolve => {
             loadWaiter = result => {
@@ -323,11 +326,20 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         return loadPromise;
     }
 
-    /** The starting page in the state the service is in. Only a single-player window shows it. */
-    function showStarting(override?: { state: SinglePlayerView['status']; reason: string }): void {
+    /**
+     * The starting page in the state the service is in. Only a single-player
+     * window shows it. `pagefailed` is the page's own state, not the world's:
+     * the world is up and its page is what would not load.
+     */
+    function showStarting(override?: { state: SinglePlayerView['status'] | 'pagefailed'; reason: string }): void {
         if (!single || win.isDestroyed()) return;
         const view = single.view();
         const version = view.version ? `engine ${view.version.engine.slice(0, 8)} · content ${view.version.content.slice(0, 8)} · rev ${view.version.revision}` : '';
+        // This page supersedes a game load still in flight — the world died between
+        // becoming ready and the page finishing. Chromium reports the superseded load
+        // as ERR_ABORTED, which did-fail-load ignores, and this page's own
+        // did-finish-load settles nothing, so the waiter would wait forever.
+        if (gameLoadPending) settleLoad('failed');
         failedOver = true;
         void gameView.webContents.loadFile(STARTING_PAGE, {
             query: {
@@ -360,6 +372,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function settleLoad(result: LoadResult): void {
         const waiter = loadWaiter;
         loadWaiter = null;
+        gameLoadPending = false;
         waiter?.(result);
     }
 
@@ -371,7 +384,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         event.preventDefault();
         if (decision === 'retry') {
             deps.log(`${tag} retrying the world`);
-            void single?.retry().catch(() => undefined);
+            // Forgetting the url is what lets the same one be loaded again: when the
+            // world is already up and only its page failed, retry() resolves off the
+            // ready status without changing it, so nothing notifies and syncSinglePlayer
+            // would otherwise see the url it has already loaded and do nothing.
+            loadedGameUrl = null;
+            void single?.retry().then(
+                () => syncSinglePlayer(),
+                () => syncSinglePlayer()
+            );
             return;
         }
         if (decision === 'open-external') {
@@ -406,7 +427,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // the world is running, the page itself is what failed, and the starting
             // page has to say so rather than claim the world is up.
             const running = single.view().status === 'ready';
-            showStarting(running ? { state: 'failed', reason: 'The game page did not load, though the world is running.' } : undefined);
+            showStarting(running ? { state: 'pagefailed', reason: 'The game page did not load, though the world is running.' } : undefined);
             return;
         }
         void gameView.webContents.loadFile(OFFLINE_PAGE, {

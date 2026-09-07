@@ -22,7 +22,8 @@
         starting: ['Starting your world', 'Loading the map and everyone in it.'],
         stopping: ['Stopping the world', 'Saving and shutting down.'],
         stopped: ['The world is stopped', 'Open it again from the panel.'],
-        failed: ["The world couldn't start", q.get('reason') || 'No reason was given.']
+        failed: ["The world couldn't start", q.get('reason') || 'No reason was given.'],
+        pagefailed: ["The game didn't load", q.get('reason') || 'The world is running, but its page did not load.']
     };
     const [heading, detail] = copy[state] || copy.starting;
     title.textContent = heading;
@@ -34,7 +35,7 @@
     text.textContent = detail;
     if (q.get('version')) document.getElementById('version').textContent = q.get('version');
 
-    if (state === 'failed') {
+    if (state === 'failed' || state === 'pagefailed') {
         const lines = q.get('log') || '';
         if (lines) {
             log.textContent = lines;
