@@ -16,6 +16,8 @@ const STATUS: Record<SinglePlayerView['status'], string> = {
  * would be settled by stylesheet order rather than by intent.
  */
 const MUTED: CSSProperties = { color: 'var(--color-dim)' };
+/* A control the world is currently busy with: spent, since .btn:disabled paints nothing of its own. */
+const SPENT: CSSProperties = { color: 'var(--color-faint)' };
 
 /** The Single player tool: what the world is doing, the cheats switch, and where its files are. */
 export default function SinglePlayer({ view }: { view: SinglePlayerView }): ReactNode {
@@ -29,8 +31,8 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
             <div className="px-2.5">
                 <p className={view.status === 'failed' ? 'text-warn' : 'text-cream'} aria-live="polite">
                     {status}
+                    {view.status === 'failed' && view.reason && <span className="block text-[12px] text-dim">{view.reason}</span>}
                 </p>
-                {view.status === 'failed' && view.reason && <p className="text-[12px] text-dim">{view.reason}</p>}
                 {view.version && (
                     <p className="text-[12px] text-faint">
                         engine {view.version.engine.slice(0, 8)} · content {view.version.content.slice(0, 8)} · rev {view.version.revision}
@@ -50,14 +52,15 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
                         type="button"
                         role="switch"
                         aria-checked={view.cheats}
+                        aria-describedby="cheats-note"
                         disabled={busy}
                         onClick={() => void window.zanaris.singlePlayer.setCheats(!view.cheats)}
-                        style={view.cheats ? undefined : MUTED}
-                        className={`btn${view.cheats ? ' btn-red' : ''}`}
+                        style={busy ? SPENT : view.cheats ? undefined : MUTED}
+                        className={`btn shrink-0${view.cheats && !busy ? ' btn-red' : ''}`}
                     >
                         Cheats {view.cheats ? 'on' : 'off'}
                     </button>
-                    <span className="text-[12px] text-dim">Developer commands such as ::tele and ::give. Off, the world plays as the servers do.</span>
+                    <span id="cheats-note" className="text-[12px] text-dim">Developer commands such as ::tele and ::give. Off, the world plays as the servers do.</span>
                 </div>
             </div>
 
