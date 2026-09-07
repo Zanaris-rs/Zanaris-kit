@@ -256,8 +256,9 @@ Capture mode (`ZANARIS_CAPTURE=<dir>`, settle time `ZANARIS_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,
 because a window's own webContents holds nothing when its content lives in
 child views. It opens the panel on a loaded window, opens the Worlds tool,
-waits for the list, switches to another world and captures that, then opens
-a second instance of that server. It keeps its own `state.json` beside the
+waits for the list, switches to another world and captures that, opens the
+Single player tool on the window running the bundled world, then opens a
+second instance of that server. It keeps its own `state.json` beside the
 screenshots so a test switch never changes what the next real launch opens.
 A view that has no frame yet is retried, then skipped.
 
@@ -278,7 +279,7 @@ One capture run with every catalog server open at once:
 The version 1 `servers.json` on disk migrated in place during that run, with
 no recovery prompt, and the state file recorded the hop.
 
-222 tests cover the pure modules: layout, catalog (validation, defaults, file
+250 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, v1 to v2 migration), slots, tabs, the window registry, the world
 sources against the real API payloads (including a check that the Lost City
 template reproduces LostHQ's URLs exactly), the worlds service (cache, shared
