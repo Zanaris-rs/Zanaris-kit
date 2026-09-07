@@ -100,8 +100,14 @@ export interface ZanarisApi {
         setNick(nick: string): Promise<void>;
         /** Moves chat between the bottom dock and the side column. App-wide. */
         setHome(home: ChatHome): Promise<void>;
-        /** Sets the dock's height in px. Clamped by main. */
-        setDockHeight(px: number): Promise<void>;
+        /**
+         * Sets the dock's height in px. Resolves with the height main actually
+         * applied, after its own clamp — including when the request landed
+         * exactly where the dock already was, so a caller sitting at a boundary
+         * (the floor, the ceiling) always learns the true number rather than
+         * being left trusting whatever it asked for.
+         */
+        setDockHeight(px: number): Promise<number>;
     };
     worlds: {
         refresh(): Promise<void>;

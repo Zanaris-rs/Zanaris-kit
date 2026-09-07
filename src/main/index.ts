@@ -402,21 +402,33 @@ ipcMain.handle(IPC.chatSetHome, (event, home: unknown) => {
 });
 
 /**
- * The dock's height, as the user drags its top edge. Clamping is main's job —
- * the preload passes the number through untouched, and a renderer is not
- * something to take arithmetic on trust from. The ceiling is half the work area
- * of the display the dragging window is on, since that is the only screen this
- * request has anything to do with.
+ * The dock's height, as the user drags its top edge or steps it by keyboard.
+ * Clamping is main's job — the preload passes the number through untouched,
+ * and a renderer is not something to take arithmetic on trust from. The
+ * ceiling is half the work area of the display the dragging window is on,
+ * since that is the only screen this request has anything to do with.
+ *
+ * The clamped height is returned on every path, including the ones that skip
+ * the layout work below because nothing changed. A renderer sitting at a
+ * boundary already reached — one more ArrowDown at the floor, an End that was
+ * already at the ceiling — has no way to tell its own guess was out of range
+ * unless it is told; without the answer it would keep building the next
+ * request on a number main never actually held. The skip itself stays: a
+ * height equal to the one on file has no layout to redo, and relaying out
+ * anyway on every one of those would be exactly the wasted work the skip
+ * exists to avoid.
  */
-ipcMain.handle(IPC.chatSetDockHeight, (event, px: unknown) => {
-    if (typeof px !== 'number' || !Number.isFinite(px)) return;
+ipcMain.handle(IPC.chatSetDockHeight, (event, px: unknown): number => {
+    const current = appState.chat().dockHeight;
+    if (typeof px !== 'number' || !Number.isFinite(px)) return current;
     const sw = windowFor(event.sender);
-    if (!sw) return;
+    if (!sw) return current;
     const workArea = screen.getDisplayMatching(sw.window.getBounds()).workArea;
     const height = Math.round(Math.min(Math.max(px, DOCK_HEIGHT_MIN), workArea.height / 2));
-    if (height === appState.chat().dockHeight) return;
+    if (height === current) return height;
     appState.setChat({ dockHeight: height });
     for (const other of serverWindows.values()) other.relayout();
+    return height;
 });
 
 // ── single player ─────────────────────────────────────────────────────────

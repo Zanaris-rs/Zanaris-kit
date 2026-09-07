@@ -58,17 +58,26 @@ const DOCK_STEP_COARSE = 50;
  * separator that answers arrow keys. Both paths call the same
  * `setDockHeight`, and neither clamps: main owns the range (`DOCK_HEIGHT_MIN`
  * up to half the work area), and restating it here would just be a second
- * copy of it to keep in step. A request past either end is not wrong, it just
- * does not move the number main sends back — the same way a drag past the
- * floor or the ceiling simply stops the strip rather than erroring.
+ * copy of it to keep in step.
  *
- * `requested` tracks the height this component last asked for, confirmed or
- * not: a drag anchors its delta to it rather than to `height` so a resize
- * begun before the previous request's reply lands still starts from the right
- * place, and repeated key presses add up instead of all reading the same
- * stale prop. The effect below folds main's confirmed value back in whenever
- * it changes, so an external correction — the clamp, or another window's own
- * edit of the shared height — is what wins once it arrives.
+ * `requested` tracks the height this component believes is current, and
+ * `send` is the only thing allowed to move it: it sets `requested` to the
+ * number being asked for, then — once `setDockHeight` resolves — sets it
+ * again to whatever main actually applied. That second write is not optional.
+ * Main skips its own layout work when a request lands exactly where the dock
+ * already is, which happens at both ends of the range: one more ArrowDown at
+ * the floor, an End already at the ceiling. Without a reply to correct it,
+ * `requested` would be left holding the out-of-range number it optimistically
+ * guessed, and every later key press would build the next request on that
+ * wrong number instead of the real one — at the floor a few wasted presses
+ * paying back the debt, at the ceiling (where the guess used to be
+ * `Number.MAX_SAFE_INTEGER`) the control dead until the dock closed and
+ * reopened. Resolving `setDockHeight` with the applied height, on every path
+ * including the one that changes nothing, is what makes this safe rather
+ * than a renderer-side clamp of our own. The effect below folds the same
+ * confirmed value in whenever `height` changes for a reason that was not this
+ * component's own request — another window dragging the shared height, most
+ * plausibly.
  */
 function DockGrip({ height }: { height: number }): ReactNode {
     const requested = useRef(height);
@@ -79,10 +88,25 @@ function DockGrip({ height }: { height: number }): ReactNode {
     const drag = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
     /* The id of a scheduled frame, or null when none is pending. */
     const frame = useRef<number | null>(null);
+    /* A pending frame calling back into an unmounted component would still reach main; nothing here needs that after the grip is gone. */
+    useEffect(() => () => {
+        if (frame.current !== null) cancelAnimationFrame(frame.current);
+    }, []);
+
+    /**
+     * The exact ceiling, learned rather than guessed, the moment any request
+     * overshoots it: main clamping a request down (`applied < px`) can only
+     * mean the ceiling itself is `applied`. Until that happens this is null
+     * and the announcement falls back to an estimate — see `announcedMax`.
+     */
+    const [exactMax, setExactMax] = useState<number | null>(null);
 
     const send = (px: number): void => {
         requested.current = px;
-        void window.zanaris.chat.setDockHeight(px);
+        void window.zanaris.chat.setDockHeight(px).then(applied => {
+            requested.current = applied;
+            if (applied < px) setExactMax(applied);
+        });
     };
 
     const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
@@ -108,7 +132,7 @@ function DockGrip({ height }: { height: number }): ReactNode {
         if (frame.current === null) {
             frame.current = requestAnimationFrame(() => {
                 frame.current = null;
-                void window.zanaris.chat.setDockHeight(requested.current);
+                send(requested.current);
             });
         }
     };
@@ -123,7 +147,7 @@ function DockGrip({ height }: { height: number }): ReactNode {
         // The frame just cancelled may never have run, so the release position
         // is sent once here rather than left to whichever pointermove queued it —
         // otherwise the last pixel of a drag could go unsent and unpersisted.
-        void window.zanaris.chat.setDockHeight(requested.current);
+        send(requested.current);
     };
 
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -138,9 +162,14 @@ function DockGrip({ height }: { height: number }): ReactNode {
                 send(DOCK_HEIGHT_MIN);
                 break;
             case 'End':
-                // No ceiling to send here either: this only has to be bigger than
-                // any real one, and main's own clamp decides where it lands.
-                send(Number.MAX_SAFE_INTEGER);
+                // Not a sentinel: window.screen.availHeight is a real quantity
+                // (this display's own available height) that comfortably
+                // exceeds any per-window ceiling main could compute from it, so
+                // main's own clamp is still what decides where this lands — and
+                // unlike Number.MAX_SAFE_INTEGER, a reply that fails to arrive
+                // for some reason leaves `requested` at a plausible height
+                // rather than a nine-quadrillion one.
+                send(window.screen.availHeight);
                 break;
             default:
                 return;
@@ -153,9 +182,11 @@ function DockGrip({ height }: { height: number }): ReactNode {
      * is on, and only main can see that display. window.screen is the same
      * idea from the renderer's own side of the glass — close enough for a
      * screen reader's announcement without a round trip to ask main, or a
-     * second formula that could drift from its one.
+     * second formula that could drift from its one. Once `exactMax` has been
+     * learned from an actual reply, it is the truth and this estimate steps
+     * aside for it.
      */
-    const announcedMax = Math.round(window.screen.availHeight / 2);
+    const announcedMax = exactMax ?? Math.round(window.screen.availHeight / 2);
 
     return (
         <div

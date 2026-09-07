@@ -289,6 +289,16 @@ input {
 .dock-grip:focus-visible {
     background: rgba(255, 255, 255, 0.16);
 }
+/*
+ * The global focus ring insets 2px into whatever it rings, tuned for buttons
+ * and panels many pixels tall. Inset 2px from both edges of a strip this thin
+ * leaves nothing: the ring would collapse on itself instead of framing
+ * anything. Pushed outward by the same 2px instead, it draws around the strip
+ * rather than inside it.
+ */
+.dock-grip:focus-visible {
+    outline-offset: 2px;
+}
 
 /* A divider scored into the rail: the cut, then a hairline of light under it. */
 .sep {
