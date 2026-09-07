@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Rect, ShellState, TabInfo, ToolId } from '../shared/ipc';
-import { Chat as ChatIcon, Globe, PanelToggle } from './icons';
+import { Chat as ChatIcon, Globe, Hearth, PanelToggle } from './icons';
 import Chat from './tools/Chat';
+import SinglePlayer from './tools/SinglePlayer';
 import Worlds from './tools/Worlds';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
@@ -57,7 +58,8 @@ const MODE_NOTE: Record<ShellState['mode'], string | null> = {
  */
 const TOOLS: { id: ToolId; label: string; group: 'app' | 'server'; icon: ReactNode }[] = [
     { id: 'chat', label: 'Chat', group: 'app', icon: <ChatIcon /> },
-    { id: 'worlds', label: 'Worlds', group: 'server', icon: <Globe /> }
+    { id: 'worlds', label: 'Worlds', group: 'server', icon: <Globe /> },
+    { id: 'singleplayer', label: 'Single player', group: 'server', icon: <Hearth /> }
 ];
 
 /** Highlights are lines that named you, so the count is worth carrying on the rail. */
@@ -122,6 +124,8 @@ export default function Shell(): ReactNode {
                         <Chat view={state.chat} />
                     ) : active === 'worlds' && state.worlds ? (
                         <Worlds view={state.worlds} />
+                    ) : active === 'singleplayer' && state.singlePlayer ? (
+                        <SinglePlayer view={state.singlePlayer} />
                     ) : (
                         <div className="px-2.5">
                             <h2 className="title">Tools</h2>
