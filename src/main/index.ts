@@ -213,7 +213,10 @@ function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
     if (!server.hiscores) return null;
     let service = hiscoresServices.get(server.id);
     if (!service) {
-        service = new HiscoresService(server.hiscores, { fetch: fetchStatus });
+        // Seeded with the name last looked up on this server, so the box opens
+        // on it rather than empty — the service holds the name the panel
+        // prefills from, and this is the only moment it can be handed one.
+        service = new HiscoresService(server.hiscores, { fetch: fetchStatus }, appState.hiscoresName(server.id) ?? '');
         hiscoresServices.set(server.id, service);
         service.subscribe(() => {
             for (const sw of serverWindows.values()) if (sw.state().server.id === server.id) sw.pushState();
@@ -443,33 +446,70 @@ function hiscoresFor(sender: WebContents): HiscoresService | null {
 }
 
 /**
+ * The longest name a lookup will carry, deliberately the same number
+ * `appState` refuses to store a remembered name past. Agreeing is the whole
+ * point: a longer name would be looked up and kept in the box for the rest of
+ * the session, then quietly dropped when the profile is read back on the next
+ * launch, and the prefill would go missing with nothing to explain it. The two
+ * caps answer different questions — what may be stored, and what may be asked
+ * of a server — so each states its own number where it enforces it.
+ */
+const HISCORES_NAME_MAX = 30;
+
+/**
  * Awaited rather than fired and forgotten. Nothing comes back over the wire —
  * every row the panel draws arrives by pushState — so this promise resolving
  * is the only signal the caller gets that the lookup is over, and a panel that
  * means to stop a rate-limited server being asked twice needs one.
+ *
+ * A blank box is not a lookup: `normaliseName` leaves whitespace as nothing at
+ * all, and the request would still go out — a round trip spent on a nameless
+ * URL against a server that rate-limits after a handful of them. Too long is
+ * refused rather than shortened, as `appState` refuses rather than truncates:
+ * a name cut to fit is a different, still-plausible player.
  */
 ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
     if (typeof name !== 'string') return;
-    await hiscoresFor(event.sender)?.lookup(name);
+    const wanted = name.trim();
+    if (wanted === '' || wanted.length > HISCORES_NAME_MAX) return;
+    const server = windowFor(event.sender)?.state().server;
+    if (!server) return;
+    const service = hiscoresServiceFor(server);
+    if (!service) return;
+    // Remembered before the request rather than after it, and whatever the
+    // server answers: the box keeps the name that was looked up even when
+    // nobody by that name exists, so the profile keeps the same thing the box
+    // does. Waiting for a reply would only mean a name typed just before the
+    // app quits is the one that goes missing.
+    appState.setHiscoresName(server.id, wanted);
+    await service.lookup(wanted);
 });
 
 ipcMain.handle(IPC.hiscoresClear, event => hiscoresFor(event.sender)?.clear());
 
 /**
- * "Full hiscores" opens the server's own page, and the plan is specific that it
- * opens as a page tab in this window. Page tabs are not reachable from main on
- * this branch: `TabModel.open` exists and is tested, but nothing ever calls it,
- * there is no view for a page tab's content to draw in, and the strip's + and
- * address row are not wired. Sending the URL to the system browser instead is a
- * different behaviour from the one the plan asked for — it takes the user out
- * of the kit — and that substitution is the user's call to make, not this
- * task's. So the channel exists and answers, and says in the log what it would
- * have opened, until page tabs land.
+ * "Full hiscores" opens the server's own page in the system browser.
+ *
+ * The plan asked for a page tab in this window, and page tabs are not built:
+ * `TabModel.open` exists and is tested, but nothing calls it, there is no view
+ * for a page tab's content to draw in, and the strip's + and address row are
+ * not wired. Waiting for them would leave the panel with a link that does
+ * nothing, so the page opens outside the kit instead — a visible deviation from
+ * the plan, which is why the panel's own label says where the link goes rather
+ * than letting the browser window be how the user finds out.
+ *
+ * https only, as in `openExternal` above and serverWindow's window-open
+ * handler: `servers.json` is a file the user edits by hand, so this URL is no
+ * more trusted than the update feed's.
  */
 ipcMain.handle(IPC.hiscoresOpenSite, event => {
     const site = windowFor(event.sender)?.state().server.hiscores?.site ?? null;
     if (!site) return;
-    log(`[main] full hiscores: ${site} — page tabs are not wired yet, so nothing was opened`);
+    if (!/^https:\/\//.test(site)) {
+        log(`[main] refused to open ${site}: not https`);
+        return;
+    }
+    void shell.openExternal(site);
 });
 
 // ── chat ──────────────────────────────────────────────────────────────────

@@ -43,6 +43,22 @@ export function Globe(): ReactNode {
 }
 
 /**
+ * Hiscores. Three bars climbing to the right, sharing one baseline, with the
+ * tallest in gold — a table read at a glance rather than a trophy or a crown,
+ * neither of which the client has a sprite for. Flat fills on the shared
+ * outline, like the rest of the tools.
+ */
+export function Bars(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
+            <rect x="2.5" y="10" width="3.6" height="5.5" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <rect x="7.2" y="7" width="3.6" height="8.5" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <rect x="11.9" y="4" width="3.6" height="11.5" fill="#ffe139" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+/**
  * The panel toggle. Chrome rather than a tool, so it stays a stroked glyph in
  * the strip's own colour instead of becoming a sprite. It is drawn in the same
  * 18x18 box as the sprites at 1:1, which keeps its stroke the width the design

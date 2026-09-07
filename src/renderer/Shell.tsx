@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState, ToolId } from '../shared/ipc';
 import { DOCK_HEIGHT_MIN, type LayoutMode } from '../shared/layout';
-import { Chat as ChatIcon, Globe, Hearth, PanelToggle } from './icons';
+import { Bars, Chat as ChatIcon, Globe, Hearth, PanelToggle } from './icons';
 import Tab from './tab';
 import Chat from './tools/Chat';
+import Hiscores from './tools/Hiscores';
 import SinglePlayer from './tools/SinglePlayer';
 import Worlds from './tools/Worlds';
 
@@ -293,6 +294,7 @@ function DockGrip({ height }: { height: number }): ReactNode {
 const TOOLS: { id: ToolId; label: string; group: 'app' | 'server'; icon: ReactNode }[] = [
     { id: 'chat', label: 'Chat', group: 'app', icon: <ChatIcon /> },
     { id: 'worlds', label: 'Worlds', group: 'server', icon: <Globe /> },
+    { id: 'hiscores', label: 'Hiscores', group: 'server', icon: <Bars /> },
     { id: 'singleplayer', label: 'Single player', group: 'server', icon: <Hearth /> }
 ];
 
@@ -382,6 +384,8 @@ export default function Shell(): ReactNode {
                         <Chat view={state.chat} home="side" />
                     ) : active === 'worlds' && state.worlds ? (
                         <Worlds view={state.worlds} />
+                    ) : active === 'hiscores' && state.hiscores ? (
+                        <Hiscores view={state.hiscores} />
                     ) : active === 'singleplayer' && state.singlePlayer ? (
                         <SinglePlayer view={state.singlePlayer} />
                     ) : (

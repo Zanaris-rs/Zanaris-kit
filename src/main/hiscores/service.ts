@@ -58,7 +58,7 @@ export class HiscoresService {
     private readonly def: HiscoresDef;
     private readonly io: HiscoresIo;
     private status: HiscoresStatus = 'idle';
-    private name = '';
+    private name: string;
     private skills: PlayerSkill[] = [];
     private shown: string | null = null;
     private error: string | null = null;
@@ -70,9 +70,17 @@ export class HiscoresService {
     private inFlight: Pending | null = null;
     private readonly subscribers = new Set<(view: HiscoresView) => void>();
 
-    constructor(def: HiscoresDef, io: HiscoresIo) {
+    /**
+     * `name` is the name to open with — the one this server remembers from the
+     * last session, so the panel's box is prefilled before anything has been
+     * looked up. It is only ever a starting value: nothing here reads it until
+     * a lookup replaces it, and a service built without one starts empty, as
+     * every test does.
+     */
+    constructor(def: HiscoresDef, io: HiscoresIo, name = '') {
         this.def = def;
         this.io = io;
+        this.name = name;
     }
 
     view(): HiscoresView {
