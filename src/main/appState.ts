@@ -11,7 +11,13 @@ interface StateFile {
     warnOnSwitch: boolean;
     chat: ChatSettings;
     singlePlayer: { cheats: boolean };
+    hiscores: Record<string, string>;
 }
+
+// Well past base37's 12-character limit, so no real player name is ever
+// affected — this only stops a hand-edited file from handing an arbitrarily
+// long string down the wire when a later task builds a lookup URL from it.
+const HISCORES_NAME_MAX = 30;
 
 function isRemembered(x: unknown): x is RememberedWorld {
     if (typeof x !== 'object' || x === null) return false;
@@ -49,6 +55,26 @@ function readChat(x: unknown): ChatSettings {
 }
 
 /**
+ * Reads a stored hiscores block one entry at a time, for the same reason as
+ * readChat above: a hand-edited file with one bad name must not cost the
+ * user every other remembered name, let alone their worlds or chat settings.
+ * An entry whose key or value is not a non-empty string, or whose value is
+ * longer than a real name could ever be, is dropped rather than repaired —
+ * there is no sane way to truncate a name into a different, still-plausible
+ * one, so the prefill is simply lost for that one server.
+ */
+function readHiscores(x: unknown): Record<string, string> {
+    const hiscores: Record<string, string> = {};
+    if (typeof x !== 'object' || x === null) return hiscores;
+    for (const [id, value] of Object.entries(x as Record<string, unknown>)) {
+        if (id === '') continue;
+        if (typeof value !== 'string' || value === '' || value.length > HISCORES_NAME_MAX) continue;
+        hiscores[id] = value;
+    }
+    return hiscores;
+}
+
+/**
  * Small per-user state. Mostly choices the user made in passing rather than
  * settings they configured — the last world and detail chosen per server, and
  * whether they still want warning before a switch reloads the game — and, now,
@@ -66,6 +92,8 @@ export class AppState {
     private chatSettings: ChatSettings = { ...DEFAULT_CHAT };
     // Developer commands in the single-player world: off until asked for.
     private cheats = false;
+    // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
+    private hiscoresNames = new Map<string, string>();
 
     constructor(file: string) {
         this.file = file;
@@ -76,6 +104,7 @@ export class AppState {
         this.warn = true;
         this.chatSettings = { ...DEFAULT_CHAT };
         this.cheats = false;
+        this.hiscoresNames = new Map();
         if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
@@ -89,6 +118,7 @@ export class AppState {
             this.chatSettings = readChat(parsed?.chat);
             const sp = parsed?.singlePlayer;
             if (typeof sp === 'object' && sp !== null && typeof (sp as { cheats?: unknown }).cheats === 'boolean') this.cheats = (sp as { cheats: boolean }).cheats;
+            this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
         }
@@ -145,9 +175,31 @@ export class AppState {
         this.save();
     }
 
+    /** The name last looked up on this server, to prefill the box. Null when nothing has been. */
+    hiscoresName(serverId: string): string | null {
+        return this.hiscoresNames.get(serverId) ?? null;
+    }
+
+    /**
+     * Written once per lookup, unlike the chat dock height that stageChat
+     * exists for — there is no per-frame volume here to spare a rewrite
+     * for, so this saves immediately like setWorld does.
+     */
+    setHiscoresName(serverId: string, name: string): void {
+        this.hiscoresNames.set(serverId, name);
+        this.save();
+    }
+
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: StateFile = { version: 1, worlds: Object.fromEntries(this.worlds), warnOnSwitch: this.warn, chat: this.chatSettings, singlePlayer: { cheats: this.cheats } };
+        const data: StateFile = {
+            version: 1,
+            worlds: Object.fromEntries(this.worlds),
+            warnOnSwitch: this.warn,
+            chat: this.chatSettings,
+            singlePlayer: { cheats: this.cheats },
+            hiscores: Object.fromEntries(this.hiscoresNames)
+        };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }

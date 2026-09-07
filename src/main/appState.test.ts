@@ -287,3 +287,68 @@ test('single-player cheats are off by default, persist, and survive a file witho
     odd.load();
     assert.equal(odd.singlePlayerCheats(), false);
 });
+
+test('a stored hiscores block round-trips', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, hiscores: { lostcity: 'granny_grunt', zanaris: 'knight' } }));
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.hiscoresName('lostcity'), 'granny_grunt');
+    assert.equal(state.hiscoresName('zanaris'), 'knight');
+    assert.equal(state.hiscoresName('labs'), null);
+});
+
+test('a missing, non-object, or invalid hiscores block leaves an empty map, and the remembered worlds and chat settings intact', () => {
+    const cases: unknown[] = [undefined, 'granny_grunt', { lostcity: 42 }];
+    for (const hiscores of cases) {
+        const file = tempFile();
+        const data: Record<string, unknown> = { version: 1, worlds: { lostcity: REMEMBERED }, chat: { nick: 'lumbridge', server: 'irc.example.net', port: 6667 } };
+        if (hiscores !== undefined) data.hiscores = hiscores;
+        writeFileSync(file, JSON.stringify(data));
+        const state = new AppState(file);
+        state.load();
+        assert.equal(state.hiscoresName('lostcity'), null, `expected ${JSON.stringify(hiscores)} to leave an empty map`);
+        assert.deepEqual(state.world('lostcity'), REMEMBERED, `expected ${JSON.stringify(hiscores)} to leave the remembered worlds alone`);
+        assert.deepEqual(state.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', server: 'irc.example.net', port: 6667 }, `expected ${JSON.stringify(hiscores)} to leave chat alone`);
+        assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false, `expected ${JSON.stringify(hiscores)} not to be treated as a broken file`);
+    }
+});
+
+test('an over-long name is rejected, leaving other entries alone', () => {
+    const file = tempFile();
+    const atMax = 'x'.repeat(30);
+    const overMax = 'x'.repeat(31);
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, hiscores: { lostcity: overMax, zanaris: atMax } }));
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.hiscoresName('lostcity'), null, 'a name past the cap is rejected');
+    assert.equal(state.hiscoresName('zanaris'), atMax, 'a name at the cap is kept');
+});
+
+test('setHiscoresName saves, and a fresh instance reads it back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setHiscoresName('lostcity', 'granny_grunt');
+    const b = new AppState(file);
+    b.load();
+    assert.equal(b.hiscoresName('lostcity'), 'granny_grunt');
+    assert.equal(b.hiscoresName('zanaris'), null);
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(written.version, 1);
+    assert.deepEqual(written.hiscores, { lostcity: 'granny_grunt' });
+});
+
+test('setHiscoresName leaves the remembered worlds and chat settings alone', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setWorld('lostcity', REMEMBERED);
+    a.setChat({ nick: 'lumbridge' });
+    a.setHiscoresName('lostcity', 'granny_grunt');
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.world('lostcity'), REMEMBERED);
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
+    assert.equal(b.hiscoresName('lostcity'), 'granny_grunt');
+});
