@@ -285,19 +285,25 @@ input {
     /* A custom pointer drag, not a scroll or a browser gesture. */
     touch-action: none;
 }
-.dock-grip:hover,
-.dock-grip:focus-visible {
+.dock-grip:hover {
     background: rgba(255, 255, 255, 0.16);
 }
 /*
- * The global focus ring insets 2px into whatever it rings, tuned for buttons
- * and panels many pixels tall. Inset 2px from both edges of a strip this thin
- * leaves nothing: the ring would collapse on itself instead of framing
- * anything. Pushed outward by the same 2px instead, it draws around the strip
- * rather than inside it.
+ * Focus does not get the global gold ring. The grip's top edge is flush with
+ * the game's own view — a separate native WebContentsView stacked above
+ * everything the shell draws, reachable by no z-index on this side — and its
+ * right edge, when the dock runs under an open panel, sits exactly on the
+ * rail, a later DOM sibling that paints over anything bleeding past the
+ * dock's own box. A ring drawn outward from a strip this thin loses both of
+ * those edges: a partial frame, not a focus indicator. `outline: none` here
+ * is not the usual anti-pattern of deleting the indicator — it is replaced by
+ * a fill entirely inside the grip's own 4px, which nothing can paint over,
+ * the same way `.tab-on` shows "selected" as lit stone rather than a ring
+ * around a tab.
  */
 .dock-grip:focus-visible {
-    outline-offset: 2px;
+    outline: none;
+    background: var(--color-gold);
 }
 
 /* A divider scored into the rail: the cut, then a hairline of light under it. */

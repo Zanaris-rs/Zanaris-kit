@@ -101,11 +101,23 @@ function DockGrip({ height }: { height: number }): ReactNode {
      */
     const [exactMax, setExactMax] = useState<number | null>(null);
 
+    /**
+     * `px` is rounded here, once, before it goes anywhere else. A fractional
+     * pixel height is meaningless — `clientY` is fractional on any HiDPI
+     * display, which is routine — and without this, `applied < px` stops
+     * meaning "main clamped this": main rounds too, so an unrounded request
+     * like 200.33 comes back as 200 from ordinary rounding, no ceiling
+     * involved, and would have latched `exactMax` onto an arbitrary drag
+     * position forever. Rounding is not clamping — it does not narrow the
+     * range main enforces, only the precision of what is asked for — so it
+     * does not cross the line the spec draws about main being the authority.
+     */
     const send = (px: number): void => {
-        requested.current = px;
-        void window.zanaris.chat.setDockHeight(px).then(applied => {
+        const rounded = Math.round(px);
+        requested.current = rounded;
+        void window.zanaris.chat.setDockHeight(rounded).then(applied => {
             requested.current = applied;
-            if (applied < px) setExactMax(applied);
+            if (applied < rounded) setExactMax(applied);
         });
     };
 
@@ -185,8 +197,16 @@ function DockGrip({ height }: { height: number }): ReactNode {
      * second formula that could drift from its one. Once `exactMax` has been
      * learned from an actual reply, it is the truth and this estimate steps
      * aside for it.
+     *
+     * Floored at `height`: `exactMax` is only ever refreshed when a request
+     * happens to overshoot it, so a window dragged onto a display with a
+     * taller ceiling after `exactMax` was learned on a shorter one would
+     * otherwise leave the announcement stale and, if the dock has since grown
+     * past that stale number, smaller than `aria-valuenow` — an invalid ARIA
+     * state. `height` is always current and always within the true ceiling,
+     * so it is a safe floor regardless of how stale `exactMax` gets.
      */
-    const announcedMax = exactMax ?? Math.round(window.screen.availHeight / 2);
+    const announcedMax = Math.max(height, exactMax ?? Math.round(window.screen.availHeight / 2));
 
     return (
         <div
