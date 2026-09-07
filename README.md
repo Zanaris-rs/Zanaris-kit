@@ -84,6 +84,13 @@ log. Its Cheats switch turns the engine's developer commands, `::tele` and
 `::give`, on for the whole world; that takes a restart of the world, so it
 logs you out and asks first.
 
+Your world is not a live one, and it does not pretend to be: the RuneScape
+Guide will offer to skip the tutorial, whether cheats are on or off and however
+many characters you start. That is deliberate. Nobody should have to redo the
+tutorial on their own machine to get to the game, and a world that only you can
+reach has nothing to protect by making them. What the Cheats switch controls is
+the developer commands, and only those.
+
 Nothing is injected into a game page: no preload, no main-world code. The page
 that runs is byte-for-byte the page the server served. A modified client is
 both the most detectable thing we could ship and the most likely to be against

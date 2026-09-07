@@ -60,8 +60,15 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
                     >
                         Cheats {view.cheats ? 'on' : 'off'}
                     </button>
-                    <span id="cheats-note" className="text-[12px] text-dim">Developer commands such as ::tele and ::give. Off, they are refused. Your world is still a development one either way, so the guide offers to skip the tutorial.</span>
+                    <span id="cheats-note" className="text-[12px] text-dim">Developer commands such as ::tele and ::give. Off, they are refused.</span>
                 </div>
+                {/*
+                 * Not a caveat about the cheats switch, which is why it does not hang off it:
+                 * the world is yours whatever the switch says, and content asks map_live -
+                 * node.production, which single player never turns on. The guide is where a
+                 * player meets that first, and on a second character it is the point.
+                 */}
+                <p className="mt-2 text-[12px] text-dim">Your own world, not a live one. The guide will offer to skip the tutorial, however many characters you start.</p>
             </div>
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}

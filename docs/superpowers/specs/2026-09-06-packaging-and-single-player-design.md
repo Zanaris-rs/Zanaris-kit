@@ -433,19 +433,14 @@ Rail tool `singleplayer`, panel content in `src/renderer/tools/SinglePlayer.tsx`
 - The last twenty log lines, read-only, when failed.
 
 What cheats means, in the panel's own words: "Developer commands such as
-::tele and ::give. Off, they are refused. Your world is still a development
-one either way, so the guide offers to skip the tutorial."
+::tele and ::give. Off, they are refused."
 
-Corrected 2026-09-07: the first wording claimed the world plays as the servers
-do with cheats off, and it does not. `node.production` stays false whatever the
-toggle says — Decision 9 — and content asks `map_live`, which is exactly
-`node.production`, in places the toggle knows nothing about. The tutorial guide
-is the one a player meets first: `runescape_guide.rs2` offers to skip the
-tutorial `if (map_live = false)`. Production cannot simply be turned on to fix
-it: `ClientCheatHandler` gates every developer command on
-`!production && staffModLevel >= 4`, so a production world could never have
-cheats at all. The switch is honest about what it controls; the copy now is
-too.
+Beneath the switch, and not attached to it, a standing line about the world
+itself: "Your own world, not a live one. The guide will offer to skip the
+tutorial, however many characters you start." See Decision 13.
+
+Corrected 2026-09-07: the first wording was "Off, the world plays as the servers
+do", which is not true and cannot be made true.
 
 ### IPC and persistence
 
@@ -561,6 +556,25 @@ Settled on 2026-09-06:
     (milestone 3) lets a developer add it by hand.
 12. **Graceful stop is an HTTP request**, not a signal, so Windows flushes
     saves too.
+13. **A single-player world is a development world, and the tutorial can be
+    skipped.** Added 2026-09-07. `node.production` is false on every start and
+    the cheats switch does not change it — Decision 9 — so content asking
+    `map_live`, which is exactly `node.production`, sees a world that is not
+    live. The first place a player meets that is the tutorial guide:
+    `content/scripts/tutorial/scripts/guides/runescape_guide.rs2` offers to skip
+    the tutorial `if (map_live = false)`, with cheats on or off.
+
+    This is kept, not fixed. It is the behaviour a local world should have: a
+    player starting their third character on their own machine should not be
+    made to redo the tutorial, and nothing about it reaches anyone else. The
+    panel says so plainly rather than leaving it to be discovered.
+
+    Turning production on is not the alternative it looks like.
+    `ClientCheatHandler` gates every developer command on
+    `!production && staffModLevel >= 4`, so a production world could never have
+    cheats at all, and production also switches on logout-on-script-error and
+    the live login rate limits. Parity would mean patching the cheat handler to
+    gate on staff level alone — a wider engine patch, for a prompt worth having.
 
 ## Out of scope
 
