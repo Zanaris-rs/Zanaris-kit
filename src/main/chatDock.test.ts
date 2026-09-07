@@ -12,6 +12,13 @@ const TOOLS: readonly ToolId[] = TOOL_IDS;
  * `serverWindow` builds it: chat, then the server's own tools. TOOL_IDS above
  * is the *set* of tools and is deliberately in a different order, so the
  * cases that turn on rail order say which of the two they mean.
+ *
+ * A third copy of that order, alongside the builder in `main/serverWindow.ts`
+ * (which feeds `firstLegalSideOccupant`, and so `panelAvailable`) and `TOOLS`
+ * in `renderer/Shell.tsx` (which decides what is drawn). Nothing links the
+ * three and nothing here compares them: this literal is what the reducer is
+ * tested against, not proof the window builds the same one. Reorder any of
+ * them and the other two want the same edit.
  */
 const RAIL: readonly ToolId[] = ['chat', 'worlds', 'hiscores', 'singleplayer'];
 
@@ -197,7 +204,7 @@ test('the panel toggle reopens on the remembered tool when there is one', () => 
 test('the panel toggle picks the first legal side occupant when nothing is remembered', () => {
     const r = reduce(base({ home: 'bottom', activeTool: null, panelOpen: false }), { kind: 'toggle-panel' }, TOOLS);
     assert.equal(r.panelOpen, true);
-    assert.equal(r.activeTool, 'worlds', "'worlds' is the first entry in the rail order passed in");
+    assert.equal(r.activeTool, 'worlds', "'worlds' is the first entry in the list passed here — TOOL_IDS, whose order is not the rail's");
 });
 
 test('the panel toggle skips chat and keeps scanning for the next legal tool while home is bottom', () => {

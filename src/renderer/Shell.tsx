@@ -290,6 +290,14 @@ function DockGrip({ height }: { height: number }): ReactNode {
  * A tool is either the app's or this window's server's, and the rail scores a
  * divider where one becomes the other: chat is one conversation shared by every
  * window, while worlds only means anything for the server in front of you.
+ *
+ * The order here is one of three copies of the rail's order, and the other two
+ * live in main: the tools builder in `main/serverWindow.ts`, which feeds
+ * `firstLegalSideOccupant` and so `panelAvailable`, and `RAIL` in
+ * `main/chatDock.test.ts`, which stands in for that builder. Nothing links
+ * them and no test compares them, so reordering this list means editing those
+ * two as well — and it is a live question now that every remote window offers
+ * both Worlds and Hiscores rather than one server tool at most.
  */
 const TOOLS: { id: ToolId; label: string; group: 'app' | 'server'; icon: ReactNode }[] = [
     { id: 'chat', label: 'Chat', group: 'app', icon: <ChatIcon /> },

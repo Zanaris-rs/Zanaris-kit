@@ -172,6 +172,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * player is the case that matters — a one-player world has nothing to
      * rank, and its catalog entry carries no hiscores, so the tool never
      * reaches its rail without anything here naming it.
+     *
+     * The rail's order is declared in three places nothing links together:
+     * this builder, which feeds `firstLegalSideOccupant` and so
+     * `panelAvailable`; `TOOLS` in `renderer/Shell.tsx`, which decides what is
+     * drawn; and `RAIL` in `chatDock.test.ts`, which stands in for this
+     * builder. They agree today, and no test would notice if they stopped —
+     * reorder one and the other two want the same edit. It matters in a way it
+     * did not before hiscores: every remote window now offers two server tools
+     * at once, so which of them comes first is a real question.
      */
     const tools: ToolId[] = ['chat'];
     if (worldSwitch) tools.push('worlds');

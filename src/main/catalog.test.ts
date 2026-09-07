@@ -145,7 +145,14 @@ test('every built-in entry validates and lists its own game host', () => {
         assert.ok(isServerDef(server), `${server.id} must validate`);
         assert.ok(server.hosts.includes(hostOf(server.url)), `${server.id} must allow its own host`);
         if (server.wiki) assert.ok(server.hosts.includes(hostOf(server.wiki.home)), `${server.id} must allow its wiki host`);
-        // The panel's "Full hiscores" link opens the site as a page tab, so its host belongs on the list too.
+        // `hosts` is the allowlist page tabs will consult once they land, and
+        // "Full hiscores" names a page a tab ought to be able to open, so the
+        // site's host belongs on it — even while that link goes out to the
+        // system browser instead, page tabs being unbuilt. The list is not
+        // idle in the meantime: `Catalog.refreshHiscores` tests a stored
+        // entry's own url host against this same array before it will adopt a
+        // built-in's lookup, so these arrays are read on every launch and
+        // pruning one is never free.
         if (server.hiscores?.site) assert.ok(server.hosts.includes(hostOf(server.hiscores.site)), `${server.id} must allow its hiscores host`);
     }
 });

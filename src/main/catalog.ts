@@ -442,6 +442,14 @@ export class Catalog {
      * built-in's own hosts — a private world called Zanaris keeps its null and
      * never learns to look players up on someone else's server.
      *
+     * That last test borrows a list kept for something else. `hosts` is "hosts
+     * page tabs may visit", and it is already wider than "this server's own":
+     * `2004.losthq.rs` and `tools.losthq.rs` sit on three built-ins at once,
+     * because all three offer LostHQ's guides. So the two are coupled now —
+     * every domain a bookmark adds to `hosts` in the page-tabs milestone also
+     * widens what this guard will accept as being that built-in, silently and
+     * with nothing here to notice it. Widen `hosts`, and you widen the guard.
+     *
      * A built-in entry hand-edited onto another world's host is skipped and
      * simply never gains a lookup: there is nothing to tell the user here, and
      * a wrong endpoint would be worse than none. An entry whose lookup is
