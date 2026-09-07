@@ -1,3 +1,4 @@
+import type { HiscoresDef } from './hiscores';
 import type { Bookmark, WorldsDef } from './worlds';
 
 /** A wiki the server's page tabs may browse. */
@@ -28,8 +29,8 @@ export interface ServerDef {
     worlds: WorldsDef | null;
     /** Reference pages offered by the page-tab "+" menu. */
     bookmarks: Bookmark[];
-    /** Player lookup API with {name} in it, or null. */
-    hiscores: string | null;
+    /** How to look a player up, and where the server's own hiscores page is; null when it offers neither. */
+    hiscores: HiscoresDef | null;
 }
 
 /** What the launcher's add form collects. */

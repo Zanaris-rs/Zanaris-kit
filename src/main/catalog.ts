@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { NewServerInput, ServerDef, WikiDef } from '../shared/catalog.ts';
+import type { HiscoresDef } from '../shared/hiscores.ts';
 import type { Bookmark } from '../shared/worlds.ts';
 import { isWorldsDef } from './worlds/sources.ts';
 
@@ -17,6 +18,16 @@ const LOSTHQ_BOOKMARKS: Bookmark[] = [
     { name: 'Clue coordinates', url: 'https://tools.losthq.rs/cluecoordinator/' },
     { name: 'World map', url: 'https://tools.losthq.rs/map' }
 ];
+
+/**
+ * Lost City's lookup, hoisted because the version 3 → 4 migration matches the
+ * bare template a version 3 file holds against this exact URL. The string on
+ * disk is the one that shipped from here, so the two must not drift apart.
+ */
+const LOSTCITY_HISCORES: HiscoresDef = {
+    source: { kind: 'lostcity', url: 'https://2004.lostcity.rs/api/hiscores/player/{name}' },
+    site: 'https://2004.lostcity.rs/hiscores'
+};
 
 /** What the engine was pinned to when this line was written; used only when neither source can be read. */
 const LAST_KNOWN_REVISION = 274;
@@ -44,7 +55,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         revision: 274,
         wiki: LOSTHQ,
         map: 'https://tools.losthq.rs/map',
-        hosts: ['w5-2004.lostcity.rs', '2004.losthq.rs', 'tools.losthq.rs', 'markets.lostcity.rs'],
+        hosts: ['w5-2004.lostcity.rs', '2004.lostcity.rs', '2004.losthq.rs', 'tools.losthq.rs', 'markets.lostcity.rs'],
         notes: null,
         worlds: {
             source: { kind: 'losthq', url: 'https://2004.losthq.rs/pages/api/worlds.php' },
@@ -53,7 +64,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
             defaultWorld: 5
         },
         bookmarks: [...LOSTHQ_BOOKMARKS, { name: 'Markets', url: 'https://markets.lostcity.rs' }],
-        hiscores: 'https://2004.lostcity.rs/api/hiscores/player/{name}'
+        hiscores: LOSTCITY_HISCORES
     },
     {
         id: 'zanaris',
@@ -63,7 +74,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         revision: 274,
         wiki: LOSTHQ,
         map: 'https://tools.losthq.rs/map',
-        hosts: ['w1.04.zanaris.rs', '2004.losthq.rs', 'tools.losthq.rs'],
+        hosts: ['w1.04.zanaris.rs', 'zanaris.rs', '2004.losthq.rs', 'tools.losthq.rs'],
         notes: null,
         worlds: {
             source: { kind: 'zanaris', url: 'https://zanaris.rs/worlds.json' },
@@ -72,7 +83,10 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
             defaultWorld: 1
         },
         bookmarks: [...LOSTHQ_BOOKMARKS],
-        hiscores: null
+        hiscores: {
+            source: { kind: 'zanaris', url: 'https://zanaris.rs/api/hiscores/player/{name}' },
+            site: 'https://zanaris.rs/hiscores'
+        }
     },
     {
         id: 'lostcitylabs',
@@ -91,7 +105,10 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
             defaultWorld: 1
         },
         bookmarks: [],
-        hiscores: null
+        hiscores: {
+            source: { kind: 'labs', url: 'https://www.lostcitylabs.com/hiscores/player?name={name}' },
+            site: 'https://www.lostcitylabs.com/hiscores'
+        }
     },
     {
         id: 'singleplayer',
@@ -106,20 +123,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         notes: 'Runs on this computer. No account needed.',
         worlds: null,
         bookmarks: [...LOSTHQ_BOOKMARKS],
-        hiscores: null
-    },
-    {
-        id: 'local',
-        kind: 'remote',
-        name: 'Local server',
-        url: 'http://127.0.0.1:8888/rs2.cgi?lowmem=1',
-        revision: 289,
-        wiki: null,
-        map: null,
-        hosts: ['127.0.0.1:8888'],
-        notes: null,
-        worlds: null,
-        bookmarks: [],
+        // A one-player world has nobody to rank, so single player offers no lookup.
         hiscores: null
     }
 ];
@@ -229,8 +233,25 @@ export function isServerDef(x: unknown): x is ServerDef {
     if (!Array.isArray(s.hosts) || !s.hosts.every(isString)) return false;
     if (s.worlds !== null && !isWorldsDef(s.worlds)) return false;
     if (!Array.isArray(s.bookmarks) || !s.bookmarks.every(isBookmark)) return false;
-    if (s.hiscores !== null && !(isString(s.hiscores) && s.hiscores.includes('{name}') && parseServerUrl(s.hiscores).ok)) return false;
+    if (s.hiscores !== null && !isHiscoresDef(s.hiscores)) return false;
     return true;
+}
+
+/**
+ * A hiscores block that can actually be used: a source this kit knows how to
+ * read, a lookup URL the name can be substituted into, and either a page to
+ * link to or nothing. An unknown kind is rejected rather than tolerated —
+ * `sources.ts` has no branch for it, so keeping it would only fail later, in
+ * front of the player.
+ */
+function isHiscoresDef(x: unknown): x is HiscoresDef {
+    if (typeof x !== 'object' || x === null) return false;
+    const h = x as Record<string, unknown>;
+    if (!isNullableString(h.site)) return false;
+    if (typeof h.source !== 'object' || h.source === null) return false;
+    const source = h.source as Record<string, unknown>;
+    if (source.kind !== 'lostcity' && source.kind !== 'zanaris' && source.kind !== 'labs') return false;
+    return isString(source.url) && source.url.includes('{name}') && parseServerUrl(source.url).ok;
 }
 
 function isBookmark(x: unknown): x is Bookmark {
@@ -240,7 +261,7 @@ function isBookmark(x: unknown): x is Bookmark {
 }
 
 interface CatalogFile {
-    version: 3;
+    version: 4;
     servers: ServerDef[];
 }
 
@@ -248,13 +269,15 @@ interface CatalogFile {
 const LEGACY_IDS: Record<string, string> = {
     'zanaris-w1': 'zanaris',
     'lostcity-w5': 'lostcity',
-    'lostcitylabs-w1': 'lostcitylabs',
-    local: 'local'
+    'lostcitylabs-w1': 'lostcitylabs'
 };
 
 function uniqueIds(servers: readonly ServerDef[]): boolean {
     return new Set(servers.map(s => s.id)).size === servers.length;
 }
+
+const isLocalEntry = (entry: unknown): boolean =>
+    typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).id === 'local';
 
 /**
  * Turns whatever was on disk into a usable list, or null when it cannot be
@@ -262,7 +285,8 @@ function uniqueIds(servers: readonly ServerDef[]): boolean {
  * built-in entries replaced by the current built-ins, in default order, and
  * keeps any custom entries with the new fields empty. A missing version is 1.
  * An older file's entries are remote unless they say otherwise, and gain the
- * built-in single-player entry.
+ * built-in single-player entry. A version 3 file's `hiscores` template becomes
+ * the block the Hiscores tool reads.
  */
 export function migrateCatalog(parsed: unknown): ServerDef[] | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
@@ -270,23 +294,31 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
     const version = file.version === undefined ? 1 : file.version;
     if (!Array.isArray(file.servers)) return null;
 
+    // Single player superseded the built-in local server, so version 4 has no
+    // entry for it — and every older version shipped one, which is why it goes
+    // here rather than inside one version's step. Dropping it before anything
+    // is validated also keeps a stale local entry from condemning the whole
+    // file, and with it the user's own entries.
+    const servers: unknown[] = file.servers.filter((entry: unknown) => !isLocalEntry(entry));
+
+    if (version === 4) {
+        return servers.every(isServerDef) && uniqueIds(servers) ? servers.map(copy) : null;
+    }
     if (version === 3) {
-        return file.servers.every(isServerDef) && uniqueIds(file.servers) ? file.servers.map(copy) : null;
+        return fromV3(servers);
     }
     if (version === 2) {
-        const upgraded: ServerDef[] = [];
-        for (const entry of file.servers) {
-            const withKind = typeof entry === 'object' && entry !== null ? { kind: 'remote', ...(entry as object) } : entry;
-            if (!isServerDef(withKind)) return null;
-            upgraded.push(copy(withKind));
-        }
-        return uniqueIds(upgraded) ? withSinglePlayer(upgraded) : null;
+        // A version 2 entry is a version 3 entry without `kind`; the rest of it
+        // the version 3 step already knows how to read, so it finishes there.
+        const withKind = servers.map(entry => (typeof entry === 'object' && entry !== null ? { kind: 'remote', ...(entry as object) } : entry));
+        const upgraded = fromV3(withKind);
+        return upgraded ? withSinglePlayer(upgraded) : null;
     }
     if (version !== 1) return null;
 
     const builtIn = new Set<string>();
     const custom: ServerDef[] = [];
-    for (const entry of file.servers) {
+    for (const entry of servers) {
         if (typeof entry !== 'object' || entry === null) return null;
         const e = entry as Record<string, unknown>;
         const replacement = typeof e.id === 'string' ? LEGACY_IDS[e.id] : undefined;
@@ -298,17 +330,35 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
         if (!isServerDef(upgraded)) return null;
         custom.push(copy(upgraded));
     }
-    const servers = [...DEFAULT_SERVERS.filter(s => builtIn.has(s.id)).map(copy), ...custom];
-    return uniqueIds(servers) ? withSinglePlayer(servers) : null;
+    // Version 1 predates `hiscores` entirely, so its entries go to the built-ins
+    // for theirs and to null for everyone else's, with no template to rewrite.
+    const upgraded = [...DEFAULT_SERVERS.filter(s => builtIn.has(s.id)).map(copy), ...custom];
+    return uniqueIds(upgraded) ? withSinglePlayer(upgraded) : null;
 }
 
-/** Adds the built-in single-player entry to a list that lacks it, before `local` when present. */
+/**
+ * The version 3 → 4 step. Version 3 kept `hiscores` as a bare URL template and
+ * Lost City's is the only one that ever shipped in one, so this is a lookup
+ * rather than a parser: anything else a hand-edited file holds becomes null
+ * rather than a def the panel would only fail on later.
+ */
+function fromV3(servers: readonly unknown[]): ServerDef[] | null {
+    const upgraded: ServerDef[] = [];
+    for (const entry of servers) {
+        if (typeof entry !== 'object' || entry === null) return null;
+        const e = entry as Record<string, unknown>;
+        const hiscores = e.hiscores === LOSTCITY_HISCORES.source.url ? structuredClone(LOSTCITY_HISCORES) : null;
+        const withHiscores = { ...e, hiscores };
+        if (!isServerDef(withHiscores)) return null;
+        upgraded.push(copy(withHiscores));
+    }
+    return uniqueIds(upgraded) ? upgraded : null;
+}
+
+/** Adds the built-in single-player entry to a list that lacks it. */
 function withSinglePlayer(servers: ServerDef[]): ServerDef[] {
     if (servers.some(s => s.id === 'singleplayer')) return servers;
-    const entry = copy(DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!);
-    const local = servers.findIndex(s => s.id === 'local');
-    if (local < 0) return [...servers, entry];
-    return [...servers.slice(0, local), entry, ...servers.slice(local)];
+    return [...servers, copy(DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!)];
 }
 
 /**
@@ -341,7 +391,7 @@ export class Catalog {
             this.servers = migrated;
             const refreshed = this.refreshSinglePlayer();
             // An older file is rewritten in the current shape; that is an upgrade, not a recovery.
-            if (refreshed || (parsed as { version?: unknown }).version !== 3) this.save();
+            if (refreshed || (parsed as { version?: unknown }).version !== 4) this.save();
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
             this.servers = DEFAULT_SERVERS.map(copy);
@@ -403,7 +453,7 @@ export class Catalog {
 
     private save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: CatalogFile = { version: 3, servers: this.servers };
+        const data: CatalogFile = { version: 4, servers: this.servers };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }
