@@ -125,7 +125,7 @@ Along the bottom at around 735px wide the same log runs wide and short
 instead, so six rows there hold roughly what eleven hold in the panel, and
 either way the game keeps the middle of the screen.
 
-The first time you open it it asks for a nick, because there is nothing
+The first time you open chat it asks for a nick, because there is nothing
 sensible to default to and a name others see should be chosen rather than
 assigned. Nothing connects until you pick one, which is also why an unattended
 capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join` and `/part`
@@ -376,7 +376,7 @@ src/main/slots.ts           pure: slot numbers, partitions, titles              
 src/main/tabs.ts            pure: the pinned game tab and page tabs                 (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
-src/main/chatDock.ts        pure: where chat lives, and what the panel shows        (tested)
+src/main/chatDock.ts        pure: where chat lives, and what the side column shows  (tested)
 src/main/appState.ts        the state.json store                                    (tested)
 src/main/worlds/sources.ts  pure: LostHQ, Zanaris and static parsers, url templates (tested)
 src/main/worlds/service.ts  per-server world list and latency over injected IO      (tested)
