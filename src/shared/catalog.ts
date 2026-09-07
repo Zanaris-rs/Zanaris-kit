@@ -10,6 +10,8 @@ export interface WikiDef {
 /** One entry in the server catalog. `id` names windows, partitions and screenshot folders. */
 export interface ServerDef {
     id: string;
+    /** A remote server's page, or the world the kit runs on this computer. */
+    kind: 'remote' | 'singleplayer';
     name: string;
     /** The game page. */
     url: string;

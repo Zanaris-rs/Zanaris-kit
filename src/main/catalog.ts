@@ -18,9 +18,16 @@ const LOSTHQ_BOOKMARKS: Bookmark[] = [
     { name: 'World map', url: 'https://tools.losthq.rs/map' }
 ];
 
+/** The game revision the bundled engine is, from the pin file at build time or, under tests, on disk. */
+export function engineRevision(): number {
+    if (typeof __ENGINE_REVISION__ === 'number') return __ENGINE_REVISION__;
+    return (JSON.parse(readFileSync('engine.lock.json', 'utf8')) as { revision: number }).revision;
+}
+
 export const DEFAULT_SERVERS: readonly ServerDef[] = [
     {
         id: 'lostcity',
+        kind: 'remote',
         name: 'Lost City',
         url: 'https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1',
         revision: 274,
@@ -39,6 +46,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
     },
     {
         id: 'zanaris',
+        kind: 'remote',
         name: 'Zanaris',
         url: 'https://w1.04.zanaris.rs/rs2.cgi?lowmem=1',
         revision: 274,
@@ -57,6 +65,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
     },
     {
         id: 'lostcitylabs',
+        kind: 'remote',
         name: 'Lost City Labs',
         url: 'https://www.lostcitylabs.com/play/world-1/',
         revision: null,
@@ -74,7 +83,23 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         hiscores: null
     },
     {
+        id: 'singleplayer',
+        kind: 'singleplayer',
+        name: 'Single player',
+        // The port is applied at runtime: the world is started on a free one.
+        url: 'http://127.0.0.1/rs2.cgi?lowmem=1',
+        revision: engineRevision(),
+        wiki: LOSTHQ,
+        map: 'https://tools.losthq.rs/map',
+        hosts: ['127.0.0.1', '2004.losthq.rs', 'tools.losthq.rs'],
+        notes: 'Runs on this computer. No account needed.',
+        worlds: null,
+        bookmarks: [...LOSTHQ_BOOKMARKS],
+        hiscores: null
+    },
+    {
         id: 'local',
+        kind: 'remote',
         name: 'Local server',
         url: 'http://127.0.0.1:8888/rs2.cgi?lowmem=1',
         revision: 289,
@@ -170,7 +195,7 @@ export function createServer(input: NewServerInput, existing: readonly ServerDef
 
     return {
         ok: true,
-        server: { id, name, url: url.url, revision: input.revision, wiki, map: null, hosts, notes, worlds: null, bookmarks: [], hiscores: null }
+        server: { id, kind: 'remote', name, url: url.url, revision: input.revision, wiki, map: null, hosts, notes, worlds: null, bookmarks: [], hiscores: null }
     };
 }
 
@@ -181,6 +206,7 @@ export function isServerDef(x: unknown): x is ServerDef {
     if (typeof x !== 'object' || x === null) return false;
     const s = x as Record<string, unknown>;
     if (!isString(s.id) || s.id === '' || !isString(s.name) || !isString(s.url)) return false;
+    if (s.kind !== 'remote' && s.kind !== 'singleplayer') return false;
     if (!parseServerUrl(s.url).ok) return false;
     if (s.revision !== null && !(typeof s.revision === 'number' && Number.isInteger(s.revision) && s.revision > 0)) return false;
     if (s.wiki !== null) {
@@ -203,7 +229,7 @@ function isBookmark(x: unknown): x is Bookmark {
 }
 
 interface CatalogFile {
-    version: 2;
+    version: 3;
     servers: ServerDef[];
 }
 
@@ -224,6 +250,8 @@ function uniqueIds(servers: readonly ServerDef[]): boolean {
  * used. A version 1 file (per-world entries, no worlds block) has its
  * built-in entries replaced by the current built-ins, in default order, and
  * keeps any custom entries with the new fields empty. A missing version is 1.
+ * An older file's entries are remote unless they say otherwise, and gain the
+ * built-in single-player entry.
  */
 export function migrateCatalog(parsed: unknown): ServerDef[] | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
@@ -231,8 +259,17 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
     const version = file.version === undefined ? 1 : file.version;
     if (!Array.isArray(file.servers)) return null;
 
-    if (version === 2) {
+    if (version === 3) {
         return file.servers.every(isServerDef) && uniqueIds(file.servers) ? file.servers.map(copy) : null;
+    }
+    if (version === 2) {
+        const upgraded: ServerDef[] = [];
+        for (const entry of file.servers) {
+            const withKind = typeof entry === 'object' && entry !== null ? { kind: 'remote', ...(entry as object) } : entry;
+            if (!isServerDef(withKind)) return null;
+            upgraded.push(copy(withKind));
+        }
+        return uniqueIds(upgraded) ? withSinglePlayer(upgraded) : null;
     }
     if (version !== 1) return null;
 
@@ -246,12 +283,21 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
             builtIn.add(replacement);
             continue;
         }
-        const upgraded = { ...e, worlds: null, bookmarks: [], hiscores: null };
+        const upgraded = { kind: 'remote', ...e, worlds: null, bookmarks: [], hiscores: null };
         if (!isServerDef(upgraded)) return null;
         custom.push(copy(upgraded));
     }
     const servers = [...DEFAULT_SERVERS.filter(s => builtIn.has(s.id)).map(copy), ...custom];
-    return uniqueIds(servers) ? servers : null;
+    return uniqueIds(servers) ? withSinglePlayer(servers) : null;
+}
+
+/** Adds the built-in single-player entry to a list that lacks it, before `local` when present. */
+function withSinglePlayer(servers: ServerDef[]): ServerDef[] {
+    if (servers.some(s => s.id === 'singleplayer')) return servers;
+    const entry = copy(DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!);
+    const local = servers.findIndex(s => s.id === 'local');
+    if (local < 0) return [...servers, entry];
+    return [...servers.slice(0, local), entry, ...servers.slice(local)];
 }
 
 /**
@@ -283,7 +329,7 @@ export class Catalog {
             if (!migrated) throw new Error('not a catalog');
             this.servers = migrated;
             // An older file is rewritten in the current shape; that is an upgrade, not a recovery.
-            if ((parsed as { version?: unknown }).version !== 2) this.save();
+            if ((parsed as { version?: unknown }).version !== 3) this.save();
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
             this.servers = DEFAULT_SERVERS.map(copy);
@@ -320,7 +366,7 @@ export class Catalog {
 
     private save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: CatalogFile = { version: 2, servers: this.servers };
+        const data: CatalogFile = { version: 3, servers: this.servers };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }

@@ -14,10 +14,11 @@ import {
     isServerDef,
     serverMenuLabel,
     migrateCatalog,
+    engineRevision,
     Catalog
 } from './catalog.ts';
 import { isWorldsDef } from './worlds/sources.ts';
-import type { NewServerInput } from '../shared/catalog.ts';
+import type { NewServerInput, ServerDef } from '../shared/catalog.ts';
 
 const input = (over: Partial<NewServerInput> = {}): NewServerInput => ({
     name: 'My Server',
@@ -29,7 +30,7 @@ const input = (over: Partial<NewServerInput> = {}): NewServerInput => ({
 });
 
 test('the built-in list is per server, Lost City first, with the settled revisions', () => {
-    assert.deepEqual(DEFAULT_SERVERS.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'local']);
+    assert.deepEqual(DEFAULT_SERVERS.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'local']);
     const byId = Object.fromEntries(DEFAULT_SERVERS.map(s => [s.id, s]));
     assert.equal(byId['lostcity']!.revision, 274);
     assert.equal(byId['zanaris']!.revision, 274);
@@ -39,6 +40,67 @@ test('the built-in list is per server, Lost City first, with the settled revisio
     assert.equal(byId['lostcity']!.wiki?.home, 'https://2004.losthq.rs/');
     assert.equal(byId['zanaris']!.wiki?.home, 'https://2004.losthq.rs/');
     assert.equal(byId['lostcitylabs']!.wiki, null);
+});
+
+test('the single-player entry runs on this computer and carries the engine revision', () => {
+    const sp = DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!;
+    assert.equal(sp.kind, 'singleplayer');
+    assert.equal(sp.name, 'Single player');
+    assert.equal(sp.url, 'http://127.0.0.1/rs2.cgi?lowmem=1');
+    assert.equal(sp.revision, engineRevision());
+    assert.equal(typeof sp.revision, 'number');
+    assert.equal(sp.worlds, null);
+    assert.equal(sp.wiki?.home, 'https://2004.losthq.rs/');
+    assert.ok(sp.bookmarks.length >= 5);
+    assert.deepEqual(sp.hosts, ['127.0.0.1', '2004.losthq.rs', 'tools.losthq.rs']);
+    for (const server of DEFAULT_SERVERS) assert.equal(server.kind, server.id === 'singleplayer' ? 'singleplayer' : 'remote');
+});
+
+test('engineRevision reads engine.lock.json when nothing was stamped at build time', () => {
+    const lock = JSON.parse(readFileSync('engine.lock.json', 'utf8')) as { revision: number };
+    assert.equal(engineRevision(), lock.revision);
+});
+
+test('a version 2 file gains kind and the single-player entry, before local when present', () => {
+    const v2 = {
+        version: 2,
+        servers: DEFAULT_SERVERS.filter(s => s.id !== 'singleplayer').map(s => {
+            const { kind: _kind, ...rest } = s;
+            return rest;
+        })
+    };
+    const migrated = migrateCatalog(v2)!;
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'local']);
+    assert.ok(migrated.every(s => s.kind === (s.id === 'singleplayer' ? 'singleplayer' : 'remote')));
+});
+
+test('a version 2 file without local gets the single-player entry appended', () => {
+    const created = createServer(input(), []);
+    assert.ok(created.ok);
+    const custom: ServerDef = { ...created.server };
+    const { kind: _kind, ...bare } = custom;
+    const migrated = migrateCatalog({ version: 2, servers: [bare] })!;
+    assert.deepEqual(migrated.map(s => s.id), ['my-server', 'singleplayer']);
+    assert.equal(migrated[0]!.kind, 'remote');
+});
+
+test('a version 3 file is taken as it is, and one lacking kind is rejected', () => {
+    const v3 = { version: 3, servers: DEFAULT_SERVERS.map(s => structuredClone(s)) };
+    assert.deepEqual(migrateCatalog(v3), v3.servers);
+    const { kind: _kind, ...bare } = DEFAULT_SERVERS[0]!;
+    assert.equal(migrateCatalog({ version: 3, servers: [bare] }), null);
+});
+
+test('the catalog writes version 3 and upgrades a version 2 file on load', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'catalog-'));
+    const file = join(dir, 'servers.json');
+    writeFileSync(file, JSON.stringify({ version: 2, servers: [] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false);
+    assert.deepEqual(catalog.list().map(s => s.id), ['singleplayer']);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 3);
+    rmSync(dir, { recursive: true, force: true });
 });
 
 test('the built-ins carry the worlds, bookmarks and hiscores they should', () => {
@@ -184,9 +246,9 @@ test('migrateCatalog turns a v1 file into the new built-ins in default order plu
     const custom = OLD('my-server', 'My Server', 'https://play.example.com/rs2.cgi');
     const migrated = migrateCatalog({ version: 1, servers: [...V1_BUILTINS, custom] });
     assert.ok(migrated);
-    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'local', 'my-server']);
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'local', 'my-server']);
     assert.equal(migrated[0]!.worlds?.source.kind, 'losthq');
-    const mine = migrated[4]!;
+    const mine = migrated[5]!;
     assert.equal(mine.worlds, null);
     assert.deepEqual(mine.bookmarks, []);
     assert.equal(mine.hiscores, null);
@@ -202,20 +264,20 @@ test('migrateCatalog treats a missing version as v1 and passes a v2 file through
 
 test('migrateCatalog returns null for junk, an invalid entry, or a version it does not know', () => {
     assert.equal(migrateCatalog(null), null);
-    assert.equal(migrateCatalog({ version: 3, servers: [] }), null);
+    assert.equal(migrateCatalog({ version: 4, servers: [] }), null);
     assert.equal(migrateCatalog({ version: 1, servers: [{ id: 'x' }] }), null);
     assert.equal(migrateCatalog({ version: 2, servers: [{ ...DEFAULT_SERVERS[0], worlds: 'nope' }] }), null);
 });
 
-test('Catalog.load migrates a v1 file in place and rewrites it as v2', () => {
+test('Catalog.load migrates a v1 file in place and rewrites it as v3', () => {
     const file = tempFile();
     writeFileSync(file, JSON.stringify({ version: 1, servers: V1_BUILTINS }));
     const catalog = new Catalog(file);
     catalog.load();
     assert.equal(catalog.recovered, false, 'a migration is not a recovery');
-    assert.deepEqual(catalog.list().map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'local']);
+    assert.deepEqual(catalog.list().map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'local']);
     const written = JSON.parse(readFileSync(file, 'utf8'));
-    assert.equal(written.version, 2);
+    assert.equal(written.version, 3);
     assert.equal(written.servers[0].id, 'lostcity');
 });
 
@@ -249,7 +311,7 @@ test('load writes the defaults when there is no file', () => {
     assert.equal(catalog.recovered, false);
     assert.deepEqual(catalog.list().map(s => s.id), DEFAULT_SERVERS.map(s => s.id));
     assert.ok(existsSync(file));
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 2);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 3);
 });
 
 test('add persists and a fresh load sees it', () => {
