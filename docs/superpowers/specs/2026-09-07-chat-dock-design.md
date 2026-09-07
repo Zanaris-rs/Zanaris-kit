@@ -73,17 +73,17 @@ corner, and `npm test` can prove it.
 
 ### Persistence
 
-`dock` and `height` join the existing `chat` block of `state.json`, beside
+`dock` and `dockHeight` join the existing `chat` block of `state.json`, beside
 `nick`:
 
 ```json
 "chat": { "nick": "Whoosh", "server": "irc.libera.chat", "port": 6697,
-          "dock": "bottom", "height": 260 }
+          "dock": "bottom", "dockHeight": 260 }
 ```
 
 `readChat` in `appState.ts` already reads that block one field at a time, so a
-garbage `dock` costs only the dock position and a garbage `height` only the
-height. `height` is clamped on read as well as on write, since the file is
+garbage `dock` costs only the dock position and a garbage `dockHeight` only the
+height. `dockHeight` is clamped on read as well as on write, since the file is
 user-editable.
 
 The home is **app-wide, not per-window**. Chat is one connection showing one
@@ -134,11 +134,26 @@ export const DOCK_HEIGHT_MIN = 120;   // header + two lines + composer
 // max is computed, not constant: workArea.height / 2
 ```
 
-`DOCK_HEIGHT_MIN` is a floor on the *preference*, not on the fit. The dock is
-never silently dropped: if the window cannot grow, it clamps to the minimum and
-the content gives way below `MIN_CONTENT_HEIGHT`, which is exactly what `push`
-already means on the x axis, page auto-scaling and all. `rects.dock` is `null`
-when the dock is closed, and for no other reason.
+`DOCK_HEIGHT_MIN` is a floor on the drag preference **and** on the fit — an
+earlier draft of this spec said "not on the fit", which cannot be reconciled
+with the sentence that follows it. The dock is never silently dropped, so
+something has to stop it shrinking, and this is it.
+
+The order in which a too-short window gives way is therefore:
+
+1. The dock shrinks from its requested height, but never below
+   `DOCK_HEIGHT_MIN`, while content holds at `MIN_CONTENT_HEIGHT`.
+2. Once the dock is at its floor, the **content** gives way below
+   `MIN_CONTENT_HEIGHT` — which is exactly what `push` already means on the x
+   axis, page auto-scaling and all.
+
+This is deliberately the opposite of the x axis, where the panel is sacrificed
+to protect the content. On x the panel is one of several tools competing for a
+column and can be closed; on y the dock is the conversation the user just
+asked to see, and a chat window that silently becomes nothing is worse than a
+game canvas that scales down by the few pixels involved.
+
+`rects.dock` is `null` when the dock is closed, and for no other reason.
 
 ### The dock's extent
 
@@ -267,8 +282,11 @@ there is no renderer test infrastructure. The work splits accordingly.
 **Proven by tests:**
 
 - `layout.test.ts`: `fitAxis` directly — widen, shift and push on each axis
-  independently. The existing horizontal cases stay untouched and become the
-  regression proof that a closed dock changes nothing.
+  independently. The existing horizontal cases keep every one of their
+  geometry assertions — content, panel, rail, window — and those are the
+  regression proof that a closed dock changes nothing. Their six
+  `assert.equal(r.mode, …)` lines do change, to `r.mode.x`, because `mode`
+  becomes a pair; that edit is mandated by this spec, not incidental churn.
 - The home/eviction/toggle transition function, over every row of the invariant
   table.
 - `appState.test.ts`: `readChat` tolerates a missing `dock`, a garbage `dock`
