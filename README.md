@@ -4,11 +4,12 @@ An Electron client that opens several 04scape servers at once, one window per
 server, where every window knows which server it is running and can hop
 between that server's worlds.
 
-**Status: milestone two of the server-windows design.** Server windows with
-the pinned game tab, the rail and panel, the widen / shift / push layout
-engine, and now the Worlds tool: a world list with players and latency, a
-low / high detail switch, and the last world remembered per server. Page tabs,
-timers, screenshots and the other tools follow. The design is in
+**Status: single player — a world this computer runs — on top of milestone
+two of the server-windows design.** Server windows with the pinned game tab,
+the rail and panel, the widen / shift / push layout engine, and the Worlds
+tool: a world list with players and latency, a low / high detail switch, and
+the last world remembered per server. Page tabs, timers, screenshots and the
+other tools follow. The design is in
 `docs/superpowers/specs/2026-09-05-server-windows-design.md`, which also maps
 LostHQ's LostKit 2 onto it; the plans are under `docs/superpowers/plans/`.
 

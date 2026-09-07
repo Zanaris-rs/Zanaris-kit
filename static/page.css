@@ -75,6 +75,10 @@ pre {
     background-color: #37311f;
     border: 2px solid #7d7463; border-top-color: #211d16; border-left-color: #211d16;
     padding: 4px 8px; color: #a89c86;
+    /* The one place on these pages worth selecting: body turns selection off
+       for the whole page, and this well holds the error a player wants to
+       paste into a bug report. */
+    -webkit-user-select: text; user-select: text;
 }
 .version { color: #a89c86; font-size: 12px; margin-top: 12px; }
 /* The pre rule above sets display, and an author display beats the UA's

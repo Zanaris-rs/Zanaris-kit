@@ -329,7 +329,8 @@ world, and the next open starts it again in a couple of seconds.
 
 `preparing` runs when `engine.stamp` is missing or differs from
 `VERSION.json` in resources: copy the four asset trees and the pems into
-`<home>/.staging-<n>/`, then rename each into place, replacing the old ones.
+`<home>/.staging/`, then rename each into place, replacing the old ones. The
+one name is what lets the next `preparing` remove what a failed copy left.
 `data/players/` is never touched by preparing. About 90 MB, seconds on a
 normal disk. Symlinks are deliberately not used: junction rules on Windows,
 and a bundle-relative link breaks the first time the app moves.
@@ -376,9 +377,11 @@ failed state with Retry. Nothing restarts on its own.
 
 A window on a `singleplayer` entry gets `singleplayer` in its tool list, after
 `chat`. At creation it loads `static/starting.html` in the game view and
-calls `acquire()`; when that resolves it loads the game URL, and its allowed
-hosts gain `127.0.0.1:<port>`. `whenGameLoaded()` still resolves on the game
-load, so capture mode can wait for it.
+calls `acquire()`; when that resolves it loads the game URL, and the
+navigation guard follows it there through `expected`, which `loadGame()`
+updates to the ported URL. The host allowlist is not consulted today; it
+arrives with page tabs. `whenGameLoaded()` still resolves on the game load,
+so capture mode can wait for it.
 
 `starting.html` follows the offline page: the slab, the pixel heading, no
 network. States by query string: `starting` ("Starting your world"), with
@@ -453,7 +456,7 @@ route for 3).
 | Process exits before ready, or 60 s pass | `failed`, log tail attached. |
 | Process exits while ready | `failed`, every single-player window shows Retry. |
 | Shutdown request unanswered for 10 s | `kill()`, then `stopped`. |
-| Quit during `preparing` or `starting` | `stop()` kills the process if any and abandons the staging directory, which the next `preparing` removes. |
+| Quit during `preparing` or `starting` | `stop()` kills the process if any. The copy is asynchronous, so a quit during it lands: the start finds the status no longer `preparing`, gives up, and abandons the staging directory, which the next `preparing` removes. |
 | Two single-player windows | One world, both windows; the second `acquire` resolves immediately when ready. |
 
 ### Testing
