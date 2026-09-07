@@ -382,14 +382,25 @@ ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
 /**
  * Where chat lives, for the whole app: one conversation cannot be at the bottom
  * of one window and down the side of another without being two chats in the
- * user's head. Moving it changes geometry rather than only what is drawn, so
- * every window lays itself out again — relayout pushes the new state itself,
- * which is why nothing here follows it with a pushState.
+ * user's head. What is app-wide is where chat *goes*, though, not whether it is
+ * open — that was always per-window. So only the window whose →| was clicked
+ * rearranges around the move; the rest are told where chat now goes and keep
+ * whatever they had open, or a user with the world list up in another window
+ * would lose it to a click they made over here.
+ *
+ * The window that asked is the one whose shell sent this, which is the shell
+ * the control is drawn in. Moving it changes geometry rather than only what is
+ * drawn, and both of these lay the window out again — which pushes the new
+ * state itself, so nothing here follows them with a pushState.
  */
-ipcMain.handle(IPC.chatSetHome, (_event, home: unknown) => {
+ipcMain.handle(IPC.chatSetHome, (event, home: unknown) => {
     if (home !== 'bottom' && home !== 'side') return;
     appState.setChat({ dock: home });
-    for (const sw of serverWindows.values()) sw.setChatHome(home);
+    const asked = windowFor(event.sender);
+    for (const sw of serverWindows.values()) {
+        if (sw === asked) sw.moveChat(home);
+        else sw.syncChatHome(home);
+    }
 });
 
 /**
@@ -537,7 +548,11 @@ async function captureAndExit(dir: string): Promise<void> {
         if (!first) throw new Error('the server list is empty');
         first.togglePanel();
         await wait(500);
-        log(`[capture] panel open on ${first.state().title}: mode x ${first.state().mode.x}, y ${first.state().mode.y}`);
+        // The strip's toggle is a no-op on a window whose column has no legal
+        // occupant — chat alone, living at the bottom — so this reports what
+        // the panel actually did rather than assuming it opened.
+        const toggled = first.state();
+        log(`[capture] ${toggled.title}: panel ${toggled.panelOpen ? `open on ${toggled.activeTool}` : 'stayed closed'}, mode x ${toggled.mode.x}, y ${toggled.mode.y}`);
         await shoot(`${first.state().server.id}-panel`, first);
 
         // The Worlds tool: open it on a loaded window that has worlds, wait for

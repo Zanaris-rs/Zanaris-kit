@@ -88,7 +88,7 @@ export interface ZanarisApi {
         /** Null when the calling view is not a server window's shell. */
         get(): Promise<ShellState | null>;
         togglePanel(): Promise<void>;
-        /** Opens the panel on a tool; null closes it. */
+        /** Opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. */
         selectTool(id: ToolId | null): Promise<void>;
         /** Opens or closes the bottom dock. Only meaningful while chat's home is the dock. */
         toggleDock(): Promise<void>;

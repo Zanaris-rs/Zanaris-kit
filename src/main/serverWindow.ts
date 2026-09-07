@@ -83,12 +83,14 @@ export interface ServerWindow extends ServerWindowHandle {
     /** The shell view's webContents id, so IPC handlers can find the window from `event.sender`. */
     readonly shellContentsId: number;
     togglePanel(): void;
-    /** Opens the panel on a tool; null closes it. */
+    /** The rail's tabs: opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. */
     selectTool(id: ToolId | null): void;
     /** The rail's Chat tab: opens or closes the dock, or the panel while chat lives on the side. */
     toggleDock(): void;
-    /** Follows the app-wide home. Moving chat is a geometry change, so it lays the window out again. */
-    setChatHome(home: ChatHome): void;
+    /** The →| control in this window: chat moves home, and this window's chrome rearranges around it. */
+    moveChat(home: ChatHome): void;
+    /** The echo of a move made in another window: this one learns where chat goes without losing what it has open. */
+    syncChatHome(home: ChatHome): void;
     /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
     relayout(): void;
     state(): ShellState;
@@ -282,14 +284,23 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function syncMinimumSize(dock: number): void {
         if (dock === minimumDock) return;
         minimumDock = dock;
+        // Under `applying` for the same reason setContentBounds is. macOS does
+        // not resize a live window onto a new minimum — measured, not assumed —
+        // but nothing promises the other platforms do not, and such a resize
+        // would arrive at the handler below as the user's own: it would take
+        // the half-grown window for the height they asked for and hand the
+        // content the dock's pixels.
+        applying = true;
         win.setMinimumSize(minWindowWidth, minWindowHeight + dock);
+        applying = false;
     }
 
     function applyLayout(): void {
         if (win.isDestroyed()) return;
         const dock = dockHeight();
-        // Before the bounds are read, since raising the floor can grow the
-        // window and lowering it is what lets the window shrink again.
+        // The floor moves before the bounds are read and set: closing the dock
+        // has to lower it first, or the minimum that was carrying the dock
+        // clamps setContentBounds and the window never shrinks back.
         syncMinimumSize(dock);
         const current = win.getContentBounds();
         const display = screen.getDisplayMatching(win.getBounds());
@@ -392,10 +403,21 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         deps.log(`${tag} chat tab: dock ${placement.dockOpen ? 'open' : 'closed'}, panel ${placement.panelOpen ? 'open' : 'closed'}`);
     }
 
-    /** The home is app-wide: main moves every window, not just the one that asked. */
-    function setChatHome(home: ChatHome): void {
+    /**
+     * The two halves of an app-wide home change. Where chat goes is the app's,
+     * so every window hears about it; whether chat is open here is this
+     * window's, so only the window whose control was clicked rearranges around
+     * it. Which of the two a window gets is main's to decide, and the
+     * difference between them is the rules module's.
+     */
+    function moveChat(home: ChatHome): void {
         place({ kind: 'move', to: home });
         deps.log(`${tag} chat moved to the ${home}`);
+    }
+
+    function syncChatHome(home: ChatHome): void {
+        place({ kind: 'sync-home', to: home });
+        deps.log(`${tag} chat now lives at the ${home}`);
     }
 
     // ── the game view ────────────────────────────────────────────────────
@@ -627,7 +649,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         togglePanel,
         selectTool,
         toggleDock,
-        setChatHome,
+        moveChat,
+        syncChatHome,
         relayout: applyLayout,
         state,
         pushState,
