@@ -313,7 +313,7 @@ to two different edges, and both get said.
 |---|---|---|
 | widen | there is room to grow, on that axis | the window grows |
 | shift | growing would run the window off the screen | the window grows and slides back onto it |
-| push | maximised, fullscreen, or no room on the display | the content rect shrinks on that axis and the page does not rescale to follow, so part of the canvas can end up out of view |
+| push | maximised, fullscreen, or no room on the display | the content rect gives way instead of the window: on x only as far as the canvas width, on y far enough that part of the canvas can end up out of view — the page does not rescale to follow |
 
 Nothing in the served page scales the canvas down to match: its `setSize` fits
 the canvas to the window only for someone who has picked **Auto Sizing** from
