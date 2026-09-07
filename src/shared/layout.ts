@@ -6,7 +6,11 @@ export const PANEL_WIDTH = 320;
 /** The stock client canvas. The content area never drops below it unless the user shrinks the window. */
 export const MIN_CONTENT_WIDTH = 765;
 export const MIN_CONTENT_HEIGHT = 503;
+/** Default height of the bottom chat dock. */
+export const DOCK_HEIGHT_DEFAULT = 200;
+/** Floor on the user's drag preference, not on the fit: a too-short window still shrinks the content instead. */
+export const DOCK_HEIGHT_MIN = 120;
 
-/** How the panel was accommodated: the window grew, grew and moved left, or the content area gave way. */
+/** How one axis accommodated its chrome: the window grew, grew and slid back onto the screen, or the content area gave way. */
 export type LayoutMode = 'widen' | 'shift' | 'push';
 export type TabKind = 'game' | 'page';

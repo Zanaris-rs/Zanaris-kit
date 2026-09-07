@@ -123,8 +123,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     let panelOpen = false;
     let activeTool: ToolId | null = null;
     let mode: LayoutMode = 'widen';
-    let rects: Rects = splitWindow(DEFAULT_CONTENT.width + RAIL_WIDTH, STRIP_HEIGHT + DEFAULT_CONTENT.height, false, 'game');
+    let rects: Rects = splitWindow(DEFAULT_CONTENT.width + RAIL_WIDTH, STRIP_HEIGHT + DEFAULT_CONTENT.height, false, 0, 'game');
     let contentWidth = DEFAULT_CONTENT.width;
+    let contentHeight = DEFAULT_CONTENT.height;
     let applying = false;
     let failedOver = false;
     let loadWaiter: ((result: LoadResult) => void) | null = null;
@@ -235,10 +236,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             window: current,
             workArea: display.workArea,
             contentWidth,
+            contentHeight,
+            dockHeight: 0,
             canResize: !win.isMaximized() && !win.isFullScreen()
         });
 
-        mode = result.mode;
+        // Only the x axis is surfaced today: there is no dock yet, so mode.y is
+        // always 'widen' and ShellState (and Shell.tsx's note) stay single-axis
+        // until the dock lands.
+        mode = result.mode.x;
         rects = result;
         const w = result.window;
         if (w.x !== current.x || w.y !== current.y || w.width !== current.width || w.height !== current.height) {
