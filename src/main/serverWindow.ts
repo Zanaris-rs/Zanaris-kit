@@ -1,7 +1,7 @@
 import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { ADDRESS_HEIGHT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
+import { ADDRESS_HEIGHT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, PAGE_CONTROLS_HEIGHT, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
 import type { ChatHome, ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
@@ -19,9 +19,26 @@ import type { ServerWindowHandle, WindowSpec } from './windows';
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /** The content area a new window opens with: the canvas plus the page's controls strip. */
-const DEFAULT_CONTENT = { width: 800, height: 640 };
+const DEFAULT_CONTENT = { width: MIN_CONTENT_WIDTH, height: MIN_CONTENT_HEIGHT + PAGE_CONTROLS_HEIGHT };
 const PROBE_EVERY_MS = 10_000;
 const PROBE_TIMEOUT_MS = 3_000;
+
+/**
+ * Injected into every game page. The stock client is `body{overflow:auto}` around
+ * a fixed 765x503 canvas plus a controls strip, inside a `center{min-height:100vh}`
+ * flex column — and Chromium's vh ignores the scrollbar gutter, so one scrollbar
+ * induces the other. Three fixes, in order: hide the bars so they never take a
+ * gutter (which alone breaks the induction), swap 100vh for a percentage of a
+ * definite height, and make the centring `safe` so an overflowing page clips its
+ * controls strip at the bottom instead of shaving the top off the canvas.
+ * Scrolling still works, so 2x/3x Size stay pannable by wheel and trackpad.
+ */
+const GAME_PAGE_CSS = `
+    html, body { height: 100% !important; }
+    body { scrollbar-width: none !important; }
+    body::-webkit-scrollbar, html::-webkit-scrollbar { display: none !important; }
+    center { min-height: 100% !important; justify-content: safe center !important; }
+`;
 
 export type LoadResult = 'loaded' | 'failed';
 
@@ -560,6 +577,23 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         void gameView.webContents.loadFile(OFFLINE_PAGE, {
             query: { url: expected, name: gameLabel(), reason: description }
         });
+    });
+    // `insertCSS` is per-document, so it must be re-applied on every navigation. `dom-ready`
+    // (Chromium's DOMContentLoaded) is the earliest hook Electron exposes for that;
+    // `did-finish-load` (below, used for the load waiter) waits for the 'load' event — every
+    // subresource — and is much later. dom-ready is *not* guaranteed ahead of first paint here:
+    // the client's own game code is a deferred `type="module"` script, which delays
+    // DOMContentLoaded until it has fetched and run, while Chromium can paint the
+    // already-parsed, already-styled page before that finishes. So a brief flash is possible —
+    // but only at sizes where the page actually overflows its view (the bare-canvas floor, or
+    // the dock pushing content below it; the default size never overflows) — and it is still
+    // strictly earlier than did-finish-load. World hopping and detail switching load into this
+    // same view (switchWorld), so they re-fire `dom-ready` and re-inject — nothing
+    // server-specific is needed here.
+    gameView.webContents.on('dom-ready', () => {
+        // The kit's own offline and starting pages are already sized to fit; this is for the client.
+        if (gameView.webContents.getURL().startsWith('file:')) return;
+        void gameView.webContents.insertCSS(GAME_PAGE_CSS);
     });
     gameView.webContents.on('did-finish-load', () => {
         const url = gameView.webContents.getURL();
