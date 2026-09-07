@@ -63,7 +63,7 @@ export function installMenu(servers: readonly ServerDef[], actions: MenuActions,
             role: 'help',
             submenu: [
                 ...(update?.newer ? [{ label: `Update Available: ${update.latest}`, click: () => actions.openExternal(update.url) }] : []),
-                { label: 'Zanaris Kit on GitHub', click: () => actions.openExternal('https://github.com/Zanaris-rs/swiftkit') }
+                { label: 'Zanaris Kit on GitHub', click: () => actions.openExternal('https://github.com/Zanaris-rs/Zanaris-kit') }
             ]
         }
     ];

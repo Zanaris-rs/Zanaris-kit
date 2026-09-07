@@ -139,7 +139,7 @@ that does not boot does not stage.
 - Windows: NSIS x64, `oneClick: true`, `perMachine: false` (per-user, no
   admin prompt). Unsigned; SmartScreen shows "More info > Run anyway".
 - Linux: AppImage x64, category Game.
-- `publish: { provider: github, owner: Zanaris-rs, repo: swiftkit,
+- `publish: { provider: github, owner: Zanaris-rs, repo: Zanaris-kit,
   releaseType: draft }`.
 - Artifact names carry product, version and platform, for example
   `Zanaris-Kit-0.2.0-universal.dmg`, `Zanaris-Kit-Setup-0.2.0.exe`,
@@ -197,7 +197,7 @@ the dry run: same build, artifacts on the workflow run, no release.
 
 `src/main/update.ts` exports `compareVersions(a, b)` and
 `checkLatest(fetchJson, current)`, both pure: given the JSON of
-`https://api.github.com/repos/Zanaris-rs/swiftkit/releases/latest`, return
+`https://api.github.com/repos/Zanaris-rs/Zanaris-kit/releases/latest`, return
 `{ latest, url, newer }`. Main calls it once at ready, after the catalog
 loads, with `net.fetch`, a five-second abort and every failure swallowed:
 offline, rate limited, malformed. Skipped in capture mode and when

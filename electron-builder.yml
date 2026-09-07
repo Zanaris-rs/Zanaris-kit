@@ -60,5 +60,5 @@ linux:
 publish:
   provider: github
   owner: Zanaris-rs
-  repo: swiftkit
+  repo: Zanaris-kit
   releaseType: draft

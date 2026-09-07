@@ -16,7 +16,7 @@ LostHQ's LostKit 2 onto it; the plans are under `docs/superpowers/plans/`.
 ## Download
 
 Installers for macOS, Windows and Linux are on the
-[releases page](https://github.com/Zanaris-rs/swiftkit/releases/latest):
+[releases page](https://github.com/Zanaris-rs/Zanaris-kit/releases/latest):
 `Zanaris-Kit-<version>-universal.dmg`, `Zanaris-Kit-Setup-<version>.exe` and
 `Zanaris-Kit-<version>.AppImage`.
 

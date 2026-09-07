@@ -5,7 +5,7 @@ export interface LatestRelease {
     newer: boolean;
 }
 
-export const RELEASES_LATEST = 'https://api.github.com/repos/Zanaris-rs/swiftkit/releases/latest';
+export const RELEASES_LATEST = 'https://api.github.com/repos/Zanaris-rs/Zanaris-kit/releases/latest';
 
 /** `v0.2.0` or `0.2.0` to `[0, 2, 0]`; anything else, including prereleases, to null. */
 export function parseVersion(text: string): number[] | null {

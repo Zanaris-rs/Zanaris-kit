@@ -18,7 +18,7 @@ test('compareVersions orders numerically and pads missing parts with zero', () =
 });
 
 test('checkLatest reads the GitHub release body and says whether it is newer', () => {
-    const body = { tag_name: 'v0.3.0', html_url: 'https://github.com/Zanaris-rs/swiftkit/releases/tag/v0.3.0' };
+    const body = { tag_name: 'v0.3.0', html_url: 'https://github.com/Zanaris-rs/Zanaris-kit/releases/tag/v0.3.0' };
     assert.deepEqual(checkLatest(body, '0.2.0'), { latest: 'v0.3.0', url: body.html_url, newer: true });
     assert.deepEqual(checkLatest(body, '0.3.0'), { latest: 'v0.3.0', url: body.html_url, newer: false });
     assert.deepEqual(checkLatest(body, '0.4.0'), { latest: 'v0.3.0', url: body.html_url, newer: false });
