@@ -132,11 +132,17 @@ export function splitWindow(width: number, height: number, panelOpen: boolean, d
     const dockH = dockHeight === 0 ? 0 : Math.max(DOCK_HEIGHT_MIN, Math.min(dockHeight, belowTop - MIN_CONTENT_HEIGHT));
     const contentH = Math.max(0, belowTop - dockH);
 
+    // The dock spans under the panel as well as the content (it stops at the
+    // rail, not at the panel), so the panel must be shortened to make room for
+    // it or the two would paint on top of each other. The rail is beside the
+    // dock rather than above it, so it alone keeps its full height.
+    const panelH = Math.max(0, below - dockH);
+
     return {
         strip: { x: 0, y: 0, width, height: STRIP_HEIGHT },
         address: addressH > 0 ? { x: 0, y: STRIP_HEIGHT, width: contentW, height: addressH } : null,
         content: { x: 0, y: top, width: contentW, height: contentH },
-        panel: panelW > 0 ? { x: contentW, y: STRIP_HEIGHT, width: panelW, height: below } : null,
+        panel: panelW > 0 ? { x: contentW, y: STRIP_HEIGHT, width: panelW, height: panelH } : null,
         rail: { x: contentW + panelW, y: STRIP_HEIGHT, width: railW, height: below },
         dock: dockH > 0 ? { x: 0, y: top + contentH, width: contentW + panelW, height: dockH } : null
     };

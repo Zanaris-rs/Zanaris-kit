@@ -150,9 +150,27 @@ test('the dock spans content plus panel width and stops at the rail, panel open 
     }
 });
 
-test('the dock does not shrink the rail: it still runs from the strip to the window bottom', () => {
-    const r = computeLayout(base({ dockHeight: 200 }));
-    assert.equal(r.rail.height, r.window.height - STRIP_HEIGHT);
+test('the dock does not shrink the rail: it still runs from the strip to the window bottom, panel open or closed', () => {
+    for (const panelOpen of [false, true]) {
+        const r = computeLayout(base({ panelOpen, dockHeight: 200 }));
+        assert.equal(r.rail.height, r.window.height - STRIP_HEIGHT, 'the rail is beside the dock, not above it');
+    }
+});
+
+test('the panel is shortened so the dock never overlaps it', () => {
+    const r = computeLayout(base({ panelOpen: true, dockHeight: 200 }));
+    assert.ok(r.panel && r.dock, 'both the panel and the dock have room to open');
+    assert.ok(r.panel!.y + r.panel!.height <= r.dock!.y, 'the panel ends at or above where the dock begins');
+});
+
+test('the panel column tiles exactly: strip, panel and dock account for the whole window', () => {
+    const r = computeLayout(base({ panelOpen: true, dockHeight: 200 }));
+    assert.equal(r.strip.height + r.panel!.height + r.dock!.height, r.window.height);
+});
+
+test('the panel height is unchanged when the dock is closed', () => {
+    const r = computeLayout(base({ panelOpen: true }));
+    assert.equal(r.panel!.height, r.window.height - STRIP_HEIGHT, 'nothing is subtracted from the panel when there is no dock to make room for');
 });
 
 test('push on y when the window cannot resize: content gives way, the dock keeps its full height', () => {
