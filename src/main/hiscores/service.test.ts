@@ -55,8 +55,7 @@ function fake(): Fake {
             const d = deferred();
             queue.push(d);
             return d.promise;
-        },
-        now: () => 1_000_000
+        }
     };
     return { io, fetches, queue };
 }

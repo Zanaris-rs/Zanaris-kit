@@ -33,6 +33,11 @@ const api: ZanarisApi = {
         switch: world => ipcRenderer.invoke(IPC.worldsSwitch, world),
         setDetail: detail => ipcRenderer.invoke(IPC.worldsSetDetail, detail)
     },
+    hiscores: {
+        lookup: name => ipcRenderer.invoke(IPC.hiscoresLookup, name),
+        clear: () => ipcRenderer.invoke(IPC.hiscoresClear),
+        openSite: () => ipcRenderer.invoke(IPC.hiscoresOpenSite)
+    },
     singlePlayer: {
         setCheats: on => ipcRenderer.invoke(IPC.singlePlayerSetCheats, on),
         retry: () => ipcRenderer.invoke(IPC.singlePlayerRetry),

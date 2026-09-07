@@ -14,6 +14,7 @@ import { windowTitle } from './slots';
 import { WorldSwitch } from './worlds/switch';
 import { worldEndpoint } from './worlds/sources';
 import type { WorldsService } from './worlds/service';
+import type { HiscoresService } from './hiscores/service';
 import type { ServerWindowHandle, WindowSpec } from './windows';
 
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
@@ -83,6 +84,8 @@ export interface ServerWindowDeps {
     position: { x: number; y: number } | null;
     /** The server's shared world list and latency, or null when the server has one page. */
     worlds: WorldsService | null;
+    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool off a single-player window's rail. */
+    hiscores: HiscoresService | null;
     /**
      * The one conversation, which is the app's rather than this window's: every
      * window shows the same one. A getter rather than the service itself, since
@@ -155,10 +158,29 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const tag = `[${spec.title}]`;
     const tabs = new TabModel({ title: server.name, url: server.url });
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
-    // Chat is app-scoped, so every window offers it, and first: it is there
-    // whether or not the server has worlds to hop between.
     const single = server.kind === 'singleplayer' ? deps.singlePlayer : null;
-    const tools: ToolId[] = single ? ['chat', 'singleplayer'] : worldSwitch ? ['chat', 'worlds'] : ['chat'];
+    /**
+     * The rail this window offers. Chat is app-scoped, so every window offers
+     * it, and first: it is there whether or not the server has worlds to hop
+     * between. Everything after it is this window's server's, which is where
+     * the rail draws its divider — worlds to hop between, hiscores to look a
+     * player up on, the world this computer runs.
+     *
+     * Each of the three is offered because the window was *given* the thing
+     * behind it, rather than because of what kind of server this is: no
+     * hiscores def means no service, no service means no tool, and single
+     * player is the case that matters — a one-player world has nothing to
+     * rank, and its catalog entry carries no hiscores, so the tool never
+     * reaches its rail without anything here naming it.
+     */
+    const tools: ToolId[] = ['chat'];
+    if (worldSwitch) tools.push('worlds');
+    if (deps.hiscores) tools.push('hiscores');
+    if (single) tools.push('singleplayer');
+    // Which tools a window came up with is otherwise only visible by looking at
+    // the rail, and a tool missing from it looks the same as a tool that drew
+    // nothing. One line at open says which of the two happened.
+    deps.log(`${tag} rail: ${tools.join(' · ')}`);
 
     /** The URL main last asked the game view to load. The offline page may return to it; nothing else may navigate. */
     let expected = worldSwitch ? worldSwitch.url : server.url;
@@ -279,6 +301,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             activeTool: placement.activeTool,
             panelAvailable: firstLegalSideOccupant(tools, placement.home) !== null,
             worlds: worldsView(),
+            hiscores: deps.hiscores?.view() ?? null,
             chat: deps.chat(),
             chatHome: placement.home,
             dockOpen: placement.dockOpen,

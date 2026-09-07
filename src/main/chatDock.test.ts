@@ -7,6 +7,14 @@ import { TOOL_IDS } from '../shared/ipc.ts';
 
 const TOOLS: readonly ToolId[] = TOOL_IDS;
 
+/**
+ * The rail a window of the fullest kind actually offers, in the order
+ * `serverWindow` builds it: chat, then the server's own tools. TOOL_IDS above
+ * is the *set* of tools and is deliberately in a different order, so the
+ * cases that turn on rail order say which of the two they mean.
+ */
+const RAIL: readonly ToolId[] = ['chat', 'worlds', 'hiscores', 'singleplayer'];
+
 const base = (over: Partial<Placement> = {}): Placement => ({
     home: 'bottom',
     dockOpen: false,
@@ -239,6 +247,8 @@ test('the panel toggle can still close an open panel even when no tool would be 
 // panel toggle is offered at all.
 
 test('the legal side occupant is the first tool in rail order, chat skipped only while it lives at the bottom', () => {
+    assert.equal(firstLegalSideOccupant(RAIL, 'bottom'), 'worlds', "the full rail's first legal occupant at the bottom is worlds, the tool right after chat");
+    assert.equal(firstLegalSideOccupant(RAIL, 'side'), 'chat', 'and chat itself once the column is its home');
     assert.equal(firstLegalSideOccupant(['chat', 'worlds'], 'bottom'), 'worlds', 'chat is skipped at the bottom and the scan carries on past it');
     assert.equal(firstLegalSideOccupant(['chat', 'worlds'], 'side'), 'chat', 'chat is legal again once the side column is its home');
     assert.equal(firstLegalSideOccupant(['chat'], 'side'), 'chat', 'one tool is enough when it is a legal one');
@@ -276,6 +286,7 @@ test('reduce does not mutate the state object it is given', () => {
     const actions: Action[] = [
         { kind: 'rail-chat' },
         { kind: 'rail-tool', tool: 'worlds' },
+        { kind: 'rail-tool', tool: 'hiscores' },
         { kind: 'rail-tool', tool: 'chat' },
         { kind: 'rail-tool', tool: 'singleplayer' },
         { kind: 'move', to: 'bottom' },

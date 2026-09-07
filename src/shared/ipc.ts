@@ -3,6 +3,7 @@ import type { ServerDef } from './catalog';
 import type { LayoutMode, TabKind } from './layout';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatHome, ChatView } from './chat';
+import type { HiscoresView } from './hiscores';
 import type { SinglePlayerView } from './singleplayer';
 
 export const IPC = {
@@ -13,6 +14,9 @@ export const IPC = {
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
     worldsSetDetail: 'zanaris:worlds-set-detail',
+    hiscoresLookup: 'zanaris:hiscores-lookup',
+    hiscoresClear: 'zanaris:hiscores-clear',
+    hiscoresOpenSite: 'zanaris:hiscores-open-site',
     chatState: 'zanaris:chat-state',
     chatGet: 'zanaris:chat-get',
     chatSend: 'zanaris:chat-send',
@@ -26,8 +30,13 @@ export const IPC = {
     singlePlayerShowLog: 'zanaris:singleplayer-show-log'
 } as const;
 
-/** The tools a window can offer. Three so far; a registry is worth it when the list grows. */
-export const TOOL_IDS = ['worlds', 'chat', 'singleplayer'] as const;
+/**
+ * The tools a window can offer. Four so far; a registry is worth it when the
+ * list grows. This is the set, not the rail order — which tools a given window
+ * offers and in what order is `serverWindow`'s to say, and the rail it builds
+ * runs chat · divider · worlds, hiscores, singleplayer.
+ */
+export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
@@ -78,6 +87,8 @@ export interface ShellState {
     panelAvailable: boolean;
     /** Null when the server has one page. */
     worlds: WorldsView | null;
+    /** Null when the server offers no hiscores — single player above all, where a one-player world has nothing to rank. */
+    hiscores: HiscoresView | null;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
     /** Where chat lives. App-wide: every window agrees. */
@@ -123,6 +134,14 @@ export interface ZanarisApi {
         switch(world: number): Promise<void>;
         /** Reloads the current world at the given detail. */
         setDetail(detail: Detail): Promise<void>;
+    };
+    hiscores: {
+        /** Looks a player up on this window's server. One request per press: these servers rate-limit. */
+        lookup(name: string): Promise<void>;
+        /** Empties the table, back to the state before anything was looked up. Keeps the name in the box. */
+        clear(): Promise<void>;
+        /** Opens the server's own hiscores page. */
+        openSite(): Promise<void>;
     };
     singlePlayer: {
         /** Asks first when the world is running, since it restarts. */

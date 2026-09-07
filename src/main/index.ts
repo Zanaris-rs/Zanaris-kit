@@ -11,6 +11,7 @@ import { ServerWindows } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
 import { installMenu, type MenuActions } from './menu';
 import { WorldsService } from './worlds/service';
+import { HiscoresService } from './hiscores/service';
 import { ChatService, offlineChat, tlsConnect } from './chat/service';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
@@ -90,6 +91,8 @@ const catalog = new Catalog(join(userData, 'servers.json'));
 const appState = new AppState(join(CAPTURE_DIR ?? userData, 'state.json'));
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
+/** One hiscores lookup per server, shared the same way, so a name looked up in one window is on the table in the others. */
+const hiscoresServices = new Map<string, HiscoresService>();
 /** One chat connection for the whole app, built at ready because its nick comes out of the profile. */
 let chat: ChatService | null = null;
 
@@ -165,12 +168,56 @@ async function fetchJson(url: string): Promise<unknown> {
     return response.json();
 }
 
+/**
+ * The same request, with the status kept rather than thrown. `fetchJson` above
+ * treats any non-2xx as a failure, which is right for a world list — there is
+ * no such thing as a useful 404 there — and wrong for a hiscores lookup, where
+ * a 404 *is* the answer: two of the three servers say "no such player" with
+ * one, and only the body tells that apart from a proxy having a bad day. So
+ * both halves come back together and the parser, which knows each server's
+ * quirks, decides what they mean.
+ *
+ * A body that is not JSON resolves as undefined rather than throwing, for the
+ * same reason: an HTML error page from something in front of the server
+ * arrives with its own status, and the service has words for that status. A
+ * throw here would replace them with a parser message no player can act on.
+ * Only a transport failure — no route, no name, no answer inside the same 8s
+ * `fetchJson` allows — rejects.
+ */
+async function fetchStatus(url: string): Promise<{ status: number; json: unknown }> {
+    const response = await net.fetch(url, { signal: AbortSignal.timeout(8_000) });
+    const json = await response.json().catch(() => undefined);
+    return { status: response.status, json };
+}
+
 function worldsServiceFor(server: ServerDef): WorldsService | null {
     if (!server.worlds) return null;
     let service = worldsServices.get(server.id);
     if (!service) {
         service = new WorldsService(server.worlds, { fetchJson, probe: probeLatency, now: Date.now });
         worldsServices.set(server.id, service);
+    }
+    return service;
+}
+
+/**
+ * One lookup per server, built on the first window that server opens and kept
+ * for the app's life, exactly as the world list above is. The subscription
+ * fans out to that server's windows and no others: a name looked up in one
+ * Lost City window fills the table in the second one, while a Zanaris window
+ * beside them is not showing this server's hiscores at all. A lookup moves no
+ * chrome, so this is pushState rather than relayout — nothing to lay out
+ * again, only new rows to draw.
+ */
+function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
+    if (!server.hiscores) return null;
+    let service = hiscoresServices.get(server.id);
+    if (!service) {
+        service = new HiscoresService(server.hiscores, { fetch: fetchStatus });
+        hiscoresServices.set(server.id, service);
+        service.subscribe(() => {
+            for (const sw of serverWindows.values()) if (sw.state().server.id === server.id) sw.pushState();
+        });
     }
     return service;
 }
@@ -225,6 +272,7 @@ const windows = new ServerWindows((spec, onClosed) => {
             confirmClose,
             position: nextPosition(),
             worlds: worldsServiceFor(spec.server),
+            hiscores: hiscoresServiceFor(spec.server),
             chat: chatView,
             chatHome: () => appState.chat().dock,
             chatDockHeight: () => appState.chat().dockHeight,
@@ -379,6 +427,49 @@ ipcMain.handle(IPC.worldsSetDetail, async (event, detail: unknown) => {
     if (!sw || !worlds || worlds.detail === detail) return;
     if (!(await confirmSwitch(sw, { kind: 'detail', to: detail, world: worlds.current }))) return;
     await sw.setDetail(detail);
+});
+
+// ── hiscores ──────────────────────────────────────────────────────────────
+//
+// Per server rather than per app, so each of these starts from the window that
+// asked and works out which server that is. A window whose server offers no
+// hiscores has no service and no tool to send these from, so every one of them
+// is a no-op there rather than an error.
+
+/** The lookup belonging to the window that sent this, or null when that server has none. */
+function hiscoresFor(sender: WebContents): HiscoresService | null {
+    const sw = windowFor(sender);
+    return sw ? hiscoresServiceFor(sw.state().server) : null;
+}
+
+/**
+ * Awaited rather than fired and forgotten. Nothing comes back over the wire —
+ * every row the panel draws arrives by pushState — so this promise resolving
+ * is the only signal the caller gets that the lookup is over, and a panel that
+ * means to stop a rate-limited server being asked twice needs one.
+ */
+ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
+    if (typeof name !== 'string') return;
+    await hiscoresFor(event.sender)?.lookup(name);
+});
+
+ipcMain.handle(IPC.hiscoresClear, event => hiscoresFor(event.sender)?.clear());
+
+/**
+ * "Full hiscores" opens the server's own page, and the plan is specific that it
+ * opens as a page tab in this window. Page tabs are not reachable from main on
+ * this branch: `TabModel.open` exists and is tested, but nothing ever calls it,
+ * there is no view for a page tab's content to draw in, and the strip's + and
+ * address row are not wired. Sending the URL to the system browser instead is a
+ * different behaviour from the one the plan asked for — it takes the user out
+ * of the kit — and that substitution is the user's call to make, not this
+ * task's. So the channel exists and answers, and says in the log what it would
+ * have opened, until page tabs land.
+ */
+ipcMain.handle(IPC.hiscoresOpenSite, event => {
+    const site = windowFor(event.sender)?.state().server.hiscores?.site ?? null;
+    if (!site) return;
+    log(`[main] full hiscores: ${site} — page tabs are not wired yet, so nothing was opened`);
 });
 
 // ── chat ──────────────────────────────────────────────────────────────────

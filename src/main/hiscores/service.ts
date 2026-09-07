@@ -2,11 +2,18 @@ import type { HiscoresDef, HiscoresStatus, HiscoresView, PlayerSkill } from '../
 import { normaliseName } from '../../shared/hiscores.ts';
 import { lookupUrl, parsePlayer, NOT_FOUND } from './sources.ts';
 
-/** Everything the service needs from outside, so it runs under node --test with fakes. */
+/**
+ * Everything the service needs from outside, so it runs under node --test with
+ * fakes. Fetching is the whole of it: unlike the world list, a lookup is not
+ * cached, refreshed on a timer or aged out, so there is nothing here for a
+ * clock to decide. `now()` was in the plan's sketch of this interface and is
+ * gone because nothing ever called it — an injection point every construction
+ * site has to satisfy and no code reads is a question for whoever finds it
+ * next, not a spare part.
+ */
 export interface HiscoresIo {
     /** Resolves for any status the server returns. Rejects only on a transport failure. */
     fetch(url: string): Promise<{ status: number; json: unknown }>;
-    now(): number;
 }
 
 const NOT_FOUND_MESSAGE = 'No hiscores entry for that name.';
