@@ -1,6 +1,7 @@
 // Pure helpers for scripts/stage-engine.mjs, kept apart so they can be tested
 // over fixtures without cloning or packing anything.
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /**
@@ -76,4 +77,27 @@ export function staticNpcs(output) {
     const matches = [...output.matchAll(/(\d+)\s*\/\s*\d+\s+static NPCs added/g)];
     if (matches.length === 0) return null;
     return Number(matches[matches.length - 1][1]);
+}
+
+/**
+ * Every *.patch in dir, sorted by name, as { name, sha256 }. The order is the
+ * order they are applied in, so it has to be the sorted one and not the
+ * directory's. A missing directory is no patches, not an error: the day Lost
+ * City merges these upstream, the directory goes away.
+ */
+export function readPatches(dir) {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+        .filter(name => name.endsWith('.patch'))
+        .sort()
+        .map(name => ({ name, sha256: createHash('sha256').update(readFileSync(join(dir, name))).digest('hex') }));
+}
+
+/**
+ * One line identifying a patch set, written beside the engine checkout and
+ * compared on the next run. An edited patch changes the digest, which throws
+ * the checkout away rather than applying the new patch on top of the old one.
+ */
+export function patchStamp(patches) {
+    return patches.map(({ name, sha256 }) => `${name} ${sha256}`).join('\n');
 }

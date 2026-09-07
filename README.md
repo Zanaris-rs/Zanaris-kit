@@ -244,9 +244,15 @@ npm run stage:engine # fetch the pinned engine and content, pack, precompile int
 npm run dist         # package this platform into release/ (stages first if needed)
 ```
 
-`engine.lock.json` pins the engine and content commits the kit carries; see
-`RELEASE.md` for how a release is cut. Everything under `engine-dist/`,
-`.engine-work/` and `release/` is build output.
+`engine.lock.json` pins the engine and content commits the kit carries — Lost
+City upstream, `LostCityRS/Engine-TS` and `LostCityRS/Content`, at the latest
+revision Lost City has adopted. Single player is that game, not a fork of it.
+The one exception is `patches/engine/`, which the stage script applies to the
+engine checkout: three backwards-compatible changes a world running on a
+player's own machine needs, on their way upstream. `patches/engine/README.md`
+says what they are and why. See `RELEASE.md` for how a release is cut.
+Everything under `engine-dist/`, `.engine-work/` and `release/` is build
+output.
 
 Single player runs from `engine-dist/` in dev, so `npm run stage:engine` has
 to have run once before it works: without it the window says "Engine not

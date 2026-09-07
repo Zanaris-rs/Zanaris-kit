@@ -68,16 +68,23 @@ What the engine needs and does not need:
 
 ```json
 {
-    "engine": { "repo": "https://github.com/Zanaris-rs/Engine-TS.git", "commit": "<sha>" },
-    "content": { "repo": "https://github.com/Zanaris-rs/Content.git", "commit": "<sha>" },
+    "engine": { "repo": "https://github.com/LostCityRS/Engine-TS.git", "commit": "<sha>" },
+    "content": { "repo": "https://github.com/LostCityRS/Content.git", "commit": "<sha>" },
+    "patches": "patches/engine",
     "revision": 274
 }
 ```
 
 HTTPS URLs, because CI clones them without a key; both repositories are
 public. `revision` is the game revision the content is, shown in the catalog
-entry. The pinned engine commit is the one the fleet runs, so the kit ships
-what the servers ship; it moves when the fleet moves, by editing this file.
+entry. `patches` names the directory of `git apply` patches the stage script
+lays over the engine checkout; see `patches/engine/README.md`.
+
+Amended 2026-09-07: the pin was the fleet's own fork, so that the kit shipped
+what the servers ship. It is now Lost City upstream, at the head of the `274`
+branch of each repository — the latest revision Lost City has adopted. A newer
+revision is the same edit: both commits and `revision`, by hand, after checking
+the patches still apply.
 
 `scripts/stage-engine.mjs` (Node 24, no arguments; `npm run stage:engine`)
 turns the pin into `engine-dist/`, gitignored:
@@ -210,8 +217,8 @@ browser. No download, no install, until builds are signed.
 
 `RELEASE.md` in the kit, the order to do it in:
 
-1. `engine.lock.json` points at the commit the fleet runs. Bump
-   `package.json` version. Commit.
+1. `engine.lock.json` points at the upstream commits to ship, and the patches
+   in `patches/engine` still apply to them. Bump `package.json` version. Commit.
 2. Dispatch `release.yml` by hand; download the three artifacts.
 3. On this Mac: mount the DMG, copy the app out, `xattr -w
    com.apple.quarantine` it if it lacks the flag, launch through Open Anyway,
@@ -441,25 +448,33 @@ AppState.
 
 ### Engine patches
 
-Three small, backwards-compatible changes on the fleet's engine branch,
-merged there, pushed, and then pinned by `engine.lock.json`. The fleet is
-unaffected: every default is today's behaviour.
+Three small, backwards-compatible changes. Amended 2026-09-07: they were
+written on the fleet's engine branch, but the kit now builds from Lost City
+upstream (see Decision 5), which has none of them, so they live in the kit as
+`patches/engine/0001-single-player-hosts-staff-level-and-shutdown.patch` and
+`scripts/stage-engine.mjs` applies them to the checkout with `git apply`. Every
+default is upstream's behaviour, so a world that sets none of them is unchanged.
 
 1. **Bind hosts.** `web.host` and `node.host` in `WorldConfig`, defaults
    `0.0.0.0`, env `WEB_HOST` and `NODE_HOST` in the legacy migration. Used by
-   `fastify.listen` in `web.ts` and `tcp.listen` in `TcpServer.ts`. The
-   management server already binds loopback.
-2. **Local staff level.** `node.localStaffLevel: number | null`, default
-   null, env `NODE_LOCAL_STAFF_LEVEL`. In `LoginThread`'s local branch (login
-   server off) the level becomes `localStaffLevel ?? (production ? 0 : 4)`,
-   which is exactly the current expression when null.
+   `fastify.listen` in `web.ts` and `tcp.listen` in `TcpServer.ts`. Upstream
+   binds the management server on `0.0.0.0` too, and it has no authentication
+   and gains the shutdown route below, so the patch moves it to loopback.
+2. **Local staff level.** `node.localStaffLevel: number`, default `-1` meaning
+   unset, env `NODE_LOCAL_STAFF_LEVEL`. In `LoginThread`'s local branch (login
+   server off) the level becomes `resolveLocalStaffLevel()`, which is exactly
+   the current expression while unset. `-1` rather than `null` because the
+   config merge is typed and fills missing keys from the defaults.
 3. **Shutdown route.** `POST /shutdown` on the management server: replies 202
    and runs the same path as SIGTERM (`World.rebootTimer(0)` behind the
    `exiting` guard, hoisted from `app.ts` into a shared function). Loopback
    only, like every management route.
 
-Each patch gets a test in the engine's `test/` (config parsing for 1 and 2,
-route for 3).
+Upstream `274` has no `test/` directory and no test script, so the patch
+carries no tests. The stage script's boot check covers 1 and 3 end to end: it
+starts the staged engine bound to loopback, asserts the world does not answer
+on a routable address, and stops it with `POST /shutdown` rather than a signal.
+2 is covered by the manual cheats check in `RELEASE.md`.
 
 ### Error handling
 
@@ -512,8 +527,15 @@ Settled on 2026-09-06:
    published by hand. The flip to public is the owner's, after a dry run.
 4. **Universal macOS build.** One download beats asking a player which chip
    they have; the size cost is the Electron binary twice.
-5. **Engine pinned to the fleet's commit** in `engine.lock.json`, moved by
-   hand.
+5. **Engine and content pinned to Lost City upstream** in `engine.lock.json`,
+   moved by hand. Amended 2026-09-07: this was the fleet's commit, so that the
+   kit shipped what the servers ship. The kit is a Lost City client and single
+   player should be vanilla Lost City, not the fleet's build. Nothing is lost
+   by it: the content fork had no commits of its own, and the engine fork's 86
+   are the fleet's stack — postgres, the login, friend and logger servers, the
+   message centre, moderation, the economy census — none of which a world with
+   those servers disabled runs. What the fork did have that single player needs
+   is the patch above, which the kit now carries itself.
 6. **Precompiled engine.** Per-file esbuild transform at stage time; tsx,
    TypeScript and esbuild dropped from the shipped tree. One
    platform-independent engine artifact, no native modules.

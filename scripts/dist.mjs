@@ -5,6 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { patchStamp, readPatches } from './stage-lib.mjs';
+
 const onWindows = process.platform === 'win32';
 const npm = onWindows ? 'npm.cmd' : 'npm';
 const run = args => execFileSync(npm, args, { stdio: 'inherit', shell: onWindows });
@@ -30,6 +32,11 @@ function stageReason() {
         const pinned = lock[part].commit;
         if (staged !== pinned) return `${part}.commit is ${staged ?? '(absent)'} in the stage, ${pinned} in engine.lock.json`;
     }
+    // The commits alone do not identify the engine: an edited patch is a different
+    // build at the same pin, and without this it would ship the old one.
+    const staged = patchStamp(version.patches ?? []);
+    const pinned = patchStamp(readPatches(lock.patches ?? 'patches/engine'));
+    if (staged !== pinned) return 'the staged engine carries different patches than patches/engine holds';
     return null;
 }
 

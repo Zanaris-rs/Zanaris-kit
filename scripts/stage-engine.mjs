@@ -5,11 +5,12 @@
 // Spec: docs/superpowers/specs/2026-09-06-packaging-and-single-player-design.md, Part 1.
 import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
+import { connect, createServer } from 'node:net';
+import { networkInterfaces } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transform } from 'esbuild';
-import { assertPack, classify, findNativeModules, hasTsUrl, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { assertPack, classify, findNativeModules, hasTsUrl, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lock = JSON.parse(readFileSync(join(root, 'engine.lock.json'), 'utf8'));
@@ -20,6 +21,10 @@ const dist = join(root, 'engine-dist');
 // The world reads these under `<build.srcDir>/maps`; everything else the packer
 // consumed is already in data/pack.
 const RUNTIME_CONTENT = ['multiway.csv', 'free2play.csv'];
+// What the kit changes in the upstream engine, and the file recording what a
+// checkout already has applied. See patches/engine/README.md.
+const patches = readPatches(join(root, lock.patches ?? 'patches/engine'));
+const PATCH_STAMP = '.kit-patches';
 const CONTENT_MAPS = join('content', 'maps');
 const onWindows = process.platform === 'win32';
 const npm = onWindows ? 'npm.cmd' : 'npm';
@@ -30,7 +35,9 @@ const started = Date.now();
 
 // ── 1. fetch ─────────────────────────────────────────────────────────────
 
-function fetchAt(repo, commit, dir) {
+function fetchAt(repo, commit, dir, applyPatches = []) {
+    const stampPath = join(dir, PATCH_STAMP);
+    const wanted = patchStamp(applyPatches);
     if (existsSync(join(dir, '.git'))) {
         // An interrupted fetch leaves .git behind with no HEAD: no head is a mismatch, so the
         // checkout is thrown away and fetched again rather than wedging every later run here.
@@ -40,8 +47,11 @@ function fetchAt(repo, commit, dir) {
         } catch {
             head = null;
         }
-        if (head === commit) {
-            log(`${relative(root, dir)} already at ${commit.slice(0, 8)}`);
+        // The patches are already applied in a fresh checkout, so re-applying them is not an
+        // option: an edited or added patch has to throw the tree away and start from the pin.
+        const applied = existsSync(stampPath) ? readFileSync(stampPath, 'utf8') : '';
+        if (head === commit && applied === wanted) {
+            log(`${relative(root, dir)} already at ${commit.slice(0, 8)}${applyPatches.length > 0 ? ' with its patches' : ''}`);
             return;
         }
         rmSync(dir, { recursive: true, force: true });
@@ -51,9 +61,18 @@ function fetchAt(repo, commit, dir) {
     run('git', ['init', '-q'], dir);
     run('git', ['fetch', '-q', '--depth', '1', repo, commit], dir);
     run('git', ['checkout', '-q', 'FETCH_HEAD'], dir);
+    for (const { name } of applyPatches) {
+        // No --3way and no fuzz: a patch that no longer fits the pin is a build that
+        // stops, not one that quietly ships an engine missing a piece of it.
+        log(`applying ${name}`);
+        run('git', ['apply', join(root, lock.patches ?? 'patches/engine', name)], dir);
+    }
+    // Only where there is something to record: an absent stamp reads as no patches,
+    // so the content checkout does not collect an empty file it has no use for.
+    if (wanted !== '') writeFileSync(stampPath, wanted);
 }
 
-fetchAt(lock.engine.repo, lock.engine.commit, engine);
+fetchAt(lock.engine.repo, lock.engine.commit, engine, patches);
 fetchAt(lock.content.repo, lock.content.commit, content);
 
 // ── 2. pack ──────────────────────────────────────────────────────────────
@@ -172,6 +191,9 @@ log('no native modules in node_modules');
 const version = {
     engine: lock.engine,
     content: lock.content,
+    // The pin alone does not say what was built: the same commits with a different
+    // patch are a different engine, and the working directory re-prepares off this.
+    patches,
     revision: lock.revision,
     built: new Date().toISOString()
 };
@@ -190,6 +212,30 @@ const freePort = () =>
         });
     });
 
+/** The first non-internal IPv4 on this machine, or null when there is none. */
+function routableAddress() {
+    for (const addresses of Object.values(networkInterfaces())) {
+        for (const address of addresses ?? []) {
+            if (address.family === 'IPv4' && !address.internal) return address.address;
+        }
+    }
+    return null;
+}
+
+/** True when something accepts a TCP connection on host:port within a second. */
+function reachable(host, port) {
+    return new Promise(resolveReachable => {
+        const socket = connect({ host, port });
+        const settle = value => {
+            socket.destroy();
+            resolveReachable(value);
+        };
+        socket.setTimeout(1000, () => settle(false));
+        socket.on('connect', () => settle(true));
+        socket.on('error', () => settle(false));
+    });
+}
+
 async function bootCheck() {
     const home = join(work, 'boot');
     rmSync(home, { recursive: true, force: true });
@@ -199,17 +245,15 @@ async function bootCheck() {
     mkdirSync(join(home, 'data', 'config'), { recursive: true });
     for (const pem of ['private.pem', 'public.pem']) cpSync(join(dist, 'data', 'config', pem), join(home, 'data', 'config', pem));
     const [web, managementPort, tcp] = await Promise.all([freePort(), freePort(), freePort()]);
-    // No bind host: this engine listens on every interface for the length of
-    // the check, because the setting that confines it to loopback arrives with
-    // the single-player engine patches. Login, friend and logger are off and
-    // the ports are ephemeral, so what is briefly reachable is one unpopulated
-    // world on a random port.
+    // The same shape the kit writes at runtime, so the check exercises the patch
+    // rather than a configuration nothing ships: loopback binds, and the world is
+    // stopped through the management route instead of a signal.
     writeFileSync(
         join(home, 'data', 'config', 'world.json'),
         JSON.stringify(
             {
-                web: { port: web, managementPort },
-                node: { id: 1, port: tcp, production: false },
+                web: { port: web, host: '127.0.0.1', managementPort },
+                node: { id: 1, port: tcp, host: '127.0.0.1', production: false },
                 login: { enabled: false },
                 friend: { enabled: false },
                 logger: { enabled: false },
@@ -242,11 +286,32 @@ async function bootCheck() {
         await new Promise(r => setTimeout(r, 250));
     }
 
+    // Bound to loopback, the world must not answer on a routable address. Only
+    // meaningful once it is up, and only where this machine has one.
+    let boundLoopbackOnly = null;
+    if (ready) {
+        const routable = routableAddress();
+        boundLoopbackOnly = routable === null ? null : !(await reachable(routable, web));
+    }
+
     if (child.exitCode === null) {
-        child.kill();
+        // POST /shutdown, not a signal: Windows has no SIGTERM, so this is the path
+        // the kit actually uses to stop a world, and the check has to prove it works.
+        let stopped = false;
+        try {
+            const res = await fetch(`http://127.0.0.1:${managementPort}/shutdown`, { method: 'POST' });
+            stopped = res.status === 202;
+        } catch {
+            // the route is missing, or the world is already gone
+        }
         const timer = setTimeout(() => child.kill('SIGKILL'), 10_000);
+        if (!stopped) child.kill();
         await exited;
         clearTimeout(timer);
+        if (ready && !stopped) {
+            throw new Error('the staged engine did not accept POST /shutdown on its management port: the single-player patch is missing or did not apply');
+        }
+        if (stopped) log('the staged engine stopped through POST /shutdown');
     }
     if (!ready) {
         throw new Error(`the staged engine did not serve /rs2.cgi within 60s; last output:\n${output.split('\n').slice(-20).join('\n')}`);
@@ -265,6 +330,11 @@ async function bootCheck() {
         throw new Error('the staged engine loaded the game map but added no static NPCs: the packed maps are empty');
     }
     log(`the staged engine loaded the game map: ${npcs} static NPCs`);
+
+    if (boundLoopbackOnly === false) {
+        throw new Error(`the staged engine answered on ${routableAddress()}:${web} while configured for 127.0.0.1: the bind-host patch is missing or did not apply`);
+    }
+    log(boundLoopbackOnly === null ? 'no routable address on this machine: the loopback bind was not checked' : 'the staged engine bound loopback only');
 }
 
 await bootCheck();
@@ -278,4 +348,4 @@ function sizeOf(dir) {
 }
 const mb = bytes => (bytes / 1048576).toFixed(1);
 log(`engine-dist: ${mb(sizeOf(dist))} MB total, ${mb(sizeOf(join(dist, 'node_modules')))} MB of it node_modules`);
-log(`done in ${Math.round((Date.now() - started) / 1000)}s: engine ${lock.engine.commit.slice(0, 8)}, content ${lock.content.commit.slice(0, 8)}, rev ${lock.revision}`);
+log(`done in ${Math.round((Date.now() - started) / 1000)}s: engine ${lock.engine.commit.slice(0, 8)}, content ${lock.content.commit.slice(0, 8)}, rev ${lock.revision}, ${patches.length} patch${patches.length === 1 ? '' : 'es'}`);

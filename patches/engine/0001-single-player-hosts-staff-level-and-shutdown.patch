@@ -1,0 +1,214 @@
+diff --git a/src/app.ts b/src/app.ts
+index 3bcdc74..91ff523 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -8,6 +8,7 @@ import World from '#/engine/World.js';
+ import TcpServer from '#/server/tcp/TcpServer.js';
+ import Environment from '#/util/Environment.js';
+ import { printError, printInfo } from '#/util/Logger.js';
++import { requestShutdown } from '#/util/Shutdown.js';
+ import { startManagementWeb, startWeb } from '#/web.js';
+ import OnDemand from '#/engine/OnDemand.js';
+ 
+@@ -44,14 +45,8 @@ await startManagementWeb();
+ register.setDefaultLabels({ nodeId: Environment.node.id });
+ collectDefaultMetrics({ register });
+ 
+-let exiting = false;
+ function safeExit() {
+-    if (exiting) {
+-        return;
+-    }
+-
+-    exiting = true;
+-    World.rebootTimer(0);
++    requestShutdown(() => World.rebootTimer(0));
+ }
+ 
+ process.on('SIGINT', safeExit);
+diff --git a/src/server/login/LoginThread.ts b/src/server/login/LoginThread.ts
+index 9cfe73a..ff5e786 100644
+--- a/src/server/login/LoginThread.ts
++++ b/src/server/login/LoginThread.ts
+@@ -3,6 +3,7 @@ import { parentPort } from 'worker_threads';
+ 
+ import { LoginClient } from '#/server/login/LoginClient.js';
+ import Environment from '#/util/Environment.js';
++import { resolveLocalStaffLevel } from '#/util/WorldConfig.js';
+ 
+ import { type GenericLoginThreadResponse } from './index.d.js';
+ import { trackLoginAttempts, trackLoginTime } from './LoginMetrics.js';
+@@ -60,11 +61,7 @@ async function handleRequests(parentPort: ParentPort, msg: any) {
+                 });
+                 stopTimer();
+             } else {
+-                let staffmodlevel = 0;
+-
+-                if (!Environment.node.production) {
+-                    staffmodlevel = 4; // dev (destructive commands)
+-                }
++                const staffmodlevel = resolveLocalStaffLevel(Environment);
+ 
+                 const profile = Environment.node.profile;
+                 if (!fs.existsSync(`data/players/${profile}`)) {
+diff --git a/src/server/tcp/TcpServer.ts b/src/server/tcp/TcpServer.ts
+index 8676413..f3b208a 100644
+--- a/src/server/tcp/TcpServer.ts
++++ b/src/server/tcp/TcpServer.ts
+@@ -67,6 +67,6 @@ export default class TcpServer {
+             });
+         });
+ 
+-        this.tcp.listen(Environment.node.port, '0.0.0.0', () => {});
++        this.tcp.listen(Environment.node.port, Environment.node.host, () => {});
+     }
+ }
+diff --git a/src/util/Shutdown.ts b/src/util/Shutdown.ts
+new file mode 100644
+index 0000000..351508e
+--- /dev/null
++++ b/src/util/Shutdown.ts
+@@ -0,0 +1,18 @@
++/**
++ * One exit path for the world, whoever asks: SIGINT, SIGTERM, or the
++ * management route a single-player host uses on Windows, where there is
++ * no signal to send. The world stops through its own reboot timer so every
++ * save is flushed; asking twice does nothing.
++ */
++let exiting = false;
++
++export function requestShutdown(stop: () => void): boolean {
++    if (exiting) return false;
++    exiting = true;
++    stop();
++    return true;
++}
++
++export function resetShutdownForTests(): void {
++    exiting = false;
++}
+diff --git a/src/util/WorldConfig.ts b/src/util/WorldConfig.ts
+index ec99e52..177159b 100644
+--- a/src/util/WorldConfig.ts
++++ b/src/util/WorldConfig.ts
+@@ -10,6 +10,7 @@ export interface WorldConfig {
+     };
+     web: {
+         port: number;
++        host: string;
+         allowedOrigin: string;
+         managementPort: number;
+     };
+@@ -19,10 +20,17 @@ export interface WorldConfig {
+     node: {
+         id: number;
+         port: number;
++        host: string;
+         members: boolean;
+         autoSubscribeMembers: boolean;
+         xpRate: number;
+         production: boolean;
++        /**
++         * Staff level given to logins when the login server is off (a dev world,
++         * or a single-player world). -1 means unset: 4 when production is off,
++         * as before, and 0 when it is on. See resolveLocalStaffLevel().
++         */
++        localStaffLevel: number;
+         minimumWealthValueEvent: number;
+         debug: boolean;
+         debugProfile: boolean;
+@@ -84,6 +92,7 @@ export function createDefaultWorldConfig(): WorldConfig {
+         },
+         web: {
+             port: process.platform === 'win32' || process.platform === 'darwin' ? 80 : 8888,
++            host: '0.0.0.0',
+             allowedOrigin: '',
+             managementPort: 8898
+         },
+@@ -93,10 +102,12 @@ export function createDefaultWorldConfig(): WorldConfig {
+         node: {
+             id: 10,
+             port: 43594,
++            host: '0.0.0.0',
+             members: true,
+             autoSubscribeMembers: true,
+             xpRate: 1,
+             production: false,
++            localStaffLevel: -1,
+             minimumWealthValueEvent: 10,
+             debug: true,
+             debugProfile: false,
+@@ -186,6 +197,12 @@ export function normalizeWorldConfig(value: unknown): WorldConfig {
+     return config;
+ }
+ 
++/** The staff level a local login gets: the explicit setting, else today's rule. */
++export function resolveLocalStaffLevel(config: WorldConfig): number {
++    if (config.node.localStaffLevel >= 0) return config.node.localStaffLevel;
++    return config.node.production ? 0 : 4;
++}
++
+ function parseLegacyEnvFile(filePath: string): Record<string, string> {
+     const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+     const env: Record<string, string> = {};
+@@ -225,6 +242,7 @@ function migrateFromLegacyEnv(defaults: WorldConfig, env: Record<string, string>
+     config.website.registration = tryParseBoolean(env.WEBSITE_REGISTRATION, config.website.registration);
+ 
+     config.web.port = tryParseInt(env.WEB_PORT, config.web.port);
++    config.web.host = tryParseString(env.WEB_HOST, config.web.host);
+     config.web.allowedOrigin = tryParseString(env.WEB_ALLOWED_ORIGIN, config.web.allowedOrigin);
+     config.web.managementPort = tryParseInt(env.WEB_MANAGEMENT_PORT, config.web.managementPort);
+ 
+@@ -232,10 +250,12 @@ function migrateFromLegacyEnv(defaults: WorldConfig, env: Record<string, string>
+ 
+     config.node.id = tryParseInt(env.NODE_ID, config.node.id);
+     config.node.port = tryParseInt(env.NODE_PORT, config.node.port);
++    config.node.host = tryParseString(env.NODE_HOST, config.node.host);
+     config.node.members = tryParseBoolean(env.NODE_MEMBERS, config.node.members);
+     config.node.autoSubscribeMembers = tryParseBoolean(env.NODE_AUTO_SUBSCRIBE_MEMBERS, config.node.autoSubscribeMembers);
+     config.node.xpRate = tryParseInt(env.NODE_XPRATE, config.node.xpRate);
+     config.node.production = tryParseBoolean(env.NODE_PRODUCTION, config.node.production);
++    config.node.localStaffLevel = tryParseInt(env.NODE_LOCAL_STAFF_LEVEL, config.node.localStaffLevel);
+     config.node.minimumWealthValueEvent = tryParseInt(env.NODE_MINIMUM_WEALTH_VALUE_EVENT, config.node.minimumWealthValueEvent);
+     config.node.debug = tryParseBoolean(env.NODE_DEBUG, config.node.debug);
+     config.node.debugProfile = tryParseBoolean(env.NODE_DEBUG_PROFILE, config.node.debugProfile);
+diff --git a/src/web.ts b/src/web.ts
+index dbc9b2c..86bd6af 100644
+--- a/src/web.ts
++++ b/src/web.ts
+@@ -20,6 +20,7 @@ import { LoggerEventType } from '#/server/logger/LoggerEventType.js';
+ import WSClientSocket from '#/server/ws/WSClientSocket.js';
+ 
+ import Environment from '#/util/Environment.js';
++import { requestShutdown } from '#/util/Shutdown.js';
+ import { tryParseInt } from '#/util/TryParse.js';
+ import { createDefaultWorldConfig, loadWorldConfig, normalizeWorldConfig, saveWorldConfig } from '#/util/WorldConfig.js';
+ 
+@@ -302,7 +303,7 @@ fastify.register(FastifyStatic, {
+ });
+ 
+ export async function startWeb() {
+-    await fastify.listen({ port: Environment.web.port, host: '0.0.0.0' });
++    await fastify.listen({ port: Environment.web.port, host: Environment.web.host });
+ }
+ 
+ // management routes
+@@ -343,6 +344,17 @@ management.put('/setup/config', async req => {
+     };
+ });
+ 
++// The same exit path as a signal, so every save is flushed. Windows has no
++// SIGTERM, so a host that supervises the world - a desktop launcher running it
++// as a child process - has no other way to stop it cleanly.
++management.post('/shutdown', async (_req, reply) => {
++    const accepted = requestShutdown(() => World.rebootTimer(0));
++    reply.status(202);
++    return { stopping: true, alreadyStopping: !accepted };
++});
++
+ export async function startManagementWeb() {
+-    await management.listen({ port: Environment.web.managementPort, host: '0.0.0.0' });
++    // Loopback only: this server has no authentication, and it can now stop the
++    // world. Reach it from elsewhere with `ssh -L 8898:localhost:8898`.
++    await management.listen({ port: Environment.web.managementPort, host: '127.0.0.1' });
+ }

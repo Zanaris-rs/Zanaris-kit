@@ -5,16 +5,22 @@ Release; publishing the draft is the last step and is done by hand. The order:
 
 ## 0. Before you tag
 
-- `engine.lock.json` points at the engine commit the fleet runs and the
-  content commit beside it. Both commits must be reachable on the public
-  repositories, or CI cannot fetch them — a commit that exists only in a local
-  checkout stages here and fails on the runner. Each of these must print a
-  line:
+- `engine.lock.json` points at the Lost City upstream commits to ship — the
+  head of the `274` branch of each repository, or of whichever revision Lost
+  City has adopted. Both must be reachable on the public repositories, or CI
+  cannot fetch them; a commit that exists only in a local checkout stages here
+  and fails on the runner. Each of these must print a line:
 
   ```sh
-  git ls-remote https://github.com/Zanaris-rs/Engine-TS.git | grep "$(node -p "require('./engine.lock.json').engine.commit")"
-  git ls-remote https://github.com/Zanaris-rs/Content.git   | grep "$(node -p "require('./engine.lock.json').content.commit")"
+  git ls-remote https://github.com/LostCityRS/Engine-TS.git | grep "$(node -p "require('./engine.lock.json').engine.commit")"
+  git ls-remote https://github.com/LostCityRS/Content.git   | grep "$(node -p "require('./engine.lock.json').content.commit")"
   ```
+- The patches in `patches/engine` still apply to that engine commit. Moving the
+  pin is the thing most likely to break them, and `npm run stage:engine` is
+  where you find out: it stops on a patch that does not fit, and its boot check
+  stops on an engine that took the patch but did not behave — a world that
+  answers on a routable address, or refuses `POST /shutdown`. Delete a patch
+  that upstream has merged rather than carrying it twice.
 - Bump `version` in `package.json`. The tag must be `v` followed by exactly
   that version; the workflow refuses anything else.
 - Commit. `git status` clean.

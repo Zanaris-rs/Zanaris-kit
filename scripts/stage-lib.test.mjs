@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertPack, classify, findNativeModules, hasTsUrl, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { assertPack, classify, findNativeModules, hasTsUrl, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'stage-lib-'));
 
@@ -84,4 +84,22 @@ test('staticNpcs reads the game map line, and says nothing when the map never lo
     assert.equal(staticNpcs('\t DEBUG\t 0/8192 static NPCs added\n'), 0);
     // A reload after the first boot must not be read as the first count.
     assert.equal(staticNpcs('1/8192 static NPCs added\n2/8192 static NPCs added\n'), 2);
+});
+
+test('readPatches lists only .patch files, in apply order, and digests them', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'patches-'));
+    writeFileSync(join(dir, '0002-b.patch'), 'two');
+    writeFileSync(join(dir, '0001-a.patch'), 'one');
+    writeFileSync(join(dir, 'README.md'), 'not a patch');
+    const patches = readPatches(dir);
+    assert.deepEqual(patches.map(p => p.name), ['0001-a.patch', '0002-b.patch']);
+    // sha256('one'), so the digest is of the file's bytes and nothing else.
+    assert.equal(patches[0].sha256, '7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed');
+    // An absent directory is no patches: the day upstream merges them it is deleted.
+    assert.deepEqual(readPatches(join(dir, 'gone')), []);
+    // An edit has to move the stamp, or the next stage applies a new patch over an old one.
+    const before = patchStamp(patches);
+    writeFileSync(join(dir, '0001-a.patch'), 'one, amended');
+    assert.notEqual(patchStamp(readPatches(dir)), before);
+    rmSync(dir, { recursive: true, force: true });
 });
