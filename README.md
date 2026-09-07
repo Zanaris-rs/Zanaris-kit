@@ -245,6 +245,22 @@ Main owns all geometry. Each server window is one full-window **shell** view
 it inside the content rect. The shell draws the strip, rail, panel and dock
 exactly where main says they are, and leaves the content rect empty.
 
+A new window opens with a content rect of 813×571: a game view of 765×535,
+the bare canvas plus the client page's own controls strip below it
+(`PAGE_CONTROLS_HEIGHT`, `src/shared/layout.ts`). The floor a window can still
+be dragged to stays the bare 765×503 canvas — `MIN_CONTENT_WIDTH`/
+`MIN_CONTENT_HEIGHT` are unchanged, so the default is just tight rather than
+loose, not a new minimum. Below that default, the client page is not ours:
+every server serves the same template, and its own `overflow: auto` around a
+`100vh` centring column can put up a vertical and a horizontal scrollbar that
+induce each other once the game view is shorter than the page's natural
+height — the bare-canvas floor, and the dock pushing the content rect below
+it while maximised, both land there. Main injects a small stylesheet into the
+game view's `dom-ready` (the kit's own offline and starting pages are left
+alone) that hides the scrollbar, swaps that `100vh` for a percentage of the
+view's own height, and centres safely — so the page clips its controls strip
+instead of ever scrolling.
+
 Opening the panel or the dock is supposed to grow the window rather than
 shrink the game underneath it, and now that both exist that has to be true on
 two axes at once: the panel costs width, the dock costs height. Rather than
