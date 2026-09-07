@@ -860,6 +860,39 @@ async function captureAndExit(dir: string): Promise<void> {
             log('[capture] chat-side skipped: no window had worlds to evict');
         }
 
+        // The Hiscores tool: unlike chat below, a lookup needs no nick, only a
+        // public GET, so this is the first capture of a working panel on this
+        // branch. One lookup per server and never more — Lost City rate-limits
+        // after a handful of requests inside a minute, and a second round trip
+        // here would spend budget this run has no use for. `granny_grunt` and
+        // `knight` are known to resolve on Lost City and Labs; Zanaris gets a
+        // plausible guess, and if it comes back notFound that panel is
+        // captured and logged exactly as honestly as a hit would be, rather
+        // than swapped for a friendlier name.
+        const HISCORES_LOOKUP: Record<string, string> = { lostcity: 'granny_grunt', zanaris: 'zezima', lostcitylabs: 'knight' };
+        for (const sw of opened) {
+            const server = sw.state().server;
+            if (!server.hiscores) continue;
+            const name = HISCORES_LOOKUP[server.id];
+            const service = name && hiscoresServiceFor(server);
+            if (!name || !service) continue;
+            // Fronted before the tool opens, as the Worlds tool is above: the
+            // panel's pixel font is only fetched once the shell paints, and
+            // until it arrives font-display: block leaves every label blank.
+            sw.window.moveTop();
+            sw.focus();
+            await wait(500);
+            showTool(sw, 'hiscores');
+            // Driven directly on the service, as switchWorld is above, rather
+            // than over IPC — there is no renderer here to send the request.
+            // The promise settles only once the lookup has left 'loading', so
+            // there is nothing here to poll for.
+            const view = await service.lookup(name);
+            await wait(500);
+            log(`[capture] ${server.id} hiscores: ${view.status} "${name}" ${view.skills.length} row(s)${view.error ? ` error: ${view.error}` : ''}`);
+            await shoot(`${server.id}-hiscores`, sw);
+        }
+
         // The chat dock: this profile has no nick — see the chat block in
         // app.whenReady, above — so chat never opens a socket here, and every
         // shot below lands on the nick prompt rather than a conversation.

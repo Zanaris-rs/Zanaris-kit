@@ -72,6 +72,26 @@ partition (`persist:server:<id>:2`) and the title "Lost City — World 5 (2)",
 so two accounts on one server never share cookies or client prefs. Slot
 numbers are reused once a window closes.
 
+**Hiscores** is the rail's other server tool, offered for the three remote
+servers only — a one-player world has nobody to rank, so single player never
+gets it. A name box and a Look up button sit above a Skill · Rank · Lvl · XP
+table; the lookup fires on submit, never on a keystroke, since Lost City
+rate-limits after a handful of requests inside a minute and typing a name
+would spend that budget before you finished it. Overall comes first and is
+picked out in gold, then whatever skills the server actually sent — Lost City
+Labs runs a later revision than 274 and returns Slayer and Farming rows 274
+never will, so the table shows exactly what a lookup handed it rather than a
+fixed list. A name nobody holds gets its own message instead of an empty
+table or a raw error, and a 429 gets the same plain rate-limiting sentence
+wherever it comes from. Lost City's raw API carries xp with one extra digit
+of precision, a genuine tenth the client keeps internally; the panel floors
+it away to match the whole numbers Zanaris and Labs already send, which is
+the one place comparing the panel against the raw API will look wrong
+without being wrong. The **Full hiscores** link at the foot opens the
+server's own page in your system browser rather than a tab in this window —
+page tabs are not built yet, so the label says where the link goes rather
+than leaving a new window to explain itself.
+
 **Single player** needs no server at all: the kit carries the Lost City engine
 and the game's files, and File > New Window For > Single player starts a world
 on this computer. There is no account and nothing to sign up for — any name
@@ -196,7 +216,7 @@ a second, which would stall any game you were not looking at.
 ## The catalog
 
 `<userData>/servers.json` (on macOS, `~/Library/Application Support/zanaris-kit/`),
-seeded on first run, one entry per server:
+seeded on first run, one entry per server, now at file version 4:
 
 
 | id | revision | worlds from | detail switch | wiki |
@@ -205,14 +225,25 @@ seeded on first run, one entry per server:
 | `zanaris` | 274 | `zanaris.rs/worlds.json`, players from each world's `world.json` | yes | losthq |
 | `lostcitylabs` | unknown, "May 2005 per Lost City Labs" | a static list, worlds 1 to 4 | no parameter found | none |
 | `singleplayer` | 274, the bundled engine | none | | losthq |
-| `local` | 289, as `engine/data/config/world.json` sets it | none | | none |
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 `{url}` and `{lowmem}`, whether detail is switchable, the default world),
 `bookmarks` for the page-tab menu that arrives next milestone (LostHQ's
-guides, the clue coordinator, the world map, markets), an optional `hiscores`
-API, the `hosts` page tabs may visit, and a wiki URL that never claims which
-revision it describes, since losthq moves on its own schedule.
+guides, the clue coordinator, the world map, markets), the `hosts` page tabs
+may visit, and a wiki URL that never claims which revision it describes, since
+losthq moves on its own schedule. The three remote entries also carry a
+`hiscores` block: a `source` — a `kind` naming which of the three lookup APIs
+it is, plus the URL for it — and a `site` the panel's "Full hiscores" link
+opens. Version 3 kept only Lost City's as a bare URL template; version 4 is
+what turned it into this shape, and what gave Zanaris and Labs one of their
+own for the first time. Single player carries no `hiscores`, since a
+one-player world has nobody to rank.
+
+A built-in server's `hiscores` is read back from the defaults above on every
+launch rather than frozen from the file on disk — the same trade single
+player's own revision already makes. It is the kit's knowledge, not something
+the add form ever offered a way to set, so hand-editing or deleting one only
+lasts until the next launch, when it comes right back.
 
 The app was called SwiftKit until the rename, and `userData` follows the
 package name, so that directory used to be `.../Application Support/swiftkit/`.
@@ -346,7 +377,6 @@ One capture run with every catalog server open at once:
 | Lost City | login screen at World 5 | "Lost City · W5 · low · 239 ms", the globe on the rail |
 | Zanaris | login screen | "Zanaris · W1 · low · N ms" |
 | Lost City Labs | login screen | "Lost City Labs · W1 · N ms", no detail since Labs has no switch |
-| Local server | offline page, `ERR_CONNECTION_REFUSED`, auto-retry | "Local server", no worlds tool |
 | Lost City, Worlds open | untouched | five worlds with region, players and latency, W5 marked in gold, the red Low detail slab pressed; mode **widen** |
 | Lost City, after choosing W1 | login screen at World 1 | "Lost City · W1 · low · 294 ms", W1 marked; title "Lost City — World 1" |
 | Lost City (2), opened after the hop | login screen at World 1, the remembered world | slot 2, `persist:server:lostcity:2` |
@@ -434,5 +464,4 @@ the reload button) is parked in `git stash`.
 4. **Shared tools.** Screenshot cropped to the canvas, timers with an AFK
    reset, notes, settings, always-on-top.
 5. **Chat.** IRC on Libera.Chat, channels under the `#04scape` prefix.
-6. **Server tools.** Hiscores, clue lookup and calculators, with the data pack
-   loader.
+6. **Server tools.** Clue lookup and calculators, with the data pack loader.
