@@ -67,7 +67,6 @@ const TOOLS: { id: ToolId; label: string; group: 'app' | 'server'; icon: ReactNo
 
 /** Highlights are lines that named you, so the count is worth carrying on the rail. */
 function unreadChat(state: ShellState): number {
-    if (!state.chat) return 0;
     return state.chat.channels.reduce((total, channel) => total + channel.highlights, 0);
 }
 
@@ -108,6 +107,7 @@ export default function Shell(): ReactNode {
                     {state.tabs.map(tab => (
                         <Tab
                             key={tab.id}
+                            role="tab"
                             label={tab.title}
                             open={tab.active}
                             after={tab.kind === 'game' ? <span className="shrink-0 text-[12px] text-faint">{revision}</span> : null}
@@ -131,7 +131,7 @@ export default function Shell(): ReactNode {
 
             {rects.panel && (
                 <aside style={{ ...at(rects.panel), borderRight: 'none' }} className="tile flex flex-col">
-                    {active === 'chat' && state.chat ? (
+                    {active === 'chat' ? (
                         /* The panel is the side, so chat drawn in it is chat at home on the side. */
                         <Chat view={state.chat} home="side" />
                     ) : active === 'worlds' && state.worlds ? (

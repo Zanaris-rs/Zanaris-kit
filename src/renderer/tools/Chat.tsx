@@ -134,18 +134,18 @@ function MoveControl({ home, className = '' }: { home: ChatHome; className?: str
 function DockHeader({ view }: { view: ChatView }): ReactNode {
     return (
         <div className="flex items-center gap-[5px] px-1.5 py-[3px]">
-            <div role="tablist" aria-label="Channels" className="flex min-w-0 items-center gap-[5px] overflow-hidden">
+            {/* A group of controls rather than a tablist, and every room acts when clicked, including the open one — see `role` in tab.tsx. */}
+            <div role="group" aria-label="Channels" className="flex min-w-0 items-center gap-[5px] overflow-hidden">
                 {view.channels.map(channel => {
                     const on = channel.name === view.active;
                     return (
                         <Tab
                             key={channel.name}
+                            role="button"
                             label={channelLabel(channel.name)}
                             title={channel.name}
                             open={on}
-                            onSelect={() => {
-                                if (!on) void window.zanaris.chat.select(channel.name);
-                            }}
+                            onSelect={() => void window.zanaris.chat.select(channel.name)}
                             after={!on && channel.unread > 0 ? <span className="shrink-0 text-gold">{channel.unread}</span> : null}
                         />
                     );

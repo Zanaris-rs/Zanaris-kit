@@ -87,7 +87,7 @@ export interface ZanarisApi {
         /** Null when the calling view is not a server window's shell. */
         get(): Promise<ShellState | null>;
         togglePanel(): Promise<void>;
-        /** The rail's tools: opens the panel on one, closing it again when that tool is the one already on show. Null only closes. Chat is the one main routes rather than places — while it lives at the bottom, asking for it opens or closes the dock and the panel is untouched — so the rail has one gesture and one channel for it instead of two. */
+        /** Opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. Chat is routed by where it lives: while it is at the bottom, asking for it opens or closes the dock instead. */
         selectTool(id: ToolId | null): Promise<void>;
         onState(cb: (state: ShellState) => void): () => void;
     };
