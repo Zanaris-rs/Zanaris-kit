@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState, ToolId } from '../shared/ipc';
-import type { LayoutMode } from '../shared/layout';
+import { DOCK_HEIGHT_MIN, type LayoutMode } from '../shared/layout';
 import { Chat as ChatIcon, Globe, Hearth, PanelToggle } from './icons';
 import Tab from './tab';
 import Chat from './tools/Chat';
@@ -47,6 +47,134 @@ const MODE_NOTE: Record<'x' | 'y', Record<LayoutMode, string | null>> = {
 /** Both notes, in axis order, and neither when the window fitted its chrome by growing. */
 function modeNotes(mode: { x: LayoutMode; y: LayoutMode }): string[] {
     return [MODE_NOTE.x[mode.x], MODE_NOTE.y[mode.y]].filter((note): note is string => note !== null);
+}
+
+/** A fine nudge, and Shift for the coarse one — a stroke of a drag in one press. */
+const DOCK_STEP = 10;
+const DOCK_STEP_COARSE = 50;
+
+/**
+ * The dock's top edge, draggable and, for anyone without a pointer, a
+ * separator that answers arrow keys. Both paths call the same
+ * `setDockHeight`, and neither clamps: main owns the range (`DOCK_HEIGHT_MIN`
+ * up to half the work area), and restating it here would just be a second
+ * copy of it to keep in step. A request past either end is not wrong, it just
+ * does not move the number main sends back — the same way a drag past the
+ * floor or the ceiling simply stops the strip rather than erroring.
+ *
+ * `requested` tracks the height this component last asked for, confirmed or
+ * not: a drag anchors its delta to it rather than to `height` so a resize
+ * begun before the previous request's reply lands still starts from the right
+ * place, and repeated key presses add up instead of all reading the same
+ * stale prop. The effect below folds main's confirmed value back in whenever
+ * it changes, so an external correction — the clamp, or another window's own
+ * edit of the shared height — is what wins once it arrives.
+ */
+function DockGrip({ height }: { height: number }): ReactNode {
+    const requested = useRef(height);
+    useEffect(() => {
+        requested.current = height;
+    }, [height]);
+
+    const drag = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+    /* The id of a scheduled frame, or null when none is pending. */
+    const frame = useRef<number | null>(null);
+
+    const send = (px: number): void => {
+        requested.current = px;
+        void window.zanaris.chat.setDockHeight(px);
+    };
+
+    const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+        if (event.button !== 0) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: requested.current };
+    };
+
+    /*
+     * The OS can report pointer movement far faster than the shell repaints,
+     * and each repaint is a full setContentBounds — so only the freshest
+     * position survives to the next frame. A frame already pending is left
+     * alone and just has its target replaced; a fresh one is scheduled only
+     * once nothing is in flight. That is what keeps a fast drag from queuing
+     * a pile of setDockHeight calls behind the one that already supersedes
+     * them all.
+     */
+    const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
+        const d = drag.current;
+        if (!d || event.pointerId !== d.pointerId) return;
+        // Up is taller: the strip moves opposite to the screen's y axis.
+        requested.current = d.startHeight + (d.startY - event.clientY);
+        if (frame.current === null) {
+            frame.current = requestAnimationFrame(() => {
+                frame.current = null;
+                void window.zanaris.chat.setDockHeight(requested.current);
+            });
+        }
+    };
+
+    const endDrag = (event: PointerEvent<HTMLDivElement>): void => {
+        if (!drag.current || event.pointerId !== drag.current.pointerId) return;
+        drag.current = null;
+        if (frame.current !== null) {
+            cancelAnimationFrame(frame.current);
+            frame.current = null;
+        }
+        // The frame just cancelled may never have run, so the release position
+        // is sent once here rather than left to whichever pointermove queued it —
+        // otherwise the last pixel of a drag could go unsent and unpersisted.
+        void window.zanaris.chat.setDockHeight(requested.current);
+    };
+
+    const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        switch (event.key) {
+            case 'ArrowUp':
+                send(requested.current + (event.shiftKey ? DOCK_STEP_COARSE : DOCK_STEP));
+                break;
+            case 'ArrowDown':
+                send(requested.current - (event.shiftKey ? DOCK_STEP_COARSE : DOCK_STEP));
+                break;
+            case 'Home':
+                send(DOCK_HEIGHT_MIN);
+                break;
+            case 'End':
+                // No ceiling to send here either: this only has to be bigger than
+                // any real one, and main's own clamp decides where it lands.
+                send(Number.MAX_SAFE_INTEGER);
+                break;
+            default:
+                return;
+        }
+        event.preventDefault();
+    };
+
+    /*
+     * The true ceiling is workArea.height / 2 on whichever display the window
+     * is on, and only main can see that display. window.screen is the same
+     * idea from the renderer's own side of the glass — close enough for a
+     * screen reader's announcement without a round trip to ask main, or a
+     * second formula that could drift from its one.
+     */
+    const announcedMax = Math.round(window.screen.availHeight / 2);
+
+    return (
+        <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize chat"
+            aria-valuenow={height}
+            aria-valuemin={DOCK_HEIGHT_MIN}
+            aria-valuemax={announcedMax}
+            tabIndex={0}
+            className="dock-grip absolute inset-x-0 top-0 h-1"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onLostPointerCapture={endDrag}
+            onKeyDown={onKeyDown}
+        />
+    );
 }
 
 /**
@@ -173,6 +301,7 @@ export default function Shell(): ReactNode {
              */}
             {rects.dock && state.chatHome === 'bottom' && (
                 <section style={at(rects.dock)} className="dock flex flex-col" aria-label="Chat">
+                    <DockGrip height={state.dockHeight} />
                     <Chat view={state.chat} home="bottom" />
                 </section>
             )}

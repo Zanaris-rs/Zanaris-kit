@@ -271,6 +271,25 @@ input {
     box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.28);
 }
 
+/*
+ * The dock's resize grip. It sits exactly on the groove `.dock`'s own
+ * box-shadow already draws along the top, inside the border rather than
+ * before it, and paints nothing of its own at rest — the groove alone reads
+ * as the seam. Hover and focus are what turn it into a control: a highlight
+ * that was there all the time would be a second line drawn across the window
+ * on every server the dock ever opens on, whether anyone meant to grab it or
+ * not.
+ */
+.dock-grip {
+    cursor: ns-resize;
+    /* A custom pointer drag, not a scroll or a browser gesture. */
+    touch-action: none;
+}
+.dock-grip:hover,
+.dock-grip:focus-visible {
+    background: rgba(255, 255, 255, 0.16);
+}
+
 /* A divider scored into the rail: the cut, then a hairline of light under it. */
 .sep {
     width: 32px;
