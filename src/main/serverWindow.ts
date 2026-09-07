@@ -1,7 +1,7 @@
 import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { ADDRESS_HEIGHT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
+import { ADDRESS_HEIGHT, DOCK_HEIGHT_DEFAULT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
@@ -122,7 +122,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     let currentLatency: number | null = null;
     let panelOpen = false;
     let activeTool: ToolId | null = null;
-    let mode: LayoutMode = 'widen';
+    let mode: { x: LayoutMode; y: LayoutMode } = { x: 'widen', y: 'widen' };
     let rects: Rects = splitWindow(DEFAULT_CONTENT.width + RAIL_WIDTH, STRIP_HEIGHT + DEFAULT_CONTENT.height, false, 0, 'game');
     let contentWidth = DEFAULT_CONTENT.width;
     let contentHeight = DEFAULT_CONTENT.height;
@@ -211,6 +211,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             activeTool,
             worlds: worldsView(),
             chat: deps.chat(),
+            // Fixed at the shipped default until Task 4 (the dock toggle) and
+            // Task 5 (the home switch) read and update these from AppState.
+            chatHome: 'bottom',
+            dockOpen: false,
+            dockHeight: DOCK_HEIGHT_DEFAULT,
             singlePlayer: single?.view() ?? null
         };
     }
@@ -241,10 +246,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             canResize: !win.isMaximized() && !win.isFullScreen()
         });
 
-        // Only the x axis is surfaced today: there is no dock yet, so mode.y is
-        // always 'widen' and ShellState (and Shell.tsx's note) stay single-axis
-        // until the dock lands.
-        mode = result.mode.x;
+        mode = result.mode;
         rects = result;
         const w = result.window;
         if (w.x !== current.x || w.y !== current.y || w.width !== current.width || w.height !== current.height) {

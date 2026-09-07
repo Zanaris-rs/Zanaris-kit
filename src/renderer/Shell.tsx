@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Rect, ShellState, TabInfo, ToolId } from '../shared/ipc';
+import type { LayoutMode } from '../shared/layout';
 import { Chat as ChatIcon, Globe, Hearth, PanelToggle } from './icons';
 import Chat from './tools/Chat';
 import SinglePlayer from './tools/SinglePlayer';
@@ -40,7 +41,7 @@ function Tab({ tab, revision }: { tab: TabInfo; revision: string }): ReactNode {
     );
 }
 
-const MODE_NOTE: Record<ShellState['mode'], string | null> = {
+const MODE_NOTE: Record<LayoutMode, string | null> = {
     widen: null,
     shift: 'The window moved left to make room.',
     push: 'No room to widen, so the game area is narrower than the canvas and the page scales it down.'
@@ -90,7 +91,7 @@ export default function Shell(): ReactNode {
     if (!state) return <div className="h-full bg-ink" />;
 
     const { rects } = state;
-    const note = MODE_NOTE[state.mode];
+    const note = MODE_NOTE[state.mode.x];
     const tools = TOOLS.filter(t => state.tools.includes(t.id));
     const active = state.panelOpen ? state.activeTool : null;
     const unread = unreadChat(state);

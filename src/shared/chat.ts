@@ -6,7 +6,12 @@
  * open, and closing a server window does not close the conversation.
  */
 
+import { DOCK_HEIGHT_DEFAULT } from './layout.ts';
+
 export type ChatStatus = 'offline' | 'connecting' | 'registering' | 'online' | 'reconnecting';
+
+/** Where chat lives: the bottom dock, or the side column with the other tools. */
+export type ChatHome = 'bottom' | 'side';
 
 /** Where server notices and errors go, since they belong to no channel. */
 export const SERVER_LOG = '*';
@@ -51,9 +56,11 @@ export interface ChatSettings {
     nick: string | null;
     server: string;
     port: number;
+    dock: ChatHome;
+    dockHeight: number;
 }
 
-export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.libera.chat', port: 6697 };
+export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.libera.chat', port: 6697, dock: 'bottom', dockHeight: DOCK_HEIGHT_DEFAULT };
 
 /** Everyone shares this one, whatever server their windows are on. */
 export const LOBBY = '#04scape';

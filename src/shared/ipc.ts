@@ -2,7 +2,7 @@
 import type { ServerDef } from './catalog';
 import type { LayoutMode, TabKind } from './layout';
 import type { Detail, WorldsView } from './worlds';
-import type { ChatView } from './chat';
+import type { ChatHome, ChatView } from './chat';
 import type { SinglePlayerView } from './singleplayer';
 
 export const IPC = {
@@ -10,6 +10,7 @@ export const IPC = {
     shellGet: 'zanaris:shell-get',
     shellTogglePanel: 'zanaris:shell-toggle-panel',
     shellSelectTool: 'zanaris:shell-select-tool',
+    shellToggleDock: 'zanaris:shell-toggle-dock',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
     worldsSetDetail: 'zanaris:worlds-set-detail',
@@ -18,6 +19,8 @@ export const IPC = {
     chatSend: 'zanaris:chat-send',
     chatSelect: 'zanaris:chat-select',
     chatSetNick: 'zanaris:chat-set-nick',
+    chatSetHome: 'zanaris:chat-set-home',
+    chatSetDockHeight: 'zanaris:chat-set-dock-height',
     singlePlayerSetCheats: 'zanaris:singleplayer-set-cheats',
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
@@ -51,7 +54,8 @@ export interface ShellState {
     title: string;
     tabs: TabInfo[];
     panelOpen: boolean;
-    mode: LayoutMode;
+    /** How each axis accommodated its chrome. The window moving and the game shrinking are different sentences, so both axes are kept rather than collapsed into one. */
+    mode: { x: LayoutMode; y: LayoutMode };
     /** Where main placed things, relative to the window's content area, so the shell draws exactly there. */
     rects: {
         strip: Rect;
@@ -59,6 +63,8 @@ export interface ShellState {
         content: Rect;
         panel: Rect | null;
         rail: Rect;
+        /** Only while the dock is open. Null while chat's home is the side column. */
+        dock: Rect | null;
     };
     /** Tools this window offers, in rail order. */
     tools: ToolId[];
@@ -67,6 +73,12 @@ export interface ShellState {
     worlds: WorldsView | null;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
+    /** Where chat lives. App-wide: every window agrees. */
+    chatHome: ChatHome;
+    /** Whether the bottom dock is open. Meaningful only while chatHome is 'bottom'. */
+    dockOpen: boolean;
+    /** The remembered dock height in px, whether or not the dock is open. */
+    dockHeight: number;
     /** The world this computer runs; null for every other kind of window. */
     singlePlayer: SinglePlayerView | null;
 }
@@ -78,6 +90,8 @@ export interface ZanarisApi {
         togglePanel(): Promise<void>;
         /** Opens the panel on a tool; null closes it. */
         selectTool(id: ToolId | null): Promise<void>;
+        /** Opens or closes the bottom dock. Only meaningful while chat's home is the dock. */
+        toggleDock(): Promise<void>;
         onState(cb: (state: ShellState) => void): () => void;
     };
     chat: {
@@ -87,6 +101,10 @@ export interface ZanarisApi {
         select(channel: string): Promise<void>;
         /** Chooses the nick and connects. */
         setNick(nick: string): Promise<void>;
+        /** Moves chat between the bottom dock and the side column. App-wide. */
+        setHome(home: ChatHome): Promise<void>;
+        /** Sets the dock's height in px. Clamped by main. */
+        setDockHeight(px: number): Promise<void>;
     };
     worlds: {
         refresh(): Promise<void>;

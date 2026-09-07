@@ -13,6 +13,7 @@ const api: ZanarisApi = {
         get: () => ipcRenderer.invoke(IPC.shellGet),
         togglePanel: () => ipcRenderer.invoke(IPC.shellTogglePanel),
         selectTool: id => ipcRenderer.invoke(IPC.shellSelectTool, id),
+        toggleDock: () => ipcRenderer.invoke(IPC.shellToggleDock),
         onState: cb => {
             const handler = (_event: unknown, state: ShellState): void => cb(state);
             ipcRenderer.on(IPC.shellState, handler);
@@ -24,7 +25,9 @@ const api: ZanarisApi = {
     chat: {
         send: text => ipcRenderer.invoke(IPC.chatSend, text),
         select: channel => ipcRenderer.invoke(IPC.chatSelect, channel),
-        setNick: nick => ipcRenderer.invoke(IPC.chatSetNick, nick)
+        setNick: nick => ipcRenderer.invoke(IPC.chatSetNick, nick),
+        setHome: home => ipcRenderer.invoke(IPC.chatSetHome, home),
+        setDockHeight: px => ipcRenderer.invoke(IPC.chatSetDockHeight, px)
     },
     worlds: {
         refresh: () => ipcRenderer.invoke(IPC.worldsRefresh),

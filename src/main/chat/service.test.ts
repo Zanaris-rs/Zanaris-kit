@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ChatService, offlineChat, splitLines, wantedChannels, type ChatIo, type ChatSocket, type SocketHandlers } from './service.ts';
 import { LOBBY, type ChatSettings } from '../../shared/chat.ts';
 
-const SETTINGS: ChatSettings = { nick: null, server: 'irc.libera.chat', port: 6697 };
+const SETTINGS: ChatSettings = { nick: null, server: 'irc.libera.chat', port: 6697, dock: 'bottom', dockHeight: 200 };
 
 // ── the stream ────────────────────────────────────────────────────────────
 //

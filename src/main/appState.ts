@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
+import { DOCK_HEIGHT_MIN } from '../shared/layout.ts';
 
 interface StateFile {
     version: 1;
@@ -39,6 +40,11 @@ function readChat(x: unknown): ChatSettings {
     if (c.nick === null || (typeof c.nick === 'string' && c.nick !== '')) chat.nick = c.nick;
     if (typeof c.server === 'string' && c.server !== '') chat.server = c.server;
     if (typeof c.port === 'number' && Number.isInteger(c.port) && c.port >= 1 && c.port <= 65535) chat.port = c.port;
+    if (c.dock === 'bottom' || c.dock === 'side') chat.dock = c.dock;
+    // 2000 is a sanity rail against a hand-edited file, not the real ceiling: the
+    // true maximum depends on the display's work area and is enforced at drag
+    // time, where a screen is actually known. Nothing here has one to consult.
+    if (typeof c.dockHeight === 'number' && Number.isInteger(c.dockHeight)) chat.dockHeight = Math.min(Math.max(c.dockHeight, DOCK_HEIGHT_MIN), 2000);
     return chat;
 }
 
