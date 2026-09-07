@@ -30,6 +30,12 @@ const api: ZanarisApi = {
         refresh: () => ipcRenderer.invoke(IPC.worldsRefresh),
         switch: world => ipcRenderer.invoke(IPC.worldsSwitch, world),
         setDetail: detail => ipcRenderer.invoke(IPC.worldsSetDetail, detail)
+    },
+    singlePlayer: {
+        setCheats: on => ipcRenderer.invoke(IPC.singlePlayerSetCheats, on),
+        retry: () => ipcRenderer.invoke(IPC.singlePlayerRetry),
+        openSaves: () => ipcRenderer.invoke(IPC.singlePlayerOpenSaves),
+        showLog: () => ipcRenderer.invoke(IPC.singlePlayerShowLog)
     }
 };
 

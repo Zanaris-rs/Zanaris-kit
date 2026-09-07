@@ -179,7 +179,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             tools,
             activeTool,
             worlds: worldsView(),
-            chat: deps.chat()
+            chat: deps.chat(),
+            singlePlayer: null
         };
     }
 
