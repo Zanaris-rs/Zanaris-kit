@@ -8,12 +8,21 @@ export interface WorldPorts {
 
 export const LOG_TAIL_LINES = 200;
 
+/** The engine's content directory, relative to the world's working directory. */
+export const CONTENT_DIR = 'content';
+
 /**
  * The world.json the kit writes before every start. Everything the engine
  * needs to be a private world: loopback binds, no login, friend or logger
- * server, live reload off, a content directory that does not exist so the
- * engine neither watches nor serves it. Production stays off; cheats is the
- * staff level and nothing else. The engine fills any key omitted here.
+ * server, live reload off. Production stays off; cheats is the staff level and
+ * nothing else. The engine fills any key omitted here.
+ *
+ * srcDir names the trimmed content directory the kit ships and copies into the
+ * working directory - the maps CSVs and nothing else. It cannot be a path that
+ * does not exist: the engine's GameMap.init() returns at its first line when
+ * <srcDir>/maps is absent, and a world with no npcs, objs, locs or collision
+ * still boots and reports itself ready. Live reload is off, so nothing watches
+ * it; the /content route serves those two files on loopback.
  */
 export function worldJson(opts: { ports: WorldPorts; cheats: boolean; revision: number }): string {
     const config = {
@@ -38,7 +47,7 @@ export function worldJson(opts: { ports: WorldPorts; cheats: boolean; revision: 
         friend: { enabled: false },
         logger: { enabled: false },
         db: { backend: 'sqlite' },
-        build: { startup: false, verify: false, liveReload: false, srcDir: 'content-absent' }
+        build: { startup: false, verify: false, liveReload: false, srcDir: CONTENT_DIR }
     };
     return `${JSON.stringify(config, null, 4)}\n`;
 }

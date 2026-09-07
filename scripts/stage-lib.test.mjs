@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertPack, classify, findNativeModules, hasTsUrl, rewriteWorkerUrls } from './stage-lib.mjs';
+import { assertPack, classify, findNativeModules, hasTsUrl, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'stage-lib-'));
 
@@ -73,4 +73,15 @@ test('findNativeModules lists every .node file, relative, and nothing else', () 
     writeFileSync(join(dir, 'fsevents', 'index.js'), '');
     assert.deepEqual(findNativeModules(dir).sort(), ['@prisma/engines/libquery_engine.dylib.node', 'fsevents/fsevents.node']);
     assert.deepEqual(findNativeModules(scratch()), []);
+});
+
+test('staticNpcs reads the game map line, and says nothing when the map never loaded', () => {
+    const ready = '07/09/2026 13:04:17\t INFO\t Starting world\n07/09/2026 13:04:17\t DEBUG\t Loaded 10940 scripts.\n';
+    // What 0.1.0 shipped: boots, serves, reports ready, and is empty.
+    assert.equal(staticNpcs(`${ready}07/09/2026 13:04:17\t INFO\t World ready: Visit http://localhost:54629/rs2.cgi\n`), null);
+    assert.equal(staticNpcs(`${ready}\t DEBUG\t Loading game map\n\t DEBUG\t 3491/8192 static NPCs added\n`), 3491);
+    // A map that loaded but spawned nothing is a broken pack, not a healthy world.
+    assert.equal(staticNpcs('\t DEBUG\t 0/8192 static NPCs added\n'), 0);
+    // A reload after the first boot must not be read as the first count.
+    assert.equal(staticNpcs('1/8192 static NPCs added\n2/8192 static NPCs added\n'), 2);
 });

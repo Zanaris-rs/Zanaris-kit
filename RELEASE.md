@@ -37,6 +37,10 @@ beside `src` (on macOS, inside the bundle at `Zanaris Kit.app/Contents/Resources
   Then File > New Window For > Single player: wait for the login screen, log
   in as a new name, log out, and confirm the `.sav` appeared under
   `~/Library/Application Support/zanaris-kit/singleplayer/data/players/main/`.
+  **Look for other characters.** A world with no game map logs in and plays
+  exactly like a populated one, minus every NPC, ground item and door; 0.1.0
+  shipped that way. The tutorial guide should be standing in front of you, and
+  `world.log` should carry `Loading game map` and `N/… static NPCs added`.
   Turn Cheats on in the Single player tool, accept the restart, log in again
   and confirm `::tele 0,50,50,22,18` moves the character to 3222, 3218. The
   engine wants one comma-separated argument, `level,mapx,mapz,localx,localz`;

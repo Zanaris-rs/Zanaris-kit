@@ -63,7 +63,10 @@ const engine = packagedEngine();
 const required = [
     join('src', 'app.js'),
     join('node_modules', 'fastify', 'package.json'),
-    join('data', 'pack', '.cache', 'maps-server.zip')
+    join('data', 'pack', '.cache', 'maps-server.zip'),
+    // Without this the world boots, serves the game and is empty: GameMap.init()
+    // returns before loading a single map square when <srcDir>/maps is missing.
+    join('content', 'maps', 'multiway.csv')
 ].map(path => join(engine, path));
 const missing = required.filter(path => !existsSync(path));
 if (missing.length > 0) {

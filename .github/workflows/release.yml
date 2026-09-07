@@ -85,7 +85,7 @@ jobs:
         run: |
           engine=$(find release -type d -path '*/engine' -name engine | grep -E '(Resources|resources)/engine$' | head -1)
           [ -n "$engine" ] || { echo "no packaged engine directory under release/"; exit 1; }
-          for f in src/app.js node_modules/fastify/package.json data/pack/.cache/maps-server.zip; do
+          for f in src/app.js node_modules/fastify/package.json data/pack/.cache/maps-server.zip content/maps/multiway.csv; do
             [ -f "$engine/$f" ] || { echo "packaged engine is incomplete: missing $f under $engine"; exit 1; }
           done
           echo "packaged engine complete at $engine"

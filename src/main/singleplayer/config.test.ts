@@ -22,7 +22,10 @@ test('worldJson binds loopback, disables the servers, and sets the staff level f
     assert.equal(off.logger.enabled, false);
     assert.equal(off.build.liveReload, false);
     assert.equal(off.build.startup, false);
-    assert.equal(off.build.srcDir, 'content-absent');
+    // The engine's GameMap.init() returns without loading anything - no npcs, objs,
+    // locs or collision - when <srcDir>/maps is absent, so this has to be a real
+    // directory the kit ships and copies into the working directory.
+    assert.equal(off.build.srcDir, 'content');
     assert.equal(off.easyStartup, false);
     assert.equal(off.account.autoCreate, false);
     const on = JSON.parse(worldJson({ ports, cheats: true, revision: 274 }));

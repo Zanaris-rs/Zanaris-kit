@@ -122,10 +122,12 @@ test('the first acquire prepares the working directory, writes world.json, spawn
     assert.equal(service.view().status, 'ready');
     assert.equal(service.view().port, 40001);
     assert.deepEqual(service.view().version, { engine: 'e1', content: 'c1', revision: 274, built: '2026-09-06T00:00:00.000Z' });
-    // the four trees were copied through a staging directory and renamed into place
-    assert.equal(h.copies.length, 4);
+    // the asset trees were copied through a staging directory and renamed into place.
+    // content/ carries the maps CSVs the engine's GameMap.init() needs to load the
+    // world at all, so it is an asset like the pack, not an optional extra.
+    assert.equal(h.copies.length, 5);
     assert.ok(h.copies.every(([from, to]) => from.startsWith('/res/') && to.startsWith('/home/.staging/')));
-    for (const tree of ['/home/data/pack', '/home/data/raw', '/home/public', '/home/view']) assert.ok(h.dirs.has(tree), tree);
+    for (const tree of ['/home/data/pack', '/home/data/raw', '/home/public', '/home/view', '/home/content']) assert.ok(h.dirs.has(tree), tree);
     assert.equal(h.files.get('/home/data/config/private.pem'), 'priv');
     assert.equal(h.files.get('/home/engine.stamp'), VERSION);
     const world = JSON.parse(h.files.get('/home/data/config/world.json')!);

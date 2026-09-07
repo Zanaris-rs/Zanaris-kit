@@ -63,3 +63,17 @@ export function findNativeModules(dir) {
     walk(dir);
     return found;
 }
+
+/**
+ * The static NPC count from a booted world's output, or null when the world never
+ * loaded a game map. GameMap.init() prints "<added>/<max> static NPCs added" as its
+ * last act; when `<build.srcDir>/maps` is missing it returns before any of that, and
+ * the world still serves /rs2.cgi and reports itself ready with nothing in it.
+ *
+ * The last match wins, so a re-read of the map cannot be mistaken for the first.
+ */
+export function staticNpcs(output) {
+    const matches = [...output.matchAll(/(\d+)\s*\/\s*\d+\s+static NPCs added/g)];
+    if (matches.length === 0) return null;
+    return Number(matches[matches.length - 1][1]);
+}

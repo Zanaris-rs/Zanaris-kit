@@ -1,5 +1,5 @@
 import type { SinglePlayerStatus, SinglePlayerVersion, SinglePlayerView } from '../../shared/singleplayer.ts';
-import { gameUrl, LOG_TAIL_LINES, parseVersion, stampMatches, worldJson, type WorldPorts } from './config.ts';
+import { CONTENT_DIR, gameUrl, LOG_TAIL_LINES, parseVersion, stampMatches, worldJson, type WorldPorts } from './config.ts';
 
 export interface WorldProcess {
     /** Resolves with the exit code, null when killed, once the process is gone. */
@@ -43,7 +43,7 @@ export interface SinglePlayerDeps {
     log(msg: string): void;
 }
 
-const ASSET_TREES = ['data/pack', 'data/raw', 'public', 'view'];
+const ASSET_TREES = ['data/pack', 'data/raw', 'public', 'view', CONTENT_DIR];
 /** One name, not a timestamped one: a copy that died leaves this behind, and the next prepare removes it. */
 const STAGING_DIR = '.staging';
 const PEMS = ['data/config/private.pem', 'data/config/public.pem'];

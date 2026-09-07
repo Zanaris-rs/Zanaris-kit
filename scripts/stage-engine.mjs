@@ -9,7 +9,7 @@ import { createServer } from 'node:net';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transform } from 'esbuild';
-import { assertPack, classify, findNativeModules, hasTsUrl, rewriteWorkerUrls } from './stage-lib.mjs';
+import { assertPack, classify, findNativeModules, hasTsUrl, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lock = JSON.parse(readFileSync(join(root, 'engine.lock.json'), 'utf8'));
@@ -17,6 +17,10 @@ const work = join(root, '.engine-work');
 const engine = join(work, 'engine');
 const content = join(work, 'content');
 const dist = join(root, 'engine-dist');
+// The world reads these under `<build.srcDir>/maps`; everything else the packer
+// consumed is already in data/pack.
+const RUNTIME_CONTENT = ['multiway.csv', 'free2play.csv'];
+const CONTENT_MAPS = join('content', 'maps');
 const onWindows = process.platform === 'win32';
 const npm = onWindows ? 'npm.cmd' : 'npm';
 
@@ -132,6 +136,15 @@ mkdirSync(join(dist, 'data', 'config'), { recursive: true });
 for (const pem of ['private.pem', 'public.pem']) cpSync(join(engine, 'data', 'config', pem), join(dist, 'data', 'config', pem));
 for (const file of ['package.json', 'package-lock.json']) cpSync(join(engine, file), join(dist, file));
 
+// The only part of the content the engine reads at *run* time. GameMap.init()
+// returns at its first line when `<build.srcDir>/maps` is absent - no npcs, objs,
+// locs or collision, in a world that still boots and says it is ready - and then
+// reads these two files before unpacking data/pack/.cache/maps-server.zip. The
+// rest of the content is already baked into the pack, so this is all that ships.
+mkdirSync(join(dist, CONTENT_MAPS), { recursive: true });
+for (const csv of RUNTIME_CONTENT) cpSync(join(content, 'maps', csv), join(dist, CONTENT_MAPS, csv));
+log(`content: ${RUNTIME_CONTENT.join(', ')} for the game map`);
+
 // ── 6. production node_modules, no compilers, no native binaries ─────────
 
 log('npm ci --omit=dev in engine-dist (--ignore-scripts: the engine\'s prepare runs husky)');
@@ -180,7 +193,7 @@ const freePort = () =>
 async function bootCheck() {
     const home = join(work, 'boot');
     rmSync(home, { recursive: true, force: true });
-    for (const tree of [join('data', 'pack'), join('data', 'raw'), 'public', 'view']) {
+    for (const tree of [join('data', 'pack'), join('data', 'raw'), 'public', 'view', 'content']) {
         cpSync(join(dist, tree), join(home, tree), { recursive: true });
     }
     mkdirSync(join(home, 'data', 'config'), { recursive: true });
@@ -200,7 +213,7 @@ async function bootCheck() {
                 login: { enabled: false },
                 friend: { enabled: false },
                 logger: { enabled: false },
-                build: { liveReload: false, srcDir: 'content-absent' }
+                build: { liveReload: false, srcDir: 'content' }
             },
             null,
             2
@@ -239,6 +252,19 @@ async function bootCheck() {
         throw new Error(`the staged engine did not serve /rs2.cgi within 60s; last output:\n${output.split('\n').slice(-20).join('\n')}`);
     }
     log('the staged engine boots and serves /rs2.cgi');
+
+    // A world with no game map serves /rs2.cgi and reports itself ready exactly like
+    // a populated one - that is how an empty single player shipped in 0.1.0. The only
+    // difference is this line, which GameMap.init() prints after loading the map
+    // squares, so the count is what the check is for, not the boot.
+    const npcs = staticNpcs(output);
+    if (npcs === null) {
+        throw new Error(`the staged engine never loaded the game map (no "static NPCs added" line); last output:\n${output.split('\n').slice(-20).join('\n')}`);
+    }
+    if (npcs === 0) {
+        throw new Error('the staged engine loaded the game map but added no static NPCs: the packed maps are empty');
+    }
+    log(`the staged engine loaded the game map: ${npcs} static NPCs`);
 }
 
 await bootCheck();

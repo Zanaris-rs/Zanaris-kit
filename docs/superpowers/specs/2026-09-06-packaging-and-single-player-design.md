@@ -101,7 +101,8 @@ turns the pin into `engine-dist/`, gitignored:
 5. Copies the runtime subset into `engine-dist/`: `src/`, `tools/`, `view/`,
    `public/`, `data/pack/` (with `.cache/`, without `.stamps/`), `data/raw/`,
    `data/config/private.pem` and `public.pem`, `package.json`,
-   `package-lock.json`.
+   `package-lock.json`, and `content/maps/multiway.csv` and `free2play.csv`
+   from the content checkout — the only content the engine reads at run time.
 6. Runs `npm ci --omit=dev --ignore-scripts` in `engine-dist/`
    (`--ignore-scripts` because the engine's `prepare` runs husky, a dev
    dependency), then removes `node_modules/tsx`, `typescript`, `esbuild` and
@@ -324,11 +325,13 @@ world, and the next open starts it again in a couple of seconds.
     data/config/private.pem      copied from resources
     data/config/public.pem
     data/pack/  data/raw/  public/  view/     copied from resources
+    content/maps/multiway.csv                 copied from resources
+    content/maps/free2play.csv
     data/players/main/<name>.sav              the player's characters; persists
 ```
 
 `preparing` runs when `engine.stamp` is missing or differs from
-`VERSION.json` in resources: copy the four asset trees and the pems into
+`VERSION.json` in resources: copy the five asset trees and the pems into
 `<home>/.staging/`, then rename each into place, replacing the old ones. The
 one name is what lets the next `preparing` remove what a failed copy left.
 `data/players/` is never touched by preparing. About 90 MB, seconds on a
@@ -341,13 +344,25 @@ kit. Fixed values: `easyStartup` false; `account.autoCreate` false; `login`,
 `node.autoSubscribeMembers` true, `node.xpRate` 1, `node.production` false,
 `node.debug` false, `node.profile` `main`, `node.maxConnected` 10;
 `db.backend` `sqlite`; `build.startup` false, `build.verify` false,
-`build.liveReload` false, `build.srcDir` `content-absent` (a path that does
-not exist, so the engine neither watches content nor serves the working
-directory as static files); `engine.revision` from VERSION.json. Per start:
+`build.liveReload` false, `build.srcDir` `content`; `engine.revision` from
+VERSION.json. Per start:
 `web.port`, `web.managementPort`, `node.port` from three free loopback ports;
 `web.host` and `node.host` `127.0.0.1`; `node.localStaffLevel` 4 when cheats
 are on, else 0. The engine's `normalizeWorldConfig` fills anything the
 template omits; environment variables are not relied upon.
+
+`build.srcDir` was `content-absent` until 2026-09-07 — a path chosen not to
+exist, so that the engine would neither watch content nor serve the working
+directory statically. That shipped an empty world in 0.1.0. `GameMap.init()`
+returns at its first line when `<srcDir>/maps` is absent, so no NPC or obj
+spawns, no ground or collision and no loc spawns were ever loaded, while the
+world still served `/rs2.cgi` and reported itself ready. The stage script now
+copies `maps/multiway.csv` and `maps/free2play.csv` — the only content the
+engine reads at run time, ~140 KB — into `engine-dist/content/`, and `srcDir`
+names that directory. Nothing watches it (`liveReload` is false) and the
+engine's `/content/` static route now serves those two files on loopback. The
+stage script's boot check fails unless the booted world reports a non-zero
+static NPC count.
 
 ### Process lifecycle
 
