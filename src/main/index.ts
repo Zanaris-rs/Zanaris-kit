@@ -307,8 +307,6 @@ ipcMain.handle(IPC.shellSelectTool, (event, id: unknown) => {
     windowFor(event.sender)?.selectTool(id as ToolId | null);
 });
 
-ipcMain.handle(IPC.shellToggleDock, event => windowFor(event.sender)?.toggleDock());
-
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
 
 /**

@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import type { Rect, ShellState, TabInfo, ToolId } from '../shared/ipc';
+import type { Rect, ShellState, ToolId } from '../shared/ipc';
 import type { LayoutMode } from '../shared/layout';
 import { Chat as ChatIcon, Globe, Hearth, PanelToggle } from './icons';
+import Tab from './tab';
 import Chat from './tools/Chat';
 import SinglePlayer from './tools/SinglePlayer';
 import Worlds from './tools/Worlds';
@@ -18,34 +19,35 @@ function revisionOf(state: ShellState): string {
  * decided by stylesheet order, which is not something to leave to chance.
  */
 
-/** Strip tabs hug their label instead of taking the rail tab's fixed 36x34 square. */
-const TAB_BOX: CSSProperties = { height: 26, width: 'auto' };
 /** The bar spans the window, so only its underside is bevelled. */
 const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
 /* A tab is not one of the surfaces that carry the stone's text shadow, and a gold
    digit on a lit sprite needs one of its own to stay a digit. */
 const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
 
-/** The open tab is a raised tile; the rest are tabs cut into the strip. */
-function Tab({ tab, revision }: { tab: TabInfo; revision: string }): ReactNode {
-    return (
-        <div
-            role="tab"
-            aria-selected={tab.active}
-            style={TAB_BOX}
-            className={`flex items-center gap-[7px] px-2.5 ${tab.active ? 'tile' : 'tab text-dim'}`}
-        >
-            <span className="truncate">{tab.title}</span>
-            {tab.kind === 'game' && <span className="shrink-0 text-[12px] text-faint">{revision}</span>}
-        </div>
-    );
-}
-
-const MODE_NOTE: Record<LayoutMode, string | null> = {
-    widen: null,
-    shift: 'The window moved left to make room.',
-    push: 'No room to widen, so the game area is narrower than the canvas and the page scales it down.'
+/**
+ * What fitting the chrome cost, per axis, in plain words — null where it cost
+ * nothing worth saying. The axes are two sentences rather than one because
+ * they are two events: the panel can slide the window left in the same breath
+ * as the dock scales the game down, and somebody who hits both is owed both.
+ */
+const MODE_NOTE: Record<'x' | 'y', Record<LayoutMode, string | null>> = {
+    x: {
+        widen: null,
+        shift: 'The window moved left to make room.',
+        push: 'No room to widen, so the game area is narrower than the canvas and the page scales it down.'
+    },
+    y: {
+        widen: null,
+        shift: 'The window moved up to make room.',
+        push: 'No room to grow taller, so the game area is shorter than the canvas and the page scales it down.'
+    }
 };
+
+/** Both notes, in axis order, and neither when the window fitted its chrome by growing. */
+function modeNotes(mode: { x: LayoutMode; y: LayoutMode }): string[] {
+    return [MODE_NOTE.x[mode.x], MODE_NOTE.y[mode.y]].filter((note): note is string => note !== null);
+}
 
 /**
  * The rail's tools, in order. Main says which of these a window offers. The
@@ -70,8 +72,10 @@ function unreadChat(state: ShellState): number {
 }
 
 /**
- * The chrome around the game: strip, rail and panel, drawn exactly where main
- * placed them. The content rect is left empty; the game view sits on top of it.
+ * The chrome around the game: strip, rail, panel and dock, drawn exactly where
+ * main placed them. The content rect is left empty; the game view sits on top
+ * of it. The panel and the dock are independent regions and can both be open;
+ * which one holds chat is main's to say, and arrives as `chatHome`.
  */
 export default function Shell(): ReactNode {
     const [state, setState] = useState<ShellState | null>(null);
@@ -91,7 +95,8 @@ export default function Shell(): ReactNode {
     if (!state) return <div className="h-full bg-ink" />;
 
     const { rects } = state;
-    const note = MODE_NOTE[state.mode.x];
+    const notes = modeNotes(state.mode);
+    const revision = revisionOf(state);
     const tools = TOOLS.filter(t => state.tools.includes(t.id));
     const active = state.panelOpen ? state.activeTool : null;
     const unread = unreadChat(state);
@@ -101,7 +106,12 @@ export default function Shell(): ReactNode {
             <div style={at(rects.strip)} className="flex flex-col">
                 <header role="tablist" style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
                     {state.tabs.map(tab => (
-                        <Tab key={tab.id} tab={tab} revision={revisionOf(state)} />
+                        <Tab
+                            key={tab.id}
+                            label={tab.title}
+                            open={tab.active}
+                            after={tab.kind === 'game' ? <span className="shrink-0 text-[12px] text-faint">{revision}</span> : null}
+                        />
                     ))}
                     <button
                         type="button"
@@ -122,27 +132,64 @@ export default function Shell(): ReactNode {
             {rects.panel && (
                 <aside style={{ ...at(rects.panel), borderRight: 'none' }} className="tile flex flex-col">
                     {active === 'chat' && state.chat ? (
-                        <Chat view={state.chat} />
+                        /* The panel is the side, so chat drawn in it is chat at home on the side. */
+                        <Chat view={state.chat} home="side" />
                     ) : active === 'worlds' && state.worlds ? (
                         <Worlds view={state.worlds} />
                     ) : active === 'singleplayer' && state.singlePlayer ? (
                         <SinglePlayer view={state.singlePlayer} />
                     ) : (
+                        /*
+                         * The last arm of the ternary rather than a state anyone can
+                         * reach: every window offers chat, so the rail is never empty;
+                         * main refuses to open the panel onto a column with no legal
+                         * occupant; and every tool a window offers arrives with a view
+                         * to draw. What this used to say — pick a tool on the rail —
+                         * became a lie the moment chat could live at the bottom, since
+                         * a server whose only tool is chat then has nothing the rail
+                         * can put here. So it says something that stays true if it
+                         * ever does render, instead of naming an action that may not
+                         * exist.
+                         */
                         <div className="px-2.5">
                             <h2 className="title">Tools</h2>
-                            <p className="text-[12px] text-dim">
-                                {tools.length === 0 ? 'This server has one page, so there is nothing to switch.' : 'Pick a tool on the rail.'}
-                            </p>
+                            <p className="text-[12px] text-dim">Nothing is open here.</p>
                         </div>
                     )}
-                    {note && <p className="mt-auto px-2.5 py-2 text-[12px] text-warn">{note}</p>}
+                    {notes.length > 0 && (
+                        <div className="mt-auto flex flex-col gap-1 px-2.5 py-2 text-[12px] text-warn">
+                            {notes.map(note => (
+                                <p key={note}>{note}</p>
+                            ))}
+                        </div>
+                    )}
                 </aside>
+            )}
+
+            {/*
+             * The dock. Main decides it exists, how tall it is and how far along
+             * the window it runs; the shell only fills it. Chat is its one
+             * possible occupant, which is why there is no tool switch here.
+             */}
+            {rects.dock && state.chatHome === 'bottom' && (
+                <section style={at(rects.dock)} className="dock flex flex-col" aria-label="Chat">
+                    <Chat view={state.chat} home="bottom" />
+                </section>
             )}
 
             {/* .rail paints the stone; main sizes it, so the stack of tabs is laid out here. */}
             <nav style={at(rects.rail)} className="rail flex flex-col items-center gap-1 py-[5px]" aria-label="Tools">
                 {tools.map((tool, i) => {
                     const badge = tool.id === 'chat' ? unread : 0;
+                    /*
+                     * While chat lives at the bottom its rail tab is the dock's
+                     * switch, so it reports the dock rather than the column chat no
+                     * longer occupies. Only the pressed state branches: main routes
+                     * the Chat tab by home on its own, and the null below still
+                     * means "shut the panel", which is never what the dock's switch
+                     * is asking for.
+                     */
+                    const on = tool.id === 'chat' && state.chatHome === 'bottom' ? state.dockOpen : active === tool.id;
                     const previous = tools[i - 1];
                     return (
                         <Fragment key={tool.id}>
@@ -151,9 +198,9 @@ export default function Shell(): ReactNode {
                                 type="button"
                                 title={tool.label}
                                 aria-label={badge > 0 ? `${tool.label}, ${badge} unread` : tool.label}
-                                aria-pressed={active === tool.id}
+                                aria-pressed={on}
                                 onClick={() => void window.zanaris.shell.selectTool(active === tool.id ? null : tool.id)}
-                                className={`tab relative ${active === tool.id ? 'tab-on' : ''}`}
+                                className={`tab relative ${on ? 'tab-on' : ''}`}
                             >
                                 {tool.icon}
                                 {/* The count sits on the tab rather than beside it: the rail is 48px wide. */}

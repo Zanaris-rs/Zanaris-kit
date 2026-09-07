@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
-import { SERVER_LOG, type ChatLine, type ChatStatus, type ChatView } from '../../shared/chat';
+import { SERVER_LOG, type ChatHome, type ChatLine, type ChatStatus, type ChatView } from '../../shared/chat';
+import { MoveChat } from '../icons';
+import Tab from '../tab';
 
 /*
  * .btn and .sunk are hand-written CSS carrying colour and padding, so the few
@@ -11,6 +13,9 @@ import { SERVER_LOG, type ChatLine, type ChatStatus, type ChatView } from '../..
 /** A channel chip sits tighter than a full button, as the design draws them. */
 const CHIP: CSSProperties = { padding: '2px 10px' };
 const CHIP_QUIET: CSSProperties = { ...CHIP, color: 'var(--color-dim)' };
+
+/** In the dock the title shares a row instead of owning one, so it gives up the panel title's padding. */
+const ROW_TITLE: CSSProperties = { padding: 0 };
 
 /**
  * Nick colours, so a conversation can be followed by shape instead of by
@@ -56,9 +61,12 @@ function Status({ view }: { view: ChatView }): ReactNode {
 }
 
 /**
- * Every room carries the same #04scape- prefix, which in a 320px panel spends
- * half the chip saying nothing. The full name stays on the button's title for
- * anyone who needs to type it.
+ * Every room carries the same #04scape- prefix, so half of every label says
+ * what the whole list already says. Trimmed in both homes, not only the narrow
+ * one: short labels fit more rooms across the dock's header, and a room whose
+ * name changed as you moved chat from one edge to the other would be worse
+ * than one that is always short. The full name stays on the control's title
+ * for anyone who needs to type it.
  */
 const PREFIX = '#04scape-';
 
@@ -87,6 +95,67 @@ function Channels({ view }: { view: ChatView }): ReactNode {
                     </button>
                 );
             })}
+        </div>
+    );
+}
+
+/**
+ * Sends chat to the edge it is not on. The label names the destination rather
+ * than the direction: "move chat to the side" is a thing somebody can want,
+ * where "move right" is a thing they have to work out first. The home is
+ * app-wide, so main tells every other window where chat went.
+ */
+function MoveControl({ home, className = '' }: { home: ChatHome; className?: string }): ReactNode {
+    const to: ChatHome = home === 'bottom' ? 'side' : 'bottom';
+    const label = to === 'side' ? 'Move chat to the side' : 'Move chat to the bottom';
+    return (
+        <button
+            type="button"
+            title={label}
+            aria-label={label}
+            onClick={() => void window.zanaris.chat.setHome(to)}
+            className={`tile flex h-[26px] w-[28px] shrink-0 items-center justify-center ${className}`}
+        >
+            <MoveChat down={to === 'bottom'} />
+        </button>
+    );
+}
+
+/**
+ * The dock's one row of furniture: the rooms as tabs, the title, and the move
+ * control. In the side panel those first two cost a 31px centred title and a
+ * wrapping row of chips, which 600px of height can afford and 200px cannot, so
+ * the dock buys all three back for a single ~33px row.
+ *
+ * The rooms sit in the order they were joined and never reorder. An unread
+ * count changes inside a tab that stays put; a room list that reshuffles as
+ * people talk is a room list you cannot aim at.
+ */
+function DockHeader({ view }: { view: ChatView }): ReactNode {
+    return (
+        <div className="flex items-center gap-[5px] px-1.5 py-[3px]">
+            <div role="tablist" aria-label="Channels" className="flex min-w-0 items-center gap-[5px] overflow-hidden">
+                {view.channels.map(channel => {
+                    const on = channel.name === view.active;
+                    return (
+                        <Tab
+                            key={channel.name}
+                            label={channelLabel(channel.name)}
+                            title={channel.name}
+                            open={on}
+                            onSelect={() => {
+                                if (!on) void window.zanaris.chat.select(channel.name);
+                            }}
+                            after={!on && channel.unread > 0 ? <span className="shrink-0 text-gold">{channel.unread}</span> : null}
+                        />
+                    );
+                })}
+            </div>
+            {/* Two auto margins: the title takes the middle of whatever the rooms leave, and the control keeps the right. */}
+            <h2 style={ROW_TITLE} className="title mx-auto shrink-0">
+                Chat
+            </h2>
+            <MoveControl home="bottom" />
         </div>
     );
 }
@@ -125,8 +194,14 @@ function Line({ line, self }: { line: ChatLine; self: string | null }): ReactNod
 /** Within this much of the end still counts as watching the end. */
 const STICK_SLACK = 24;
 
-/** The conversation: rooms across the top, the log, and the line you are typing. */
-function Conversation({ view }: { view: ChatView }): ReactNode {
+/**
+ * The conversation: rooms across the top, the log, and the line you are typing.
+ *
+ * Only the furniture above the log knows which home it is in. The log and the
+ * composer are the same object at 320px wide and at 735px, so they are written
+ * once; a second log would be a second set of scroll rules to keep in step.
+ */
+function Conversation({ view, home }: { view: ChatView; home: ChatHome }): ReactNode {
     const [draft, setDraft] = useState('');
     const [behind, setBehind] = useState(false);
     const log = useRef<HTMLDivElement | null>(null);
@@ -183,10 +258,27 @@ function Conversation({ view }: { view: ChatView }): ReactNode {
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {/* The client centres a panel's title over its contents, so this one is centred too. */}
-            <h2 className="title">Chat</h2>
-            <Status view={view} />
-            {view.channels.length > 1 && <Channels view={view} />}
+            {home === 'bottom' ? (
+                <>
+                    <DockHeader view={view} />
+                    <Status view={view} />
+                </>
+            ) : (
+                <>
+                    {/*
+                     * The client centres a panel's title over its contents, so this one is
+                     * centred too — which is why the move control is laid over the row
+                     * rather than placed in it: a flex sibling would push the title off
+                     * centre to make room for itself.
+                     */}
+                    <div className="relative">
+                        <h2 className="title">Chat</h2>
+                        <MoveControl home="side" className="absolute top-1/2 right-2.5 -translate-y-1/2" />
+                    </div>
+                    <Status view={view} />
+                    {view.channels.length > 1 && <Channels view={view} />}
+                </>
+            )}
 
             {/*
              * mt-auto on the lines: a short log sits on the floor of the well
@@ -289,7 +381,12 @@ function NickPrompt({ view }: { view: ChatView }): ReactNode {
     );
 }
 
-/** The Chat tool: one connection, shared by every window this kit has open. */
-export default function Chat({ view }: { view: ChatView }): ReactNode {
-    return view.needsNick ? <NickPrompt view={view} /> : <Conversation view={view} />;
+/**
+ * The Chat tool: one connection, shared by every window this kit has open, and
+ * drawn either along the bottom of the window or down the side column.
+ * `NickPrompt` is the same in both — at 735px its two paragraphs land in three
+ * or four lines instead of a column, which is the only difference.
+ */
+export default function Chat({ view, home }: { view: ChatView; home: ChatHome }): ReactNode {
+    return view.needsNick ? <NickPrompt view={view} /> : <Conversation view={view} home={home} />;
 }

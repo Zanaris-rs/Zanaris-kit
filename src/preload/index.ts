@@ -13,7 +13,6 @@ const api: ZanarisApi = {
         get: () => ipcRenderer.invoke(IPC.shellGet),
         togglePanel: () => ipcRenderer.invoke(IPC.shellTogglePanel),
         selectTool: id => ipcRenderer.invoke(IPC.shellSelectTool, id),
-        toggleDock: () => ipcRenderer.invoke(IPC.shellToggleDock),
         onState: cb => {
             const handler = (_event: unknown, state: ShellState): void => cb(state);
             ipcRenderer.on(IPC.shellState, handler);

@@ -10,7 +10,6 @@ export const IPC = {
     shellGet: 'zanaris:shell-get',
     shellTogglePanel: 'zanaris:shell-toggle-panel',
     shellSelectTool: 'zanaris:shell-select-tool',
-    shellToggleDock: 'zanaris:shell-toggle-dock',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
     worldsSetDetail: 'zanaris:worlds-set-detail',
@@ -88,10 +87,8 @@ export interface ZanarisApi {
         /** Null when the calling view is not a server window's shell. */
         get(): Promise<ShellState | null>;
         togglePanel(): Promise<void>;
-        /** Opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. */
+        /** The rail's tools: opens the panel on one, closing it again when that tool is the one already on show. Null only closes. Chat is the one main routes rather than places — while it lives at the bottom, asking for it opens or closes the dock and the panel is untouched — so the rail has one gesture and one channel for it instead of two. */
         selectTool(id: ToolId | null): Promise<void>;
-        /** Opens or closes the bottom dock. Only meaningful while chat's home is the dock. */
-        toggleDock(): Promise<void>;
         onState(cb: (state: ShellState) => void): () => void;
     };
     chat: {

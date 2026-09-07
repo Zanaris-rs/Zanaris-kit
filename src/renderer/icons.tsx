@@ -76,3 +76,29 @@ export function Hearth(): ReactNode {
         </svg>
     );
 }
+
+/**
+ * Move chat to the other edge. A block arrow driving into the edge it is aimed
+ * at — a sprite like the tools rather than a stroked chrome glyph, because it
+ * sits among the dock's own furniture rather than in the strip.
+ *
+ * One sprite serves both directions: a quarter turn is the whole difference
+ * between "to the side" and "to the bottom", and two near-identical arrows
+ * would be two arrows to keep in step. The label names the destination; this
+ * only has to point at it.
+ */
+export function MoveChat({ down = false }: { down?: boolean }): ReactNode {
+    return (
+        <svg
+            width="18"
+            height="18"
+            viewBox="0 0 18 18"
+            aria-hidden="true"
+            fill="none"
+            style={down ? { transform: 'rotate(90deg)' } : undefined}
+        >
+            <path d="M2 6.5h5V3.5L12 9l-5 5.5V11.5H2z" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <rect x="14" y="2.5" width="2" height="13" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+    );
+}

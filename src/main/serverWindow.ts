@@ -83,10 +83,8 @@ export interface ServerWindow extends ServerWindowHandle {
     /** The shell view's webContents id, so IPC handlers can find the window from `event.sender`. */
     readonly shellContentsId: number;
     togglePanel(): void;
-    /** The rail's tabs: opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. */
+    /** The rail's tabs: opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. The Chat tab is routed by where chat lives: at the bottom it opens or closes the dock instead. */
     selectTool(id: ToolId | null): void;
-    /** The rail's Chat tab: opens or closes the dock, or the panel while chat lives on the side. */
-    toggleDock(): void;
     /** The →| control in this window: chat moves home, and this window's chrome rearranges around it. */
     moveChat(home: ChatHome): void;
     /** The echo of a move made in another window: this one learns where chat goes without losing what it has open. */
@@ -385,22 +383,21 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             return;
         }
         if (!tools.includes(id)) return;
-        place(id === 'chat' ? { kind: 'rail-chat' } : { kind: 'rail-tool', tool: id });
+        if (id !== 'chat') {
+            place({ kind: 'rail-tool', tool: id });
+            return;
+        }
+        // The one rail tab whose meaning depends on where chat lives — the dock
+        // while chat is at the bottom, the panel while it is on the side — so
+        // the log says which of the two it just did. Which it is belongs to the
+        // rules, not here.
+        place({ kind: 'rail-chat' });
+        deps.log(`${tag} chat tab: dock ${placement.dockOpen ? 'open' : 'closed'}, panel ${placement.panelOpen ? 'open' : 'closed'}`);
     }
 
     function togglePanel(): void {
         place({ kind: 'toggle-panel' });
         deps.log(`${tag} panel ${placement.panelOpen ? 'opened' : 'closed'}`);
-    }
-
-    /**
-     * The rail's Chat tab. It is a dock toggle only while chat lives at the
-     * bottom — with chat on the side the same tab opens the panel on it — and
-     * which of those it is belongs to the rules, not here.
-     */
-    function toggleDock(): void {
-        place({ kind: 'rail-chat' });
-        deps.log(`${tag} chat tab: dock ${placement.dockOpen ? 'open' : 'closed'}, panel ${placement.panelOpen ? 'open' : 'closed'}`);
     }
 
     /**
@@ -648,7 +645,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         close: () => win.close(),
         togglePanel,
         selectTool,
-        toggleDock,
         moveChat,
         syncChatHome,
         relayout: applyLayout,
