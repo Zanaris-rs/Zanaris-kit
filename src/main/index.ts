@@ -591,7 +591,65 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] tab now reads "${hopper.state().tabs[0]?.title}", title "${hopper.window.getTitle()}"`);
                 log(`[capture] state file: ${existsSync(appState.file) ? readFileSync(appState.file, 'utf8').replace(/\s+/g, ' ') : '(none)'}`);
             }
+
+            // Chat on the side: the one state a reader cannot infer from the
+            // other two. Captured here, while Worlds is still genuinely open
+            // on `hopper` from the lines just above, so moveChat('side')
+            // evicting it is a real eviction rather than a no-op — `hopper`
+            // is often the same window as `first` below, and closing that
+            // window's panel first (for a clean dock shot) would leave
+            // nothing here to evict.
+            hopper.window.moveTop();
+            hopper.focus();
+            await wait(500);
+            hopper.moveChat('side');
+            await wait(500);
+            const side = hopper.state();
+            log(`[capture] ${side.title}: chat moved to the side, evicting worlds; mode x ${side.mode.x}, y ${side.mode.y}`);
+            await shoot(`${side.server.id}-chat-side`, hopper);
+        } else {
+            log('[capture] chat-side skipped: no window had worlds to evict');
         }
+
+        // The chat dock: this profile has no nick — see the chat block in
+        // app.whenReady, above — so chat never opens a socket here, and every
+        // shot below lands on the nick prompt rather than a conversation.
+        // That is the correct thing to capture, not a bug to paper over: log
+        // it plainly so nobody later mistakes an offline dock for a broken one,
+        // and never fake a connection just to get a prettier screenshot.
+        log('[capture] chat: no nick in this profile, so the dock captures the nick prompt, not a conversation');
+
+        // moveChat('bottom') rather than the rail's selectTool('chat'): it
+        // lands on "dock open, default height, panel closed" unconditionally,
+        // whatever `first` currently has open — including home already 'side'
+        // if `first` and `hopper` are the same window and the eviction above
+        // just ran on it. selectTool('chat') only opens the dock when home is
+        // already 'bottom', so it cannot be trusted to recover from that.
+        // Fronted first, as the Worlds tool is above: the pixel font is only
+        // fetched once the shell paints, and font-display: block leaves the
+        // room tabs and the title blank until it lands.
+        first.window.moveTop();
+        first.focus();
+        await wait(500);
+        first.moveChat('bottom');
+        await wait(500);
+        const dock1 = first.state();
+        log(`[capture] ${dock1.title}: dock ${dock1.dockOpen ? 'open' : 'closed'} at ${dock1.dockHeight}px, mode x ${dock1.mode.x}, y ${dock1.mode.y}`);
+        await shoot(`${dock1.server.id}-dock`, first);
+
+        // Resized without a pointer: the same clamp chatSetDockHeight applies
+        // in main, driven directly the way this whole function drives
+        // ServerWindow rather than over IPC — there is no renderer here to
+        // send the request. Proves the resize path end to end: the clamp, the
+        // write to state.json, and every window relaying out around it.
+        const dockWorkArea = screen.getDisplayMatching(first.window.getBounds()).workArea;
+        const tallHeight = Math.round(Math.min(Math.max(500, DOCK_HEIGHT_MIN), dockWorkArea.height / 2));
+        appState.setChat({ dockHeight: tallHeight });
+        for (const sw of serverWindows.values()) sw.relayout();
+        await wait(500);
+        const dock2 = first.state();
+        log(`[capture] ${dock2.title}: dock height set to ${dock2.dockHeight}px, mode x ${dock2.mode.x}, y ${dock2.mode.y}`);
+        await shoot(`${dock2.server.id}-dock-tall`, first);
 
         // The Single player tool: the world is up by the time the game loaded,
         // so this is the panel as a player finds it — status, port and cheats.

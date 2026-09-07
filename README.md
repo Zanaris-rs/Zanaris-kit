@@ -107,7 +107,25 @@ always, plus a room per server while you have a window on it — `#04scape-lostc
 public network where a bare `#zanaris` may already belong to someone else. A
 local or self-added server gets no room, since it would be a room of one.
 
-The first time you open the panel it asks for a nick, because there is nothing
+Chat lives along the bottom of the window by default — a dock, wide and
+short — rather than in the side panel with Worlds and Single player. It opens
+and closes from the rail's Chat tab exactly as the panel does, except that it
+does not have to fight anything for the column: the dock and the panel are
+independent regions, so Worlds can be open on the side while the dock sits
+underneath it. Its top edge is a drag handle, clamped between a floor and
+half the screen, and the height you leave it at is remembered next to the
+nick. The `→|` control in its header sends it to the side column instead,
+evicting whatever tool was parked there, and the matching control in the
+panel sends it back to the bottom.
+
+The bottom is the default because of proportion, not preference. `Chat.tsx`
+was drawn for 320px wide by full height, and a conversation is a column of
+short lines — a shape that wraps almost every one of them at that width.
+Along the bottom at around 735px wide the same log runs wide and short
+instead, so six rows there hold roughly what eleven hold in the panel, and
+either way the game keeps the middle of the screen.
+
+The first time you open it it asks for a nick, because there is nothing
 sensible to default to and a name others see should be chosen rather than
 assigned. Nothing connects until you pick one, which is also why an unattended
 capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join` and `/part`
@@ -224,21 +242,40 @@ and the state starts empty.
 
 Main owns all geometry. Each server window is one full-window **shell** view
 (React, the only view with a preload) with the **game** view placed on top of
-it inside the content rect. The shell draws the strip, rail and panel exactly
-where main says they are, and leaves the content rect empty.
+it inside the content rect. The shell draws the strip, rail, panel and dock
+exactly where main says they are, and leaves the content rect empty.
 
-Opening the panel widens the window by 320px so the content rect, and with it
-the game view, never changes. When that is not possible the engine falls back
-in order:
+Opening the panel or the dock is supposed to grow the window rather than
+shrink the game underneath it, and now that both exist that has to be true on
+two axes at once: the panel costs width, the dock costs height. Rather than
+grow the old single-axis engine into two similar-but-not-identical blocks of
+arithmetic, the fallback ladder was pulled out into one 1-D solver and called
+once per axis, so `mode` is a pair, `{ x, y }` — a user who is both up against
+the edge of their screen and dragging the dock tall sees both things happen,
+to two different edges, and both get said.
 
 | mode | when | what happens |
 |---|---|---|
-| widen | there is room to the right | the window grows |
-| shift | the window would run off the right edge | the window grows and moves left |
-| push | maximised, fullscreen, or no room on the display | the content rect narrows and the page's own auto-scaling shrinks the canvas |
+| widen | there is room to grow, on that axis | the window grows |
+| shift | growing would run the window off the screen | the window grows and slides back onto it |
+| push | maximised, fullscreen, or no room on the display | the content rect shrinks on that axis and the page's own auto-scaling follows it down |
 
-The active mode is stated in the panel rather than silently substituted. The
-content rect never drops below 765 x 503 unless the user shrinks the window.
+The active mode is stated per axis rather than silently substituted — "the
+window moved left" and "the game is scaled down to fit the dock" are
+different sentences, and hitting both at once deserves both.
+
+The two axes disagree, on purpose, about who gives way first. On x, `push`
+shrinks the content because the panel is one of several tools sharing a 320px
+column and can simply be closed, so the content rect still never drops below
+765 wide unless the user shrinks the window that far themselves. On y the
+dock holds the conversation the user just asked to see, and a chat window
+that silently becomes nothing is worse than a game canvas a few pixels
+shorter — so the dock is the one thing here that never gets silently
+dropped: it shrinks first, down to its own floor, and only once it is
+already at that floor does the content rect give up height too. A short
+window with the dock open can therefore now push the content below 503 tall,
+which used to be impossible; that is deliberate, and it is the opposite
+choice from the one x makes for exactly the reason above.
 
 ## Running it
 
@@ -339,6 +376,7 @@ src/main/slots.ts           pure: slot numbers, partitions, titles              
 src/main/tabs.ts            pure: the pinned game tab and page tabs                 (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
+src/main/chatDock.ts        pure: where chat lives, and what the panel shows        (tested)
 src/main/appState.ts        the state.json store                                    (tested)
 src/main/worlds/sources.ts  pure: LostHQ, Zanaris and static parsers, url templates (tested)
 src/main/worlds/service.ts  per-server world list and latency over injected IO      (tested)
@@ -352,7 +390,8 @@ src/main/menu.ts            application menu: new windows, the server list, the 
 src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.zanaris bridge
-src/renderer/Shell.tsx      strip, rail, panel
+src/renderer/Shell.tsx      strip, rail, panel, dock
+src/renderer/tab.tsx        the shared tab button, worn by the strip and the dock header
 src/renderer/tools/Worlds.tsx
 static/offline.html         shown when a server can't be reached
 ```

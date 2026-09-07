@@ -57,6 +57,8 @@ const head = `<!doctype html>
     .title { text-align: center; font-family: 'Pixelify Sans', 'Trebuchet MS', Arial, sans-serif; font-size: 18px; color: ${C.gold}; padding: 7px 0 6px; }
     .row { display: flex; align-items: center; gap: 10px; padding: 5px 8px; }
     .rail { width: 48px; flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 5px 0; background-color: ${C.stone}; ${TEX} border: 2px solid ${C.edgeDark}; border-top-color: ${C.edgeLit}; border-left: 2px solid ${C.edgeDark}; box-shadow: inset 2px 0 0 rgba(0,0,0,.28); }
+    /* The dock: the rail's exception mirrored onto the other axis. Its top edge meets the game rather than the window, so the groove goes there and only the left edge, which really is the window's, stays lit; the right edge is dropped where it meets the rail, same as the panel's. */
+    .dock { background-color: ${C.stone}; ${TEX} border: 2px solid ${C.edgeDark}; border-left-color: ${C.edgeLit}; border-right: none; box-shadow: inset 0 2px 0 rgba(0,0,0,.28); }
     .sep { width: 32px; height: 2px; background: ${C.edgeDark}; border-bottom: 1px solid rgba(255,255,255,.09); margin: 2px 0; }
   </style>
 </helmet>
@@ -74,7 +76,10 @@ const icons = {
     map: `<path d="M2 4l4.5-2 5 2 4.5-2v12l-4.5 2-5-2L2 16z" fill="#c8a86a" stroke="${D}" stroke-width="1.2" stroke-linejoin="round"/><path d="M6.5 2v12M11.5 4v12" stroke="${D}" stroke-width="1.2"/>`,
     trophy: `<path d="M5.5 2h7v4a3.5 3.5 0 0 1-7 0z" fill="${C.gold}" stroke="${D}" stroke-width="1.2"/><path d="M9 9.5v3M3 3h2.5M12.5 3H15" stroke="${D}" stroke-width="1.4"/><path d="M6 12.5h6V16H6z" fill="${C.gold}" stroke="${D}" stroke-width="1.2"/>`,
     calc: `<rect x="3.5" y="2" width="11" height="14" fill="${C.dim}" stroke="${D}" stroke-width="1.2"/><rect x="5.5" y="4" width="7" height="3" fill="${D}"/><path d="M6 10.5h1.5M10.5 10.5h1.5M6 13.5h1.5M10.5 13.5h1.5" stroke="${D}" stroke-width="1.6"/>`,
-    wrench: `<path d="M12.5 2a4 4 0 0 0-4.6 5.2L2.5 12.6l2.9 2.9 5.4-5.4A4 4 0 0 0 16 5.5l-2.3 2.3-1.9-.5-.5-1.9z" fill="${C.dim}" stroke="${D}" stroke-width="1.2" stroke-linejoin="round"/>`
+    wrench: `<path d="M12.5 2a4 4 0 0 0-4.6 5.2L2.5 12.6l2.9 2.9 5.4-5.4A4 4 0 0 0 16 5.5l-2.3 2.3-1.9-.5-.5-1.9z" fill="${C.dim}" stroke="${D}" stroke-width="1.2" stroke-linejoin="round"/>`,
+    // The dock header's move control, arrow pointing at the destination rather
+    // than a direction: this is the "send chat to the side" state.
+    moveSide: `<path d="M2 6.5h5V3.5L12 9l-5 5.5V11.5H2z" fill="${C.cream}" stroke="${D}" stroke-width="1.3" stroke-linejoin="round"/><rect x="14" y="2.5" width="2" height="13" fill="${C.cream}" stroke="${D}" stroke-width="1.3" stroke-linejoin="round"/>`
 };
 const ico = k => `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">${icons[k]}</svg>`;
 const tab = (k, on) => `<div class="tab${on ? ' tab-on' : ''}">${ico(k)}</div>`;
@@ -214,6 +219,46 @@ writeFileSync('Chat.dc.html', toolPanel('chat', `
         <div class="btn btn-red px">Send</div>
       </div>`));
 
+/* A text-bearing room tab, the same object as gameTab/pageTab above: the
+   shared Tab component overrides the rail tab's 36x34 square with a 26px-tall
+   box that hugs its label, in the strip and in the dock header alike. */
+const roomTab = (label, on, unread) => `<div class="${on ? 'tile' : 'tab'}" style="height: 26px; width: auto; display: flex; align-items: center; gap: 7px; padding: 0 10px; flex: 0 0 auto;${on ? '' : ` color: ${C.dim};`}">
+      <span>${label}</span>${!on && unread ? `<span style="color: ${C.gold};">${unread}</span>` : ''}
+    </div>`;
+
+/* The dock's one row of furniture: rooms as tabs from the left, the gold title
+   centred in whatever they leave, the move control held at the right. */
+const dockHeader = `<div style="display: flex; align-items: center; gap: 5px; padding: 3px 6px; flex: 0 0 auto;">
+      <div style="display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden;">
+        ${roomTab('#04scape', true)}
+        ${roomTab('#lostcity', false, 3)}
+        ${roomTab('#zanaris', false)}
+      </div>
+      <div class="title" style="margin: 0 auto; padding: 0; flex: 0 0 auto;">Chat</div>
+      <div class="tile" style="width: 28px; height: 26px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;">${ico('moveSide')}</div>
+    </div>`;
+
+/* The dock itself: a `.dock`, not a `.tile` — it meets the game on its top
+   edge and the rail on its right, so it takes the mirror of the panel's bevel. */
+const dock = inner => `<div class="dock" style="flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden;">${inner}</div>`;
+
+writeFileSync('ChatDock.dc.html', head + `<div style="width: 1168px; height: 260px; background: ${C.ground}; color: ${C.cream}; font-family: Arial, Helvetica, sans-serif; font-size: 13px; display: flex;">
+  ${dock(`${dockHeader}
+      <div class="sunk" style="margin: 0 8px; flex: 1 1 auto; min-height: 0; padding: 6px 8px; display: flex; flex-direction: column; gap: 5px; line-height: 1.45;">
+        <div><span style="color: #9db8c3;">kev</span> anyone got a spare vial of prayer potions before I head to the wildy for a barrows run</div>
+        <div><span style="color: #faa8aa;">zanna</span> im on w5, hopping over in a sec</div>
+        <div style="color: ${C.faint};">&rarr; mod_ash joined #04scape</div>
+        <div><span style="color: ${C.gold};">mod_ash</span> w3 is getting a restart in 10 minutes, hop off if you're mid-clue</div>
+        <div><span style="color: #9db8c3;">kev</span> ta, ill bank first</div>
+        <div style="margin-top: auto;"><span style="color: #faa8aa;">zanna</span> here, w5 castle wars bank</div>
+      </div>
+      <div style="display: flex; gap: 6px; padding: 8px 10px; align-items: center; flex: 0 0 auto;">
+        <div class="sunk" style="flex: 1 1 auto; padding: 3px 7px; color: ${C.faint};">Say something</div>
+        <div class="btn btn-red px">Send</div>
+      </div>`)}
+  ${rail('chat')}
+</div>` + tail);
+
 writeFileSync('Timers.dc.html', toolPanel('timer', `
       <div class="title">Timers</div>
       <div class="sunk" style="margin: 0 10px 8px; padding: 2px 0;">
@@ -303,4 +348,4 @@ writeFileSync('WikiTab.dc.html', head + win(`${strip(`${gameTab(false)}\n    ${p
     ${rail('book')}
   </div>`) + tail);
 
-console.log('wrote Main, Rail, Chat, Timers, Settings, WikiTab');
+console.log('wrote Main, Rail, Chat, ChatDock, Timers, Settings, WikiTab');
