@@ -66,6 +66,8 @@ export class SinglePlayerService {
     private windows = 0;
     private starting: Promise<string> | null = null;
     private stopping: Promise<void> | null = null;
+    /** Bumped by every start, so a stop can tell whether the world is still the one it took. */
+    private generation = 0;
     private readonly listeners = new Set<() => void>();
     private readonly deps: SinglePlayerDeps;
 
@@ -119,7 +121,8 @@ export class SinglePlayerService {
     /** Quit, or a restart: stops whatever is running, regardless of windows. */
     async stop(): Promise<void> {
         if (this.stopping) return this.stopping;
-        if (this.status === 'stopped' || this.status === 'failed') return;
+        // 'failed' can still own a live world — an explicit stop has to be able to reap it.
+        if (this.status === 'stopped' && !this.process) return;
         this.stopping = this.doStop().finally(() => {
             this.stopping = null;
         });
@@ -131,6 +134,9 @@ export class SinglePlayerService {
     private ensure(): Promise<string> {
         if (this.status === 'ready' && this.url) return Promise.resolve(this.url);
         if (this.starting) return this.starting;
+        // A stop in flight owns the world's state until it finishes; queue behind it,
+        // or its tail would clear the ports and url this start is about to establish.
+        if (this.stopping) return this.stopping.then(() => this.ensure());
         this.starting = this.start().finally(() => {
             this.starting = null;
         });
@@ -143,7 +149,14 @@ export class SinglePlayerService {
     }
 
     private notify(): void {
-        for (const fn of this.listeners) fn();
+        for (const fn of this.listeners) {
+            // A window that went away mid-send must not take the world down with it.
+            try {
+                fn();
+            } catch (err) {
+                this.deps.log(`[singleplayer] a status listener threw: ${String(err)}`);
+            }
+        }
     }
 
     /** True once a stop has taken the world away from a start still in flight. */
@@ -159,6 +172,8 @@ export class SinglePlayerService {
     }
 
     private async start(): Promise<string> {
+        this.generation++;
+        let spawned: WorldProcess | null = null;
         try {
             const { deps } = this;
             const { fs, join } = deps;
@@ -200,6 +215,7 @@ export class SinglePlayerService {
                     fs.appendText(logPath, `${line}\n`);
                 }
             });
+            spawned = process;
             this.process = process;
             let exit: number | null | undefined;
             void process.exited.then(code => {
@@ -207,15 +223,20 @@ export class SinglePlayerService {
                 this.onExit(process, code);
             });
 
-            const deadline = deps.now() + READY_TIMEOUT_MS;
-            while (deps.now() < deadline) {
-                // A deliberate stop already owns the status, so it rejects this start
-                // without reporting a failure; a world that died on its own does.
+            // A deliberate stop or a newer start already owns the status, so those reject
+            // this start without reporting a failure; a world that died on its own does.
+            // Checked both before the probe and after it answers, since the world can die
+            // in that gap and a 200 from a dead world is not a world that is ready.
+            const guard = (): void => {
                 if (this.stopped()) throw new Failure('Stopped while starting');
                 if (exit !== undefined) this.fail(`The world exited before it was ready (code ${exit})`);
                 if (this.process !== process) throw new Failure('Stopped while starting');
+            };
+            const deadline = deps.now() + READY_TIMEOUT_MS;
+            while (deps.now() < deadline) {
+                guard();
                 if ((await deps.httpStatus(url)) === 200) {
-                    if (this.stopped() || this.process !== process) throw new Failure('Stopped while starting');
+                    guard();
                     this.url = url;
                     this.set('ready');
                     deps.log(`[singleplayer] ready on port ${ports.web}`);
@@ -227,6 +248,12 @@ export class SinglePlayerService {
             this.process = null;
             this.fail(`The world did not answer within ${READY_TIMEOUT_MS / 1000} s`);
         } catch (err) {
+            // Never leave a world behind: while this start's process is still ours, no
+            // one else can reap it, and a failed status would hide it from stop().
+            if (spawned && this.process === spawned) {
+                this.process = null;
+                spawned.kill();
+            }
             if (err instanceof Failure) throw err;
             this.fail(String(err));
         }
@@ -265,6 +292,7 @@ export class SinglePlayerService {
     private async doStop(): Promise<void> {
         const process = this.process;
         const ports = this.ports;
+        const generation = this.generation;
         this.set('stopping');
         if (process && ports && this.url) {
             this.process = null;
@@ -281,6 +309,9 @@ export class SinglePlayerService {
             process.kill();
             await process.exited;
         }
+        // If a newer start took the world over while this stop waited, the state is
+        // no longer this stop's to erase.
+        if (this.generation !== generation) return;
         this.url = null;
         this.ports = null;
         this.set('stopped');

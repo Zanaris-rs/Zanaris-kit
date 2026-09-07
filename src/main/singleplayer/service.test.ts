@@ -282,3 +282,72 @@ test('a malformed catalog url fails before a world is spawned', async () => {
     assert.equal(service.view().status, 'failed');
     assert.equal(h.processes.length, 0);
 });
+
+test('a window that arrives while the world is stopping gets a world of its own', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    service.release();
+    await tick();
+    assert.equal(service.view().status, 'stopping');
+    h.statusQueue.push(200);
+    const url = await service.acquire();
+    assert.equal(url, 'http://127.0.0.1:40004/rs2.cgi?lowmem=1');
+    assert.equal(h.processes.length, 2);
+    // the dying world's stop must not clear the new world's state when its grace expires
+    await tick();
+    await tick();
+    assert.equal(service.view().status, 'ready');
+    assert.equal(service.view().port, 40004);
+    assert.equal(service.view().url, url);
+    assert.ok(h.processes[0]!.killed === 1 || h.posts.length > 0, 'the old world was asked to stop');
+    assert.equal(h.processes[1]!.killed, 0);
+});
+
+test('a world that answers and dies in the same turn fails with the exit, not the stop', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    // The only way to land an exit inside the gap between the probe and its answer.
+    h.deps.httpStatus = async () => {
+        h.processes[0]!.print('Error: boom');
+        h.processes[0]!.exit(1);
+        await tick();
+        return 200;
+    };
+    await assert.rejects(service.acquire(), /exited before it was ready \(code 1\)/);
+    assert.equal(service.view().status, 'failed');
+    assert.match(service.view().reason!, /code 1/);
+});
+
+test('a listener that throws is logged and leaves the world alone', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    let others = 0;
+    service.subscribe(() => {
+        if (service.view().status === 'ready') throw new Error('the window is gone');
+    });
+    service.subscribe(() => others++);
+    h.statusQueue.push(200);
+    const url = await service.acquire();
+    assert.equal(url, 'http://127.0.0.1:40001/rs2.cgi?lowmem=1');
+    assert.equal(service.view().status, 'ready');
+    assert.ok(others > 0);
+    assert.equal(h.processes[0]!.killed, 0);
+    await service.stop();
+    assert.equal(service.view().status, 'stopped');
+});
+
+test('an unexpected failure after the spawn reaps the world, and a later stop settles at stopped', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.deps.httpStatus = async () => {
+        throw new Error('probe blew up');
+    };
+    await assert.rejects(service.acquire(), /probe blew up/);
+    assert.equal(service.view().status, 'failed');
+    assert.equal(h.processes.length, 1);
+    assert.equal(h.processes[0]!.killed, 1);
+    await service.stop();
+    assert.equal(service.view().status, 'stopped');
+});
