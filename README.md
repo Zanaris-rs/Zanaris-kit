@@ -76,21 +76,21 @@ numbers are reused once a window closes.
 servers only — a one-player world has nobody to rank, so single player never
 gets it. A name box and a Look up button sit above a Skill · Rank · Lvl · XP
 table; the lookup fires on submit, never on a keystroke, since Lost City
-rate-limits after a handful of requests inside a minute and typing a name
-would spend that budget before you finished it. Overall comes first and is
-picked out in gold, then whatever skills the server actually sent — Lost City
-Labs runs a later revision than 274 and returns Slayer and Farming rows 274
-never will, so the table shows exactly what a lookup handed it rather than a
-fixed list. A name nobody holds gets its own message instead of an empty
-table or a raw error, and a 429 gets the same plain rate-limiting sentence
-wherever it comes from. Lost City's raw API carries xp with one extra digit
-of precision, a genuine tenth the client keeps internally; the panel floors
-it away to match the whole numbers Zanaris and Labs already send, which is
-the one place comparing the panel against the raw API will look wrong
-without being wrong. The **Full hiscores** link at the foot opens the
+rate-limits after a handful of requests inside a minute and typing a name would
+spend that budget before you finished it. Overall comes first and is picked out
+in gold, then whatever skills the server actually sent — Lost City Labs runs a
+later revision than 274 and returns Slayer and Farming rows 274 never will, so
+the table shows exactly what a lookup handed it rather than a fixed list. A
+name nobody holds gets its own message instead of an empty table or a raw
+error, and a 429 gets the same plain rate-limiting sentence wherever it comes
+from. Lost City's raw API carries xp with one extra digit of precision, a
+genuine tenth the client keeps internally; main's parser floors it away before
+the panel ever sees it, matching the whole numbers Zanaris and Labs already
+send, which is the one place comparing the panel against the raw API will look
+wrong without being wrong. The **Full hiscores** link at the foot opens the
 server's own page in your system browser rather than a tab in this window —
-page tabs are not built yet, so the label says where the link goes rather
-than leaving a new window to explain itself.
+page tabs are not built yet, so the label says where the link goes rather than
+leaving a new window to explain itself.
 
 **Single player** needs no server at all: the kit carries the Lost City engine
 and the game's files, and File > New Window For > Single player starts a world
@@ -403,6 +403,20 @@ listener.
   occluded surface, and once the screen sleeps most shots come back "Current
   display surface not available for capture". The run still completes and skips
   those frames; rerun it with the display awake.
+- **A successful-looking capture can still be stale.** `capturePage` does not
+  always fail loudly when a window goes occluded — it can also hand back an
+  old frame without an error at all, so the log reports success and the PNG
+  looks plausible while actually being a duplicate of an earlier shot. It
+  happened once on this branch: a Hiscores capture logged a correct `ready
+  "granny_grunt" 20 row(s)` and wrote a shell PNG that was byte-identical to
+  an unrelated capture of the same window taken moments before, catchable
+  only by hashing the two files against each other. It is likeliest on any
+  capture step that awaits a real network round trip between fronting the
+  window and shooting it — fronting is a point-in-time guard, not a held
+  invariant, and both the Hiscores and Worlds passes do exactly that. The fix
+  for the run that hit it was keeping the display awake throughout, per the
+  bullet above; the safeguard for reading the evidence is not trusting a
+  capture's log line over its own pixels.
 
 ## Security posture
 
