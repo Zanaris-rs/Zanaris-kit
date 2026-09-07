@@ -89,8 +89,8 @@ const DOCK_STEP_COARSE = 50;
  * up to half the work area), and restating it here would just be a second
  * copy of it to keep in step.
  *
- * `requested` tracks the height this component believes is current, and
- * `send` is the only thing allowed to move it: it sets `requested` to the
+ * `requested` tracks the height this component believes is current. Outside a
+ * drag `send` is the only thing allowed to move it: it sets `requested` to the
  * number being asked for, then — once `setDockHeight` resolves — sets it
  * again to whatever main actually applied. That second write is not optional.
  * Main skips its own layout work when a request lands exactly where the dock
@@ -158,7 +158,17 @@ function DockGrip({ height }: { height: number }): ReactNode {
         const rounded = Math.round(px);
         requested.current = rounded;
         void window.zanaris.chat.setDockHeight(rounded).then(applied => {
-            requested.current = applied;
+            // Stands aside for a live drag for the same reason the effect
+            // above does, and it is not a different race: main answers this
+            // call in the same breath as it pushes the state that effect
+            // watches, so a reply folded in mid-drag puts the target back on
+            // the frame the pointer has already moved past — and one landing
+            // between the last pointermove and pointerup takes the release
+            // position with it. Nothing in a drag needs the reply: each
+            // pointermove recomputes the height from where the drag began, so
+            // it cannot inherit a stale one, and the release's own send is
+            // made after `drag` is cleared and does fold its answer in.
+            if (!drag.current) requested.current = applied;
             if (applied < rounded) setExactMax(applied);
         });
     };
