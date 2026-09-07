@@ -363,10 +363,13 @@ ms, default 15000) writes each window's shell and game views separately,
 because a window's own webContents holds nothing when its content lives in
 child views. It opens the panel on a loaded window, opens the Worlds tool,
 waits for the list, switches to another world and captures that, opens the
-Single player tool on the window running the bundled world, then opens a
-second instance of that server. It keeps its own `state.json` beside the
-screenshots so a test switch never changes what the next real launch opens.
-A view that has no frame yet is retried, then skipped.
+Hiscores tool on each server that has one and looks a single name up there —
+one request per server and no retry, since Lost City rate-limits after a
+handful inside a minute — opens the Single player tool on the window running
+the bundled world, then opens a second instance of that server. It keeps its
+own `state.json` beside the screenshots so a test switch never changes what
+the next real launch opens. A view that has no frame yet is retried, then
+skipped.
 
 ## Verified
 
@@ -379,18 +382,30 @@ One capture run with every catalog server open at once:
 | Lost City Labs | login screen | "Lost City Labs · W1 · N ms", no detail since Labs has no switch |
 | Lost City, Worlds open | untouched | five worlds with region, players and latency, W5 marked in gold, the red Low detail slab pressed; mode **widen** |
 | Lost City, after choosing W1 | login screen at World 1 | "Lost City · W1 · low · 294 ms", W1 marked; title "Lost City — World 1" |
+| Lost City, Hiscores open | untouched | "Showing granny_grunt", Overall picked out in gold at rank 18, level 1,724, 143,195,458 xp, then Attack down to Crafting in view, 20 rows in all. Every xp is a whole number — Attack reads 13,073,159, the floor of the raw `value` 130731598 |
+| Zanaris, Hiscores open | untouched | the header row and nothing else, with "No hiscores entry for that name." in warn: `zezima` is nobody on Zanaris, and the panel says so rather than showing an empty table |
+| Lost City Labs, Hiscores open | untouched | "Showing knight", Overall in gold at rank 1, level 1,176, 18,174,678 xp; 22 rows in all, Labs' later revision sending the Slayer and Farming lines 274 never does |
 | Lost City (2), opened after the hop | login screen at World 1, the remembered world | slot 2, `persist:server:lostcity:2` |
+
+The Zanaris and Labs frames caught the panel before its pixel font landed, so
+the title and the Look up label are blank in those two — everything drawn in
+the sans face, the table and its message included, is there. They evidence the
+lookup, not the chrome around it.
 
 The version 1 `servers.json` on disk migrated in place during that run, with
 no recovery prompt, and the state file recorded the hop.
 
-250 tests cover the pure modules: layout, catalog (validation, defaults, file
-recovery, v1 to v2 migration), slots, tabs, the window registry, the world
-sources against the real API payloads (including a check that the Lost City
-template reproduces LostHQ's URLs exactly), the worlds service (cache, shared
-fetch, last-good-on-error, latency by host), the per-window switch state, the
-app state store, the navigation guard, and the latency probe against a local
-listener.
+371 tests cover the pure modules: layout, catalog (validation, defaults, file
+recovery, a version 1, 2 or 3 file each migrating into version 4, and a
+built-in's hiscores block re-adopted from the defaults), slots, tabs, the
+window registry, the world sources against the real API payloads (including a
+check that the Lost City template reproduces LostHQ's URLs exactly), the
+worlds service (cache, shared fetch, last-good-on-error, latency by host), the
+hiscores sources against each server's own payload (the xp floor, Lost City's
+empty 200, and the 404s that are and are not a missing player), the hiscores
+service (supersession by sequence number, the last table kept through a
+failure, the rate-limit message), the per-window switch state, the app state
+store, the navigation guard, and the latency probe against a local listener.
 
 ## Known
 
