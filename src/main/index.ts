@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
+import { normaliseName } from '../shared/hiscores';
 import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
 import { DOCK_HEIGHT_MIN } from '../shared/layout';
 import { Catalog } from './catalog';
@@ -462,16 +463,22 @@ const HISCORES_NAME_MAX = 30;
  * is the only signal the caller gets that the lookup is over, and a panel that
  * means to stop a rate-limited server being asked twice needs one.
  *
- * A blank box is not a lookup: `normaliseName` leaves whitespace as nothing at
- * all, and the request would still go out — a round trip spent on a nameless
- * URL against a server that rate-limits after a handful of them. Too long is
- * refused rather than shortened, as `appState` refuses rather than truncates:
- * a name cut to fit is a different, still-plausible player.
+ * A box with no name in it is not a lookup, and the test for that is
+ * `normaliseName`'s own: it keeps only [a-z0-9_], so `   ` and `!!!` alike come
+ * out empty and would otherwise send a request to a nameless URL — a round trip
+ * spent on nothing against a server that rate-limits after a handful of them,
+ * answered with a parse failure the player cannot act on, and `!!!` written
+ * into the profile as the name to open the box on next time. Asking the same
+ * function the URL is built from is what keeps this guard and that URL from
+ * ever disagreeing about what counts as a name.
+ *
+ * Too long is refused rather than shortened, as `appState` refuses rather than
+ * truncates: a name cut to fit is a different, still-plausible player.
  */
 ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
     if (typeof name !== 'string') return;
     const wanted = name.trim();
-    if (wanted === '' || wanted.length > HISCORES_NAME_MAX) return;
+    if (normaliseName(wanted) === '' || wanted.length > HISCORES_NAME_MAX) return;
     const server = windowFor(event.sender)?.state().server;
     if (!server) return;
     const service = hiscoresServiceFor(server);

@@ -26,8 +26,11 @@ const NAME_MAX = 30;
  * two — and the skill name is the one that truncates when the panel narrows or
  * a scrollbar takes its 12px. Sized in border-box terms because `table-fixed`
  * reads a <col> width that way, so the cell padding below comes out of these
- * numbers rather than adding to them; a column too narrow for its number does
- * not clip it, it wraps the row to two lines, which is why they are generous.
+ * numbers rather than adding to them. A column too narrow for its number does
+ * not clip it and cannot wrap it either — a comma-separated figure offers no
+ * break opportunity — so it overflows the cell, leftward out of a right-aligned
+ * one and across its neighbour. That is why these are generous: the failure is
+ * two numbers on top of each other, not a scrollbar.
  */
 const COL_RANK = 'w-[66px]';
 const COL_LEVEL = 'w-[44px]';
@@ -80,7 +83,14 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
     const [draft, setDraft] = useState(view.name);
 
     const loading = view.status === 'loading';
-    const ready = draft.trim() !== '';
+    /*
+     * Whether the box holds a name at all, asked of `normaliseName` rather than
+     * of the string's length: it keeps only [a-z0-9_], so a box holding `!!!`
+     * is as empty as one holding spaces, and the URL built from it would name
+     * nobody. Main refuses both at the boundary; this keeps the button spent
+     * rather than letting it look live and be ignored.
+     */
+    const ready = normaliseName(draft) !== '';
 
     const submit = (event: FormEvent): void => {
         event.preventDefault();
