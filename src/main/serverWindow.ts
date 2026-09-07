@@ -587,9 +587,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     // already-parsed, already-styled page before that finishes. So a brief flash is possible —
     // but only at sizes where the page actually overflows its view (the bare-canvas floor, or
     // the dock pushing content below it; the default size never overflows) — and it is still
-    // strictly earlier than did-finish-load. World hopping and detail switching load into this
-    // same view (switchWorld), so they re-fire `dom-ready` and re-inject — nothing
-    // server-specific is needed here.
+    // strictly earlier than did-finish-load. World hopping and detail switching both funnel
+    // through `loadGame`'s `loadURL` on this same view, so they re-fire `dom-ready` and
+    // re-inject too — nothing server-specific is needed here.
     gameView.webContents.on('dom-ready', () => {
         // The kit's own offline and starting pages are already sized to fit; this is for the client.
         if (gameView.webContents.getURL().startsWith('file:')) return;
