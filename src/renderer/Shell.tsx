@@ -44,9 +44,38 @@ const MODE_NOTE: Record<'x' | 'y', Record<LayoutMode, string | null>> = {
     }
 };
 
-/** Both notes, in axis order, and neither when the window fitted its chrome by growing. */
-function modeNotes(mode: { x: LayoutMode; y: LayoutMode }): string[] {
-    return [MODE_NOTE.x[mode.x], MODE_NOTE.y[mode.y]].filter((note): note is string => note !== null);
+/** The notes for the given axes, in axis order, and none where the window fitted its chrome by growing. */
+function modeNotes(mode: { x: LayoutMode; y: LayoutMode }, axes: readonly ('x' | 'y')[]): string[] {
+    return axes.map(axis => MODE_NOTE[axis][mode[axis]]).filter((note): note is string => note !== null);
+}
+
+/**
+ * A note hangs off the chrome that caused it: the panel is what widened the
+ * window, the dock is what grew it taller. So each region shows its own axis'
+ * note — and picks up the other axis' note as well whenever the region that
+ * owns it is closed, which is what keeps a note from having nowhere to go.
+ *
+ * Both open and both axes pushed is therefore two regions with one note each,
+ * never the same sentence twice; the dock alone, which is the common case (at
+ * the default content height 640 + 36 + 200 already overflows most laptop work
+ * areas the first time the dock opens), carries both. Neither region open
+ * leaves both undrawn, as it always has: there is no chrome on screen to hang
+ * them from.
+ */
+function noteAxes(otherRegionOpen: boolean, own: 'x' | 'y'): readonly ('x' | 'y')[] {
+    return otherRegionOpen ? [own] : ['x', 'y'];
+}
+
+/** The warning under a region, in the words the region's own axis earned. Absent, not empty, when there is nothing to say. */
+function ModeNotes({ notes }: { notes: string[] }): ReactNode {
+    if (notes.length === 0) return null;
+    return (
+        <div className="mt-auto flex flex-col gap-1 px-2.5 py-2 text-[12px] text-warn">
+            {notes.map(note => (
+                <p key={note}>{note}</p>
+            ))}
+        </div>
+    );
 }
 
 /** A fine nudge, and Shift for the coarse one — a stroke of a drag in one press. */
@@ -273,7 +302,8 @@ export default function Shell(): ReactNode {
     if (!state) return <div className="h-full bg-ink" />;
 
     const { rects } = state;
-    const notes = modeNotes(state.mode);
+    /* Main sends a dock rect only while the dock is open; the home is checked with it because the two arrive in one state and only one of them says which region chat is in. */
+    const dock = state.chatHome === 'bottom' ? rects.dock : null;
     const revision = revisionOf(state);
     const tools = TOOLS.filter(t => state.tools.includes(t.id));
     const active = state.panelOpen ? state.activeTool : null;
@@ -335,13 +365,7 @@ export default function Shell(): ReactNode {
                             <p className="text-[12px] text-dim">Nothing is open here.</p>
                         </div>
                     )}
-                    {notes.length > 0 && (
-                        <div className="mt-auto flex flex-col gap-1 px-2.5 py-2 text-[12px] text-warn">
-                            {notes.map(note => (
-                                <p key={note}>{note}</p>
-                            ))}
-                        </div>
-                    )}
+                    <ModeNotes notes={modeNotes(state.mode, noteAxes(dock !== null, 'x'))} />
                 </aside>
             )}
 
@@ -350,10 +374,12 @@ export default function Shell(): ReactNode {
              * the window it runs; the shell only fills it. Chat is its one
              * possible occupant, which is why there is no tool switch here.
              */}
-            {rects.dock && state.chatHome === 'bottom' && (
-                <section style={at(rects.dock)} className="dock flex flex-col" aria-label="Chat">
+            {dock && (
+                <section style={at(dock)} className="dock flex flex-col" aria-label="Chat">
                     <DockGrip height={state.dockHeight} />
                     <Chat view={state.chat} home="bottom" />
+                    {/* Under the composer, on the edge of the window: the dock is usually what pushed the y axis, and until now the note for it only ever rendered inside a side panel that a chat-only server cannot even open. */}
+                    <ModeNotes notes={modeNotes(state.mode, noteAxes(rects.panel !== null, 'y'))} />
                 </section>
             )}
 
