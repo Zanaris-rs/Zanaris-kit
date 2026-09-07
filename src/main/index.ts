@@ -664,17 +664,18 @@ async function captureAndExit(dir: string): Promise<void> {
             await wait(500);
             // Maximising forces canResize false, which fitAxis turns into
             // 'push' on both axes unconditionally (see fitAxis's first
-            // branch) — the only way to put the composed two-axis note in
-            // front of a capture, since Shell.tsx renders it only inside the
-            // open side panel. Waited out rather than assumed: macOS's zoom
-            // is an animated, OS-driven transition, and proceeding while it
-            // is still in flight left a genuinely racy run — one in several
-            // — with a stray maximize/resize event landing after `second`
-            // opened a few steps below, and this shot's PNG showed it: a
-            // brand new window neither this function nor `reduce` ever
-            // touched came up with its own dock open. isMaximized() polled
-            // to true is what "settled" actually means here; a fixed wait is
-            // a guess at how long that takes.
+            // branch), so this is the shot that carries both mode notes — and
+            // the only one that shows how they are split when both regions are
+            // open: the panel takes the x note, the dock takes the y one, and
+            // neither sentence appears twice. Waited out rather than assumed:
+            // macOS's zoom is an animated, OS-driven transition, and
+            // proceeding while it is still in flight left a genuinely racy
+            // run — one in several — with a stray maximize/resize event
+            // landing after `second` opened a few steps below, and this
+            // shot's PNG showed it: a brand new window neither this function
+            // nor `reduce` ever touched came up with its own dock open.
+            // isMaximized() polled to true is what "settled" actually means
+            // here; a fixed wait is a guess at how long that takes.
             hopper.window.maximize();
             const maximised = Date.now() + 5_000;
             while (Date.now() < maximised && !hopper.window.isMaximized()) await wait(100);
