@@ -118,3 +118,27 @@ export function MoveChat({ down = false }: { down?: boolean }): ReactNode {
         </svg>
     );
 }
+
+/**
+ * Close a room. A filled diagonal cross on the shared outline, a sprite like
+ * the tools rather than a stroked chrome glyph, because it sits among the
+ * dock's own furniture beside the move control rather than in the strip.
+ *
+ * It fills about ten of its eighteen pixels. The other sprites run edge to
+ * edge because they are pictures of things; this one is a mark, and a mark
+ * drawn to the same bounds as a globe reads as heavier than everything it
+ * sits beside rather than as the smallest control in the row.
+ */
+export function CloseRoom(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
+            <path
+                d="M6.3 3.6L9 6.3L11.7 3.6L14.4 6.3L11.7 9L14.4 11.7L11.7 14.4L9 11.7L6.3 14.4L3.6 11.7L6.3 9L3.6 6.3Z"
+                fill="#ece7dc"
+                stroke={OUTLINE}
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}

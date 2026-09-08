@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { SERVER_LOG, type ChatHome, type ChatLine, type ChatStatus, type ChatView } from '../../shared/chat';
-import { MoveChat } from '../icons';
+import { CloseRoom, MoveChat } from '../icons';
 import Tab from '../tab';
 
 /*
@@ -13,6 +13,21 @@ import Tab from '../tab';
 /** A channel chip sits tighter than a full button, as the design draws them. */
 const CHIP: CSSProperties = { padding: '2px 10px' };
 const CHIP_QUIET: CSSProperties = { ...CHIP, color: 'var(--color-dim)' };
+
+/*
+ * A room and whatever belongs to it are one item of the row. In the dock that
+ * keeps a close reading as part of its room rather than as another piece of
+ * the row's furniture; in the panel, whose chips wrap, it stops a wrap landing
+ * a close on the next line from the room it would close. The 2px inside is
+ * tighter than either row's own gap — 5px in the dock, 6px in the panel — so
+ * the pair groups against the rhythm of the rooms around it.
+ *
+ * Deliberately no `min-w-0`: the slot keeps the content-based shrink floor
+ * flex gives by default, which is the floor each Tab had while it was a direct
+ * child of the row. Zeroing it would let a crowded dock squeeze a room away
+ * entirely, which is a new behaviour rather than the preserved one.
+ */
+const ROOM_SLOT = 'flex items-center gap-[2px]';
 
 /**
  * Nick colours, so a conversation can be followed by shape instead of by
@@ -63,6 +78,39 @@ function channelLabel(name: string): string {
     return name;
 }
 
+/**
+ * Gives up a room the user joined by hand: it is parted and forgotten, so it
+ * does not come back on the next launch. Whether a room is the user's to close
+ * is `channel.closable`, which the service stamps and the panel never works out
+ * for itself — only the service knows which rooms an open window claims, and a
+ * close drawn on one of those would appear to work and then undo itself the
+ * next time a window opened. What happens on a press is the service's too: it
+ * refuses anything not hand-joined, so this asks and does not also judge.
+ *
+ * A pointer is not required to reach it. It is an ordinary button sitting next
+ * in order after the room it belongs to, present whenever that room is the
+ * open one, so the keyboard route is the room, then Tab once.
+ *
+ * The label names the room rather than the act, as the move control names its
+ * destination: "Close" is the same word on every one of them, and a screen
+ * reader reading it out says which button you are on and nothing about which
+ * conversation it would take away.
+ */
+function CloseControl({ channel }: { channel: string }): ReactNode {
+    const label = `Close ${channel}`;
+    return (
+        <button
+            type="button"
+            title={label}
+            aria-label={label}
+            onClick={() => void window.zanaris.chat.closeRoom(channel)}
+            className="tile flex h-[26px] w-[24px] shrink-0 items-center justify-center"
+        >
+            <CloseRoom />
+        </button>
+    );
+}
+
 function Channels({ view }: { view: ChatView }): ReactNode {
     return (
         <div className="flex flex-wrap gap-1.5 px-2.5 pb-[7px]" role="group" aria-label="Channels">
@@ -72,17 +120,24 @@ function Channels({ view }: { view: ChatView }): ReactNode {
                    the label is always the room's full name already — unlike the dock's Tab
                    below, whose truncate class can still clip a crowded row. */
                 return (
-                    <button
-                        key={channel.name}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => !on && void window.zanaris.chat.select(channel.name)}
-                        style={on ? CHIP : CHIP_QUIET}
-                        className={`btn gap-[7px] ${on ? 'btn-red' : ''}`}
-                    >
-                        {channelLabel(channel.name)}
-                        {!on && channel.unread > 0 && <span className="text-gold">{channel.unread}</span>}
-                    </button>
+                    <div key={channel.name} className={ROOM_SLOT}>
+                        <button
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => !on && void window.zanaris.chat.select(channel.name)}
+                            style={on ? CHIP : CHIP_QUIET}
+                            className={`btn gap-[7px] ${on ? 'btn-red' : ''}`}
+                        >
+                            {channelLabel(channel.name)}
+                            {!on && channel.unread > 0 && <span className="text-gold">{channel.unread}</span>}
+                        </button>
+                        {/* These chips wrap, so they could afford a close on every hand-joined room
+                            where the dock's single row cannot — but two rules about the same four
+                            rooms is one more than anyone should have to learn, so this follows the
+                            dock and shows the close on the open room only. Beside the chip rather
+                            than inside it, for the reason the dock's does the same. */}
+                        {on && channel.closable && <CloseControl channel={channel.name} />}
+                    </div>
                 );
             })}
         </div>
@@ -120,6 +175,15 @@ function MoveControl({ home, className = '' }: { home: ChatHome; className?: str
  * The rooms sit in the order they were joined and never reorder. An unread
  * count changes inside a tab that stays put; a room list that reshuffles as
  * people talk is a room list you cannot aim at.
+ *
+ * The close control appears on the open room and nowhere else. One on every
+ * hand-joined room would put a control per room into a row already carrying
+ * names, unread counts and the move control. Revealed on hover instead it
+ * would be the one control here a keyboard could not reach, and revealing it
+ * would either shove every room to its right as the pointer crossed the row
+ * or reserve the width it was meant to save. Tied to the open room there is
+ * at most one of it, it costs a fixed 26px, and it arrives and leaves only
+ * when the user changes rooms — which redraws every tab in the row anyway.
  */
 function DockHeader({ view }: { view: ChatView }): ReactNode {
     return (
@@ -129,15 +193,20 @@ function DockHeader({ view }: { view: ChatView }): ReactNode {
                 {view.channels.map(channel => {
                     const on = channel.name === view.active;
                     return (
-                        <Tab
-                            key={channel.name}
-                            role="button"
-                            label={channelLabel(channel.name)}
-                            title={channel.name}
-                            open={on}
-                            onSelect={() => void window.zanaris.chat.select(channel.name)}
-                            after={!on && channel.unread > 0 ? <span className="shrink-0 text-gold">{channel.unread}</span> : null}
-                        />
+                        <div key={channel.name} className={ROOM_SLOT}>
+                            <Tab
+                                role="button"
+                                label={channelLabel(channel.name)}
+                                title={channel.name}
+                                open={on}
+                                onSelect={() => void window.zanaris.chat.select(channel.name)}
+                                after={!on && channel.unread > 0 ? <span className="shrink-0 text-gold">{channel.unread}</span> : null}
+                            />
+                            {/* Beside the tab, never in its `after`, which renders inside the tab's
+                                own button — a button within a button is invalid HTML that no two
+                                browsers agree on. Why only the open room is above. */}
+                            {on && channel.closable && <CloseControl channel={channel.name} />}
+                        </div>
                     );
                 })}
             </div>
