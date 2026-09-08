@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
-import { SERVER_LOG, type ChatHome, type ChatLine, type ChatStatus, type ChatView } from '../../shared/chat';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react';
+import { SERVER_LOG, type ChatHome, type ChatLine, type ChatStatus, type ChatView, type ViewChannel } from '../../shared/chat';
 import { CloseRoom, MoveChat } from '../icons';
 import Tab from '../tab';
 
@@ -78,6 +78,58 @@ function channelLabel(name: string): string {
     return name;
 }
 
+/*
+ * The open room says which it is differently in the two views — `aria-current`
+ * on the dock's tabs, `aria-pressed` on the panel's chips — and the restore
+ * below has to find whichever one it is looking at.
+ */
+const OPEN_ROOM = '[aria-current="true"],[aria-pressed="true"]';
+
+/**
+ * Puts the keyboard back somewhere after a room closes.
+ *
+ * Closing is the only destructive control in the row, and pressing it takes
+ * its own button out of the tree. Three things then happen at once: focus
+ * falls to the document body, the log swaps to the server log because the
+ * client hands `active` back when it forgets a channel, and nothing says so —
+ * the panel's one live region carries connection state and not this. A
+ * keyboard user is left with no position and no confirmation.
+ *
+ * Moving focus to whichever room is open now answers all three together. The
+ * room it lands on is the one carrying `aria-current` or `aria-pressed`, so a
+ * screen reader announces where the user now is, and that announcement *is*
+ * the confirmation — a separate live-region message would be a second sentence
+ * saying the same thing, and one more thing to keep true.
+ *
+ * It waits for the room to leave `channels` rather than firing on the press.
+ * Closing is a round trip through main, which is allowed to refuse; a refusal
+ * that had already moved the focus would be a keyboard jump with nothing
+ * behind it. A refused close therefore leaves focus where it was, on a button
+ * that is still there.
+ */
+function useCloseFocus(channels: ViewChannel[]): {
+    group: RefObject<HTMLDivElement | null>;
+    closing: (channel: string) => void;
+} {
+    const group = useRef<HTMLDivElement | null>(null);
+    const awaited = useRef<string | null>(null);
+
+    /* No dependency list: the room's departure is what this waits for, and that arrives on a render the room list is not the only thing to change on. */
+    useLayoutEffect(() => {
+        const room = awaited.current;
+        if (room === null || channels.some(channel => channel.name === room)) return;
+        awaited.current = null;
+        group.current?.querySelector<HTMLElement>(OPEN_ROOM)?.focus();
+    });
+
+    return {
+        group,
+        closing: (channel: string) => {
+            awaited.current = channel;
+        }
+    };
+}
+
 /**
  * Gives up a room the user joined by hand: it is parted and forgotten, so it
  * does not come back on the next launch. Whether a room is the user's to close
@@ -89,22 +141,38 @@ function channelLabel(name: string): string {
  *
  * A pointer is not required to reach it. It is an ordinary button sitting next
  * in order after the room it belongs to, present whenever that room is the
- * open one, so the keyboard route is the room, then Tab once.
+ * open one, so the keyboard route is the room, then Tab once; `useCloseFocus`
+ * is what gives the keyboard somewhere to be afterwards.
  *
  * The label names the room rather than the act, as the move control names its
  * destination: "Close" is the same word on every one of them, and a screen
  * reader reading it out says which button you are on and nothing about which
  * conversation it would take away.
+ *
+ * The height is taken from the room it sits beside, not stated. It was 26px —
+ * the dock tab's own height, which `tab.tsx` forces inline — and that is right
+ * in the dock and 4.5px short in the panel, whose chips are 30.5px. Wanting
+ * the two views to agree is what made the size wrong in one of them: what has
+ * to agree is each control with the room it is bevelled against, and in a
+ * design that draws a hard two-colour edge on every surface, two squares whose
+ * edges miss each other read as a mistake. The 24px width stays stated,
+ * because it is a floor rather than a fit — WCAG 2.5.8 asks 24 CSS px of
+ * target in both directions, and width is the tight one here: the shortest
+ * room this ever stands beside is the dock's 26px tab.
  */
-function CloseControl({ channel }: { channel: string }): ReactNode {
+function CloseControl({ channel, closing }: { channel: string; closing: (channel: string) => void }): ReactNode {
     const label = `Close ${channel}`;
     return (
         <button
             type="button"
             title={label}
             aria-label={label}
-            onClick={() => void window.zanaris.chat.closeRoom(channel)}
-            className="tile flex h-[26px] w-[24px] shrink-0 items-center justify-center"
+            onClick={() => {
+                /* Name what is about to go before asking for it, so the focus restore knows whose disappearance it is waiting on. */
+                closing(channel);
+                void window.zanaris.chat.closeRoom(channel);
+            }}
+            className="tile flex w-[24px] shrink-0 items-center justify-center self-stretch"
         >
             <CloseRoom />
         </button>
@@ -112,8 +180,9 @@ function CloseControl({ channel }: { channel: string }): ReactNode {
 }
 
 function Channels({ view }: { view: ChatView }): ReactNode {
+    const { group, closing } = useCloseFocus(view.channels);
     return (
-        <div className="flex flex-wrap gap-1.5 px-2.5 pb-[7px]" role="group" aria-label="Channels">
+        <div ref={group} className="flex flex-wrap gap-1.5 px-2.5 pb-[7px]" role="group" aria-label="Channels">
             {view.channels.map(channel => {
                 const on = channel.name === view.active;
                 /* No title here: these chips wrap onto new rows rather than truncating, so
@@ -136,7 +205,7 @@ function Channels({ view }: { view: ChatView }): ReactNode {
                             rooms is one more than anyone should have to learn, so this follows the
                             dock and shows the close on the open room only. Beside the chip rather
                             than inside it, for the reason the dock's does the same. */}
-                        {on && channel.closable && <CloseControl channel={channel.name} />}
+                        {on && channel.closable && <CloseControl channel={channel.name} closing={closing} />}
                     </div>
                 );
             })}
@@ -182,14 +251,18 @@ function MoveControl({ home, className = '' }: { home: ChatHome; className?: str
  * would be the one control here a keyboard could not reach, and revealing it
  * would either shove every room to its right as the pointer crossed the row
  * or reserve the width it was meant to save. Tied to the open room there is
- * at most one of it, it costs a fixed 26px, and it arrives and leaves only
- * when the user changes rooms — which redraws every tab in the row anyway.
+ * at most one of it, and the 26px it takes arrives and leaves only on a room
+ * change the user asked for, shifting the row by that fixed amount and by no
+ * more however many rooms there are. That shift is real, not nil — the case
+ * against hover-reveal is not that a row must never move, but that it must not
+ * move under a pointer that was only crossing it.
  */
 function DockHeader({ view }: { view: ChatView }): ReactNode {
+    const { group, closing } = useCloseFocus(view.channels);
     return (
         <div className="flex items-center gap-[5px] px-1.5 py-[3px]">
             {/* A group of controls rather than a tablist, and every room acts when clicked, including the open one — see `role` in tab.tsx. */}
-            <div role="group" aria-label="Channels" className="flex min-w-0 items-center gap-[5px] overflow-hidden">
+            <div ref={group} role="group" aria-label="Channels" className="flex min-w-0 items-center gap-[5px] overflow-hidden">
                 {view.channels.map(channel => {
                     const on = channel.name === view.active;
                     return (
@@ -205,7 +278,7 @@ function DockHeader({ view }: { view: ChatView }): ReactNode {
                             {/* Beside the tab, never in its `after`, which renders inside the tab's
                                 own button — a button within a button is invalid HTML that no two
                                 browsers agree on. Why only the open room is above. */}
-                            {on && channel.closable && <CloseControl channel={channel.name} />}
+                            {on && channel.closable && <CloseControl channel={channel.name} closing={closing} />}
                         </div>
                     );
                 })}
