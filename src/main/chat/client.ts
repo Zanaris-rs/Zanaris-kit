@@ -1,5 +1,5 @@
 import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatStatus, type ChatView } from '../../shared/chat.ts';
-import { formatCommand, isChannel, mentions, parseInput, parseLine } from './protocol.ts';
+import { foldName as key, formatCommand, isChannel, mentions, parseInput, parseLine, sameName as same } from './protocol.ts';
 
 /**
  * One IRC conversation, as pure state over injected IO: it is handed lines and
@@ -56,10 +56,6 @@ interface Chan {
     pending: string[] | null;
     lines: ChatLine[];
 }
-
-/** Channel names and nicks are case-insensitive on IRC, so everything is keyed folded. */
-const key = (name: string): string => name.toLowerCase();
-const same = (a: string, b: string): boolean => key(a) === key(b);
 
 /** Sorted and deduplicated, folded, with the raw name breaking ties so the order never wobbles. */
 function sortNicks(names: string[]): string[] {
