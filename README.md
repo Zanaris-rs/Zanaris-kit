@@ -72,6 +72,26 @@ partition (`persist:server:<id>:2`) and the title "Lost City — World 5 (2)",
 so two accounts on one server never share cookies or client prefs. Slot
 numbers are reused once a window closes.
 
+**Hiscores** is the rail's other server tool, offered for the three remote
+servers only — a one-player world has nobody to rank, so single player never
+gets it. A name box and a Look up button sit above a Skill · Rank · Lvl · XP
+table; the lookup fires on submit, never on a keystroke, since Lost City
+rate-limits after a handful of requests inside a minute and typing a name would
+spend that budget before you finished it. Overall comes first and is picked out
+in gold, then whatever skills the server actually sent — Lost City Labs runs a
+later revision than 274 and returns Slayer and Farming rows 274 never will, so
+the table shows exactly what a lookup handed it rather than a fixed list. A
+name nobody holds gets its own message instead of an empty table or a raw
+error, and a 429 gets the same plain rate-limiting sentence wherever it comes
+from. Lost City's raw API carries xp with one extra digit of precision, a
+genuine tenth the client keeps internally; main's parser floors it away before
+the panel ever sees it, matching the whole numbers Zanaris and Labs already
+send, which is the one place comparing the panel against the raw API will look
+wrong without being wrong. The **Full hiscores** link at the foot opens the
+server's own page in your system browser rather than a tab in this window —
+page tabs are not built yet, so the label says where the link goes rather than
+leaving a new window to explain itself.
+
 **Single player** needs no server at all: the kit carries the Lost City engine
 and the game's files, and File > New Window For > Single player starts a world
 on this computer. There is no account and nothing to sign up for — any name
@@ -101,13 +121,32 @@ detection; everything equivalent here is done from main or not at all.
 
 Chat is one IRC connection for the whole app, not one per window: it stays up
 while you open and close game windows, and every window shows the same
-conversation. It joins Libera.Chat over TLS, the shared `#04scape` lobby
-always, plus a room per server while you have a window on it — `#04scape-lostcity`,
-`#04scape-zanaris`, `#04scape-labs`. Those names are prefixed because this is a
-public network where a bare `#zanaris` may already belong to someone else. A
-local or self-added server gets no room, since it would be a room of one.
+conversation. It joins SwiftIRC over TLS — the network LostHQ's community
+actually uses — in the shared `#LostHQ` lobby always, plus `#LostCity` while
+you have a Lost City window open. Zanaris and Labs get no room: there is no
+channel for either on SwiftIRC, and guessing one would risk dropping a player
+into a stranger's channel on a large public network. A local or self-added
+server gets no room either, since it would be a room of one.
 
-The first time you open the panel it asks for a nick, because there is nothing
+Chat lives along the bottom of the window by default — a dock, wide and
+short — rather than in the side panel with Worlds and Single player. It opens
+and closes from the rail's Chat tab exactly as the panel does, except that it
+does not have to fight anything for the column: the dock and the panel are
+independent regions, so Worlds can be open on the side while the dock sits
+underneath it. Its top edge is a drag handle, clamped between a floor and
+half the screen, and the height you leave it at is remembered next to the
+nick. The `→|` control in its header sends it to the side column instead,
+evicting whatever tool was parked there, and the matching control in the
+panel sends it back to the bottom.
+
+The bottom is the default because of proportion, not preference. `Chat.tsx`
+was drawn for 320px wide by full height, and a conversation is a column of
+short lines — a shape that wraps almost every one of them at that width.
+Along the bottom at around 735px wide the same log runs wide and short
+instead, so six rows there hold roughly what eleven hold in the panel, and
+either way the game keeps the middle of the screen.
+
+The first time you open chat it asks for a nick, because there is nothing
 sensible to default to and a name others see should be chosen rather than
 assigned. Nothing connects until you pick one, which is also why an unattended
 capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join` and `/part`
@@ -120,9 +159,12 @@ driven in tests without a socket. The service around it owns the TLS socket
 and the reconnect backoff, which grows and caps — a client that retries harder
 the longer a network is down is a client that gets banned.
 
-Not carried over from LostKit, which reaches LostHQ's hosted web client
-instead: that host exposes no public IRC port, so this is a different room
-rather than the same one.
+Not carried over from LostKit, which reaches LostHQ's community through
+`https://irc.losthq.rs/`, a hosted web client rather than a server: that host
+exposes no public IRC port. But it is the same room, not a different one — the
+web client's own defaults are `wss://irc.swiftirc.net:4443/`, joining
+`#LostCity` and `#LostHQ`, and SwiftIRC also exposes ordinary IRC ports, so
+this app's raw-TLS client reaches those same channels directly.
 
 ## How it looks
 
@@ -178,7 +220,7 @@ a second, which would stall any game you were not looking at.
 ## The catalog
 
 `<userData>/servers.json` (on macOS, `~/Library/Application Support/zanaris-kit/`),
-seeded on first run, one entry per server:
+seeded on first run, one entry per server, now at file version 4:
 
 
 | id | revision | worlds from | detail switch | wiki |
@@ -187,14 +229,25 @@ seeded on first run, one entry per server:
 | `zanaris` | 274 | `zanaris.rs/worlds.json`, players from each world's `world.json` | yes | losthq |
 | `lostcitylabs` | unknown, "May 2005 per Lost City Labs" | a static list, worlds 1 to 4 | no parameter found | none |
 | `singleplayer` | 274, the bundled engine | none | | losthq |
-| `local` | 289, as `engine/data/config/world.json` sets it | none | | none |
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 `{url}` and `{lowmem}`, whether detail is switchable, the default world),
 `bookmarks` for the page-tab menu that arrives next milestone (LostHQ's
-guides, the clue coordinator, the world map, markets), an optional `hiscores`
-API, the `hosts` page tabs may visit, and a wiki URL that never claims which
-revision it describes, since losthq moves on its own schedule.
+guides, the clue coordinator, the world map, markets), the `hosts` page tabs
+may visit, and a wiki URL that never claims which revision it describes, since
+losthq moves on its own schedule. The three remote entries also carry a
+`hiscores` block: a `source` — a `kind` naming which of the three lookup APIs
+it is, plus the URL for it — and a `site` the panel's "Full hiscores" link
+opens. Version 3 kept only Lost City's as a bare URL template; version 4 is
+what turned it into this shape, and what gave Zanaris and Labs one of their
+own for the first time. Single player carries no `hiscores`, since a
+one-player world has nobody to rank.
+
+A built-in server's `hiscores` is read back from the defaults above on every
+launch rather than frozen from the file on disk — the same trade single
+player's own revision already makes. It is the kit's knowledge, not something
+the add form ever offered a way to set, so hand-editing or deleting one only
+lasts until the next launch, when it comes right back.
 
 The app was called SwiftKit until the rename, and `userData` follows the
 package name, so that directory used to be `.../Application Support/swiftkit/`.
@@ -224,21 +277,72 @@ and the state starts empty.
 
 Main owns all geometry. Each server window is one full-window **shell** view
 (React, the only view with a preload) with the **game** view placed on top of
-it inside the content rect. The shell draws the strip, rail and panel exactly
-where main says they are, and leaves the content rect empty.
+it inside the content rect. The shell draws the strip, rail, panel and dock
+exactly where main says they are, and leaves the content rect empty.
 
-Opening the panel widens the window by 320px so the content rect, and with it
-the game view, never changes. When that is not possible the engine falls back
-in order:
+A new window opens with a content rect of 813×571: a game view of 765×535,
+the bare canvas plus the client page's own controls strip below it
+(`PAGE_CONTROLS_HEIGHT`, `src/shared/layout.ts`). The floor a window can still
+be dragged to stays the bare 765×503 canvas — `MIN_CONTENT_WIDTH`/
+`MIN_CONTENT_HEIGHT` are unchanged, so the default is just tight rather than
+loose, not a new minimum. Below that default, the client page is not ours:
+every server serves the same template, and its own `overflow: auto` around a
+`100vh` centring column can put up a vertical and a horizontal scrollbar that
+induce each other once the game view is shorter than the page's natural
+height — the bare-canvas floor, and the dock pushing the content rect below
+it while maximised, both land there. Main injects a small stylesheet into the
+game view's `dom-ready` (the kit's own offline and starting pages are left
+alone) that hides the scrollbar — a hidden bar reserves no gutter, which is
+what actually stops the two axes inducing each other — and separately swaps
+that `100vh` for a percentage of the view's own height, which keeps the
+canvas centred in an oversized window now that `vh` is gone rather than
+fixing anything itself. When the page does overflow anyway, it clips its
+controls strip at the bottom rather than the canvas at the top for an
+unrelated reason: `overflow: auto` rests scrolled to zero by default, so the
+visible window onto the content starts at its top edge. The stylesheet also
+centres `safe`, a no-op on the stock markup today — `center` only ever
+carries `min-height`, so it can never end up shorter than its own content —
+kept as a guard against a future change to the served page.
+
+Opening the panel or the dock is supposed to grow the window rather than
+shrink the game underneath it, and now that both exist that has to be true on
+two axes at once: the panel costs width, the dock costs height. Rather than
+grow the old single-axis engine into two similar-but-not-identical blocks of
+arithmetic, the fallback ladder was pulled out into one 1-D solver and called
+once per axis, so `mode` is a pair, `{ x, y }` — a user who is both up against
+the edge of their screen and dragging the dock tall sees both things happen,
+to two different edges, and both get said.
 
 | mode | when | what happens |
 |---|---|---|
-| widen | there is room to the right | the window grows |
-| shift | the window would run off the right edge | the window grows and moves left |
-| push | maximised, fullscreen, or no room on the display | the content rect narrows and the page's own auto-scaling shrinks the canvas |
+| widen | there is room to grow, on that axis | the window grows |
+| shift | growing would run the window off the screen | the window grows and slides back onto it |
+| push | maximised, fullscreen, or no room on the display | the content rect gives way instead of the window: on x only as far as the canvas width, on y far enough that part of the canvas can end up out of view — the page does not rescale to follow |
 
-The active mode is stated in the panel rather than silently substituted. The
-content rect never drops below 765 x 503 unless the user shrinks the window.
+Nothing in the served page scales the canvas down to match: its `setSize` fits
+the canvas to the window only for someone who has picked **Auto Sizing** from
+the controls under the game, and the default is a fixed 765×503 at 1x. So a
+`push` that eats into the 503 leaves the bottom of the canvas out of view —
+still reachable by scrolling, but with no bar to hint that there is anything
+to scroll to, since the stylesheet above hides them. The notes under the panel
+and the dock say that, rather than claiming a rescale that did not happen.
+
+The active mode is stated per axis rather than silently substituted — "the
+window moved left" and "the height came out of the game area" are
+different sentences, and hitting both at once deserves both.
+
+The two axes disagree, on purpose, about who gives way first. On x, `push`
+shrinks the content because the panel is one of several tools sharing a 320px
+column and can simply be closed, so the content rect still never drops below
+765 wide unless the user shrinks the window that far themselves. On y the
+dock holds the conversation the user just asked to see, and a chat window
+that silently becomes nothing is worse than a game canvas a few pixels
+shorter — so the dock is the one thing here that never gets silently
+dropped: it shrinks first, down to its own floor, and only once it is
+already at that floor does the content rect give up height too. A short
+window with the dock open can therefore now push the content below 503 tall,
+which used to be impossible; that is deliberate, and it is the opposite
+choice from the one x makes for exactly the reason above.
 
 ## Running it
 
@@ -271,10 +375,13 @@ ms, default 15000) writes each window's shell and game views separately,
 because a window's own webContents holds nothing when its content lives in
 child views. It opens the panel on a loaded window, opens the Worlds tool,
 waits for the list, switches to another world and captures that, opens the
-Single player tool on the window running the bundled world, then opens a
-second instance of that server. It keeps its own `state.json` beside the
-screenshots so a test switch never changes what the next real launch opens.
-A view that has no frame yet is retried, then skipped.
+Hiscores tool on each server that has one and looks a single name up there —
+one request per server and no retry, since Lost City rate-limits after a
+handful inside a minute — opens the Single player tool on the window running
+the bundled world, then opens a second instance of that server. It keeps its
+own `state.json` beside the screenshots so a test switch never changes what
+the next real launch opens. A view that has no frame yet is retried, then
+skipped.
 
 ## Verified
 
@@ -285,21 +392,32 @@ One capture run with every catalog server open at once:
 | Lost City | login screen at World 5 | "Lost City · W5 · low · 239 ms", the globe on the rail |
 | Zanaris | login screen | "Zanaris · W1 · low · N ms" |
 | Lost City Labs | login screen | "Lost City Labs · W1 · N ms", no detail since Labs has no switch |
-| Local server | offline page, `ERR_CONNECTION_REFUSED`, auto-retry | "Local server", no worlds tool |
 | Lost City, Worlds open | untouched | five worlds with region, players and latency, W5 marked in gold, the red Low detail slab pressed; mode **widen** |
 | Lost City, after choosing W1 | login screen at World 1 | "Lost City · W1 · low · 294 ms", W1 marked; title "Lost City — World 1" |
+| Lost City, Hiscores open | untouched | "Showing granny_grunt", Overall picked out in gold at rank 18, level 1,724, 143,195,458 xp, then Attack down to Crafting in view, 20 rows in all. Every xp is a whole number — Attack reads 13,073,159, the floor of the raw `value` 130731598 |
+| Zanaris, Hiscores open | untouched | the header row and nothing else, with "No hiscores entry for that name." in warn: `zezima` is nobody on Zanaris, and the panel says so rather than showing an empty table |
+| Lost City Labs, Hiscores open | untouched | "Showing knight", Overall in gold at rank 1, level 1,176, 18,174,678 xp; 22 rows in all, Labs' later revision sending the Slayer and Farming lines 274 never does |
 | Lost City (2), opened after the hop | login screen at World 1, the remembered world | slot 2, `persist:server:lostcity:2` |
+
+The Zanaris and Labs frames caught the panel before its pixel font landed, so
+the title and the Look up label are blank in those two — everything drawn in
+the sans face, the table and its message included, is there. They evidence the
+lookup, not the chrome around it.
 
 The version 1 `servers.json` on disk migrated in place during that run, with
 no recovery prompt, and the state file recorded the hop.
 
-250 tests cover the pure modules: layout, catalog (validation, defaults, file
-recovery, v1 to v2 migration), slots, tabs, the window registry, the world
-sources against the real API payloads (including a check that the Lost City
-template reproduces LostHQ's URLs exactly), the worlds service (cache, shared
-fetch, last-good-on-error, latency by host), the per-window switch state, the
-app state store, the navigation guard, and the latency probe against a local
-listener.
+371 tests cover the pure modules: layout, catalog (validation, defaults, file
+recovery, a version 1, 2 or 3 file each migrating into version 4, and a
+built-in's hiscores block re-adopted from the defaults), slots, tabs, the
+window registry, the world sources against the real API payloads (including a
+check that the Lost City template reproduces LostHQ's URLs exactly), the
+worlds service (cache, shared fetch, last-good-on-error, latency by host), the
+hiscores sources against each server's own payload (the xp floor, Lost City's
+empty 200, and the 404s that are and are not a missing player), the hiscores
+service (supersession by sequence number, the last table kept through a
+failure, the rate-limit message), the per-window switch state, the app state
+store, the navigation guard, and the latency probe against a local listener.
 
 ## Known
 
@@ -312,6 +430,20 @@ listener.
   occluded surface, and once the screen sleeps most shots come back "Current
   display surface not available for capture". The run still completes and skips
   those frames; rerun it with the display awake.
+- **A successful-looking capture can still be stale.** `capturePage` does not
+  always fail loudly when a window goes occluded — it can also hand back an
+  old frame without an error at all, so the log reports success and the PNG
+  looks plausible while actually being a duplicate of an earlier shot. It
+  happened once on this branch: a Hiscores capture logged a correct `ready
+  "granny_grunt" 20 row(s)` and wrote a shell PNG that was byte-identical to
+  an unrelated capture of the same window taken moments before, catchable
+  only by hashing the two files against each other. It is likeliest on any
+  capture step that awaits a real network round trip between fronting the
+  window and shooting it — fronting is a point-in-time guard, not a held
+  invariant, and both the Hiscores and Worlds passes do exactly that. The fix
+  for the run that hit it was keeping the display awake throughout, per the
+  bullet above; the safeguard for reading the evidence is not trusting a
+  capture's log line over its own pixels.
 
 ## Security posture
 
@@ -339,6 +471,7 @@ src/main/slots.ts           pure: slot numbers, partitions, titles              
 src/main/tabs.ts            pure: the pinned game tab and page tabs                 (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
+src/main/chatDock.ts        pure: where chat lives, and what the side column shows  (tested)
 src/main/appState.ts        the state.json store                                    (tested)
 src/main/worlds/sources.ts  pure: LostHQ, Zanaris and static parsers, url templates (tested)
 src/main/worlds/service.ts  per-server world list and latency over injected IO      (tested)
@@ -352,7 +485,8 @@ src/main/menu.ts            application menu: new windows, the server list, the 
 src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.zanaris bridge
-src/renderer/Shell.tsx      strip, rail, panel
+src/renderer/Shell.tsx      strip, rail, panel, dock
+src/renderer/tab.tsx        the shared tab button, worn by the strip and the dock header
 src/renderer/tools/Worlds.tsx
 static/offline.html         shown when a server can't be reached
 ```
@@ -370,6 +504,5 @@ the reload button) is parked in `git stash`.
    search, the map action, the per-server host allowlist, per-tab zoom.
 4. **Shared tools.** Screenshot cropped to the canvas, timers with an AFK
    reset, notes, settings, always-on-top.
-5. **Chat.** IRC on Libera.Chat, channels under the `#04scape` prefix.
-6. **Server tools.** Hiscores, clue lookup and calculators, with the data pack
-   loader.
+5. **Chat.** IRC on SwiftIRC, joining `#LostHQ` and `#LostCity`.
+6. **Server tools.** Clue lookup and calculators, with the data pack loader.

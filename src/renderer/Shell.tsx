@@ -1,7 +1,10 @@
-import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import type { Rect, ShellState, TabInfo, ToolId } from '../shared/ipc';
-import { Chat as ChatIcon, Globe, Hearth, PanelToggle } from './icons';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import type { Rect, ShellState, ToolId } from '../shared/ipc';
+import { DOCK_HEIGHT_MIN, type LayoutMode } from '../shared/layout';
+import { Bars, Chat as ChatIcon, Globe, Hearth, PanelToggle } from './icons';
+import Tab from './tab';
 import Chat from './tools/Chat';
+import Hiscores from './tools/Hiscores';
 import SinglePlayer from './tools/SinglePlayer';
 import Worlds from './tools/Worlds';
 
@@ -17,34 +20,279 @@ function revisionOf(state: ShellState): string {
  * decided by stylesheet order, which is not something to leave to chance.
  */
 
-/** Strip tabs hug their label instead of taking the rail tab's fixed 36x34 square. */
-const TAB_BOX: CSSProperties = { height: 26, width: 'auto' };
 /** The bar spans the window, so only its underside is bevelled. */
 const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
 /* A tab is not one of the surfaces that carry the stone's text shadow, and a gold
    digit on a lit sprite needs one of its own to stay a digit. */
 const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
 
-/** The open tab is a raised tile; the rest are tabs cut into the strip. */
-function Tab({ tab, revision }: { tab: TabInfo; revision: string }): ReactNode {
+/**
+ * What fitting the chrome cost, per axis, in plain words — null where it cost
+ * nothing worth saying. The axes are two sentences rather than one because
+ * they are two events: the panel can slide the window left in the same breath
+ * as the dock takes height off the game, and somebody who hits both is owed
+ * both.
+ *
+ * Neither push sentence promises the page will scale to follow, because it
+ * will not: the served client is a fixed 765x503 canvas, and its fit-to-window
+ * branch runs only for someone who has picked "Auto Sizing" from the controls
+ * under the game. The default is 1x, so what actually happens is that the view
+ * gets shorter than the page: first the controls strip below the canvas goes
+ * out of view, then the canvas's own bottom — behind no scrollbar, since we
+ * hide those. The note has to say that, and say scrolling still reaches it,
+ * rather than describe a rescale that never happened.
+ */
+const MODE_NOTE: Record<'x' | 'y', Record<LayoutMode, string | null>> = {
+    x: {
+        widen: null,
+        shift: 'The window moved left to make room.',
+        push: 'No room to widen, so the width came out of the game area, down to the canvas width — past that, the panel is what gives way.'
+    },
+    y: {
+        widen: null,
+        shift: 'The window moved up to make room.',
+        push: 'No room to grow taller, so the height came out of the game area and the bottom of the canvas can fall out of view. Scrolling still reaches it; "Auto Sizing" under the game scales the page to fit instead.'
+    }
+};
+
+/** The notes for the given axes, in axis order, and none where the window fitted its chrome by growing. */
+function modeNotes(mode: { x: LayoutMode; y: LayoutMode }, axes: readonly ('x' | 'y')[]): string[] {
+    return axes.map(axis => MODE_NOTE[axis][mode[axis]]).filter((note): note is string => note !== null);
+}
+
+/**
+ * A note hangs off the chrome that caused it: the panel is what widened the
+ * window, the dock is what grew it taller. So each region shows its own axis'
+ * note — and picks up the other axis' note as well whenever the region that
+ * owns it is closed, which is what keeps a note from having nowhere to go.
+ *
+ * Both open and both axes pushed is therefore two regions with one note each,
+ * never the same sentence twice; whichever one is open alone carries both.
+ * That second half is not a nicety, because an axis can push with its own
+ * region shut: the rail costs width whether or not the panel is open, the
+ * strip costs height whether or not the dock is, and a maximised window has
+ * neither to spare. So the axis with nothing of its own on screen is exactly
+ * the one whose note would otherwise be dropped, and the region that is open
+ * is the only place left to hang it. Neither region open leaves both undrawn,
+ * as it always has: there is no chrome on screen to hang them from.
+ */
+function noteAxes(otherRegionOpen: boolean, own: 'x' | 'y'): readonly ('x' | 'y')[] {
+    return otherRegionOpen ? [own] : ['x', 'y'];
+}
+
+/** The warning under a region, in the words the region's own axis earned. Absent, not empty, when there is nothing to say. */
+function ModeNotes({ notes }: { notes: string[] }): ReactNode {
+    if (notes.length === 0) return null;
     return (
-        <div
-            role="tab"
-            aria-selected={tab.active}
-            style={TAB_BOX}
-            className={`flex items-center gap-[7px] px-2.5 ${tab.active ? 'tile' : 'tab text-dim'}`}
-        >
-            <span className="truncate">{tab.title}</span>
-            {tab.kind === 'game' && <span className="shrink-0 text-[12px] text-faint">{revision}</span>}
+        <div className="mt-auto flex flex-col gap-1 px-2.5 py-2 text-[12px] text-warn">
+            {notes.map(note => (
+                <p key={note}>{note}</p>
+            ))}
         </div>
     );
 }
 
-const MODE_NOTE: Record<ShellState['mode'], string | null> = {
-    widen: null,
-    shift: 'The window moved left to make room.',
-    push: 'No room to widen, so the game area is narrower than the canvas and the page scales it down.'
-};
+/** A fine nudge, and Shift for the coarse one — a stroke of a drag in one press. */
+const DOCK_STEP = 10;
+const DOCK_STEP_COARSE = 50;
+
+/**
+ * The dock's top edge, draggable and, for anyone without a pointer, a
+ * separator that answers arrow keys. Both paths call the same
+ * `setDockHeight`, and neither clamps: main owns the range (`DOCK_HEIGHT_MIN`
+ * up to half the work area), and restating it here would just be a second
+ * copy of it to keep in step.
+ *
+ * `requested` tracks the height this component believes is current. Outside a
+ * drag `send` is the only thing allowed to move it: it sets `requested` to the
+ * number being asked for, then — once `setDockHeight` resolves — sets it
+ * again to whatever main actually applied. That second write is not optional.
+ * Main skips its own layout work when a request lands exactly where the dock
+ * already is, which happens at both ends of the range: one more ArrowDown at
+ * the floor, an End already at the ceiling. Without a reply to correct it,
+ * `requested` would be left holding the out-of-range number it optimistically
+ * guessed, and every later key press would build the next request on that
+ * wrong number instead of the real one — at the floor a few wasted presses
+ * paying back the debt, at the ceiling (where the guess used to be
+ * `Number.MAX_SAFE_INTEGER`) the control dead until the dock closed and
+ * reopened. Resolving `setDockHeight` with the applied height, on every path
+ * including the one that changes nothing, is what makes this safe rather
+ * than a renderer-side clamp of our own. The effect below folds the same
+ * confirmed value in whenever `height` changes for a reason that was not this
+ * component's own request — another window dragging the shared height, most
+ * plausibly — except while a drag of this component's own is in flight, where
+ * the pointer is the one that knows where the height is going.
+ */
+function DockGrip({ height }: { height: number }): ReactNode {
+    const requested = useRef(height);
+    const drag = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+    /*
+     * Every frame of a drag ends in a layout, and every layout pushes state, so
+     * this fires once a frame while the pointer is down — and while it is down
+     * the pointer owns `requested`, not the echo. A push landing between a
+     * pointermove and its frame would otherwise overwrite the position being
+     * aimed at with the one already applied, spending that frame on a request
+     * for the height the dock is already at; one landing just before pointerup
+     * would lose the release position outright. The echo is authoritative
+     * again the moment the drag ends, which is when this effect has something
+     * to say: a height that moved for a reason that was not this pointer.
+     */
+    useEffect(() => {
+        if (drag.current) return;
+        requested.current = height;
+    }, [height]);
+
+    /* The id of a scheduled frame, or null when none is pending. */
+    const frame = useRef<number | null>(null);
+    /* A pending frame calling back into an unmounted component would still reach main; nothing here needs that after the grip is gone. */
+    useEffect(() => () => {
+        if (frame.current !== null) cancelAnimationFrame(frame.current);
+    }, []);
+
+    /**
+     * The exact ceiling, learned rather than guessed, the moment any request
+     * overshoots it: main clamping a request down (`applied < px`) can only
+     * mean the ceiling itself is `applied`. Until that happens this is null
+     * and the announcement falls back to an estimate — see `announcedMax`.
+     */
+    const [exactMax, setExactMax] = useState<number | null>(null);
+
+    /**
+     * `px` is rounded here, once, before it goes anywhere else. A fractional
+     * pixel height is meaningless — `clientY` is fractional on any HiDPI
+     * display, which is routine — and without this, `applied < px` stops
+     * meaning "main clamped this": main rounds too, so an unrounded request
+     * like 200.33 comes back as 200 from ordinary rounding, no ceiling
+     * involved, and would have latched `exactMax` onto an arbitrary drag
+     * position forever. Rounding is not clamping — it does not narrow the
+     * range main enforces, only the precision of what is asked for — so it
+     * does not cross the line the spec draws about main being the authority.
+     */
+    const send = (px: number): void => {
+        const rounded = Math.round(px);
+        requested.current = rounded;
+        void window.zanaris.chat.setDockHeight(rounded).then(applied => {
+            // Stands aside for a live drag for the same reason the effect
+            // above does, and it is not a different race: main answers this
+            // call in the same breath as it pushes the state that effect
+            // watches, so a reply folded in mid-drag puts the target back on
+            // the frame the pointer has already moved past — and one landing
+            // between the last pointermove and pointerup takes the release
+            // position with it. Nothing in a drag needs the reply: each
+            // pointermove recomputes the height from where the drag began, so
+            // it cannot inherit a stale one, and the release's own send is
+            // made after `drag` is cleared and does fold its answer in.
+            if (!drag.current) requested.current = applied;
+            if (applied < rounded) setExactMax(applied);
+        });
+    };
+
+    const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+        if (event.button !== 0) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: requested.current };
+    };
+
+    /*
+     * The OS can report pointer movement far faster than the shell repaints,
+     * and each repaint is a full setContentBounds — so only the freshest
+     * position survives to the next frame. A frame already pending is left
+     * alone and just has its target replaced; a fresh one is scheduled only
+     * once nothing is in flight. That is what keeps a fast drag from queuing
+     * a pile of setDockHeight calls behind the one that already supersedes
+     * them all.
+     */
+    const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
+        const d = drag.current;
+        if (!d || event.pointerId !== d.pointerId) return;
+        // Up is taller: the strip moves opposite to the screen's y axis.
+        requested.current = d.startHeight + (d.startY - event.clientY);
+        if (frame.current === null) {
+            frame.current = requestAnimationFrame(() => {
+                frame.current = null;
+                send(requested.current);
+            });
+        }
+    };
+
+    const endDrag = (event: PointerEvent<HTMLDivElement>): void => {
+        if (!drag.current || event.pointerId !== drag.current.pointerId) return;
+        drag.current = null;
+        if (frame.current !== null) {
+            cancelAnimationFrame(frame.current);
+            frame.current = null;
+        }
+        // The frame just cancelled may never have run, so the release position
+        // is sent once here rather than left to whichever pointermove queued it —
+        // otherwise the last pixel of a drag could go unsent and unpersisted.
+        send(requested.current);
+    };
+
+    const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        switch (event.key) {
+            case 'ArrowUp':
+                send(requested.current + (event.shiftKey ? DOCK_STEP_COARSE : DOCK_STEP));
+                break;
+            case 'ArrowDown':
+                send(requested.current - (event.shiftKey ? DOCK_STEP_COARSE : DOCK_STEP));
+                break;
+            case 'Home':
+                send(DOCK_HEIGHT_MIN);
+                break;
+            case 'End':
+                // Not a sentinel: window.screen.availHeight is a real quantity
+                // (this display's own available height) that comfortably
+                // exceeds any per-window ceiling main could compute from it, so
+                // main's own clamp is still what decides where this lands — and
+                // unlike Number.MAX_SAFE_INTEGER, a reply that fails to arrive
+                // for some reason leaves `requested` at a plausible height
+                // rather than a nine-quadrillion one.
+                send(window.screen.availHeight);
+                break;
+            default:
+                return;
+        }
+        event.preventDefault();
+    };
+
+    /*
+     * The true ceiling is workArea.height / 2 on whichever display the window
+     * is on, and only main can see that display. window.screen is the same
+     * idea from the renderer's own side of the glass — close enough for a
+     * screen reader's announcement without a round trip to ask main, or a
+     * second formula that could drift from its one. Once `exactMax` has been
+     * learned from an actual reply, it is the truth and this estimate steps
+     * aside for it.
+     *
+     * Floored at `height`: `exactMax` is only ever refreshed when a request
+     * happens to overshoot it, so a window dragged onto a display with a
+     * taller ceiling after `exactMax` was learned on a shorter one would
+     * otherwise leave the announcement stale and, if the dock has since grown
+     * past that stale number, smaller than `aria-valuenow` — an invalid ARIA
+     * state. `height` is always current and always within the true ceiling,
+     * so it is a safe floor regardless of how stale `exactMax` gets.
+     */
+    const announcedMax = Math.max(height, exactMax ?? Math.round(window.screen.availHeight / 2));
+
+    return (
+        <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize chat"
+            aria-valuenow={height}
+            aria-valuemin={DOCK_HEIGHT_MIN}
+            aria-valuemax={announcedMax}
+            tabIndex={0}
+            className="dock-grip absolute inset-x-0 top-0 h-1"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onLostPointerCapture={endDrag}
+            onKeyDown={onKeyDown}
+        />
+    );
+}
 
 /**
  * The rail's tools, in order. Main says which of these a window offers. The
@@ -55,22 +303,32 @@ const MODE_NOTE: Record<ShellState['mode'], string | null> = {
  * A tool is either the app's or this window's server's, and the rail scores a
  * divider where one becomes the other: chat is one conversation shared by every
  * window, while worlds only means anything for the server in front of you.
+ *
+ * The order here is one of three copies of the rail's order, and the other two
+ * live in main: the tools builder in `main/serverWindow.ts`, which feeds
+ * `firstLegalSideOccupant` and so `panelAvailable`, and `RAIL` in
+ * `main/chatDock.test.ts`, which stands in for that builder. Nothing links
+ * them and no test compares them, so reordering this list means editing those
+ * two as well — and it is a live question now that every remote window offers
+ * both Worlds and Hiscores rather than one server tool at most.
  */
 const TOOLS: { id: ToolId; label: string; group: 'app' | 'server'; icon: ReactNode }[] = [
     { id: 'chat', label: 'Chat', group: 'app', icon: <ChatIcon /> },
     { id: 'worlds', label: 'Worlds', group: 'server', icon: <Globe /> },
+    { id: 'hiscores', label: 'Hiscores', group: 'server', icon: <Bars /> },
     { id: 'singleplayer', label: 'Single player', group: 'server', icon: <Hearth /> }
 ];
 
 /** Highlights are lines that named you, so the count is worth carrying on the rail. */
 function unreadChat(state: ShellState): number {
-    if (!state.chat) return 0;
     return state.chat.channels.reduce((total, channel) => total + channel.highlights, 0);
 }
 
 /**
- * The chrome around the game: strip, rail and panel, drawn exactly where main
- * placed them. The content rect is left empty; the game view sits on top of it.
+ * The chrome around the game: strip, rail, panel and dock, drawn exactly where
+ * main placed them. The content rect is left empty; the game view sits on top
+ * of it. The panel and the dock are independent regions and can both be open;
+ * which one holds chat is main's to say, and arrives as `chatHome`.
  */
 export default function Shell(): ReactNode {
     const [state, setState] = useState<ShellState | null>(null);
@@ -90,24 +348,46 @@ export default function Shell(): ReactNode {
     if (!state) return <div className="h-full bg-ink" />;
 
     const { rects } = state;
-    const note = MODE_NOTE[state.mode];
+    /* Main sends a dock rect only while the dock is open; the home is checked with it because the two arrive in one state and only one of them says which region chat is in. */
+    const dock = state.chatHome === 'bottom' ? rects.dock : null;
+    const revision = revisionOf(state);
     const tools = TOOLS.filter(t => state.tools.includes(t.id));
     const active = state.panelOpen ? state.activeTool : null;
     const unread = unreadChat(state);
+    /*
+     * Main says whether the side column has anything that could open in it; on
+     * a chat-only server with chat in the dock it has not, and main would
+     * refuse the open. The button says so rather than looking live, and names
+     * the reason: an unexplained dead control is the same bug wearing a
+     * different face.
+     */
+    const panelLabel = !state.panelAvailable
+        ? 'Nothing can open in the panel here: chat is docked at the bottom and this window has no other tool'
+        : state.panelOpen
+          ? 'Close panel'
+          : 'Open panel';
 
     return (
         <div className="relative h-full overflow-hidden bg-ink text-cream">
             <div style={at(rects.strip)} className="flex flex-col">
                 <header role="tablist" style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
                     {state.tabs.map(tab => (
-                        <Tab key={tab.id} tab={tab} revision={revisionOf(state)} />
+                        <Tab
+                            key={tab.id}
+                            role="tab"
+                            label={tab.title}
+                            open={tab.active}
+                            after={tab.kind === 'game' ? <span className="shrink-0 text-[12px] text-faint">{revision}</span> : null}
+                        />
                     ))}
                     <button
                         type="button"
                         onClick={() => void window.zanaris.shell.togglePanel()}
-                        aria-label={state.panelOpen ? 'Close panel' : 'Open panel'}
+                        disabled={!state.panelAvailable}
+                        title={panelLabel}
+                        aria-label={panelLabel}
                         aria-pressed={state.panelOpen}
-                        className="tile ml-auto flex h-[26px] w-[32px] shrink-0 items-center justify-center text-dim"
+                        className="tile ml-auto flex h-[26px] w-[32px] shrink-0 items-center justify-center text-dim disabled:opacity-60"
                     >
                         <PanelToggle />
                     </button>
@@ -120,28 +400,64 @@ export default function Shell(): ReactNode {
 
             {rects.panel && (
                 <aside style={{ ...at(rects.panel), borderRight: 'none' }} className="tile flex flex-col">
-                    {active === 'chat' && state.chat ? (
-                        <Chat view={state.chat} />
+                    {active === 'chat' ? (
+                        /* The panel is the side, so chat drawn in it is chat at home on the side. */
+                        <Chat view={state.chat} home="side" />
                     ) : active === 'worlds' && state.worlds ? (
                         <Worlds view={state.worlds} />
+                    ) : active === 'hiscores' && state.hiscores ? (
+                        <Hiscores view={state.hiscores} />
                     ) : active === 'singleplayer' && state.singlePlayer ? (
                         <SinglePlayer view={state.singlePlayer} />
                     ) : (
+                        /*
+                         * The last arm of the ternary rather than a state anyone can
+                         * reach: every window offers chat, so the rail is never empty;
+                         * main refuses to open the panel onto a column with no legal
+                         * occupant; and every tool a window offers arrives with a view
+                         * to draw. What this used to say — pick a tool on the rail —
+                         * became a lie the moment chat could live at the bottom, since
+                         * a server whose only tool is chat then has nothing the rail
+                         * can put here. So it says something that stays true if it
+                         * ever does render, instead of naming an action that may not
+                         * exist.
+                         */
                         <div className="px-2.5">
                             <h2 className="title">Tools</h2>
-                            <p className="text-[12px] text-dim">
-                                {tools.length === 0 ? 'This server has one page, so there is nothing to switch.' : 'Pick a tool on the rail.'}
-                            </p>
+                            <p className="text-[12px] text-dim">Nothing is open here.</p>
                         </div>
                     )}
-                    {note && <p className="mt-auto px-2.5 py-2 text-[12px] text-warn">{note}</p>}
+                    <ModeNotes notes={modeNotes(state.mode, noteAxes(dock !== null, 'x'))} />
                 </aside>
+            )}
+
+            {/*
+             * The dock. Main decides it exists, how tall it is and how far along
+             * the window it runs; the shell only fills it. Chat is its one
+             * possible occupant, which is why there is no tool switch here.
+             */}
+            {dock && (
+                <section style={at(dock)} className="dock flex flex-col" aria-label="Chat">
+                    <DockGrip height={state.dockHeight} />
+                    <Chat view={state.chat} home="bottom" />
+                    {/* Under the composer, on the edge of the window: the dock is usually what pushed the y axis, and until now the note for it only ever rendered inside a side panel that a chat-only server cannot even open. */}
+                    <ModeNotes notes={modeNotes(state.mode, noteAxes(rects.panel !== null, 'y'))} />
+                </section>
             )}
 
             {/* .rail paints the stone; main sizes it, so the stack of tabs is laid out here. */}
             <nav style={at(rects.rail)} className="rail flex flex-col items-center gap-1 py-[5px]" aria-label="Tools">
                 {tools.map((tool, i) => {
                     const badge = tool.id === 'chat' ? unread : 0;
+                    /*
+                     * While chat lives at the bottom its rail tab is the dock's
+                     * switch, so it reports the dock rather than the column chat no
+                     * longer occupies. Only the pressed state branches: main routes
+                     * the Chat tab by home on its own, and the null below still
+                     * means "shut the panel", which is never what the dock's switch
+                     * is asking for.
+                     */
+                    const on = tool.id === 'chat' && state.chatHome === 'bottom' ? state.dockOpen : active === tool.id;
                     const previous = tools[i - 1];
                     return (
                         <Fragment key={tool.id}>
@@ -150,9 +466,9 @@ export default function Shell(): ReactNode {
                                 type="button"
                                 title={tool.label}
                                 aria-label={badge > 0 ? `${tool.label}, ${badge} unread` : tool.label}
-                                aria-pressed={active === tool.id}
+                                aria-pressed={on}
                                 onClick={() => void window.zanaris.shell.selectTool(active === tool.id ? null : tool.id)}
-                                className={`tab relative ${active === tool.id ? 'tab-on' : ''}`}
+                                className={`tab relative ${on ? 'tab-on' : ''}`}
                             >
                                 {tool.icon}
                                 {/* The count sits on the tab rather than beside it: the rail is 48px wide. */}

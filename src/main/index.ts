@@ -1,16 +1,20 @@
-import { app, BrowserWindow, dialog, ipcMain, net, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, screen, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
+import { normaliseName } from '../shared/hiscores';
 import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
+import { DOCK_HEIGHT_MIN } from '../shared/layout';
 import { Catalog } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
 import { installMenu, type MenuActions } from './menu';
 import { WorldsService } from './worlds/service';
+import { HiscoresService } from './hiscores/service';
 import { ChatService, offlineChat, tlsConnect } from './chat/service';
+import { chatChanges } from './chatPersist';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
@@ -89,6 +93,8 @@ const catalog = new Catalog(join(userData, 'servers.json'));
 const appState = new AppState(join(CAPTURE_DIR ?? userData, 'state.json'));
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
+/** One hiscores lookup per server, shared the same way, so a name looked up in one window is on the table in the others. */
+const hiscoresServices = new Map<string, HiscoresService>();
 /** One chat connection for the whole app, built at ready because its nick comes out of the profile. */
 let chat: ChatService | null = null;
 
@@ -98,9 +104,34 @@ let update: LatestRelease | null = null;
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
 let singlePlayer: SinglePlayerService | null = null;
 
+/**
+ * Whether the focused window's panel could open at all. Main decides it, from
+ * the same rules that would refuse the open — a window whose only tool is chat,
+ * with chat living in the dock, has no legal occupant for the side column — and
+ * both the strip's toggle and the menu item below take their enabled state from
+ * it rather than working it out a second time.
+ */
+function panelAvailable(): boolean {
+    return focusedServerWindow()?.state().panelAvailable ?? false;
+}
+
+/** What the menu was last built with, so the rebuild below only runs when the item would actually change. */
+let menuPanelAvailable = false;
+
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
-    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update);
+    menuPanelAvailable = panelAvailable();
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuPanelAvailable);
+}
+
+/**
+ * One menu, many windows: the Toggle Panel item belongs to whichever window has
+ * focus, so it is re-examined when focus moves, when a window closes out from
+ * under it, and when chat's home changes app-wide — the three ways the answer
+ * moves without the catalog, the warning or the update doing anything.
+ */
+function syncMenuPanelItem(): void {
+    if (panelAvailable() !== menuPanelAvailable) installAppMenu();
 }
 
 /**
@@ -139,12 +170,59 @@ async function fetchJson(url: string): Promise<unknown> {
     return response.json();
 }
 
+/**
+ * The same request, with the status kept rather than thrown. `fetchJson` above
+ * treats any non-2xx as a failure, which is right for a world list — there is
+ * no such thing as a useful 404 there — and wrong for a hiscores lookup, where
+ * a 404 *is* the answer: two of the three servers say "no such player" with
+ * one, and only the body tells that apart from a proxy having a bad day. So
+ * both halves come back together and the parser, which knows each server's
+ * quirks, decides what they mean.
+ *
+ * A body that is not JSON resolves as undefined rather than throwing, for the
+ * same reason: an HTML error page from something in front of the server
+ * arrives with its own status, and the service has words for that status. A
+ * throw here would replace them with a parser message no player can act on.
+ * Only a transport failure — no route, no name, no answer inside the same 8s
+ * `fetchJson` allows — rejects.
+ */
+async function fetchStatus(url: string): Promise<{ status: number; json: unknown }> {
+    const response = await net.fetch(url, { signal: AbortSignal.timeout(8_000) });
+    const json = await response.json().catch(() => undefined);
+    return { status: response.status, json };
+}
+
 function worldsServiceFor(server: ServerDef): WorldsService | null {
     if (!server.worlds) return null;
     let service = worldsServices.get(server.id);
     if (!service) {
         service = new WorldsService(server.worlds, { fetchJson, probe: probeLatency, now: Date.now });
         worldsServices.set(server.id, service);
+    }
+    return service;
+}
+
+/**
+ * One lookup per server, built on the first window that server opens and kept
+ * for the app's life, exactly as the world list above is. The subscription
+ * fans out to that server's windows and no others: a name looked up in one
+ * Lost City window fills the table in the second one, while a Zanaris window
+ * beside them is not showing this server's hiscores at all. A lookup moves no
+ * chrome, so this is pushState rather than relayout — nothing to lay out
+ * again, only new rows to draw.
+ */
+function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
+    if (!server.hiscores) return null;
+    let service = hiscoresServices.get(server.id);
+    if (!service) {
+        // Seeded with the name last looked up on this server, so the box opens
+        // on it rather than empty — the service holds the name the panel
+        // prefills from, and this is the only moment it can be handed one.
+        service = new HiscoresService(server.hiscores, { fetch: fetchStatus }, appState.hiscoresName(server.id) ?? '');
+        hiscoresServices.set(server.id, service);
+        service.subscribe(() => {
+            for (const sw of serverWindows.values()) if (sw.state().server.id === server.id) sw.pushState();
+        });
     }
     return service;
 }
@@ -189,13 +267,20 @@ const windows = new ServerWindows((spec, onClosed) => {
             byShell.delete(sw.shellContentsId);
             log(`[main] closed ${spec.title}`);
             onClosed();
+            // Focus lands somewhere else, or nowhere, and the menu's panel item
+            // belongs to whoever has it now. Closing the last window on macOS
+            // fires no focus event at all, so it is done here as well.
+            syncMenuPanelItem();
         },
         {
             log,
             confirmClose,
             position: nextPosition(),
             worlds: worldsServiceFor(spec.server),
+            hiscores: hiscoresServiceFor(spec.server),
             chat: chatView,
+            chatHome: () => appState.chat().dock,
+            chatDockHeight: () => appState.chat().dockHeight,
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
@@ -349,10 +434,117 @@ ipcMain.handle(IPC.worldsSetDetail, async (event, detail: unknown) => {
     await sw.setDetail(detail);
 });
 
+// ── hiscores ──────────────────────────────────────────────────────────────
+//
+// Per server rather than per app, so each of these starts from the window that
+// asked and works out which server that is. A window whose server offers no
+// hiscores has no service and no tool to send these from, so every one of them
+// is a no-op there rather than an error.
+
+/**
+ * The longest name a lookup will carry, deliberately the same number
+ * `appState` refuses to store a remembered name past. Agreeing is the whole
+ * point: a longer name would be looked up and kept in the box for the rest of
+ * the session, then quietly dropped when the profile is read back on the next
+ * launch, and the prefill would go missing with nothing to explain it. The two
+ * caps answer different questions — what may be stored, and what may be asked
+ * of a server — so each states its own number where it enforces it.
+ */
+const HISCORES_NAME_MAX = 30;
+
+/**
+ * Awaited rather than fired and forgotten, though nothing is waiting on it
+ * today. Nothing comes back over the wire — every row the panel draws arrives
+ * by pushState — and the panel does not hold this promise at all: it `void`s
+ * the call and gates the Look up button, and the submit behind it, on
+ * `loading` from the pushed view. What the await buys is that the handler's
+ * own promise means what the channel name says, settling when the lookup is
+ * over rather than the moment the request goes out. It is what the handlers
+ * around it that do real work do — `worldsRefresh` hands back
+ * `refreshWorlds()`'s promise, the switch and single-player handlers await
+ * theirs — and one layer down capture mode leans on that settle directly,
+ * awaiting `service.lookup` because it is the only "the lookup has finished"
+ * this feature has to offer.
+ *
+ * A box with no name in it is not a lookup, and the test for that is
+ * `normaliseName`'s own: it keeps only [a-z0-9_], so `   ` and `!!!` alike come
+ * out empty and would otherwise send a request to a nameless URL — a round trip
+ * spent on nothing against a server that rate-limits after a handful of them,
+ * answered with a parse failure the player cannot act on, and `!!!` written
+ * into the profile as the name to open the box on next time. Asking the same
+ * function the URL is built from is what keeps this guard and that URL from
+ * ever disagreeing about what counts as a name.
+ *
+ * Too long is refused rather than shortened, as `appState` refuses rather than
+ * truncates: a name cut to fit is a different, still-plausible player.
+ */
+ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
+    if (typeof name !== 'string') return;
+    const wanted = name.trim();
+    if (normaliseName(wanted) === '' || wanted.length > HISCORES_NAME_MAX) return;
+    const server = windowFor(event.sender)?.state().server;
+    if (!server) return;
+    const service = hiscoresServiceFor(server);
+    if (!service) return;
+    // Remembered before the request rather than after it, and whatever the
+    // server answers: the box keeps the name that was looked up even when
+    // nobody by that name exists, so the profile keeps the same thing the box
+    // does. Waiting for a reply would only mean a name typed just before the
+    // app quits is the one that goes missing.
+    appState.setHiscoresName(server.id, wanted);
+    await service.lookup(wanted);
+});
+
+/**
+ * "Full hiscores" opens the server's own page in the system browser.
+ *
+ * The plan asked for a page tab in this window, and page tabs are not built:
+ * `TabModel.open` exists and is tested, but nothing calls it, there is no view
+ * for a page tab's content to draw in, and the strip's + and address row are
+ * not wired. Waiting for them would leave the panel with a link that does
+ * nothing, so the page opens outside the kit instead — a visible deviation from
+ * the plan, which is why the panel's own label says where the link goes rather
+ * than letting the browser window be how the user finds out.
+ *
+ * https only, as in `openExternal` above and serverWindow's window-open
+ * handler: `servers.json` is a file the user edits by hand, so this URL is no
+ * more trusted than the update feed's.
+ */
+ipcMain.handle(IPC.hiscoresOpenSite, event => {
+    const site = windowFor(event.sender)?.state().server.hiscores?.site ?? null;
+    if (!site) return;
+    if (!/^https:\/\//.test(site)) {
+        log(`[main] refused to open ${site}: not https`);
+        return;
+    }
+    void shell.openExternal(site);
+});
+
 // ── chat ──────────────────────────────────────────────────────────────────
 //
 // One conversation for the app, so these take no window: any window's panel
 // drives the same connection, and every window is shown the result.
+
+/**
+ * Writes back the two chat fields that follow the connection rather than a
+ * control: the nick the connection ended up with, and the rooms joined by
+ * hand — the two the owner asked to survive a restart. Both are learnt by
+ * watching the view rather than by hooking each command; `chatPersist.ts`
+ * argues why. This is the whole of it in main: which rooms are the user's own
+ * is the service's to say, and nothing here re-derives it.
+ *
+ * What was last written is read back out of `AppState` rather than kept in a
+ * variable beside it. `AppState` holds what `save()` put in the file — only the
+ * dock height is ever staged without one — so there is no second copy of the
+ * truth for a writer somewhere else to leave stale. `setChat` rather than
+ * `stageChat`: a nick or a room changes by hand, once, where the dock height
+ * arrives once a frame for as long as a drag lasts, which is the volume
+ * `stageChat` exists for.
+ */
+function persistChat(view: ChatView): void {
+    const patch = chatChanges(appState.chat(), view);
+    if (patch !== null) appState.setChat(patch);
+}
 
 ipcMain.handle(IPC.chatGet, (): ChatView => chatView());
 
@@ -366,12 +558,123 @@ ipcMain.handle(IPC.chatSelect, (_event, channel: unknown) => {
     chat?.select(channel);
 });
 
+/**
+ * Whether this room is the user's to close is not asked here: only the service
+ * has both halves of that derivation, so it makes the judgement and refuses
+ * what is not hand-joined. A copy of the test in this handler would be a
+ * second opinion, and the day the two disagreed the close control would be
+ * the one telling the truth.
+ */
+ipcMain.handle(IPC.chatCloseRoom, (_event, channel: unknown) => {
+    if (typeof channel !== 'string') return;
+    chat?.closeRoom(channel);
+});
+
+/**
+ * Deliberately does not write the nick: `persistChat` above does, from the
+ * view, which is what makes the next launch connect without asking again. The
+ * two are not the same value — a 433 renames us, and the server can rename us
+ * again later — and of the two writers only the observer revisits its answer.
+ * Writing here as well would leave the one that never looks again to win any
+ * launch where the rename came after it.
+ */
 ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
     if (typeof nick !== 'string' || nick.trim() === '') return;
-    const chosen = nick.trim();
-    // Remembered, so the next launch connects without asking again.
-    appState.setChat({ nick: chosen });
-    chat?.setNick(chosen);
+    chat?.setNick(nick.trim());
+});
+
+/**
+ * Where chat lives, for the whole app: one conversation cannot be at the bottom
+ * of one window and down the side of another without being two chats in the
+ * user's head. What is app-wide is where chat *goes*, though, not whether it is
+ * open — that was always per-window. So only the window whose →| was clicked
+ * rearranges around the move; the rest are told where chat now goes and keep
+ * whatever they had open, or a user with the world list up in another window
+ * would lose it to a click they made over here.
+ *
+ * The window that asked is the one whose shell sent this, which is the shell
+ * the control is drawn in. Moving it changes geometry rather than only what is
+ * drawn, and both of these lay the window out again — which pushes the new
+ * state itself, so nothing here follows them with a pushState.
+ */
+ipcMain.handle(IPC.chatSetHome, (event, home: unknown) => {
+    if (home !== 'bottom' && home !== 'side') return;
+    appState.setChat({ dock: home });
+    const asked = windowFor(event.sender);
+    for (const sw of serverWindows.values()) {
+        if (sw === asked) sw.moveChat(home);
+        else sw.syncChatHome(home);
+    }
+    // A home of 'bottom' takes chat out of the side column, which on a window
+    // with no other tool leaves the panel with nothing it could open onto.
+    syncMenuPanelItem();
+});
+
+/**
+ * How long the dock's height must sit still before it is written to the
+ * profile. Long enough that a drag — one height per animation frame, so around
+ * sixty a second — writes once when the user lets go, short enough that
+ * nothing plausible happens between the release and the write.
+ */
+const DOCK_HEIGHT_SETTLE_MS = 400;
+let dockHeightWrite: NodeJS.Timeout | null = null;
+
+/**
+ * The height applies to every window's layout on the frame it arrives; only
+ * the *write* waits for the drag to finish. AppState.save() is a synchronous
+ * rewrite of the whole of state.json, and one per frame is two costs: on
+ * Windows, where userData sits in a roamed and antivirus-scanned
+ * AppData\Roaming, a multi-millisecond write per frame stutters the very drag
+ * it is recording; and every write is a moment in which a kill truncates the
+ * file, which load() then quarantines, taking the user's remembered worlds and
+ * nick with it. (The write is not atomic, which is what makes that window a
+ * real one — that predates the dock and is left alone here.)
+ */
+function writeDockHeightWhenItSettles(): void {
+    if (dockHeightWrite) clearTimeout(dockHeightWrite);
+    dockHeightWrite = setTimeout(() => {
+        dockHeightWrite = null;
+        appState.save();
+    }, DOCK_HEIGHT_SETTLE_MS);
+}
+
+/** Writes a staged height now rather than on the timer. For the quit, which would otherwise leave the last drag of a session unremembered. */
+function flushDockHeight(): void {
+    if (!dockHeightWrite) return;
+    clearTimeout(dockHeightWrite);
+    dockHeightWrite = null;
+    appState.save();
+}
+
+/**
+ * The dock's height, as the user drags its top edge or steps it by keyboard.
+ * Clamping is main's job — the preload passes the number through untouched,
+ * and a renderer is not something to take arithmetic on trust from. The
+ * ceiling is half the work area of the display the dragging window is on,
+ * since that is the only screen this request has anything to do with.
+ *
+ * The clamped height is returned on every path, including the ones that skip
+ * the layout work below because nothing changed. A renderer sitting at a
+ * boundary already reached — one more ArrowDown at the floor, an End that was
+ * already at the ceiling — has no way to tell its own guess was out of range
+ * unless it is told; without the answer it would keep building the next
+ * request on a number main never actually held. The skip itself stays: a
+ * height equal to the one on file has no layout to redo, and relaying out
+ * anyway on every one of those would be exactly the wasted work the skip
+ * exists to avoid.
+ */
+ipcMain.handle(IPC.chatSetDockHeight, (event, px: unknown): number => {
+    const current = appState.chat().dockHeight;
+    if (typeof px !== 'number' || !Number.isFinite(px)) return current;
+    const sw = windowFor(event.sender);
+    if (!sw) return current;
+    const workArea = screen.getDisplayMatching(sw.window.getBounds()).workArea;
+    const height = Math.round(Math.min(Math.max(px, DOCK_HEIGHT_MIN), workArea.height / 2));
+    if (height === current) return height;
+    appState.stageChat({ dockHeight: height });
+    for (const other of serverWindows.values()) other.relayout();
+    writeDockHeightWhenItSettles();
+    return height;
 });
 
 // ── single player ─────────────────────────────────────────────────────────
@@ -462,6 +765,17 @@ async function captureAndExit(dir: string): Promise<void> {
         await save(`${name}-shell`, () => sw.captureShell());
         await save(`${name}-game`, () => sw.captureGame());
     };
+    /**
+     * Open the panel on a tool the way the rail does — which toggles, so asking
+     * for the tool already on show would close the panel this run came to
+     * photograph. The panel capture below opens the panel on whatever tool can
+     * legally hold the column, which is often this one.
+     */
+    const showTool = (sw: ServerWindow, tool: ToolId): void => {
+        const state = sw.state();
+        if (state.panelOpen && state.activeTool === tool) return;
+        sw.selectTool(tool);
+    };
     const loaded = (sw: ServerWindow): Promise<'loaded' | 'failed' | 'timeout'> =>
         Promise.race([sw.whenGameLoaded(), wait(loadTimeoutMs).then((): 'timeout' => 'timeout')]);
 
@@ -490,7 +804,11 @@ async function captureAndExit(dir: string): Promise<void> {
         if (!first) throw new Error('the server list is empty');
         first.togglePanel();
         await wait(500);
-        log(`[capture] panel open on ${first.state().title}: mode ${first.state().mode}`);
+        // The strip's toggle is a no-op on a window whose column has no legal
+        // occupant — chat alone, living at the bottom — so this reports what
+        // the panel actually did rather than assuming it opened.
+        const toggled = first.state();
+        log(`[capture] ${toggled.title}: panel ${toggled.panelOpen ? `open on ${toggled.activeTool}` : 'stayed closed'}, mode x ${toggled.mode.x}, y ${toggled.mode.y}`);
         await shoot(`${first.state().server.id}-panel`, first);
 
         // The Worlds tool: open it on a loaded window that has worlds, wait for
@@ -503,13 +821,55 @@ async function captureAndExit(dir: string): Promise<void> {
             hopper.window.moveTop();
             hopper.focus();
             await wait(500);
-            hopper.selectTool('worlds');
+            showTool(hopper, 'worlds');
             const until = Date.now() + 20_000;
             while (Date.now() < until && hopper.state().worlds?.status === 'loading') await wait(250);
             await wait(4_000);
             const view = hopper.state().worlds;
             log(`[capture] ${id} worlds: ${view?.status} ${view?.worlds.map(w => `W${w.id}=${w.players ?? '?'}p/${w.latencyMs ?? '?'}ms`).join(' ')}${view?.error ? ` error: ${view.error}` : ''}`);
             await shoot(`${id}-worlds`, hopper);
+
+            // Dock beneath the still-open Worlds panel: the single most
+            // regression-prone geometry in this feature (the dock painting
+            // over the panel's bottom rows, hiding the worlds list's tail,
+            // was a real bug found and fixed earlier on this branch) and no
+            // other capture shows both regions open at once. selectTool('chat')
+            // toggles dockOpen in place without touching panelOpen or
+            // activeTool while home is 'bottom' — see the 'rail-chat' branch
+            // of reduce — so Worlds stays exactly as the shot above left it.
+            hopper.selectTool('chat');
+            await wait(500);
+            // Maximising forces canResize false, which fitAxis turns into
+            // 'push' on both axes unconditionally (see fitAxis's first
+            // branch), so this is the shot that carries both mode notes — and
+            // the only one that shows how they are split when both regions are
+            // open: the panel takes the x note, the dock takes the y one, and
+            // neither sentence appears twice. Waited out rather than assumed:
+            // macOS's zoom is an animated, OS-driven transition, and
+            // proceeding while it is still in flight left a genuinely racy
+            // run — one in several — with a stray maximize/resize event
+            // landing after `second` opened a few steps below, and this
+            // shot's PNG showed it: a brand new window neither this function
+            // nor `reduce` ever touched came up with its own dock open.
+            // isMaximized() polled to true is what "settled" actually means
+            // here; a fixed wait is a guess at how long that takes.
+            hopper.window.maximize();
+            const maximised = Date.now() + 5_000;
+            while (Date.now() < maximised && !hopper.window.isMaximized()) await wait(100);
+            await wait(500);
+            const withPanel = hopper.state();
+            log(`[capture] ${withPanel.title}: dock ${withPanel.dockOpen ? 'open' : 'closed'} over the worlds panel, mode x ${withPanel.mode.x}, y ${withPanel.mode.y}`);
+            await shoot(`${id}-dock-with-panel`, hopper);
+            // Undone immediately, and waited out the same way: the shots
+            // below must start from a genuinely restored window, not one
+            // mid-animation back down, or the same race runs again on
+            // whatever opens next.
+            hopper.window.unmaximize();
+            const restored = Date.now() + 5_000;
+            while (Date.now() < restored && hopper.window.isMaximized()) await wait(100);
+            hopper.selectTool('chat');
+            await wait(500);
+
             const target = view?.worlds.find(w => w.id !== view.current);
             if (target) {
                 const result = await Promise.race([hopper.switchWorld(target.id), wait(loadTimeoutMs).then((): 'timeout' => 'timeout')]);
@@ -519,7 +879,98 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] tab now reads "${hopper.state().tabs[0]?.title}", title "${hopper.window.getTitle()}"`);
                 log(`[capture] state file: ${existsSync(appState.file) ? readFileSync(appState.file, 'utf8').replace(/\s+/g, ' ') : '(none)'}`);
             }
+
+            // Chat on the side: the one state a reader cannot infer from the
+            // other two. Captured here, while Worlds is still genuinely open
+            // on `hopper` from the lines just above, so moveChat('side')
+            // evicting it is a real eviction rather than a no-op — `hopper`
+            // is often the same window as `first` below, and closing that
+            // window's panel first (for a clean dock shot) would leave
+            // nothing here to evict.
+            hopper.window.moveTop();
+            hopper.focus();
+            await wait(500);
+            hopper.moveChat('side');
+            await wait(500);
+            const side = hopper.state();
+            log(`[capture] ${side.title}: chat moved to the side, evicting worlds; mode x ${side.mode.x}, y ${side.mode.y}`);
+            await shoot(`${side.server.id}-chat-side`, hopper);
+        } else {
+            log('[capture] chat-side skipped: no window had worlds to evict');
         }
+
+        // The Hiscores tool: unlike chat below, a lookup needs no nick, only a
+        // public GET, so this is the first capture of a working panel on this
+        // branch. One lookup per server and never more — Lost City rate-limits
+        // after a handful of requests inside a minute, and a second round trip
+        // here would spend budget this run has no use for. `granny_grunt` and
+        // `knight` are known to resolve on Lost City and Labs; Zanaris gets a
+        // plausible guess, and if it comes back notFound that panel is
+        // captured and logged exactly as honestly as a hit would be, rather
+        // than swapped for a friendlier name.
+        const HISCORES_LOOKUP: Record<string, string> = { lostcity: 'granny_grunt', zanaris: 'zezima', lostcitylabs: 'knight' };
+        for (const sw of opened) {
+            const server = sw.state().server;
+            if (!server.hiscores) continue;
+            const name = HISCORES_LOOKUP[server.id];
+            const service = name && hiscoresServiceFor(server);
+            if (!name || !service) continue;
+            // Fronted before the tool opens, as the Worlds tool is above: the
+            // panel's pixel font is only fetched once the shell paints, and
+            // until it arrives font-display: block leaves every label blank.
+            sw.window.moveTop();
+            sw.focus();
+            await wait(500);
+            showTool(sw, 'hiscores');
+            // Driven directly on the service, as switchWorld is above, rather
+            // than over IPC — there is no renderer here to send the request.
+            // The promise settles only once the lookup has left 'loading', so
+            // there is nothing here to poll for.
+            const view = await service.lookup(name);
+            await wait(500);
+            log(`[capture] ${server.id} hiscores: ${view.status} "${name}" ${view.skills.length} row(s)${view.error ? ` error: ${view.error}` : ''}`);
+            await shoot(`${server.id}-hiscores`, sw);
+        }
+
+        // The chat dock: this profile has no nick — see the chat block in
+        // app.whenReady, above — so chat never opens a socket here, and every
+        // shot below lands on the nick prompt rather than a conversation.
+        // That is the correct thing to capture, not a bug to paper over: log
+        // it plainly so nobody later mistakes an offline dock for a broken one,
+        // and never fake a connection just to get a prettier screenshot.
+        log('[capture] chat: no nick in this profile, so the dock captures the nick prompt, not a conversation');
+
+        // moveChat('bottom') rather than the rail's selectTool('chat'): it
+        // lands on "dock open, default height, panel closed" unconditionally,
+        // whatever `first` currently has open — including home already 'side'
+        // if `first` and `hopper` are the same window and the eviction above
+        // just ran on it. selectTool('chat') only opens the dock when home is
+        // already 'bottom', so it cannot be trusted to recover from that.
+        // Fronted first, as the Worlds tool is above: the pixel font is only
+        // fetched once the shell paints, and font-display: block leaves the
+        // room tabs and the title blank until it lands.
+        first.window.moveTop();
+        first.focus();
+        await wait(500);
+        first.moveChat('bottom');
+        await wait(500);
+        const dock1 = first.state();
+        log(`[capture] ${dock1.title}: dock ${dock1.dockOpen ? 'open' : 'closed'} at ${dock1.dockHeight}px, mode x ${dock1.mode.x}, y ${dock1.mode.y}`);
+        await shoot(`${dock1.server.id}-dock`, first);
+
+        // Resized without a pointer: the same clamp chatSetDockHeight applies
+        // in main, driven directly the way this whole function drives
+        // ServerWindow rather than over IPC — there is no renderer here to
+        // send the request. Proves the resize path end to end: the clamp, the
+        // write to state.json, and every window relaying out around it.
+        const dockWorkArea = screen.getDisplayMatching(first.window.getBounds()).workArea;
+        const tallHeight = Math.round(Math.min(Math.max(500, DOCK_HEIGHT_MIN), dockWorkArea.height / 2));
+        appState.setChat({ dockHeight: tallHeight });
+        for (const sw of serverWindows.values()) sw.relayout();
+        await wait(500);
+        const dock2 = first.state();
+        log(`[capture] ${dock2.title}: dock height set to ${dock2.dockHeight}px, mode x ${dock2.mode.x}, y ${dock2.mode.y}`);
+        await shoot(`${dock2.server.id}-dock-tall`, first);
 
         // The Single player tool: the world is up by the time the game loaded,
         // so this is the panel as a player finds it — status, port and cheats.
@@ -531,7 +982,7 @@ async function captureAndExit(dir: string): Promise<void> {
             single.window.moveTop();
             single.focus();
             await wait(500);
-            single.selectTool('singleplayer');
+            showTool(single, 'singleplayer');
             await wait(500);
             await shoot('singleplayer-tool', single);
             log(`[capture] singleplayer: ${single.state().singlePlayer?.status} on port ${single.state().singlePlayer?.port}`);
@@ -564,8 +1015,15 @@ app.whenReady().then(async () => {
             return () => clearTimeout(timer);
         }
     });
-    chat.subscribe(() => {
+    chat.subscribe(view => {
+        // The push first, and not because anything it reads depends on the
+        // write: nothing in a shell state comes from the fields persistChat
+        // touches. It is that this runs inside the socket's data handler, where
+        // a failed save() is an uncaught exception in main rather than a
+        // rejected IPC promise — so the panel is made live before anything can
+        // throw.
         for (const sw of serverWindows.values()) sw.pushState();
+        persistChat(view);
     });
     loadCatalog();
     singlePlayer = new SinglePlayerService(
@@ -615,12 +1073,17 @@ app.on('second-instance', () => {
     window.focus();
 });
 
-app.on('browser-window-focus', () => reloadCatalogIfChanged());
+app.on('browser-window-focus', () => {
+    reloadCatalogIfChanged();
+    syncMenuPanelItem();
+});
 
 /** Set once the world has been stopped for the quit, so the second quit goes through. */
 let worldStoppedForQuit = false;
 app.on('before-quit', event => {
     quitting = true;
+    // A height dragged and immediately quit on is still on the settle timer.
+    flushDockHeight();
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
     // The world writes the player's saves as it shuts down, so the quit waits for

@@ -6,7 +6,12 @@
  * open, and closing a server window does not close the conversation.
  */
 
+import { DOCK_HEIGHT_DEFAULT } from './layout.ts';
+
 export type ChatStatus = 'offline' | 'connecting' | 'registering' | 'online' | 'reconnecting';
+
+/** Where chat lives: the bottom dock, or the side column with the other tools. */
+export type ChatHome = 'bottom' | 'side';
 
 /** Where server notices and errors go, since they belong to no channel. */
 export const SERVER_LOG = '*';
@@ -25,6 +30,7 @@ export interface ChatLine {
     highlight: boolean;
 }
 
+/** What IrcClient knows about a room, on its own. */
 export interface ChatChannel {
     name: string;
     /** Sorted, as the server last reported them. */
@@ -33,11 +39,17 @@ export interface ChatChannel {
     highlights: number;
 }
 
+/** What the shell is shown: everything the client knows, plus what only ChatService can add. */
+export interface ViewChannel extends ChatChannel {
+    /** Hand-joined, so the user may close it. An auto-joined room would only come back. */
+    closable: boolean;
+}
+
 /** What the Chat panel draws. Lines are for the active channel only. */
 export interface ChatView {
     status: ChatStatus;
     nick: string | null;
-    channels: ChatChannel[];
+    channels: ViewChannel[];
     active: string;
     lines: ChatLine[];
     /** Set when the connection failed; the panel shows it rather than an empty log. */
@@ -46,14 +58,18 @@ export interface ChatView {
     needsNick: boolean;
 }
 
-/** Where chat connects. The defaults are Libera.Chat over TLS. */
+/** Where chat connects. The defaults are SwiftIRC over TLS. */
 export interface ChatSettings {
     nick: string | null;
     server: string;
     port: number;
+    dock: ChatHome;
+    dockHeight: number;
+    /** Rooms the user joined by hand, so they come back on the next launch. */
+    rooms: string[];
 }
 
-export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.libera.chat', port: 6697 };
+export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: DOCK_HEIGHT_DEFAULT, rooms: [] };
 
 /** Everyone shares this one, whatever server their windows are on. */
-export const LOBBY = '#04scape';
+export const LOBBY = '#LostHQ';

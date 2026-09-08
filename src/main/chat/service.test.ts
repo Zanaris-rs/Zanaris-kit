@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ChatService, offlineChat, splitLines, wantedChannels, type ChatIo, type ChatSocket, type SocketHandlers } from './service.ts';
+import { ChatService, handJoinedChannels, initialChannels, offlineChat, splitLines, wantedChannels, type ChatIo, type ChatSocket, type SocketHandlers } from './service.ts';
 import { LOBBY, type ChatSettings } from '../../shared/chat.ts';
 
-const SETTINGS: ChatSettings = { nick: null, server: 'irc.libera.chat', port: 6697 };
+const SETTINGS: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: 200, rooms: [] };
 
 // ── the stream ────────────────────────────────────────────────────────────
 //
@@ -17,12 +17,12 @@ test('a chunk of whole lines is split into them', () => {
 });
 
 test('a line split across two chunks is delivered once, whole', () => {
-    const first = splitLines('', ':bob!b@h PRIVMSG #04scape :hello ');
+    const first = splitLines('', ':bob!b@h PRIVMSG #LostHQ :hello ');
     assert.deepEqual(first.lines, [], 'half a line is not a line');
-    assert.equal(first.rest, ':bob!b@h PRIVMSG #04scape :hello ');
+    assert.equal(first.rest, ':bob!b@h PRIVMSG #LostHQ :hello ');
 
     const second = splitLines(first.rest, 'world\r\n');
-    assert.deepEqual(second.lines, [':bob!b@h PRIVMSG #04scape :hello world']);
+    assert.deepEqual(second.lines, [':bob!b@h PRIVMSG #LostHQ :hello world']);
     assert.equal(second.rest, '');
 });
 
@@ -56,9 +56,32 @@ test('blank lines are not lines', () => {
 
 test('the lobby is always wanted, and each hosted server adds its room once', () => {
     assert.deepEqual(wantedChannels([]), [LOBBY]);
-    assert.deepEqual(wantedChannels(['lostcity']), [LOBBY, '#04scape-lostcity']);
-    assert.deepEqual(wantedChannels(['zanaris', 'zanaris']), [LOBBY, '#04scape-zanaris'], 'two windows share one room');
-    assert.deepEqual(wantedChannels(['local', 'my-own-server']), [LOBBY], 'a server without a room adds nothing');
+    assert.deepEqual(wantedChannels(['lostcity']), [LOBBY, '#LostCity']);
+    assert.deepEqual(wantedChannels(['lostcity', 'lostcity']), [LOBBY, '#LostCity'], 'two windows share one room');
+    assert.deepEqual(wantedChannels(['zanaris', 'local', 'my-own-server']), [LOBBY], 'none of these have a room, zanaris included');
+});
+
+test('initialChannels merges the auto set with persisted rooms, folding out a case-only duplicate', () => {
+    assert.deepEqual(initialChannels([LOBBY], ['#rscape']), [LOBBY, '#rscape']);
+    assert.deepEqual(
+        initialChannels([LOBBY, '#LostCity'], ['#lostcity']),
+        [LOBBY, '#LostCity'],
+        'the persisted room is the same channel as the auto one, just typed differently, so it is not listed twice'
+    );
+    assert.deepEqual(
+        initialChannels([LOBBY, '#LostCity'], ['#lostcity', '#rscape']),
+        [LOBBY, '#LostCity', '#rscape'],
+        'a room that really is new is still added alongside the folded-out duplicate'
+    );
+});
+
+test('handJoinedChannels folds case, so a room only differing from the auto set by case is not hand-joined', () => {
+    assert.deepEqual(handJoinedChannels([LOBBY, '#LostCity', '#rscape'], [LOBBY, '#LostCity']), ['#rscape']);
+    assert.deepEqual(
+        handJoinedChannels([LOBBY, '#lostcity'], [LOBBY, '#LostCity']),
+        [],
+        'the same room in a different case is still the auto one, not hand-joined'
+    );
 });
 
 test('the offline view asks for a nick only when there is none', () => {
@@ -140,7 +163,7 @@ function fake(): Fake {
         drop: (reason = 'connection reset') => handlers?.closed(reason),
         register: (nick = 'matt') => {
             handlers?.opened();
-            handlers?.data(`:irc.libera.chat 001 ${nick} :Welcome to Libera.Chat, ${nick}\r\n`);
+            handlers?.data(`:irc.swiftirc.net 001 ${nick} :Welcome to SwiftIRC, ${nick}\r\n`);
         },
         fire: () => {
             const timer = pending();
@@ -169,14 +192,14 @@ test('with no nick the service stays offline and opens nothing', () => {
 test('a remembered nick connects as soon as the service is built', () => {
     const f = fake();
     new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
-    assert.deepEqual(f.connects, ['irc.libera.chat:6697']);
+    assert.deepEqual(f.connects, ['irc.swiftirc.net:6697']);
 });
 
 test('setNick connects once and registers with it', () => {
     const f = fake();
     const service = new ChatService(SETTINGS, f.io);
     service.setNick('matt');
-    assert.deepEqual(f.connects, ['irc.libera.chat:6697']);
+    assert.deepEqual(f.connects, ['irc.swiftirc.net:6697']);
     assert.equal(service.view().needsNick, false);
     assert.equal(service.view().status, 'connecting');
 
@@ -185,7 +208,7 @@ test('setNick connects once and registers with it', () => {
     assert.equal(service.view().status, 'registering');
 
     service.setNick('matt');
-    assert.deepEqual(f.connects, ['irc.libera.chat:6697'], 'the same nick again is not a second connection');
+    assert.deepEqual(f.connects, ['irc.swiftirc.net:6697'], 'the same nick again is not a second connection');
 });
 
 test('registering joins the lobby and every mapped server room', () => {
@@ -197,8 +220,8 @@ test('registering joins the lobby and every mapped server room', () => {
 
     assert.deepEqual(
         f.sent.filter(line => line.startsWith('JOIN')),
-        [`JOIN ${LOBBY}`, 'JOIN #04scape-lostcity', 'JOIN #04scape-zanaris'],
-        'the lobby plus a room per hosted server, and nothing for the local one'
+        [`JOIN ${LOBBY}`, 'JOIN #LostCity'],
+        'the lobby plus #LostCity for the one hosted server with a room, and nothing for local or zanaris'
     );
     assert.equal(service.view().status, 'online');
 });
@@ -206,26 +229,26 @@ test('registering joins the lobby and every mapped server room', () => {
 test('setServers joins and parts the difference without reconnecting', () => {
     const f = fake();
     const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
-    service.setServers(['lostcity']);
     f.register();
     f.sent.length = 0;
 
+    service.setServers(['lostcity']);
+    assert.deepEqual(f.sent, ['JOIN #LostCity'], 'only the new room');
+
+    f.sent.length = 0;
     service.setServers(['lostcity', 'zanaris']);
-    assert.deepEqual(f.sent, ['JOIN #04scape-zanaris'], 'only the new room');
-
-    f.sent.length = 0;
-    service.setServers(['zanaris']);
-    assert.deepEqual(f.sent, ['PART #04scape-lostcity'], 'only the room that closed');
-
-    f.sent.length = 0;
-    service.setServers(['zanaris', 'local']);
     assert.deepEqual(f.sent, [], 'a server without a room changes nothing');
 
+    /*
+     * #LostCity is still open at this point, so closing everything has to
+     * part it — if the diff or the lobby guard were broken this would come
+     * back empty (nothing parted) or carry a PART for the lobby too.
+     */
     f.sent.length = 0;
     service.setServers([]);
-    assert.deepEqual(f.sent, ['PART #04scape-zanaris'], 'the lobby is never parted');
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'the mapped room closes, and the lobby is never parted');
 
-    assert.deepEqual(f.connects, ['irc.libera.chat:6697'], 'one connection throughout');
+    assert.deepEqual(f.connects, ['irc.swiftirc.net:6697'], 'one connection throughout');
 });
 
 test('a room the user joined by hand is not parted by a window closing', () => {
@@ -237,11 +260,271 @@ test('a room the user joined by hand is not parted by a window closing', () => {
     f.sent.length = 0;
 
     service.setServers([]);
-    assert.deepEqual(f.sent, ['PART #04scape-lostcity'], 'only the mapped room goes');
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'only the mapped room goes');
     assert.ok(
         service.view().channels.some(c => c.name === '#rscape'),
         'the channel the user asked for is still there'
     );
+});
+
+// ── persisted rooms, and what may be closed ──────────────────────────────
+
+test('a persisted room is joined at startup alongside the auto rooms', () => {
+    const f = fake();
+    new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#rscape'] }, f.io);
+    f.register();
+    assert.deepEqual(
+        f.sent.filter(line => line.startsWith('JOIN')),
+        [`JOIN ${LOBBY}`, 'JOIN #rscape'],
+        'the persisted room joins alongside the lobby, with no server open to add a room of its own'
+    );
+});
+
+test('setServers never parts a persisted room, and still parts its own', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#rscape'] }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+    f.sent.length = 0;
+
+    service.setServers([]);
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'only the room this call added is parted');
+    assert.ok(
+        service.view().channels.some(c => c.name === '#rscape'),
+        'the room read from settings at startup survives a window closing'
+    );
+});
+
+test('setServers never parts a persisted room that coincides with its own auto room', () => {
+    // #rscape above never collides with the auto set, which is exactly why a
+    // regression here was never caught by it: this one shares a name with
+    // the per-server room setServers itself would otherwise part. Lowercase
+    // on purpose: it collides with #LostCity only case-insensitively, which
+    // is what pins the fold in this comparison — an exact-case match here
+    // would still pass a plain `.includes()` and prove nothing about it.
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#lostcity'] }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+    f.sent.length = 0;
+
+    service.setServers([]);
+    assert.deepEqual(f.sent, [], 'the room is the user\'s own, even though it also happens to be the per-server room');
+    const chan = service.view().channels.find(c => c.name.toLowerCase() === '#lostcity');
+    assert.ok(chan, 'still there after the window closes');
+    assert.equal(chan!.closable, true, 'closable now that nothing auto-manages it any more');
+});
+
+test('a room hand-joined after its window already opened is still recognized as hand-joined', () => {
+    // The mirror of the case above: here the window claims the room first, so
+    // IrcClient.join() is a no-op on `want` when the user then types /join
+    // for the same room — diffing `want` around client.input() would see
+    // nothing happen and never record the hand-join at all.
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    service.setServers(['lostcity']); // the window opens first
+    f.register();
+    service.send('/join #LostCity'); // hand-joined after the fact; want does not change
+
+    f.sent.length = 0;
+    service.setServers([]); // the window closes
+    assert.deepEqual(f.sent, [], 'the user separately hand-joined this room, even though `want` never changed when they did');
+    const chan = service.view().channels.find(c => c.name === '#LostCity');
+    assert.ok(chan, 'still there after the window closes');
+    assert.equal(chan!.closable, true, 'closable now that nothing auto-manages it any more');
+});
+
+test('a room hand-joined this session before its window opens survives the window closing too', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #LostCity'); // hand-joined first, no window open yet
+    service.setServers(['lostcity']); // the window opens, claiming the same room
+
+    assert.equal(
+        service.view().channels.find(c => c.name === '#LostCity')?.closable,
+        false,
+        'coincides with the per-server room while the window is open'
+    );
+
+    f.sent.length = 0;
+    service.setServers([]); // the window closes
+    assert.deepEqual(f.sent, [], 'the user hand-joined it this session, so the window closing must not part it');
+    const chan = service.view().channels.find(c => c.name === '#LostCity');
+    assert.ok(chan, 'the room is still there');
+    assert.equal(chan!.closable, true, 'closable again now that no window needs it');
+});
+
+test('a room the user closed does not linger as hand-joined if a later window reclaims it', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #LostCity');
+    assert.equal(service.closeRoom('#LostCity'), true, 'the user gives the room up');
+
+    service.setServers(['lostcity']); // a window later claims the same room fresh
+    f.sent.length = 0;
+    service.setServers([]); // and gives it up again
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'the user already closed this room once, so it is parted like any other auto room');
+});
+
+test('a room the user /parts by hand does not linger as hand-joined if a later window reclaims it', () => {
+    // The twin of "a room the user closed does not linger..." above, but for
+    // the other way a room stops being the user's own: a typed /part rather
+    // than closeRoom. Only send()'s forget-the-diff half protects this case.
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #LostCity');
+    service.send('/part #LostCity'); // typed by hand, not closeRoom
+
+    service.setServers(['lostcity']); // a window later claims the same room fresh
+    f.sent.length = 0;
+    service.setServers([]); // and gives it up again
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'the user already gave this room up by hand, so it is parted like any other auto room');
+});
+
+test('a restart carries a room hand-joined this session, not just what launched with it', () => {
+    // ChatService.rooms used to be a constructor snapshot, so a restart (via
+    // setNick while not online) rebuilt the client from launch-time settings
+    // alone, silently dropping anything hand-joined since. handJoinedRooms is
+    // live, so the room this session added is still there afterwards too.
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #rscape'); // hand-joined this session, never persisted
+
+    f.drop(); // the connection drops; status becomes 'reconnecting'
+    service.setNick('matt2'); // not online or registering, so this restarts
+    assert.equal(f.connects.length, 2, 'a fresh connection, not a wait for the old one');
+
+    f.sent.length = 0;
+    f.register('matt2');
+    assert.deepEqual(
+        f.sent.filter(line => line.startsWith('JOIN')),
+        [`JOIN ${LOBBY}`, 'JOIN #rscape'],
+        'the room hand-joined this session is carried into the restarted client'
+    );
+});
+
+test('closable is true for a hand-joined room and false for the lobby and a per-server room', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+    service.send('/join #rscape');
+
+    const closable = new Map(service.view().channels.map(c => [c.name, c.closable]));
+    assert.equal(closable.get(LOBBY), false, 'the lobby always comes back, so it is not the user\'s to close');
+    assert.equal(closable.get('#LostCity'), false, 'a per-server room follows the window, not the user');
+    assert.equal(closable.get('#rscape'), true, 'joined by hand, so closable');
+});
+
+test('closing a room that is not hand-joined is refused', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+    f.sent.length = 0;
+
+    assert.equal(service.closeRoom(LOBBY), false, 'the lobby cannot be closed');
+    assert.equal(service.closeRoom('#LostCity'), false, 'nor can a per-server room');
+    assert.deepEqual(f.sent, [], 'nothing was parted');
+    assert.ok(service.view().channels.some(c => c.name === LOBBY));
+    assert.ok(service.view().channels.some(c => c.name === '#LostCity'));
+});
+
+test('closing a hand-joined room parts it and drops it from the view', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #rscape');
+    f.sent.length = 0;
+
+    assert.equal(service.closeRoom('#rscape'), true);
+    assert.deepEqual(f.sent, ['PART #rscape']);
+    assert.equal(
+        service.view().channels.some(c => c.name === '#rscape'),
+        false,
+        'parting forgets the channel, the same as a hand-typed /part'
+    );
+});
+
+test('closing a room while offline is refused rather than throwing', () => {
+    const f = fake();
+    const service = new ChatService(SETTINGS, f.io);
+    assert.equal(service.closeRoom(LOBBY), false);
+    assert.equal(service.closeRoom('#rscape'), false);
+});
+
+// ── IRC names are case-insensitive, and closability must not forget it ────
+
+test('a room joined in a different case than the per-server room it coincides with is not hand-joined', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    // Typed lowercase, before any window claims the same room under its
+    // canonical case — asChannel only adds the '#', it does not fold case.
+    service.send('/join lostcity');
+    service.setServers(['lostcity']);
+
+    const chan = service.view().channels.find(c => c.name.toLowerCase() === '#lostcity');
+    assert.ok(chan, 'the channel is there under whichever case it first joined as');
+    assert.equal(chan!.closable, false, 'it is the per-server room in a different case, not the user\'s own');
+    assert.equal(service.closeRoom(chan!.name), false, 'refused for the same reason');
+    assert.equal(service.closeRoom('#LostCity'), false, 'refused under the canonical case too');
+});
+
+test('a persisted room matching an open server\'s auto room in a different case is not double-joined and is not closable', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#lostcity'] }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+
+    assert.deepEqual(
+        f.sent.filter(line => line.startsWith('JOIN')),
+        [`JOIN ${LOBBY}`, 'JOIN #lostcity'],
+        'one join for the shared room, under the case it first entered as'
+    );
+    const matches = service.view().channels.filter(c => c.name.toLowerCase() === '#lostcity');
+    assert.equal(matches.length, 1, 'not listed under two cases');
+    assert.equal(matches[0]!.closable, false, 'it coincides with the per-server room');
+});
+
+test('a hand-joined room in mixed case is still closable, and closing it parts the name as joined, not a folded one', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join RSCape');
+
+    const chan = service.view().channels.find(c => c.name === '#RSCape');
+    assert.ok(chan, 'shown in the case the user typed');
+    assert.equal(chan!.closable, true, 'nothing auto-joins it, so it is the user\'s to close');
+
+    f.sent.length = 0;
+    assert.equal(service.closeRoom('#RSCape'), true);
+    assert.deepEqual(f.sent, ['PART #RSCape'], 'parted under the name as joined, not a lowercased one');
+});
+
+test('closeRoom recognizes a hand-joined room even when asked for in a different case than it was joined', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join RSCape'); // stored as '#RSCape'
+    f.sent.length = 0;
+
+    assert.equal(service.closeRoom('#rscape'), true, 'the same room, asked for in a different case, is still hand-joined');
+    assert.deepEqual(f.sent, ['PART #rscape'], 'parted using the case the caller passed, not the stored one');
+});
+
+test('select recognizes a channel even when asked for in a different case than it was joined', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+
+    service.select('#lostcity');
+    assert.equal(service.view().active, '#LostCity', 'the same room selected by a different case still becomes active');
 });
 
 test('a second nick asks the server while connected, and starts over while not', () => {
@@ -352,13 +635,13 @@ test('typed lines and channel selection reach the client, and subscribers hear a
     const seen: string[] = [];
     const unsubscribe = service.subscribe(view => seen.push(view.active));
 
-    service.select('#04scape-lostcity');
+    service.select('#LostCity');
     service.send('hello world');
-    assert.deepEqual(f.sent, ['PRIVMSG #04scape-lostcity :hello world'], 'the active channel is where talking goes');
-    assert.deepEqual(seen, ['#04scape-lostcity', '#04scape-lostcity']);
+    assert.deepEqual(f.sent, ['PRIVMSG #LostCity :hello world'], 'the active channel is where talking goes');
+    assert.deepEqual(seen, ['#LostCity', '#LostCity']);
 
     service.select('#not-a-room-we-are-in');
-    assert.equal(service.view().active, '#04scape-lostcity', 'an unknown channel is not selected into existence');
+    assert.equal(service.view().active, '#LostCity', 'an unknown channel is not selected into existence');
 
     unsubscribe();
     service.send('and again');

@@ -1,5 +1,5 @@
 import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatStatus, type ChatView } from '../../shared/chat.ts';
-import { formatCommand, isChannel, mentions, parseInput, parseLine } from './protocol.ts';
+import { foldName as key, formatCommand, isChannel, mentions, parseInput, parseLine, sameName as same } from './protocol.ts';
 
 /**
  * One IRC conversation, as pure state over injected IO: it is handed lines and
@@ -40,6 +40,13 @@ export interface ClientOpts {
     send(line: string): void;
 }
 
+/**
+ * What IrcClient reports on its own. It has no notion of which rooms came
+ * from a window being open, so it cannot say what is closable; ChatService
+ * stamps that per channel, and adds needsNick, to make a ChatView.
+ */
+export type ClientSnapshot = Omit<ChatView, 'needsNick' | 'channels'> & { channels: ChatChannel[] };
+
 interface Chan {
     name: string;
     nicks: string[];
@@ -49,10 +56,6 @@ interface Chan {
     pending: string[] | null;
     lines: ChatLine[];
 }
-
-/** Channel names and nicks are case-insensitive on IRC, so everything is keyed folded. */
-const key = (name: string): string => name.toLowerCase();
-const same = (a: string, b: string): boolean => key(a) === key(b);
 
 /** Sorted and deduplicated, folded, with the raw name breaking ties so the order never wobbles. */
 function sortNicks(names: string[]): string[] {
@@ -184,6 +187,16 @@ export class IrcClient {
 
     private nickTaken(taken: string | undefined): void {
         const attempted = taken !== undefined && taken !== '' ? taken : (this.nickName ?? this.opts.nick);
+        if (this.status === 'online') {
+            // A live rename was refused: the nick we already have is still
+            // registered and working, so there is nothing to recover from and
+            // nothing to retry. The underscore cascade below is only for
+            // finding a way in during registration, when there is no working
+            // nick yet — running it here would trade a nick that works for
+            // one nobody asked for and the server has also refused.
+            this.incoming(SERVER_LOG, 'system', null, `the nick ${attempted} is taken`);
+            return;
+        }
         if (this.nickTries >= MAX_NICK_TRIES) {
             if (this.nickTries === MAX_NICK_TRIES) {
                 this.nickTries++; // say it once, then stay quiet
@@ -368,7 +381,7 @@ export class IrcClient {
         return [...this.want];
     }
 
-    snapshot(): Omit<ChatView, 'needsNick'> {
+    snapshot(): ClientSnapshot {
         const active = this.chans.get(key(this.activeName));
         const channels: ChatChannel[] = [...this.chans.values()].map(c => ({
             name: c.name,

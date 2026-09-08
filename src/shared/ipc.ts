@@ -2,7 +2,8 @@
 import type { ServerDef } from './catalog';
 import type { LayoutMode, TabKind } from './layout';
 import type { Detail, WorldsView } from './worlds';
-import type { ChatView } from './chat';
+import type { ChatHome, ChatView } from './chat';
+import type { HiscoresView } from './hiscores';
 import type { SinglePlayerView } from './singleplayer';
 
 export const IPC = {
@@ -13,19 +14,32 @@ export const IPC = {
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
     worldsSetDetail: 'zanaris:worlds-set-detail',
+    hiscoresLookup: 'zanaris:hiscores-lookup',
+    hiscoresOpenSite: 'zanaris:hiscores-open-site',
     chatState: 'zanaris:chat-state',
     chatGet: 'zanaris:chat-get',
     chatSend: 'zanaris:chat-send',
     chatSelect: 'zanaris:chat-select',
+    chatCloseRoom: 'zanaris:chat-close-room',
     chatSetNick: 'zanaris:chat-set-nick',
+    chatSetHome: 'zanaris:chat-set-home',
+    chatSetDockHeight: 'zanaris:chat-set-dock-height',
     singlePlayerSetCheats: 'zanaris:singleplayer-set-cheats',
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
     singlePlayerShowLog: 'zanaris:singleplayer-show-log'
 } as const;
 
-/** The tools a window can offer. Three so far; a registry is worth it when the list grows. */
-export const TOOL_IDS = ['worlds', 'chat', 'singleplayer'] as const;
+/**
+ * The tools a window can offer. Four so far; a registry is worth it when the
+ * list grows. This is the set, not the rail order — which tools a given window
+ * offers and in what order is `serverWindow`'s to say, and it is deliberately
+ * not spelled out again here: that order already lives in three places that
+ * have to be edited together, and a fourth copy sitting in a docstring none of
+ * them cross-reference is the one that would go stale first and be believed
+ * longest.
+ */
+export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
@@ -51,7 +65,8 @@ export interface ShellState {
     title: string;
     tabs: TabInfo[];
     panelOpen: boolean;
-    mode: LayoutMode;
+    /** How each axis accommodated its chrome. The window moving and the game shrinking are different sentences, so both axes are kept rather than collapsed into one. */
+    mode: { x: LayoutMode; y: LayoutMode };
     /** Where main placed things, relative to the window's content area, so the shell draws exactly there. */
     rects: {
         strip: Rect;
@@ -59,14 +74,32 @@ export interface ShellState {
         content: Rect;
         panel: Rect | null;
         rail: Rect;
+        /** Only while the dock is open. Null while chat's home is the side column. */
+        dock: Rect | null;
     };
     /** Tools this window offers, in rail order. */
     tools: ToolId[];
     activeTool: ToolId | null;
+    /**
+     * Whether the side column has a tool that could legally open in it. False
+     * on a window whose only tool is chat while chat lives at the bottom —
+     * main refuses to open the panel onto an empty column — and the strip's
+     * toggle and the View menu's item are disabled to match. Main works it out
+     * from the placement rules so the UI never has to.
+     */
+    panelAvailable: boolean;
     /** Null when the server has one page. */
     worlds: WorldsView | null;
+    /** Null when the server offers no hiscores — single player above all, where a one-player world has nothing to rank. */
+    hiscores: HiscoresView | null;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
+    /** Where chat lives. App-wide: every window agrees. */
+    chatHome: ChatHome;
+    /** Whether the bottom dock is open. Meaningful only while chatHome is 'bottom'. */
+    dockOpen: boolean;
+    /** The remembered dock height in px, whether or not the dock is open. */
+    dockHeight: number;
     /** The world this computer runs; null for every other kind of window. */
     singlePlayer: SinglePlayerView | null;
 }
@@ -76,7 +109,7 @@ export interface ZanarisApi {
         /** Null when the calling view is not a server window's shell. */
         get(): Promise<ShellState | null>;
         togglePanel(): Promise<void>;
-        /** Opens the panel on a tool; null closes it. */
+        /** Opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. Chat is routed by where it lives: while it is at the bottom, asking for it opens or closes the dock instead. */
         selectTool(id: ToolId | null): Promise<void>;
         onState(cb: (state: ShellState) => void): () => void;
     };
@@ -85,8 +118,27 @@ export interface ZanarisApi {
         send(text: string): Promise<void>;
         /** Shows a channel in the panel and marks it read. */
         select(channel: string): Promise<void>;
+        /**
+         * Leaves a room the user joined by hand, and forgets it, so it does not
+         * come back on the next launch. Main refuses anything else: a
+         * per-server room would be rejoined by the next window that wants it,
+         * and the lobby would not come back at all, since nothing puts it back
+         * into the set the client rejoins. Neither is the user's to close from
+         * here.
+         */
+        closeRoom(channel: string): Promise<void>;
         /** Chooses the nick and connects. */
         setNick(nick: string): Promise<void>;
+        /** Moves chat between the bottom dock and the side column. App-wide. */
+        setHome(home: ChatHome): Promise<void>;
+        /**
+         * Sets the dock's height in px. Resolves with the height main actually
+         * applied, after its own clamp — including when the request landed
+         * exactly where the dock already was, so a caller sitting at a boundary
+         * (the floor, the ceiling) always learns the true number rather than
+         * being left trusting whatever it asked for.
+         */
+        setDockHeight(px: number): Promise<number>;
     };
     worlds: {
         refresh(): Promise<void>;
@@ -94,6 +146,12 @@ export interface ZanarisApi {
         switch(world: number): Promise<void>;
         /** Reloads the current world at the given detail. */
         setDetail(detail: Detail): Promise<void>;
+    };
+    hiscores: {
+        /** Looks a player up on this window's server. One request per press: these servers rate-limit. */
+        lookup(name: string): Promise<void>;
+        /** Opens the server's own hiscores page. */
+        openSite(): Promise<void>;
     };
     singlePlayer: {
         /** Asks first when the world is running, since it restarts. */

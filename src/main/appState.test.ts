@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppState } from './appState.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
+import { DOCK_HEIGHT_MIN } from '../shared/layout.ts';
 
 const dirs: string[] = [];
 const tempFile = (): string => {
@@ -106,7 +107,7 @@ test('setWarnOnSwitch leaves the remembered worlds alone', () => {
     assert.equal(b.warnOnSwitch(), false);
 });
 
-test('chat starts at the Libera defaults when there is no file', () => {
+test('chat starts at the default settings when there is no file', () => {
     const state = new AppState(tempFile());
     state.load();
     assert.deepEqual(state.chat(), DEFAULT_CHAT);
@@ -129,10 +130,10 @@ test('setChat saves, and a fresh instance reads it back', () => {
     a.setChat({ nick: 'lumbridge', server: 'irc.example.net', port: 6667 });
     const b = new AppState(file);
     b.load();
-    assert.deepEqual(b.chat(), { nick: 'lumbridge', server: 'irc.example.net', port: 6667 });
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', server: 'irc.example.net', port: 6667 });
     const written = JSON.parse(readFileSync(file, 'utf8'));
     assert.equal(written.version, 1);
-    assert.deepEqual(written.chat, { nick: 'lumbridge', server: 'irc.example.net', port: 6667 });
+    assert.deepEqual(written.chat, { ...DEFAULT_CHAT, nick: 'lumbridge', server: 'irc.example.net', port: 6667 });
 });
 
 test('a partial patch leaves the other fields alone', () => {
@@ -162,7 +163,7 @@ test('each invalid chat field falls back on its own, keeping the valid ones', ()
         const state = new AppState(file);
         state.load();
         const stored = chat as Record<string, unknown>;
-        const expected = { nick: stored.nick, server: stored.server, port: stored.port, [bad]: DEFAULT_CHAT[bad] };
+        const expected = { ...DEFAULT_CHAT, nick: stored.nick, server: stored.server, port: stored.port, [bad]: DEFAULT_CHAT[bad] };
         assert.deepEqual(state.chat(), expected, `expected only ${bad} to fall back`);
         assert.deepEqual(state.world('lostcity'), REMEMBERED);
         assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false);
@@ -193,6 +194,150 @@ test('setChat leaves the remembered worlds and the warning alone', () => {
     assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
 });
 
+test('a stored dock and dockHeight round-trip together', () => {
+    const file = tempFile();
+    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dock: 'side', dockHeight: 260, rooms: ['#rscape'] };
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.chat(), chat);
+    assert.deepEqual(state.world('lostcity'), REMEMBERED);
+});
+
+test("an invalid or missing dock falls back to 'bottom', keeping the rest of chat and the remembered worlds", () => {
+    const cases: unknown[] = ['sideways', 42, undefined];
+    for (const dock of cases) {
+        const file = tempFile();
+        const chat: Record<string, unknown> = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dockHeight: 260 };
+        if (dock !== undefined) chat.dock = dock;
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+        const state = new AppState(file);
+        state.load();
+        assert.deepEqual(state.chat(), { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dock: 'bottom', dockHeight: 260, rooms: [] }, `expected dock ${JSON.stringify(dock)} to fall back`);
+        assert.deepEqual(state.world('lostcity'), REMEMBERED);
+    }
+});
+
+test('dockHeight is clamped to its bounds, or falls back to the default when it is not an integer', () => {
+    const cases: Array<[unknown, number]> = [
+        [40, DOCK_HEIGHT_MIN],
+        [99999, 2000],
+        ['tall', DEFAULT_CHAT.dockHeight],
+        [180.5, DEFAULT_CHAT.dockHeight]
+    ];
+    for (const [dockHeight, expected] of cases) {
+        const file = tempFile();
+        const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dock: 'side', dockHeight };
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+        const state = new AppState(file);
+        state.load();
+        assert.deepEqual(state.chat(), { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dock: 'side', dockHeight: expected, rooms: [] }, `expected dockHeight ${JSON.stringify(dockHeight)} to become ${expected}`);
+        assert.deepEqual(state.world('lostcity'), REMEMBERED);
+    }
+});
+
+test('setChat with dock and dockHeight saves, and a fresh instance reads them back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setChat({ dock: 'side', dockHeight: 260 });
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, dock: 'side', dockHeight: 260 });
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.deepEqual(written.chat, { ...DEFAULT_CHAT, dock: 'side', dockHeight: 260 });
+});
+
+test('a stored rooms list round-trips, and an older file with no rooms key loads clean', () => {
+    const file = tempFile();
+    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, rooms: ['#rscape', '#help'] };
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.chat().rooms, ['#rscape', '#help']);
+
+    const older = tempFile();
+    writeFileSync(older, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat: { nick: 'lumbridge', server: 'irc.example.net', port: 6667 } }));
+    const beforeRooms = new AppState(older);
+    beforeRooms.load();
+    assert.deepEqual(beforeRooms.chat().rooms, [], 'no rooms key at all is not a broken file');
+});
+
+test('a rooms value that is missing, not an array, or holds an invalid entry loses only that entry, keeping the rest of chat and the worlds', () => {
+    const cases: Array<[unknown, string[]]> = [
+        [undefined, []],
+        ['#rscape', []], // a single string is not an array of them
+        [42, []],
+        [['#rscape', 'not-a-channel', '#help'], ['#rscape', '#help']], // missing the # or & prefix
+        [['#rscape', '', '#help'], ['#rscape', '#help']], // empty string
+        [['#rscape', 7, '#help'], ['#rscape', '#help']] // not a string at all
+    ];
+    for (const [rooms, expected] of cases) {
+        const file = tempFile();
+        const chat: Record<string, unknown> = { nick: 'lumbridge', server: 'irc.example.net', port: 6667 };
+        if (rooms !== undefined) chat.rooms = rooms;
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+        const state = new AppState(file);
+        state.load();
+        assert.deepEqual(state.chat().rooms, expected, `expected ${JSON.stringify(rooms)} to become ${JSON.stringify(expected)}`);
+        assert.equal(state.chat().nick, 'lumbridge', `expected ${JSON.stringify(rooms)} to leave the rest of chat intact`);
+        assert.deepEqual(state.world('lostcity'), REMEMBERED, `expected ${JSON.stringify(rooms)} to leave the remembered worlds alone`);
+        assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false, `expected ${JSON.stringify(rooms)} not to be treated as a broken file`);
+    }
+});
+
+test('a room name past the length cap is rejected, leaving the rest of the list alone', () => {
+    const file = tempFile();
+    const atMax = `#${'x'.repeat(49)}`; // 50 characters, the RFC 2812 limit
+    const overMax = `#${'x'.repeat(50)}`; // 51 characters
+    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, rooms: [overMax, atMax] };
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.chat().rooms, [atMax], 'the over-long name is dropped, the one at the cap is kept');
+});
+
+test('rooms past the count cap are dropped, keeping the earlier ones', () => {
+    const file = tempFile();
+    const rooms = Array.from({ length: 25 }, (_, i) => `#room${i}`);
+    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, rooms };
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.chat().rooms, rooms.slice(0, 20));
+});
+
+test('setChat with rooms saves, and a fresh instance reads them back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setChat({ rooms: ['#rscape'] });
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, rooms: ['#rscape'] });
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.deepEqual(written.chat, { ...DEFAULT_CHAT, rooms: ['#rscape'] });
+});
+
+test('stageChat applies in memory and writes nothing until save is called', () => {
+    // What the dock drag leans on: a height arrives once an animation frame,
+    // so the layout must see it immediately while the profile is written once,
+    // when the drag settles. A stageChat that saved would be sixty rewrites of
+    // the whole file a second; one that did not apply would leave every
+    // window laying out against the old height.
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setChat({ nick: 'lumbridge' });
+    a.stageChat({ dockHeight: 260 });
+    assert.equal(a.chat().dockHeight, 260, 'the staged height is live in memory at once');
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).chat.dockHeight, DEFAULT_CHAT.dockHeight, 'and nothing has been written yet');
+    a.save();
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', dockHeight: 260 }, 'the save writes the staged height alongside everything else');
+});
+
 test('single-player cheats are off by default, persist, and survive a file without the key', () => {
     const dir = mkdtempSync(join(tmpdir(), 'state-'));
     const file = join(dir, 'state.json');
@@ -212,4 +357,69 @@ test('single-player cheats are off by default, persist, and survive a file witho
     const odd = new AppState(file);
     odd.load();
     assert.equal(odd.singlePlayerCheats(), false);
+});
+
+test('a stored hiscores block round-trips', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, hiscores: { lostcity: 'granny_grunt', zanaris: 'knight' } }));
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.hiscoresName('lostcity'), 'granny_grunt');
+    assert.equal(state.hiscoresName('zanaris'), 'knight');
+    assert.equal(state.hiscoresName('labs'), null);
+});
+
+test('a missing, non-object, or invalid hiscores block leaves an empty map, and the remembered worlds and chat settings intact', () => {
+    const cases: unknown[] = [undefined, 'granny_grunt', { lostcity: 42 }];
+    for (const hiscores of cases) {
+        const file = tempFile();
+        const data: Record<string, unknown> = { version: 1, worlds: { lostcity: REMEMBERED }, chat: { nick: 'lumbridge', server: 'irc.example.net', port: 6667 } };
+        if (hiscores !== undefined) data.hiscores = hiscores;
+        writeFileSync(file, JSON.stringify(data));
+        const state = new AppState(file);
+        state.load();
+        assert.equal(state.hiscoresName('lostcity'), null, `expected ${JSON.stringify(hiscores)} to leave an empty map`);
+        assert.deepEqual(state.world('lostcity'), REMEMBERED, `expected ${JSON.stringify(hiscores)} to leave the remembered worlds alone`);
+        assert.deepEqual(state.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', server: 'irc.example.net', port: 6667 }, `expected ${JSON.stringify(hiscores)} to leave chat alone`);
+        assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false, `expected ${JSON.stringify(hiscores)} not to be treated as a broken file`);
+    }
+});
+
+test('an over-long name is rejected, leaving other entries alone', () => {
+    const file = tempFile();
+    const atMax = 'x'.repeat(30);
+    const overMax = 'x'.repeat(31);
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, hiscores: { lostcity: overMax, zanaris: atMax } }));
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.hiscoresName('lostcity'), null, 'a name past the cap is rejected');
+    assert.equal(state.hiscoresName('zanaris'), atMax, 'a name at the cap is kept');
+});
+
+test('setHiscoresName saves, and a fresh instance reads it back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setHiscoresName('lostcity', 'granny_grunt');
+    const b = new AppState(file);
+    b.load();
+    assert.equal(b.hiscoresName('lostcity'), 'granny_grunt');
+    assert.equal(b.hiscoresName('zanaris'), null);
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(written.version, 1);
+    assert.deepEqual(written.hiscores, { lostcity: 'granny_grunt' });
+});
+
+test('setHiscoresName leaves the remembered worlds and chat settings alone', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setWorld('lostcity', REMEMBERED);
+    a.setChat({ nick: 'lumbridge' });
+    a.setHiscoresName('lostcity', 'granny_grunt');
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.world('lostcity'), REMEMBERED);
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
+    assert.equal(b.hiscoresName('lostcity'), 'granny_grunt');
 });

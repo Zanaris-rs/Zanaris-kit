@@ -261,6 +261,33 @@ test('433 tries again with an underscore, and gives up rather than looping', () 
     assert.match(f.lines().at(-1)?.text ?? '', /nick/i, 'the panel is told why the nick is not the one asked for');
 });
 
+test('a 433 answering a live rename reports the refusal and leaves the working nick and the cascade alone', () => {
+    const f = online(); // registered as matt, sent cleared
+    f.client.input('/nick taken');
+    assert.deepEqual(f.sent, ['NICK taken']);
+    f.sent.length = 0;
+
+    f.client.receive(':irc.libera.chat 433 matt taken :Nickname is already in use.');
+    assert.deepEqual(f.sent, [], 'nothing is retried: matt is still registered and working');
+    assert.equal(f.client.snapshot().nick, 'matt', 'the working nick is untouched by the refusal');
+    assert.equal(f.client.snapshot().status, 'online');
+    assert.equal(f.client.snapshot().error, null, 'the connection itself is fine');
+
+    f.client.select(SERVER_LOG);
+    assert.match(f.lines().at(-1)?.text ?? '', /taken/i, 'the refusal is reported');
+
+    // The cascade itself must still be live for a later registration: a drop
+    // and reconnect starts the whole exchange over, cascade included.
+    f.client.closed('', true);
+    f.client.connecting();
+    f.client.opened();
+    f.sent.length = 0;
+    for (const again of ['matt', 'matt_', 'matt__', 'matt___', 'matt____']) {
+        f.client.receive(`:irc.libera.chat 433 * ${again} :Nickname is already in use.`);
+    }
+    assert.deepEqual(f.sent, ['NICK matt_', 'NICK matt__', 'NICK matt___'], 'a fresh registration still runs the full cascade');
+});
+
 // ── failed joins ──────────────────────────────────────────────────────────
 
 test('a refused join says which channel and why', () => {

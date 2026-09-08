@@ -43,6 +43,22 @@ export function Globe(): ReactNode {
 }
 
 /**
+ * Hiscores. Three bars climbing to the right, sharing one baseline, with the
+ * tallest in gold — a table read at a glance rather than a trophy or a crown,
+ * neither of which the client has a sprite for. Flat fills on the shared
+ * outline, like the rest of the tools.
+ */
+export function Bars(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
+            <rect x="2.5" y="10" width="3.6" height="5.5" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <rect x="7.2" y="7" width="3.6" height="8.5" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <rect x="11.9" y="4" width="3.6" height="11.5" fill="#ffe139" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+/**
  * The panel toggle. Chrome rather than a tool, so it stays a stroked glyph in
  * the strip's own colour instead of becoming a sprite. It is drawn in the same
  * 18x18 box as the sprites at 1:1, which keeps its stroke the width the design
@@ -73,6 +89,56 @@ export function Hearth(): ReactNode {
             <rect x="3" y="12" width="12" height="3.5" fill="#5a4a38" stroke={OUTLINE} strokeWidth="1.3" />
             <path d="M9 2.5c1.2 2 3.6 3.4 3.6 6.2A3.6 3.6 0 0 1 9 12.2a3.6 3.6 0 0 1-3.6-3.5c0-1.4.6-2.2 1.3-3 .1 1.1.6 1.7 1.3 1.9C7.7 5.4 8.2 3.8 9 2.5z" fill="#ffe139" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
             <path d="M9 7.4c.6 1 1.4 1.6 1.4 2.6A1.4 1.4 0 0 1 9 11.3a1.4 1.4 0 0 1-1.4-1.3c0-.9.8-1.6 1.4-2.6z" fill="#a70700" />
+        </svg>
+    );
+}
+
+/**
+ * Move chat to the other edge. A block arrow driving into the edge it is aimed
+ * at — a sprite like the tools rather than a stroked chrome glyph, because it
+ * sits among the dock's own furniture rather than in the strip.
+ *
+ * One sprite serves both directions: a quarter turn is the whole difference
+ * between "to the side" and "to the bottom", and two near-identical arrows
+ * would be two arrows to keep in step. The label names the destination; this
+ * only has to point at it.
+ */
+export function MoveChat({ down = false }: { down?: boolean }): ReactNode {
+    return (
+        <svg
+            width="18"
+            height="18"
+            viewBox="0 0 18 18"
+            aria-hidden="true"
+            fill="none"
+            style={down ? { transform: 'rotate(90deg)' } : undefined}
+        >
+            <path d="M2 6.5h5V3.5L12 9l-5 5.5V11.5H2z" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <rect x="14" y="2.5" width="2" height="13" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+/**
+ * Close a room. A filled diagonal cross on the shared outline, a sprite like
+ * the tools rather than a stroked chrome glyph, because it sits among the
+ * dock's own furniture beside the move control rather than in the strip.
+ *
+ * It fills about ten of its eighteen pixels. The other sprites run edge to
+ * edge because they are pictures of things; this one is a mark, and a mark
+ * drawn to the same bounds as a globe reads as heavier than everything it
+ * sits beside rather than as the smallest control in the row.
+ */
+export function CloseRoom(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
+            <path
+                d="M6.3 3.6L9 6.3L11.7 3.6L14.4 6.3L11.7 9L14.4 11.7L11.7 14.4L9 11.7L6.3 14.4L3.6 11.7L6.3 9L3.6 6.3Z"
+                fill="#ece7dc"
+                stroke={OUTLINE}
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+            />
         </svg>
     );
 }

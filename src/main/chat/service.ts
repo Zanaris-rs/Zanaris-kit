@@ -2,6 +2,7 @@ import { connect } from 'node:tls';
 import { LOBBY, SERVER_LOG, type ChatSettings, type ChatView } from '../../shared/chat.ts';
 import { serverChannel } from './channels.ts';
 import { backoffDelay, IrcClient } from './client.ts';
+import { parseInput, sameName } from './protocol.ts';
 
 /**
  * The app's one chat connection.
@@ -74,11 +75,44 @@ export function offlineChat(nick: string | null): ChatView {
     return { status: 'offline', nick, channels: [], active: SERVER_LOG, lines: [], error: null, needsNick: nick === null };
 }
 
+/**
+ * What a freshly built IrcClient should join: the auto set plus whatever
+ * rooms were persisted, so a hand-joined room from a previous run comes back
+ * on this run's first connection. Folded to compare so a persisted room that
+ * only differs in case from an auto-joined one is not listed, and later
+ * joined, twice.
+ */
+export function initialChannels(autoSet: string[], rooms: string[]): string[] {
+    const channels = [...autoSet];
+    for (const room of rooms) if (!channels.some(c => sameName(c, room))) channels.push(room);
+    return channels;
+}
+
+/**
+ * Everything the client is in that the auto set does not account for — the
+ * derivation the whole close feature rests on. Folded to compare: IRC names
+ * are case-insensitive, so a room that entered `wanted` in a different case
+ * than the auto set's own canonical spelling is still the same room, and
+ * must not be misread as the user's own to close.
+ */
+export function handJoinedChannels(wanted: string[], autoSet: string[]): string[] {
+    return wanted.filter(channel => !autoSet.some(auto => sameName(auto, channel)));
+}
+
 export class ChatService {
     private readonly io: ChatIo;
     private readonly host: string;
     private readonly port: number;
     private nick: string | null;
+    /**
+     * The user's own rooms: seeded from what was persisted at launch, then
+     * kept live as the user hand-joins or closes a room this session. This is
+     * the one list both handJoined() and setServers's part decision consult,
+     * so a room can no longer be closable to one and parted by the other —
+     * and a restart() rebuilds from what is hand-joined *this* session,
+     * rather than only what launched with it.
+     */
+    private handJoinedRooms: string[];
     private client: IrcClient | null = null;
     private socket: ChatSocket | null = null;
     private pending = '';
@@ -100,6 +134,7 @@ export class ChatService {
         this.host = settings.server;
         this.port = settings.port;
         this.nick = settings.nick === '' ? null : settings.nick;
+        this.handJoinedRooms = [...settings.rooms];
         // A remembered nick connects straight away; without one nothing opens,
         // which is what a capture run — whose profile has no nick — relies on.
         if (this.nick !== null) this.open();
@@ -107,7 +142,43 @@ export class ChatService {
 
     view(): ChatView {
         if (this.client === null) return offlineChat(this.nick);
-        return { ...this.client.snapshot(), needsNick: this.nick === null };
+        const snapshot = this.client.snapshot();
+        const handJoined = this.handJoined();
+        return {
+            ...snapshot,
+            // Folded as a guard, not a fix: IrcClient.join() pushes a channel into
+            // `want` and calls chan() with that identical string in the same
+            // statement, and chan() never renames an existing entry, so channel.name
+            // here and its match in handJoined are always the same literal today,
+            // never merely case-equivalent. This does not depend on that staying true.
+            channels: snapshot.channels.map(channel => ({ ...channel, closable: handJoined.some(c => sameName(c, channel.name)) })),
+            needsNick: this.nick === null
+        };
+    }
+
+    /**
+     * The user's own rooms that the auto set does not currently also want —
+     * the derivation the whole close feature rests on. `handJoinedRooms` is
+     * the one list this and setServers's part decision both read, so a close
+     * button and a window closing cannot disagree about what is closable.
+     * That single list is not the second one the spec warns against — there
+     * is still only one fact, "which rooms are the user's own," read from one
+     * place; what changed is that this service now also updates it, rather
+     * than re-deriving it from `client.wanted()` on every call.
+     */
+    private handJoined(): string[] {
+        if (this.client === null) return [];
+        return handJoinedChannels(this.handJoinedRooms, this.channels);
+    }
+
+    /** The user asked for this room, this session or a previous one. Idempotent: joining twice marks it once. */
+    private markHandJoined(channel: string): void {
+        if (!this.handJoinedRooms.some(r => sameName(r, channel))) this.handJoinedRooms.push(channel);
+    }
+
+    /** The user no longer has this room — closed, or /part by hand — so a later window closing must not think it is theirs to spare. */
+    private forgetHandJoined(channel: string): void {
+        this.handJoinedRooms = this.handJoinedRooms.filter(r => !sameName(r, channel));
     }
 
     subscribe(cb: (view: ChatView) => void): () => void {
@@ -150,22 +221,60 @@ export class ChatService {
         this.channels = wanted;
         if (this.client === null || (added.length === 0 && gone.length === 0)) return;
         for (const channel of added) this.client.join(channel);
-        for (const channel of gone) this.client.part(channel);
+        // A room this mapping is done with is only ours to part if the user has
+        // not separately claimed it — the same room, hand-joined before this
+        // window opened or while it was, is the user's to keep after it closes.
+        for (const channel of gone) if (!this.handJoinedRooms.some(r => sameName(r, channel))) this.client.part(channel);
         this.emit();
     }
 
-    /** One typed line. Text beginning with / is a command; the client decides what it means. */
+    /**
+     * One typed line. Text beginning with / is a command; the client decides
+     * what it means. The two halves that keep handJoinedRooms live work
+     * differently on purpose:
+     *
+     * Marking reads intent, not effect: a /join is marked regardless of
+     * whether `want` actually changes, because IrcClient.join() is a no-op on
+     * `want` for a channel already there — typing /join for a room a window
+     * already opened is exactly how a coincidence begins, and a room hand-
+     * joined that way would otherwise leave no trace to protect it later.
+     *
+     * Forgetting stays on the diff: /part with no argument means "the active
+     * channel", which only the client knows, and resolving that here would
+     * duplicate its own logic for no gain — whatever /part actually dropped
+     * from `want` is the one thing worth forgetting.
+     */
     send(text: string): void {
         if (this.client === null) return;
+        const typed = parseInput(text);
+        if (typed?.kind === 'join') this.markHandJoined(typed.channel);
+        const before = this.client.wanted();
         this.client.input(text);
+        const after = this.client.wanted();
+        for (const channel of before) if (!after.some(a => sameName(a, channel))) this.forgetHandJoined(channel);
         this.emit();
+    }
+
+    /**
+     * Parts a room the user joined by hand. Refused for anything else — the
+     * lobby and a per-server room are not the user's to close from here, and
+     * that refusal belongs here rather than in the caller: only the service
+     * has both halves handJoined() derives from, so only it can tell the two
+     * cases apart without re-deriving the same set a second time.
+     */
+    closeRoom(channel: string): boolean {
+        if (this.client === null || !this.handJoined().some(c => sameName(c, channel))) return false;
+        this.client.part(channel);
+        this.forgetHandJoined(channel);
+        this.emit();
+        return true;
     }
 
     select(channel: string): void {
         if (this.client === null) return;
         // Only a channel the rail already shows: selecting anything else would
         // invent a tab for a room nobody is in.
-        const known = this.client.snapshot().channels.some(c => c.name.toLowerCase() === channel.toLowerCase());
+        const known = this.client.snapshot().channels.some(c => sameName(c.name, channel));
         if (!known) return;
         this.client.select(channel);
         this.emit();
@@ -204,7 +313,7 @@ export class ChatService {
             this.client ??
             new IrcClient({
                 nick: this.nick,
-                channels: this.channels,
+                channels: initialChannels(this.channels, this.handJoinedRooms),
                 now: () => this.io.now(),
                 send: line => this.socket?.send(line)
             });
