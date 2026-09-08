@@ -252,7 +252,7 @@ function Conversation({ view, home }: { view: ChatView; home: ChatHome }): React
                 </>
             ) : (
                 <>
-                    {/* No title left to centre, so the control is an ordinary right-aligned control in its own row rather than laid over one. */}
+                    {/* No title left to centre, so the control is an ordinary right-aligned element in its own row rather than layered over one. */}
                     <div className="flex justify-end px-2.5 pt-2 pb-1">
                         <MoveControl home="side" />
                     </div>
