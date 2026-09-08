@@ -114,7 +114,7 @@ behaviour, re-read the comments around it before you commit.
 
 | | |
 |---|---|
-| `npm test` | 371 tests, `node --test`, pure modules only, no Electron |
+| `npm test` | `node --test`, pure modules only, no Electron |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev` / `npm start` | run it |
 | `npm run capture` | screenshot every view — see the hazard below |

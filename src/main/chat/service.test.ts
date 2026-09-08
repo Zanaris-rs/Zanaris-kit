@@ -216,13 +216,14 @@ test('setServers joins and parts the difference without reconnecting', () => {
     service.setServers(['lostcity', 'zanaris']);
     assert.deepEqual(f.sent, [], 'a server without a room changes nothing');
 
-    f.sent.length = 0;
-    service.setServers(['zanaris', 'local']);
-    assert.deepEqual(f.sent, ['PART #LostCity'], 'only the room that closed');
-
+    /*
+     * #LostCity is still open at this point, so closing everything has to
+     * part it — if the diff or the lobby guard were broken this would come
+     * back empty (nothing parted) or carry a PART for the lobby too.
+     */
     f.sent.length = 0;
     service.setServers([]);
-    assert.deepEqual(f.sent, [], 'the lobby is never parted');
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'the mapped room closes, and the lobby is never parted');
 
     assert.deepEqual(f.connects, ['irc.swiftirc.net:6697'], 'one connection throughout');
 });

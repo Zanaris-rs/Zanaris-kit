@@ -144,7 +144,7 @@ export class AppState {
         this.save();
     }
 
-    /** Where chat connects, and as whom. Falls back to Libera field by field. */
+    /** Where chat connects, and as whom. Falls back to the SwiftIRC defaults field by field. */
     chat(): ChatSettings {
         return { ...this.chatSettings };
     }

@@ -70,6 +70,9 @@ function Channels({ view }: { view: ChatView }): ReactNode {
         <div className="flex flex-wrap gap-1.5 px-2.5 pb-[7px]" role="group" aria-label="Channels">
             {view.channels.map(channel => {
                 const on = channel.name === view.active;
+                /* No title here: these chips wrap onto new rows rather than truncating, so
+                   the label is always the room's full name already — unlike the dock's Tab
+                   below, whose truncate class can still clip a crowded row. */
                 return (
                     <button
                         key={channel.name}

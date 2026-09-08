@@ -107,7 +107,7 @@ test('setWarnOnSwitch leaves the remembered worlds alone', () => {
     assert.equal(b.warnOnSwitch(), false);
 });
 
-test('chat starts at the Libera defaults when there is no file', () => {
+test('chat starts at the default settings when there is no file', () => {
     const state = new AppState(tempFile());
     state.load();
     assert.deepEqual(state.chat(), DEFAULT_CHAT);
