@@ -139,6 +139,11 @@ export class ChatService {
         const handJoined = this.handJoined();
         return {
             ...snapshot,
+            // Folded as a guard, not a fix: IrcClient.join() pushes a channel into
+            // `want` and calls chan() with that identical string in the same
+            // statement, and chan() never renames an existing entry, so channel.name
+            // here and its match in handJoined are always the same literal today,
+            // never merely case-equivalent. This does not depend on that staying true.
             channels: snapshot.channels.map(channel => ({ ...channel, closable: handJoined.some(c => sameName(c, channel.name)) })),
             needsNick: this.nick === null
         };
