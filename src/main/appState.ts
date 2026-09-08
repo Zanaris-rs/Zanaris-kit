@@ -4,6 +4,7 @@ import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
 import { DOCK_HEIGHT_MIN } from '../shared/layout.ts';
+import { isChannel } from './chat/protocol.ts';
 
 interface StateFile {
     version: 1;
@@ -18,6 +19,22 @@ interface StateFile {
 // affected — this only stops a hand-edited file from handing an arbitrarily
 // long string down the wire when a later task builds a lookup URL from it.
 const HISCORES_NAME_MAX = 30;
+
+// RFC 2812 caps a channel name at 50 characters, so nothing a real IRC server
+// would accept is ever rejected here. ROOMS_MAX is a sanity rail against a
+// hand-edited file, not a real ceiling on how many rooms someone could join.
+const ROOM_NAME_MAX = 50;
+const ROOMS_MAX = 20;
+
+/**
+ * DEFAULT_CHAT, cloned deep enough that rooms is never shared: every other
+ * field is a primitive, so `{ ...DEFAULT_CHAT }` was a safe copy until rooms
+ * arrived. Without this, every fresh AppState and every reset on a failed
+ * load would start out holding DEFAULT_CHAT's own array by reference.
+ */
+function defaultChat(): ChatSettings {
+    return { ...DEFAULT_CHAT, rooms: [...DEFAULT_CHAT.rooms] };
+}
 
 function isRemembered(x: unknown): x is RememberedWorld {
     if (typeof x !== 'object' || x === null) return false;
@@ -40,7 +57,7 @@ function isRemembered(x: unknown): x is RememberedWorld {
  * their remembered worlds.
  */
 function readChat(x: unknown): ChatSettings {
-    const chat = { ...DEFAULT_CHAT };
+    const chat = defaultChat();
     if (typeof x !== 'object' || x === null) return chat;
     const c = x as Record<string, unknown>;
     if (c.nick === null || (typeof c.nick === 'string' && c.nick !== '')) chat.nick = c.nick;
@@ -51,6 +68,14 @@ function readChat(x: unknown): ChatSettings {
     // true maximum depends on the display's work area and is enforced at drag
     // time, where a screen is actually known. Nothing here has one to consult.
     if (typeof c.dockHeight === 'number' && Number.isInteger(c.dockHeight)) chat.dockHeight = Math.min(Math.max(c.dockHeight, DOCK_HEIGHT_MIN), 2000);
+    if (Array.isArray(c.rooms)) {
+        const rooms: string[] = [];
+        for (const room of c.rooms) {
+            if (rooms.length >= ROOMS_MAX) break;
+            if (typeof room === 'string' && room !== '' && room.length <= ROOM_NAME_MAX && isChannel(room)) rooms.push(room);
+        }
+        chat.rooms = rooms;
+    }
     return chat;
 }
 
@@ -89,7 +114,7 @@ export class AppState {
     private worlds = new Map<string, RememberedWorld>();
     // An opt-out: the warning shows until the user has ticked "don't ask again".
     private warn = true;
-    private chatSettings: ChatSettings = { ...DEFAULT_CHAT };
+    private chatSettings: ChatSettings = defaultChat();
     // Developer commands in the single-player world: off until asked for.
     private cheats = false;
     // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
@@ -102,7 +127,7 @@ export class AppState {
     load(): void {
         this.worlds = new Map();
         this.warn = true;
-        this.chatSettings = { ...DEFAULT_CHAT };
+        this.chatSettings = defaultChat();
         this.cheats = false;
         this.hiscoresNames = new Map();
         if (!existsSync(this.file)) return;
@@ -146,7 +171,11 @@ export class AppState {
 
     /** Where chat connects, and as whom. Falls back to the SwiftIRC defaults field by field. */
     chat(): ChatSettings {
-        return { ...this.chatSettings };
+        // rooms is cloned too, unlike the rest of the spread: it is the one array
+        // in an otherwise-primitive settings object, and returning it by reference
+        // would let a caller mutate this instance's own list without going
+        // through setChat/stageChat at all.
+        return { ...this.chatSettings, rooms: [...this.chatSettings.rooms] };
     }
 
     setChat(patch: Partial<ChatSettings>): void {
@@ -163,6 +192,10 @@ export class AppState {
      */
     stageChat(patch: Partial<ChatSettings>): void {
         this.chatSettings = { ...this.chatSettings, ...patch };
+        // Cloned for the same reason chat() clones on the way out: rooms is an
+        // array, and holding the caller's own array by reference would let it
+        // mutate this instance's settings from outside setChat/stageChat entirely.
+        if (patch.rooms !== undefined) this.chatSettings.rooms = [...patch.rooms];
     }
 
     /** Whether the single-player world grants developer commands. Off until asked for. */

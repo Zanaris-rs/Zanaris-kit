@@ -79,6 +79,8 @@ export class ChatService {
     private readonly host: string;
     private readonly port: number;
     private nick: string | null;
+    /** Rooms persisted from a previous run, joined alongside the auto set the first time a client is built. */
+    private readonly rooms: string[];
     private client: IrcClient | null = null;
     private socket: ChatSocket | null = null;
     private pending = '';
@@ -100,6 +102,7 @@ export class ChatService {
         this.host = settings.server;
         this.port = settings.port;
         this.nick = settings.nick === '' ? null : settings.nick;
+        this.rooms = settings.rooms;
         // A remembered nick connects straight away; without one nothing opens,
         // which is what a capture run — whose profile has no nick — relies on.
         if (this.nick !== null) this.open();
@@ -107,7 +110,26 @@ export class ChatService {
 
     view(): ChatView {
         if (this.client === null) return offlineChat(this.nick);
-        return { ...this.client.snapshot(), needsNick: this.nick === null };
+        const snapshot = this.client.snapshot();
+        const handJoined = this.handJoined();
+        return {
+            ...snapshot,
+            channels: snapshot.channels.map(channel => ({ ...channel, closable: handJoined.includes(channel.name) })),
+            needsNick: this.nick === null
+        };
+    }
+
+    /**
+     * Everything the client is in that this service did not put it in for
+     * managing the open windows — the derivation the whole close feature
+     * rests on. Never stored: a second list of "the rooms I joined by hand"
+     * would let this and setServers's own bookkeeping (`this.channels`)
+     * drift apart, and then a close button and a window closing could
+     * disagree about what is closable.
+     */
+    private handJoined(): string[] {
+        if (this.client === null) return [];
+        return this.client.wanted().filter(channel => !this.channels.includes(channel));
     }
 
     subscribe(cb: (view: ChatView) => void): () => void {
@@ -161,6 +183,20 @@ export class ChatService {
         this.emit();
     }
 
+    /**
+     * Parts a room the user joined by hand. Refused for anything else — the
+     * lobby and a per-server room are not the user's to close from here, and
+     * that refusal belongs here rather than in the caller: only the service
+     * has both halves handJoined() derives from, so only it can tell the two
+     * cases apart without re-deriving the same set a second time.
+     */
+    closeRoom(channel: string): boolean {
+        if (this.client === null || !this.handJoined().includes(channel)) return false;
+        this.client.part(channel);
+        this.emit();
+        return true;
+    }
+
     select(channel: string): void {
         if (this.client === null) return;
         // Only a channel the rail already shows: selecting anything else would
@@ -204,7 +240,7 @@ export class ChatService {
             this.client ??
             new IrcClient({
                 nick: this.nick,
-                channels: this.channels,
+                channels: this.initialChannels(),
                 now: () => this.io.now(),
                 send: line => this.socket?.send(line)
             });
@@ -226,6 +262,19 @@ export class ChatService {
             }
         });
         this.emit();
+    }
+
+    /**
+     * What a freshly built IrcClient should join: the current auto set plus
+     * whatever rooms were persisted, so a hand-joined room from a previous
+     * run comes back on this run's first connection. Only matters the one
+     * time `this.client` is null and a new one is about to be built — once
+     * it exists, its own `want` list is what a reconnect rejoins.
+     */
+    private initialChannels(): string[] {
+        const channels = [...this.channels];
+        for (const room of this.rooms) if (!channels.includes(room)) channels.push(room);
+        return channels;
     }
 
     private opened(): void {

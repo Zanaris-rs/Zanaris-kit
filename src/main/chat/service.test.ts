@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ChatService, offlineChat, splitLines, wantedChannels, type ChatIo, type ChatSocket, type SocketHandlers } from './service.ts';
 import { LOBBY, type ChatSettings } from '../../shared/chat.ts';
 
-const SETTINGS: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: 200 };
+const SETTINGS: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: 200, rooms: [] };
 
 // ── the stream ────────────────────────────────────────────────────────────
 //
@@ -242,6 +242,84 @@ test('a room the user joined by hand is not parted by a window closing', () => {
         service.view().channels.some(c => c.name === '#rscape'),
         'the channel the user asked for is still there'
     );
+});
+
+// ── persisted rooms, and what may be closed ──────────────────────────────
+
+test('a persisted room is joined at startup alongside the auto rooms', () => {
+    const f = fake();
+    new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#rscape'] }, f.io);
+    f.register();
+    assert.deepEqual(
+        f.sent.filter(line => line.startsWith('JOIN')),
+        [`JOIN ${LOBBY}`, 'JOIN #rscape'],
+        'the persisted room joins alongside the lobby, with no server open to add a room of its own'
+    );
+});
+
+test('setServers never parts a persisted room, and still parts its own', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#rscape'] }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+    f.sent.length = 0;
+
+    service.setServers([]);
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'only the room this call added is parted');
+    assert.ok(
+        service.view().channels.some(c => c.name === '#rscape'),
+        'the room read from settings at startup survives a window closing'
+    );
+});
+
+test('closable is true for a hand-joined room and false for the lobby and a per-server room', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+    service.send('/join #rscape');
+
+    const closable = new Map(service.view().channels.map(c => [c.name, c.closable]));
+    assert.equal(closable.get(LOBBY), false, 'the lobby always comes back, so it is not the user\'s to close');
+    assert.equal(closable.get('#LostCity'), false, 'a per-server room follows the window, not the user');
+    assert.equal(closable.get('#rscape'), true, 'joined by hand, so closable');
+});
+
+test('closing a room that is not hand-joined is refused', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+    f.sent.length = 0;
+
+    assert.equal(service.closeRoom(LOBBY), false, 'the lobby cannot be closed');
+    assert.equal(service.closeRoom('#LostCity'), false, 'nor can a per-server room');
+    assert.deepEqual(f.sent, [], 'nothing was parted');
+    assert.ok(service.view().channels.some(c => c.name === LOBBY));
+    assert.ok(service.view().channels.some(c => c.name === '#LostCity'));
+});
+
+test('closing a hand-joined room parts it and drops it from the view', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #rscape');
+    f.sent.length = 0;
+
+    assert.equal(service.closeRoom('#rscape'), true);
+    assert.deepEqual(f.sent, ['PART #rscape']);
+    assert.equal(
+        service.view().channels.some(c => c.name === '#rscape'),
+        false,
+        'parting forgets the channel, the same as a hand-typed /part'
+    );
+});
+
+test('closing a room while offline is refused rather than throwing', () => {
+    const f = fake();
+    const service = new ChatService(SETTINGS, f.io);
+    assert.equal(service.closeRoom(LOBBY), false);
+    assert.equal(service.closeRoom('#rscape'), false);
 });
 
 test('a second nick asks the server while connected, and starts over while not', () => {

@@ -36,6 +36,16 @@ export interface ChatChannel {
     nicks: string[];
     unread: number;
     highlights: number;
+    /**
+     * Hand-joined, so the user may close it. An auto-joined room would only
+     * come back. Optional here because IrcClient's raw snapshot — the same
+     * shape reused for both the client's internal state and the delivered
+     * view — has no notion of closability; only ChatService does, since it
+     * alone knows the auto set a channel would need to differ from. It fills
+     * this in on every channel of every ChatView it hands out, so a channel
+     * the shell ever sees always carries a real boolean.
+     */
+    closable?: boolean;
 }
 
 /** What the Chat panel draws. Lines are for the active channel only. */
@@ -58,9 +68,11 @@ export interface ChatSettings {
     port: number;
     dock: ChatHome;
     dockHeight: number;
+    /** Rooms the user joined by hand, so they come back on the next launch. */
+    rooms: string[];
 }
 
-export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: DOCK_HEIGHT_DEFAULT };
+export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: DOCK_HEIGHT_DEFAULT, rooms: [] };
 
 /** Everyone shares this one, whatever server their windows are on. */
 export const LOBBY = '#LostHQ';
