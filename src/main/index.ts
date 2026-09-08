@@ -14,6 +14,7 @@ import { installMenu, type MenuActions } from './menu';
 import { WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
 import { ChatService, offlineChat, tlsConnect } from './chat/service';
+import { chatChanges } from './chatPersist';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
@@ -524,6 +525,27 @@ ipcMain.handle(IPC.hiscoresOpenSite, event => {
 // One conversation for the app, so these take no window: any window's panel
 // drives the same connection, and every window is shown the result.
 
+/**
+ * Writes back the two chat fields that follow the connection rather than a
+ * control: the nick the connection ended up with, and the rooms joined by
+ * hand — the two the owner asked to survive a restart. Both are learnt by
+ * watching the view rather than by hooking each command; `chatPersist.ts`
+ * argues why. This is the whole of it in main: which rooms are the user's own
+ * is the service's to say, and nothing here re-derives it.
+ *
+ * What was last written is read back out of `AppState` rather than kept in a
+ * variable beside it. `AppState` holds what `save()` put in the file — only the
+ * dock height is ever staged without one — so there is no second copy of the
+ * truth for a writer somewhere else to leave stale. `setChat` rather than
+ * `stageChat`: a nick or a room changes by hand, once, where the dock height
+ * arrives once a frame for as long as a drag lasts, which is the volume
+ * `stageChat` exists for.
+ */
+function persistChat(view: ChatView): void {
+    const patch = chatChanges(appState.chat(), view);
+    if (patch !== null) appState.setChat(patch);
+}
+
 ipcMain.handle(IPC.chatGet, (): ChatView => chatView());
 
 ipcMain.handle(IPC.chatSend, (_event, text: unknown) => {
@@ -536,12 +558,29 @@ ipcMain.handle(IPC.chatSelect, (_event, channel: unknown) => {
     chat?.select(channel);
 });
 
+/**
+ * Whether this room is the user's to close is not asked here: only the service
+ * has both halves of that derivation, so it makes the judgement and refuses
+ * what is not hand-joined. A copy of the test in this handler would be a
+ * second opinion, and the day the two disagreed the close control would be
+ * the one telling the truth.
+ */
+ipcMain.handle(IPC.chatCloseRoom, (_event, channel: unknown) => {
+    if (typeof channel !== 'string') return;
+    chat?.closeRoom(channel);
+});
+
+/**
+ * Deliberately does not write the nick: `persistChat` above does, from the
+ * view, which is what makes the next launch connect without asking again. The
+ * two are not the same value — a 433 renames us, and the server can rename us
+ * again later — and of the two writers only the observer revisits its answer.
+ * Writing here as well would leave the one that never looks again to win any
+ * launch where the rename came after it.
+ */
 ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
     if (typeof nick !== 'string' || nick.trim() === '') return;
-    const chosen = nick.trim();
-    // Remembered, so the next launch connects without asking again.
-    appState.setChat({ nick: chosen });
-    chat?.setNick(chosen);
+    chat?.setNick(nick.trim());
 });
 
 /**
@@ -976,7 +1015,8 @@ app.whenReady().then(async () => {
             return () => clearTimeout(timer);
         }
     });
-    chat.subscribe(() => {
+    chat.subscribe(view => {
+        persistChat(view);
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();

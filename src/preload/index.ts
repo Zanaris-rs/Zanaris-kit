@@ -24,6 +24,7 @@ const api: ZanarisApi = {
     chat: {
         send: text => ipcRenderer.invoke(IPC.chatSend, text),
         select: channel => ipcRenderer.invoke(IPC.chatSelect, channel),
+        closeRoom: channel => ipcRenderer.invoke(IPC.chatCloseRoom, channel),
         setNick: nick => ipcRenderer.invoke(IPC.chatSetNick, nick),
         setHome: home => ipcRenderer.invoke(IPC.chatSetHome, home),
         setDockHeight: px => ipcRenderer.invoke(IPC.chatSetDockHeight, px)

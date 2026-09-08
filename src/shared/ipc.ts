@@ -20,6 +20,7 @@ export const IPC = {
     chatGet: 'zanaris:chat-get',
     chatSend: 'zanaris:chat-send',
     chatSelect: 'zanaris:chat-select',
+    chatCloseRoom: 'zanaris:chat-close-room',
     chatSetNick: 'zanaris:chat-set-nick',
     chatSetHome: 'zanaris:chat-set-home',
     chatSetDockHeight: 'zanaris:chat-set-dock-height',
@@ -117,6 +118,13 @@ export interface ZanarisApi {
         send(text: string): Promise<void>;
         /** Shows a channel in the panel and marks it read. */
         select(channel: string): Promise<void>;
+        /**
+         * Leaves a room the user joined by hand, and forgets it, so it does not
+         * come back on the next launch. Main refuses anything else: the lobby
+         * and a per-server room are the app's to manage, and parting one would
+         * only be undone by the next window that wants it.
+         */
+        closeRoom(channel: string): Promise<void>;
         /** Chooses the nick and connects. */
         setNick(nick: string): Promise<void>;
         /** Moves chat between the bottom dock and the side column. App-wide. */
