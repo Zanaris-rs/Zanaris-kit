@@ -16,3 +16,8 @@ engine-dist/
 
 # electron-builder output (npm run dist)
 release/
+
+# agent working state: ledgers, review diffs, and a brainstorm session token.
+# .superpowers/sdd/ already self-ignores, but brainstorm/ does not, and it holds
+# a live token — so ignore the tree rather than each subdirectory as it appears.
+.superpowers/
