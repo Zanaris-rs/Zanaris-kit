@@ -14,9 +14,6 @@ import Tab from '../tab';
 const CHIP: CSSProperties = { padding: '2px 10px' };
 const CHIP_QUIET: CSSProperties = { ...CHIP, color: 'var(--color-dim)' };
 
-/** In the dock the title shares a row instead of owning one, so it gives up the panel title's padding. */
-const ROW_TITLE: CSSProperties = { padding: 0 };
-
 /**
  * Nick colours, so a conversation can be followed by shape instead of by
  * reading every name. The palette is the era's chat set — pale blue, pink,
@@ -51,7 +48,8 @@ const STATUS_NOTE: Record<ChatStatus, string | null> = {
  * appearing silently; it collapses when there is nothing to say.
  */
 function Status({ view }: { view: ChatView }): ReactNode {
-    const note = STATUS_NOTE[view.status];
+    /* Before a nick exists, offline is the state you are always in, not news — showing it here would read as a fault. A real error still gets through. */
+    const note = view.needsNick && view.status === 'offline' ? null : STATUS_NOTE[view.status];
     return (
         <div aria-live="polite" className="px-2.5 pb-1.5 text-[12px] empty:hidden">
             {note !== null && <p className="text-dim">{note}</p>}
@@ -114,10 +112,10 @@ function MoveControl({ home, className = '' }: { home: ChatHome; className?: str
 }
 
 /**
- * The dock's one row of furniture: the rooms as tabs, the title, and the move
- * control. In the side panel those first two cost a 31px centred title and a
- * wrapping row of chips, which 600px of height can afford and 200px cannot, so
- * the dock buys all three back for a single ~33px row.
+ * The dock's one row of furniture: the rooms as tabs and the move control. The
+ * side panel gives the same rooms a wrapping row of chips instead, which 600px
+ * of height can afford and 200px cannot, so the dock buys that room back with
+ * a single ~33px row.
  *
  * The rooms sit in the order they were joined and never reorder. An unread
  * count changes inside a tab that stays put; a room list that reshuffles as
@@ -143,11 +141,8 @@ function DockHeader({ view }: { view: ChatView }): ReactNode {
                     );
                 })}
             </div>
-            {/* Two auto margins: the title takes the middle of whatever the rooms leave, and the control keeps the right. */}
-            <h2 style={ROW_TITLE} className="title mx-auto shrink-0">
-                Chat
-            </h2>
-            <MoveControl home="bottom" />
+            {/* No title left to share the row with, so the control claims the right edge on its own. */}
+            <MoveControl home="bottom" className="ml-auto" />
         </div>
     );
 }
@@ -257,15 +252,9 @@ function Conversation({ view, home }: { view: ChatView; home: ChatHome }): React
                 </>
             ) : (
                 <>
-                    {/*
-                     * The client centres a panel's title over its contents, so this one is
-                     * centred too — which is why the move control is laid over the row
-                     * rather than placed in it: a flex sibling would push the title off
-                     * centre to make room for itself.
-                     */}
-                    <div className="relative">
-                        <h2 className="title">Chat</h2>
-                        <MoveControl home="side" className="absolute top-1/2 right-2.5 -translate-y-1/2" />
+                    {/* No title left to centre, so the control is an ordinary right-aligned control in its own row rather than laid over one. */}
+                    <div className="flex justify-end px-2.5 pt-2 pb-1">
+                        <MoveControl home="side" />
                     </div>
                     <Status view={view} />
                     {view.channels.length > 1 && <Channels view={view} />}
@@ -342,8 +331,8 @@ function NickPrompt({ view }: { view: ChatView }): ReactNode {
     };
 
     return (
-        <form onSubmit={claim} className="flex min-h-0 flex-1 flex-col">
-            <h2 className="title">Chat</h2>
+        <form onSubmit={claim} className="flex min-h-0 flex-1 flex-col pt-2">
+            {/* No title above it any more, so the padding lives on the form itself — Status collapses to nothing when there is no note or error, and would otherwise take the top space with it. */}
             <Status view={view} />
 
             <div className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5 leading-[1.45]">
