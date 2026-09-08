@@ -51,7 +51,7 @@ export interface ChatView {
     needsNick: boolean;
 }
 
-/** Where chat connects. The defaults are Libera.Chat over TLS. */
+/** Where chat connects. The defaults are SwiftIRC over TLS. */
 export interface ChatSettings {
     nick: string | null;
     server: string;
@@ -60,7 +60,7 @@ export interface ChatSettings {
     dockHeight: number;
 }
 
-export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.libera.chat', port: 6697, dock: 'bottom', dockHeight: DOCK_HEIGHT_DEFAULT };
+export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: DOCK_HEIGHT_DEFAULT };
 
 /** Everyone shares this one, whatever server their windows are on. */
-export const LOBBY = '#04scape';
+export const LOBBY = '#LostHQ';

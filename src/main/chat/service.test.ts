@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ChatService, offlineChat, splitLines, wantedChannels, type ChatIo, type ChatSocket, type SocketHandlers } from './service.ts';
 import { LOBBY, type ChatSettings } from '../../shared/chat.ts';
 
-const SETTINGS: ChatSettings = { nick: null, server: 'irc.libera.chat', port: 6697, dock: 'bottom', dockHeight: 200 };
+const SETTINGS: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: 200 };
 
 // ── the stream ────────────────────────────────────────────────────────────
 //
@@ -17,12 +17,12 @@ test('a chunk of whole lines is split into them', () => {
 });
 
 test('a line split across two chunks is delivered once, whole', () => {
-    const first = splitLines('', ':bob!b@h PRIVMSG #04scape :hello ');
+    const first = splitLines('', ':bob!b@h PRIVMSG #LostHQ :hello ');
     assert.deepEqual(first.lines, [], 'half a line is not a line');
-    assert.equal(first.rest, ':bob!b@h PRIVMSG #04scape :hello ');
+    assert.equal(first.rest, ':bob!b@h PRIVMSG #LostHQ :hello ');
 
     const second = splitLines(first.rest, 'world\r\n');
-    assert.deepEqual(second.lines, [':bob!b@h PRIVMSG #04scape :hello world']);
+    assert.deepEqual(second.lines, [':bob!b@h PRIVMSG #LostHQ :hello world']);
     assert.equal(second.rest, '');
 });
 
@@ -56,9 +56,9 @@ test('blank lines are not lines', () => {
 
 test('the lobby is always wanted, and each hosted server adds its room once', () => {
     assert.deepEqual(wantedChannels([]), [LOBBY]);
-    assert.deepEqual(wantedChannels(['lostcity']), [LOBBY, '#04scape-lostcity']);
-    assert.deepEqual(wantedChannels(['zanaris', 'zanaris']), [LOBBY, '#04scape-zanaris'], 'two windows share one room');
-    assert.deepEqual(wantedChannels(['local', 'my-own-server']), [LOBBY], 'a server without a room adds nothing');
+    assert.deepEqual(wantedChannels(['lostcity']), [LOBBY, '#LostCity']);
+    assert.deepEqual(wantedChannels(['lostcity', 'lostcity']), [LOBBY, '#LostCity'], 'two windows share one room');
+    assert.deepEqual(wantedChannels(['zanaris', 'local', 'my-own-server']), [LOBBY], 'none of these have a room, zanaris included');
 });
 
 test('the offline view asks for a nick only when there is none', () => {
@@ -140,7 +140,7 @@ function fake(): Fake {
         drop: (reason = 'connection reset') => handlers?.closed(reason),
         register: (nick = 'matt') => {
             handlers?.opened();
-            handlers?.data(`:irc.libera.chat 001 ${nick} :Welcome to Libera.Chat, ${nick}\r\n`);
+            handlers?.data(`:irc.swiftirc.net 001 ${nick} :Welcome to SwiftIRC, ${nick}\r\n`);
         },
         fire: () => {
             const timer = pending();
@@ -169,14 +169,14 @@ test('with no nick the service stays offline and opens nothing', () => {
 test('a remembered nick connects as soon as the service is built', () => {
     const f = fake();
     new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
-    assert.deepEqual(f.connects, ['irc.libera.chat:6697']);
+    assert.deepEqual(f.connects, ['irc.swiftirc.net:6697']);
 });
 
 test('setNick connects once and registers with it', () => {
     const f = fake();
     const service = new ChatService(SETTINGS, f.io);
     service.setNick('matt');
-    assert.deepEqual(f.connects, ['irc.libera.chat:6697']);
+    assert.deepEqual(f.connects, ['irc.swiftirc.net:6697']);
     assert.equal(service.view().needsNick, false);
     assert.equal(service.view().status, 'connecting');
 
@@ -185,7 +185,7 @@ test('setNick connects once and registers with it', () => {
     assert.equal(service.view().status, 'registering');
 
     service.setNick('matt');
-    assert.deepEqual(f.connects, ['irc.libera.chat:6697'], 'the same nick again is not a second connection');
+    assert.deepEqual(f.connects, ['irc.swiftirc.net:6697'], 'the same nick again is not a second connection');
 });
 
 test('registering joins the lobby and every mapped server room', () => {
@@ -197,8 +197,8 @@ test('registering joins the lobby and every mapped server room', () => {
 
     assert.deepEqual(
         f.sent.filter(line => line.startsWith('JOIN')),
-        [`JOIN ${LOBBY}`, 'JOIN #04scape-lostcity', 'JOIN #04scape-zanaris'],
-        'the lobby plus a room per hosted server, and nothing for the local one'
+        [`JOIN ${LOBBY}`, 'JOIN #LostCity'],
+        'the lobby plus #LostCity for the one hosted server with a room, and nothing for local or zanaris'
     );
     assert.equal(service.view().status, 'online');
 });
@@ -206,26 +206,25 @@ test('registering joins the lobby and every mapped server room', () => {
 test('setServers joins and parts the difference without reconnecting', () => {
     const f = fake();
     const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
-    service.setServers(['lostcity']);
     f.register();
     f.sent.length = 0;
 
+    service.setServers(['lostcity']);
+    assert.deepEqual(f.sent, ['JOIN #LostCity'], 'only the new room');
+
+    f.sent.length = 0;
     service.setServers(['lostcity', 'zanaris']);
-    assert.deepEqual(f.sent, ['JOIN #04scape-zanaris'], 'only the new room');
-
-    f.sent.length = 0;
-    service.setServers(['zanaris']);
-    assert.deepEqual(f.sent, ['PART #04scape-lostcity'], 'only the room that closed');
-
-    f.sent.length = 0;
-    service.setServers(['zanaris', 'local']);
     assert.deepEqual(f.sent, [], 'a server without a room changes nothing');
 
     f.sent.length = 0;
-    service.setServers([]);
-    assert.deepEqual(f.sent, ['PART #04scape-zanaris'], 'the lobby is never parted');
+    service.setServers(['zanaris', 'local']);
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'only the room that closed');
 
-    assert.deepEqual(f.connects, ['irc.libera.chat:6697'], 'one connection throughout');
+    f.sent.length = 0;
+    service.setServers([]);
+    assert.deepEqual(f.sent, [], 'the lobby is never parted');
+
+    assert.deepEqual(f.connects, ['irc.swiftirc.net:6697'], 'one connection throughout');
 });
 
 test('a room the user joined by hand is not parted by a window closing', () => {
@@ -237,7 +236,7 @@ test('a room the user joined by hand is not parted by a window closing', () => {
     f.sent.length = 0;
 
     service.setServers([]);
-    assert.deepEqual(f.sent, ['PART #04scape-lostcity'], 'only the mapped room goes');
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'only the mapped room goes');
     assert.ok(
         service.view().channels.some(c => c.name === '#rscape'),
         'the channel the user asked for is still there'
@@ -352,13 +351,13 @@ test('typed lines and channel selection reach the client, and subscribers hear a
     const seen: string[] = [];
     const unsubscribe = service.subscribe(view => seen.push(view.active));
 
-    service.select('#04scape-lostcity');
+    service.select('#LostCity');
     service.send('hello world');
-    assert.deepEqual(f.sent, ['PRIVMSG #04scape-lostcity :hello world'], 'the active channel is where talking goes');
-    assert.deepEqual(seen, ['#04scape-lostcity', '#04scape-lostcity']);
+    assert.deepEqual(f.sent, ['PRIVMSG #LostCity :hello world'], 'the active channel is where talking goes');
+    assert.deepEqual(seen, ['#LostCity', '#LostCity']);
 
     service.select('#not-a-room-we-are-in');
-    assert.equal(service.view().active, '#04scape-lostcity', 'an unknown channel is not selected into existence');
+    assert.equal(service.view().active, '#LostCity', 'an unknown channel is not selected into existence');
 
     unsubscribe();
     service.send('and again');

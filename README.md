@@ -121,11 +121,12 @@ detection; everything equivalent here is done from main or not at all.
 
 Chat is one IRC connection for the whole app, not one per window: it stays up
 while you open and close game windows, and every window shows the same
-conversation. It joins Libera.Chat over TLS, the shared `#04scape` lobby
-always, plus a room per server while you have a window on it — `#04scape-lostcity`,
-`#04scape-zanaris`, `#04scape-labs`. Those names are prefixed because this is a
-public network where a bare `#zanaris` may already belong to someone else. A
-local or self-added server gets no room, since it would be a room of one.
+conversation. It joins SwiftIRC over TLS — the network LostHQ's community
+actually uses — in the shared `#LostHQ` lobby always, plus `#LostCity` while
+you have a Lost City window open. Zanaris and Labs get no room: there is no
+channel for either on SwiftIRC, and guessing one would risk dropping a player
+into a stranger's channel on a large public network. A local or self-added
+server gets no room either, since it would be a room of one.
 
 Chat lives along the bottom of the window by default — a dock, wide and
 short — rather than in the side panel with Worlds and Single player. It opens
@@ -158,9 +159,12 @@ driven in tests without a socket. The service around it owns the TLS socket
 and the reconnect backoff, which grows and caps — a client that retries harder
 the longer a network is down is a client that gets banned.
 
-Not carried over from LostKit, which reaches LostHQ's hosted web client
-instead: that host exposes no public IRC port, so this is a different room
-rather than the same one.
+Not carried over from LostKit, which reaches LostHQ's community through
+`https://irc.losthq.rs/`, a hosted web client rather than a server: that host
+exposes no public IRC port. But it is the same room, not a different one — the
+web client's own defaults are `wss://irc.swiftirc.net:4443/`, joining
+`#LostCity` and `#LostHQ`, and SwiftIRC also exposes ordinary IRC ports, so
+this app's raw-TLS client reaches those same channels directly.
 
 ## How it looks
 
@@ -500,5 +504,5 @@ the reload button) is parked in `git stash`.
    search, the map action, the per-server host allowlist, per-tab zoom.
 4. **Shared tools.** Screenshot cropped to the canvas, timers with an AFK
    reset, notes, settings, always-on-top.
-5. **Chat.** IRC on Libera.Chat, channels under the `#04scape` prefix.
+5. **Chat.** IRC on SwiftIRC, joining `#LostHQ` and `#LostCity`.
 6. **Server tools.** Clue lookup and calculators, with the data pack loader.

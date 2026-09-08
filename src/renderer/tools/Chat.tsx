@@ -60,19 +60,9 @@ function Status({ view }: { view: ChatView }): ReactNode {
     );
 }
 
-/**
- * Every room carries the same #04scape- prefix, so half of every label says
- * what the whole list already says. Trimmed in both homes, not only the narrow
- * one: short labels fit more rooms across the dock's header, and a room whose
- * name changed as you moved chat from one edge to the other would be worse
- * than one that is always short. The full name stays on the control's title
- * for anyone who needs to type it.
- */
-const PREFIX = '#04scape-';
-
 function channelLabel(name: string): string {
     if (name === SERVER_LOG) return 'server';
-    return name.startsWith(PREFIX) ? `#${name.slice(PREFIX.length)}` : name;
+    return name;
 }
 
 function Channels({ view }: { view: ChatView }): ReactNode {
@@ -84,7 +74,6 @@ function Channels({ view }: { view: ChatView }): ReactNode {
                     <button
                         key={channel.name}
                         type="button"
-                        title={channel.name}
                         aria-pressed={on}
                         onClick={() => !on && void window.zanaris.chat.select(channel.name)}
                         style={on ? CHIP : CHIP_QUIET}
