@@ -120,9 +120,11 @@ export interface ZanarisApi {
         select(channel: string): Promise<void>;
         /**
          * Leaves a room the user joined by hand, and forgets it, so it does not
-         * come back on the next launch. Main refuses anything else: the lobby
-         * and a per-server room are the app's to manage, and parting one would
-         * only be undone by the next window that wants it.
+         * come back on the next launch. Main refuses anything else: a
+         * per-server room would be rejoined by the next window that wants it,
+         * and the lobby would not come back at all, since nothing puts it back
+         * into the set the client rejoins. Neither is the user's to close from
+         * here.
          */
         closeRoom(channel: string): Promise<void>;
         /** Chooses the nick and connects. */

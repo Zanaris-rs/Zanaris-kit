@@ -1016,8 +1016,14 @@ app.whenReady().then(async () => {
         }
     });
     chat.subscribe(view => {
-        persistChat(view);
+        // The push first, and not because anything it reads depends on the
+        // write: nothing in a shell state comes from the fields persistChat
+        // touches. It is that this runs inside the socket's data handler, where
+        // a failed save() is an uncaught exception in main rather than a
+        // rejected IPC promise — so the panel is made live before anything can
+        // throw.
         for (const sw of serverWindows.values()) sw.pushState();
+        persistChat(view);
     });
     loadCatalog();
     singlePlayer = new SinglePlayerService(
