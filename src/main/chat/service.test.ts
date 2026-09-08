@@ -295,6 +295,80 @@ test('setServers never parts a persisted room, and still parts its own', () => {
     );
 });
 
+test('setServers never parts a persisted room that coincides with its own auto room', () => {
+    // #rscape above never collides with the auto set, which is exactly why a
+    // regression here was never caught by it: this one shares a name with
+    // the per-server room setServers itself would otherwise part.
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#LostCity'] }, f.io);
+    service.setServers(['lostcity']);
+    f.register();
+    f.sent.length = 0;
+
+    service.setServers([]);
+    assert.deepEqual(f.sent, [], 'the room is the user\'s own, even though it also happens to be the per-server room');
+    const chan = service.view().channels.find(c => c.name === '#LostCity');
+    assert.ok(chan, 'still there after the window closes');
+    assert.equal(chan!.closable, true, 'closable now that nothing auto-manages it any more');
+});
+
+test('a room hand-joined this session before its window opens survives the window closing too', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #LostCity'); // hand-joined first, no window open yet
+    service.setServers(['lostcity']); // the window opens, claiming the same room
+
+    assert.equal(
+        service.view().channels.find(c => c.name === '#LostCity')?.closable,
+        false,
+        'coincides with the per-server room while the window is open'
+    );
+
+    f.sent.length = 0;
+    service.setServers([]); // the window closes
+    assert.deepEqual(f.sent, [], 'the user hand-joined it this session, so the window closing must not part it');
+    const chan = service.view().channels.find(c => c.name === '#LostCity');
+    assert.ok(chan, 'the room is still there');
+    assert.equal(chan!.closable, true, 'closable again now that no window needs it');
+});
+
+test('a room the user closed does not linger as hand-joined if a later window reclaims it', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #LostCity');
+    assert.equal(service.closeRoom('#LostCity'), true, 'the user gives the room up');
+
+    service.setServers(['lostcity']); // a window later claims the same room fresh
+    f.sent.length = 0;
+    service.setServers([]); // and gives it up again
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'the user already closed this room once, so it is parted like any other auto room');
+});
+
+test('a restart carries a room hand-joined this session, not just what launched with it', () => {
+    // ChatService.rooms used to be a constructor snapshot, so a restart (via
+    // setNick while not online) rebuilt the client from launch-time settings
+    // alone, silently dropping anything hand-joined since. handJoinedRooms is
+    // live, so the room this session added is still there afterwards too.
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #rscape'); // hand-joined this session, never persisted
+
+    f.drop(); // the connection drops; status becomes 'reconnecting'
+    service.setNick('matt2'); // not online or registering, so this restarts
+    assert.equal(f.connects.length, 2, 'a fresh connection, not a wait for the old one');
+
+    f.sent.length = 0;
+    f.register('matt2');
+    assert.deepEqual(
+        f.sent.filter(line => line.startsWith('JOIN')),
+        [`JOIN ${LOBBY}`, 'JOIN #rscape'],
+        'the room hand-joined this session is carried into the restarted client'
+    );
+});
+
 test('closable is true for a hand-joined room and false for the lobby and a per-server room', () => {
     const f = fake();
     const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);

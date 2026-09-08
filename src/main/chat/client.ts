@@ -187,6 +187,16 @@ export class IrcClient {
 
     private nickTaken(taken: string | undefined): void {
         const attempted = taken !== undefined && taken !== '' ? taken : (this.nickName ?? this.opts.nick);
+        if (this.status === 'online') {
+            // A live rename was refused: the nick we already have is still
+            // registered and working, so there is nothing to recover from and
+            // nothing to retry. The underscore cascade below is only for
+            // finding a way in during registration, when there is no working
+            // nick yet — running it here would trade a nick that works for
+            // one nobody asked for and the server has also refused.
+            this.incoming(SERVER_LOG, 'system', null, `the nick ${attempted} is taken`);
+            return;
+        }
         if (this.nickTries >= MAX_NICK_TRIES) {
             if (this.nickTries === MAX_NICK_TRIES) {
                 this.nickTries++; // say it once, then stay quiet

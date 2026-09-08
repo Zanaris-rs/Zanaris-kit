@@ -104,8 +104,15 @@ export class ChatService {
     private readonly host: string;
     private readonly port: number;
     private nick: string | null;
-    /** Rooms persisted from a previous run, joined alongside the auto set the first time a client is built. */
-    private readonly rooms: string[];
+    /**
+     * The user's own rooms: seeded from what was persisted at launch, then
+     * kept live as the user hand-joins or closes a room this session. This is
+     * the one list both handJoined() and setServers's part decision consult,
+     * so a room can no longer be closable to one and parted by the other —
+     * and a restart() rebuilds from what is hand-joined *this* session,
+     * rather than only what launched with it.
+     */
+    private handJoinedRooms: string[];
     private client: IrcClient | null = null;
     private socket: ChatSocket | null = null;
     private pending = '';
@@ -127,7 +134,7 @@ export class ChatService {
         this.host = settings.server;
         this.port = settings.port;
         this.nick = settings.nick === '' ? null : settings.nick;
-        this.rooms = settings.rooms;
+        this.handJoinedRooms = [...settings.rooms];
         // A remembered nick connects straight away; without one nothing opens,
         // which is what a capture run — whose profile has no nick — relies on.
         if (this.nick !== null) this.open();
@@ -150,15 +157,28 @@ export class ChatService {
     }
 
     /**
-     * Everything the client is in that this service did not put it in for
-     * managing the open windows. Never stored: a second list of "the rooms I
-     * joined by hand" would let this and setServers's own bookkeeping
-     * (`this.channels`) drift apart, and then a close button and a window
-     * closing could disagree about what is closable.
+     * The user's own rooms that the auto set does not currently also want —
+     * the derivation the whole close feature rests on. `handJoinedRooms` is
+     * the one list this and setServers's part decision both read, so a close
+     * button and a window closing cannot disagree about what is closable.
+     * That single list is not the second one the spec warns against — there
+     * is still only one fact, "which rooms are the user's own," read from one
+     * place; what changed is that this service now also updates it, rather
+     * than re-deriving it from `client.wanted()` on every call.
      */
     private handJoined(): string[] {
         if (this.client === null) return [];
-        return handJoinedChannels(this.client.wanted(), this.channels);
+        return handJoinedChannels(this.handJoinedRooms, this.channels);
+    }
+
+    /** The user asked for this room, this session or a previous one. Idempotent: joining twice marks it once. */
+    private markHandJoined(channel: string): void {
+        if (!this.handJoinedRooms.some(r => sameName(r, channel))) this.handJoinedRooms.push(channel);
+    }
+
+    /** The user no longer has this room — closed, or /part by hand — so a later window closing must not think it is theirs to spare. */
+    private forgetHandJoined(channel: string): void {
+        this.handJoinedRooms = this.handJoinedRooms.filter(r => !sameName(r, channel));
     }
 
     subscribe(cb: (view: ChatView) => void): () => void {
@@ -201,14 +221,28 @@ export class ChatService {
         this.channels = wanted;
         if (this.client === null || (added.length === 0 && gone.length === 0)) return;
         for (const channel of added) this.client.join(channel);
-        for (const channel of gone) this.client.part(channel);
+        // A room this mapping is done with is only ours to part if the user has
+        // not separately claimed it — the same room, hand-joined before this
+        // window opened or while it was, is the user's to keep after it closes.
+        for (const channel of gone) if (!this.handJoinedRooms.some(r => sameName(r, channel))) this.client.part(channel);
         this.emit();
     }
 
-    /** One typed line. Text beginning with / is a command; the client decides what it means. */
+    /**
+     * One typed line. Text beginning with / is a command; the client decides
+     * what it means. /join and /part are the only commands that change
+     * `want`, so whatever this call added or dropped from it is exactly what
+     * the user just hand-joined or gave up — noted here rather than derived
+     * later, because by the time setServers or closeRoom need the answer, a
+     * window's own auto set may already cover the same room.
+     */
     send(text: string): void {
         if (this.client === null) return;
+        const before = this.client.wanted();
         this.client.input(text);
+        const after = this.client.wanted();
+        for (const channel of after) if (!before.some(b => sameName(b, channel))) this.markHandJoined(channel);
+        for (const channel of before) if (!after.some(a => sameName(a, channel))) this.forgetHandJoined(channel);
         this.emit();
     }
 
@@ -222,6 +256,7 @@ export class ChatService {
     closeRoom(channel: string): boolean {
         if (this.client === null || !this.handJoined().some(c => sameName(c, channel))) return false;
         this.client.part(channel);
+        this.forgetHandJoined(channel);
         this.emit();
         return true;
     }
@@ -269,7 +304,7 @@ export class ChatService {
             this.client ??
             new IrcClient({
                 nick: this.nick,
-                channels: initialChannels(this.channels, this.rooms),
+                channels: initialChannels(this.channels, this.handJoinedRooms),
                 now: () => this.io.now(),
                 send: line => this.socket?.send(line)
             });
