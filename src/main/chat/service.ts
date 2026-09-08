@@ -2,7 +2,7 @@ import { connect } from 'node:tls';
 import { LOBBY, SERVER_LOG, type ChatSettings, type ChatView } from '../../shared/chat.ts';
 import { serverChannel } from './channels.ts';
 import { backoffDelay, IrcClient } from './client.ts';
-import { sameName } from './protocol.ts';
+import { parseInput, sameName } from './protocol.ts';
 
 /**
  * The app's one chat connection.
@@ -230,18 +230,27 @@ export class ChatService {
 
     /**
      * One typed line. Text beginning with / is a command; the client decides
-     * what it means. /join and /part are the only commands that change
-     * `want`, so whatever this call added or dropped from it is exactly what
-     * the user just hand-joined or gave up — noted here rather than derived
-     * later, because by the time setServers or closeRoom need the answer, a
-     * window's own auto set may already cover the same room.
+     * what it means. The two halves that keep handJoinedRooms live work
+     * differently on purpose:
+     *
+     * Marking reads intent, not effect: a /join is marked regardless of
+     * whether `want` actually changes, because IrcClient.join() is a no-op on
+     * `want` for a channel already there — typing /join for a room a window
+     * already opened is exactly how a coincidence begins, and a room hand-
+     * joined that way would otherwise leave no trace to protect it later.
+     *
+     * Forgetting stays on the diff: /part with no argument means "the active
+     * channel", which only the client knows, and resolving that here would
+     * duplicate its own logic for no gain — whatever /part actually dropped
+     * from `want` is the one thing worth forgetting.
      */
     send(text: string): void {
         if (this.client === null) return;
+        const typed = parseInput(text);
+        if (typed?.kind === 'join') this.markHandJoined(typed.channel);
         const before = this.client.wanted();
         this.client.input(text);
         const after = this.client.wanted();
-        for (const channel of after) if (!before.some(b => sameName(b, channel))) this.markHandJoined(channel);
         for (const channel of before) if (!after.some(a => sameName(a, channel))) this.forgetHandJoined(channel);
         this.emit();
     }

@@ -298,15 +298,37 @@ test('setServers never parts a persisted room, and still parts its own', () => {
 test('setServers never parts a persisted room that coincides with its own auto room', () => {
     // #rscape above never collides with the auto set, which is exactly why a
     // regression here was never caught by it: this one shares a name with
-    // the per-server room setServers itself would otherwise part.
+    // the per-server room setServers itself would otherwise part. Lowercase
+    // on purpose: it collides with #LostCity only case-insensitively, which
+    // is what pins the fold in this comparison — an exact-case match here
+    // would still pass a plain `.includes()` and prove nothing about it.
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#LostCity'] }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', rooms: ['#lostcity'] }, f.io);
     service.setServers(['lostcity']);
     f.register();
     f.sent.length = 0;
 
     service.setServers([]);
     assert.deepEqual(f.sent, [], 'the room is the user\'s own, even though it also happens to be the per-server room');
+    const chan = service.view().channels.find(c => c.name.toLowerCase() === '#lostcity');
+    assert.ok(chan, 'still there after the window closes');
+    assert.equal(chan!.closable, true, 'closable now that nothing auto-manages it any more');
+});
+
+test('a room hand-joined after its window already opened is still recognized as hand-joined', () => {
+    // The mirror of the case above: here the window claims the room first, so
+    // IrcClient.join() is a no-op on `want` when the user then types /join
+    // for the same room — diffing `want` around client.input() would see
+    // nothing happen and never record the hand-join at all.
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    service.setServers(['lostcity']); // the window opens first
+    f.register();
+    service.send('/join #LostCity'); // hand-joined after the fact; want does not change
+
+    f.sent.length = 0;
+    service.setServers([]); // the window closes
+    assert.deepEqual(f.sent, [], 'the user separately hand-joined this room, even though `want` never changed when they did');
     const chan = service.view().channels.find(c => c.name === '#LostCity');
     assert.ok(chan, 'still there after the window closes');
     assert.equal(chan!.closable, true, 'closable now that nothing auto-manages it any more');
@@ -344,6 +366,22 @@ test('a room the user closed does not linger as hand-joined if a later window re
     f.sent.length = 0;
     service.setServers([]); // and gives it up again
     assert.deepEqual(f.sent, ['PART #LostCity'], 'the user already closed this room once, so it is parted like any other auto room');
+});
+
+test('a room the user /parts by hand does not linger as hand-joined if a later window reclaims it', () => {
+    // The twin of "a room the user closed does not linger..." above, but for
+    // the other way a room stops being the user's own: a typed /part rather
+    // than closeRoom. Only send()'s forget-the-diff half protects this case.
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.send('/join #LostCity');
+    service.send('/part #LostCity'); // typed by hand, not closeRoom
+
+    service.setServers(['lostcity']); // a window later claims the same room fresh
+    f.sent.length = 0;
+    service.setServers([]); // and gives it up again
+    assert.deepEqual(f.sent, ['PART #LostCity'], 'the user already gave this room up by hand, so it is parted like any other auto room');
 });
 
 test('a restart carries a room hand-joined this session, not just what launched with it', () => {

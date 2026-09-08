@@ -31,11 +31,12 @@ export type PersistedChat = Pick<ChatSettings, 'nick' | 'rooms'>;
 /**
  * Whether this view's nick is worth writing over the stored one.
  *
- * `IrcClient` answers a 433 by appending an underscore and claiming the result
- * before the server has said yes, and it does not put the name back when it
- * gives up. Persisting that claim is how a working nick is lost for good: the
- * refused name is what the next launch registers with, so it is refused again,
- * and the profile gains an underscore on every cold start.
+ * During registration, `IrcClient` answers a 433 by appending an underscore
+ * and claiming the result before the server has said yes, and it does not put
+ * the name back when it gives up. Persisting that claim is how a working nick
+ * is lost for good: the refused name is what the next launch registers with,
+ * so it is refused again, and the profile gains an underscore on every cold
+ * start.
  *
  * So a stored nick is replaced only by one the connection actually reached
  * `online` with. The exception is a profile holding no nick at all — the
@@ -43,11 +44,11 @@ export type PersistedChat = Pick<ChatSettings, 'nick' | 'rooms'>;
  * unreachable, or a first nick chosen offline would be forgotten. That is also
  * the one state with nothing to lose.
  *
- * This fences the cascade where it compounds: at registration, which is where
- * a cold launch's refusal lands. A 433 answering a /nick on a live connection
- * still writes the claim, because the view holds nothing that separates it
- * from the rename that worked — but that is one write behind one deliberate
- * rename, and it cannot loop.
+ * This fences the cascade where it used to compound: at registration, which is
+ * where a cold launch's refusal lands. A 433 answering a /nick on a live
+ * connection no longer claims anything at all — `IrcClient` reports the
+ * refusal and leaves the working nick untouched — so the view does not even
+ * change, and there is nothing left here for this guard to catch on that path.
  */
 function nickWorthWriting(stored: PersistedChat, view: ChatView): boolean {
     if (view.nick === stored.nick) return false;
