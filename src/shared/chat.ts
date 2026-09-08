@@ -30,29 +30,26 @@ export interface ChatLine {
     highlight: boolean;
 }
 
+/** What IrcClient knows about a room, on its own. */
 export interface ChatChannel {
     name: string;
     /** Sorted, as the server last reported them. */
     nicks: string[];
     unread: number;
     highlights: number;
-    /**
-     * Hand-joined, so the user may close it. An auto-joined room would only
-     * come back. Optional here because IrcClient's raw snapshot — the same
-     * shape reused for both the client's internal state and the delivered
-     * view — has no notion of closability; only ChatService does, since it
-     * alone knows the auto set a channel would need to differ from. It fills
-     * this in on every channel of every ChatView it hands out, so a channel
-     * the shell ever sees always carries a real boolean.
-     */
-    closable?: boolean;
+}
+
+/** What the shell is shown: everything the client knows, plus what only ChatService can add. */
+export interface ViewChannel extends ChatChannel {
+    /** Hand-joined, so the user may close it. An auto-joined room would only come back. */
+    closable: boolean;
 }
 
 /** What the Chat panel draws. Lines are for the active channel only. */
 export interface ChatView {
     status: ChatStatus;
     nick: string | null;
-    channels: ChatChannel[];
+    channels: ViewChannel[];
     active: string;
     lines: ChatLine[];
     /** Set when the connection failed; the panel shows it rather than an empty log. */

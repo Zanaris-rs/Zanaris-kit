@@ -40,6 +40,13 @@ export interface ClientOpts {
     send(line: string): void;
 }
 
+/**
+ * What IrcClient reports on its own. It has no notion of which rooms came
+ * from a window being open, so it cannot say what is closable; ChatService
+ * stamps that per channel, and adds needsNick, to make a ChatView.
+ */
+export type ClientSnapshot = Omit<ChatView, 'needsNick' | 'channels'> & { channels: ChatChannel[] };
+
 interface Chan {
     name: string;
     nicks: string[];
@@ -368,7 +375,7 @@ export class IrcClient {
         return [...this.want];
     }
 
-    snapshot(): Omit<ChatView, 'needsNick'> {
+    snapshot(): ClientSnapshot {
         const active = this.chans.get(key(this.activeName));
         const channels: ChatChannel[] = [...this.chans.values()].map(c => ({
             name: c.name,
