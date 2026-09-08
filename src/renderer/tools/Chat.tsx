@@ -88,24 +88,34 @@ const OPEN_ROOM = '[aria-current="true"],[aria-pressed="true"]';
 /**
  * Puts the keyboard back somewhere after a room closes.
  *
- * Closing is the only destructive control in the row, and pressing it takes
- * its own button out of the tree. Three things then happen at once: focus
- * falls to the document body, the log swaps to the server log because the
- * client hands `active` back when it forgets a channel, and nothing says so —
- * the panel's one live region carries connection state and not this. A
- * keyboard user is left with no position and no confirmation.
+ * Closing is the only destructive control in the row, and pressing it takes its
+ * own button out of the tree, so focus falls to the document body. The log
+ * swaps to the server log in the same moment, because the client hands `active`
+ * back when it forgets a channel. A keyboard user is left with no position.
  *
- * Moving focus to whichever room is open now answers all three together. The
- * room it lands on is the one carrying `aria-current` or `aria-pressed`, so a
- * screen reader announces where the user now is, and that announcement *is*
- * the confirmation — a separate live-region message would be a second sentence
- * saying the same thing, and one more thing to keep true.
+ * Moving focus to whichever room is open now answers both together. The room it
+ * lands on carries `aria-current` or `aria-pressed`, so a screen reader
+ * announces where the user is, and that announcement *is* the confirmation. The
+ * log below is a second live region and is not silent — it is `role="log"`, and
+ * every line in it changes when `active` does — but what it announces is the
+ * server log's contents, which is where the close landed the user rather than
+ * anything about what they asked for.
  *
- * It waits for the room to leave `channels` rather than firing on the press.
- * Closing is a round trip through main, which is allowed to refuse; a refusal
- * that had already moved the focus would be a keyboard jump with nothing
- * behind it. A refused close therefore leaves focus where it was, on a button
- * that is still there.
+ * It waits for the room to leave `channels` rather than firing on the press,
+ * because closing is a round trip through main and main may refuse. That wait
+ * is not sufficient on its own. The only refusal the service can produce is a
+ * room that has stopped being hand-joined, which happens when a window claims
+ * it — and that same change flips `closable` and unmounts this button. So a
+ * refusal loses the focus without ever satisfying the wait, and leaves the
+ * room's name latched here. The renderer cannot notice: the handler discards
+ * `closeRoom`'s boolean and the call is typed `Promise<void>`.
+ *
+ * Hence the second condition. The focus is restored only if nothing has taken
+ * it in the meantime — `document.body` is where an unmount leaves it, and
+ * anything else means the user has moved on, most likely into the message input
+ * further down this same view. A latch left over from a refused close then
+ * expires harmlessly on that room's eventual departure, instead of yanking the
+ * caret out of a half-typed line.
  */
 function useCloseFocus(channels: ViewChannel[]): {
     group: RefObject<HTMLDivElement | null>;
@@ -114,13 +124,16 @@ function useCloseFocus(channels: ViewChannel[]): {
     const group = useRef<HTMLDivElement | null>(null);
     const awaited = useRef<string | null>(null);
 
-    /* No dependency list: the room's departure is what this waits for, and that arrives on a render the room list is not the only thing to change on. */
+    /* `channels` arrives over IPC, so it is a fresh array on every view push and this runs on exactly the pushes that could carry the departure. */
     useLayoutEffect(() => {
         const room = awaited.current;
         if (room === null || channels.some(channel => channel.name === room)) return;
+        /* Cleared before the guard below: this close's moment has passed either way, and a latch that outlives it is the hazard. */
         awaited.current = null;
+        const idle = document.activeElement === null || document.activeElement === document.body;
+        if (!idle) return;
         group.current?.querySelector<HTMLElement>(OPEN_ROOM)?.focus();
-    });
+    }, [channels]);
 
     return {
         group,
@@ -149,16 +162,23 @@ function useCloseFocus(channels: ViewChannel[]): {
  * reader reading it out says which button you are on and nothing about which
  * conversation it would take away.
  *
- * The height is taken from the room it sits beside, not stated. It was 26px —
- * the dock tab's own height, which `tab.tsx` forces inline — and that is right
- * in the dock and 4.5px short in the panel, whose chips are 30.5px. Wanting
- * the two views to agree is what made the size wrong in one of them: what has
- * to agree is each control with the room it is bevelled against, and in a
- * design that draws a hard two-colour edge on every surface, two squares whose
- * edges miss each other read as a mistake. The 24px width stays stated,
- * because it is a floor rather than a fit — WCAG 2.5.8 asks 24 CSS px of
- * target in both directions, and width is the tight one here: the shortest
- * room this ever stands beside is the dock's 26px tab.
+ * The height is taken from the slot this shares with its room, not stated. It
+ * was 26px — the dock tab's own height, which `tab.tsx` forces inline — and that
+ * is right in the dock and 4.5px short in the panel, whose chips are 30.5px.
+ * Wanting the two views to agree is what made the size wrong in one of them:
+ * what has to agree is each control with the room it is bevelled against, and
+ * in a design that draws a hard two-colour edge on every surface, two squares
+ * whose edges miss each other read as a mistake.
+ *
+ * `self-stretch` measures that slot, and the slot is the height of its own room
+ * only because both rows say `items-center`. Without it the panel's slots would
+ * stretch to their wrapped line instead, and the close would size against the
+ * tallest chip in the row rather than the one it is beside — invisible while
+ * every chip is identical, and wrong the first time one is not.
+ *
+ * The 24px width stays stated, because it is a floor rather than a fit — WCAG
+ * 2.5.8 asks 24 CSS px of target in both directions, and width is the tight one
+ * here: the shortest room this ever stands beside is the dock's 26px tab.
  */
 function CloseControl({ channel, closing }: { channel: string; closing: (channel: string) => void }): ReactNode {
     const label = `Close ${channel}`;
@@ -182,7 +202,7 @@ function CloseControl({ channel, closing }: { channel: string; closing: (channel
 function Channels({ view }: { view: ChatView }): ReactNode {
     const { group, closing } = useCloseFocus(view.channels);
     return (
-        <div ref={group} className="flex flex-wrap gap-1.5 px-2.5 pb-[7px]" role="group" aria-label="Channels">
+        <div ref={group} className="flex flex-wrap items-center gap-1.5 px-2.5 pb-[7px]" role="group" aria-label="Channels">
             {view.channels.map(channel => {
                 const on = channel.name === view.active;
                 /* No title here: these chips wrap onto new rows rather than truncating, so
@@ -251,11 +271,12 @@ function MoveControl({ home, className = '' }: { home: ChatHome; className?: str
  * would be the one control here a keyboard could not reach, and revealing it
  * would either shove every room to its right as the pointer crossed the row
  * or reserve the width it was meant to save. Tied to the open room there is
- * at most one of it, and the 26px it takes arrives and leaves only on a room
- * change the user asked for, shifting the row by that fixed amount and by no
- * more however many rooms there are. That shift is real, not nil — the case
- * against hover-reveal is not that a row must never move, but that it must not
- * move under a pointer that was only crossing it.
+ * at most one of it, shifting the row by a fixed 26px however many rooms there
+ * are. That shift is real, not nil, and not always the user's doing: it also
+ * arrives and leaves when a room's `closable` flips, which is what happens when
+ * a game window opens or closes and claims a room the user had joined by hand.
+ * The case against hover-reveal was never that a row must not move — it is that
+ * it must not move under a pointer that was only crossing it.
  */
 function DockHeader({ view }: { view: ChatView }): ReactNode {
     const { group, closing } = useCloseFocus(view.channels);
