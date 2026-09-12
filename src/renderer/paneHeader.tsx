@@ -34,6 +34,19 @@ import { Caret, NavArrow, Reload } from './icons';
 const BUTTON: CSSProperties = { height: 22, width: 24 };
 /** The header spans the pane, so its sides are the pane's edge rather than its own. */
 const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', borderRight: 'none' };
+/**
+ * A floor under the name, so a squeeze takes the end of it rather than all of
+ * it. Everything else in the strip is an icon that cannot truncate, so without
+ * this the name is the only thing that *can* give way and a narrow page pane
+ * ends up showing three arrows and no idea what it is looking at.
+ */
+const NAME: CSSProperties = { minWidth: '3.5em' };
+/**
+ * Below this the strip has room for the name and the controls and nothing else.
+ * The shell reading its own pane's width is the same thing chat does to choose
+ * between its two shapes; it is presentation, not placement.
+ */
+const ROOM_FOR_LOADING = 320;
 
 function Step({ label, on, disabled, children }: { label: string; on: () => void; disabled: boolean; children: ReactNode }): ReactNode {
     return (
@@ -66,7 +79,7 @@ export default function PaneHeader({ pane, readout }: { pane: PaneView; readout?
 
     return (
         <div style={STRIP} className="tile flex shrink-0 items-center gap-[5px] px-1.5">
-            <span title={pane.page?.url ?? pane.name} className="min-w-0 shrink truncate font-pixel text-[15px] text-gold">
+            <span title={pane.page?.url ?? pane.name} style={NAME} className="shrink truncate font-pixel text-[15px] text-gold">
                 {pane.name}
             </span>
 
@@ -83,8 +96,10 @@ export default function PaneHeader({ pane, readout }: { pane: PaneView; readout?
                     </Step>
                     {/* The one thing the header keeps of the old toolbar's url field: a page
                         that is still coming says so, which the curated name beside it never
-                        can — it is the same word before, during and after a load. */}
-                    {pane.page.loading && <span className="shrink-0 text-[12px] text-faint">Loading…</span>}
+                        can — it is the same word before, during and after a load. First to
+                        go when the pane is too narrow for both, since the name is the pane's
+                        identity and this is only its weather. */}
+                    {pane.page.loading && pane.rect.width >= ROOM_FOR_LOADING && <span className="min-w-0 shrink truncate text-[12px] text-faint">Loading…</span>}
                 </>
             )}
 

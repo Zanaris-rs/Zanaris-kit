@@ -525,16 +525,17 @@ const HISCORES_NAME_MAX = 30;
 // ── the reference pane ────────────────────────────────────────────────────
 
 /**
- * The Guides list, the strip's tabs and the pane's own toolbar.
+ * Every gesture a pane offers: splitting it, closing it, filling it, dragging
+ * its seams, and both of the menus it raises.
  *
- * Every one of these is a gesture in one window, so each finds its window from
- * the sender and goes no further: unlike the chat dock, a pane belongs to the
- * window it is in, and a drag here has no business resizing a pane over there.
+ * Each belongs to one window, so each finds its window from the sender and goes
+ * no further: a pane belongs to the window it is in, and a drag here has no
+ * business resizing a pane over there.
  *
- * `pagesOpen` carries a url, and `openPage` checks it against that window's own
- * bookmarks. There is no address box anywhere in the shell, so a url that is
- * not one of the server's links can only be a bug or a compromised renderer,
- * and a page view lives in a session shared with every other window's pages.
+ * A `page` carries a url, which the window checks against its own bookmarks.
+ * There is no address box anywhere in the shell, so a url that is not one of
+ * the server's links can only be a bug or a compromised renderer, and a page
+ * view lives in a session shared with every other window's pages.
  */
 ipcMain.handle(IPC.paneSplit, (event, paneId: unknown, axis: unknown) => {
     if (typeof paneId !== 'string' || (axis !== 'x' && axis !== 'y')) return;
@@ -549,11 +550,12 @@ ipcMain.handle(IPC.paneClose, async (event, paneId: unknown) => {
 /**
  * What goes in a pane.
  *
- * The window checks a `page` against its own bookmarks and refuses a second
- * `game`; this end only checks the shape, since anything richer would be the
- * placement rules written a second time in a second place. What it will not do
- * is trust the shape: `content` arrives from a renderer, so a value that is not
- * one of the four kinds is dropped rather than handed on.
+ * The window checks a `page` against its own bookmarks, and moves the game
+ * rather than placing a second one; this end only checks the shape, since
+ * anything richer would be the placement rules written a second time in a
+ * second place. What it will not do is trust the shape: `content` arrives from
+ * a renderer, so a value that is not one of the four kinds is dropped rather
+ * than handed on.
  */
 ipcMain.handle(IPC.paneSetContent, (event, paneId: unknown, content: unknown) => {
     if (typeof paneId !== 'string' || typeof content !== 'object' || content === null) return;
@@ -1046,7 +1048,7 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] ${id} switched to world ${target.id}: ${result}`);
                 await wait(Math.min(settleMs, 8_000));
                 await shoot(`${id}-w${target.id}`, hopper);
-                log(`[capture] the strip now reads "${hopper.state().gameLabel}", title "${hopper.window.getTitle()}"`);
+                log(`[capture] the game pane's header now reads "${hopper.state().gameLabel}", title "${hopper.window.getTitle()}"`);
                 log(`[capture] state file: ${existsSync(appState.file) ? readFileSync(appState.file, 'utf8').replace(/\s+/g, ' ') : '(none)'}`);
             }
 
@@ -1190,7 +1192,12 @@ async function captureAndExit(dir: string): Promise<void> {
             // offers before anything is chosen.
             reader.splitPane(focused(reader), 'x');
             await wait(500);
-            log(`[capture] ${id} launcher offers: ${reader.state().server.bookmarks.map(b => b.name).join(' · ')}`);
+            // The list the launcher actually draws rather than the catalog it is
+            // built from: what a pane may become is main's answer, and the game
+            // row is the half of it the catalog cannot show — it reads "Move
+            // game here" while the game is in some other pane of this window.
+            const offered = reader.state().panes.find(pane => pane.content.kind === 'empty')?.contents;
+            log(`[capture] ${id} launcher offers: ${offered?.map(item => item.label).join(' · ') ?? 'nothing — no empty pane'}`);
             await shoot(`${id}-launcher`, reader);
 
             // Two pages in two panes, side by side — which is the arrangement

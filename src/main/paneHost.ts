@@ -131,7 +131,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
      * page's — so the header always has the pane it names to sit in, and that
      * cost comes out of the pane rather than out of the window.
      *
-     * Clamped, because a pane can be dragged shorter than its own header: a
+     * Clamped, because a pane can end up shorter than its own header: under the
+     * window's own floor the solver cuts every pane proportionally, and a
      * negative height is not something to hand `setBounds`.
      */
     function below(rect: Rect): Rect {
@@ -364,9 +365,10 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
          * Not `adopt`, which replaces the active tab's tree only: the game may
          * be in another tab, and the pane it leaves there has to be emptied in
          * the same breath or the window would claim two games and have one
-         * view. Nothing here touches the view itself — `place` finds it under
-         * its new pane on the next layout, so the move is a `setBounds` and the
-         * login survives it.
+         * view. No view is created or destroyed either way — the game's belongs
+         * to the window, and the only leaves this touches are game and empty —
+         * so all the move costs is the `setBounds` `place` gives it on the next
+         * layout, and the login survives it.
          */
         moveGame(paneId: string): void {
             const next = moveGame(set, paneId);

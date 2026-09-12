@@ -96,6 +96,9 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
     }
 }
 
+/** Below this a game pane has room for the world and the latency and nothing else. */
+const ROOM_FOR_REVISION = 300;
+
 /**
  * What the game pane's header says about the game: the server, its world, its
  * detail and the latency to that world's host, plus the revision it runs.
@@ -106,13 +109,19 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
  * it describes, it is obviously about the thing under it, and the bar is left to
  * tabs. A pane with no game shows none of this, which is itself the honest
  * answer to "where is my character".
+ *
+ * The revision goes first when the pane is too narrow to hold both. It is the
+ * server's fact rather than the moment's — it is the same number all session,
+ * while the world and the latency beside it are the whole reason to look — so
+ * it is the half worth losing. The title attribute keeps the full read-out
+ * reachable however narrow the pane gets.
  */
-function GameReadout({ state }: { state: ShellState }): ReactNode {
+function GameReadout({ state, width }: { state: ShellState; width: number }): ReactNode {
     /* No shadow of its own, unlike the rail's count: the header is a `.tile`, and every tile already puts one under its text. */
     return (
-        <span title={state.gameLabel} className="flex min-w-0 shrink items-center gap-[7px] truncate">
+        <span title={`${state.gameLabel} · ${revisionOf(state)}`} className="flex min-w-0 shrink items-center gap-[7px] truncate">
             <span className="truncate">{state.gameLabel}</span>
-            <span className="shrink-0 text-[12px] text-faint">{revisionOf(state)}</span>
+            {width >= ROOM_FOR_REVISION && <span className="shrink-0 text-[12px] text-faint">{revisionOf(state)}</span>}
         </span>
     );
 }
@@ -255,7 +264,7 @@ export default function Shell(): ReactNode {
                          * game or page pane the shell draws, and the only place
                          * either can say what it is.
                          */}
-                        <PaneHeader pane={pane} readout={pane.content.kind === 'game' ? <GameReadout state={state} /> : undefined} />
+                        <PaneHeader pane={pane} readout={pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined} />
                         <PaneBody pane={pane} state={state} />
                     </div>
                 </Fragment>
