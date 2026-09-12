@@ -16,7 +16,7 @@ import {
     type Rect
 } from './paneTree.ts';
 import { PAGE_TOOLBAR_HEIGHT } from '../shared/layout.ts';
-import { closeTab, newTab, openTabs, selectTab, type TabSet } from './tabs.ts';
+import { closeTab, labelOfTab, newTab, openTabs, selectTab, type TabSet } from './tabs.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
 
 /**
@@ -58,7 +58,7 @@ export interface PaneHostDeps {
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
-    let set: TabSet = openTabs('tab-1', 'pane-1');
+    let set: TabSet = openTabs('tab-1', 'pane-1', { kind: 'game' });
     let nextPane = 2;
     let nextSplit = 1;
     let nextTab = 2;
@@ -375,21 +375,6 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             for (const paneId of [...pageViews.keys()]) destroyPageView(paneId);
         }
     };
-}
-
-/** What a tab button says: whatever its focused pane holds. */
-function labelOfTab(tree: PaneNode, focusedPaneId: string): string {
-    const content = contentOf(tree, focusedPaneId);
-    switch (content?.kind) {
-        case 'game':
-            return 'Game';
-        case 'tool':
-            return content.tool === 'singleplayer' ? 'Single player' : content.tool[0]!.toUpperCase() + content.tool.slice(1);
-        case 'page':
-            return 'Page';
-        default:
-            return 'Empty';
-    }
 }
 
 export interface PaneHost {

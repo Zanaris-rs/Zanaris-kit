@@ -39,6 +39,22 @@ const log = (msg: string): void => console.log(msg);
 // an instance that is on its way out, moving the profile's files and touching
 // the world directory before it goes. exit(0) leaves immediately, which is
 // what an instance owning nothing should do.
+/*
+ * A capture run gets a profile of its own, before either the lock below or the
+ * userData move underneath it can read the default one.
+ *
+ * Two reasons, and the second is the one that made it necessary. A capture is
+ * meant to photograph the app as a new user finds it, and running it against a
+ * real profile shows whatever that user happens to have — their servers.json,
+ * their remembered worlds, their nick. And an ordinary instance already holding
+ * the single-instance lock makes every capture launch exit(0) immediately,
+ * writing no frames and — because electron-vite does not forward the child's
+ * stdout — saying nothing about why. That is a silent no-op with a green exit
+ * code, which is exactly the failure the capture hazard in README.md warns
+ * about wearing a different face.
+ */
+if (process.env.ZANARIS_CAPTURE) app.setPath('userData', join(app.getPath('appData'), 'zanaris-kit-capture'));
+
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
 // ── the userData move, from the old name to this one ──────────────────────
@@ -1133,7 +1149,14 @@ async function captureAndExit(dir: string): Promise<void> {
         // never destroyed, so what it photographs is the page as it was left.
         // The reload claim is the pane's whole reason to exist and nothing
         // else here can evidence it.
-        const reader = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.bookmarks.length > 0);
+        // Deliberately not `first` or `hopper` when another window will do.
+        // Those two have been split several times by the passes above, and a
+        // tree that deep in a 760px window puts every pane on its 120px floor —
+        // which is honest about what the layout does, and useless as a
+        // photograph of a page. A window that has not been split yet shows the
+        // launcher and two pages at a size someone can actually read.
+        const readers = opened.filter((sw, i) => results[i] === 'loaded' && sw.state().server.bookmarks.length > 0);
+        const reader = readers.find(sw => sw !== first && sw !== hopper) ?? readers[0];
         if (reader) {
             const id = reader.state().server.id;
             reader.window.moveTop();
