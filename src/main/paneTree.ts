@@ -325,3 +325,19 @@ function findSplit(node: PaneNode, splitId: string): (PaneNode & { kind: 'split'
     }
     return null;
 }
+
+/**
+ * The split a pane sits directly in, or null when it is the whole tree.
+ *
+ * The nearest one, not the root: Even out acts on the row or column the user is
+ * standing in, which is the only split whose seams they can see moving.
+ */
+export function parentSplitOf(node: PaneNode, paneId: string): string | null {
+    if (node.kind === 'leaf') return null;
+    if (node.children.some(child => child.kind === 'leaf' && child.paneId === paneId)) return node.splitId;
+    for (const child of node.children) {
+        const found = parentSplitOf(child, paneId);
+        if (found) return found;
+    }
+    return null;
+}

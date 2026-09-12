@@ -6,12 +6,10 @@
  * open, and closing a server window does not close the conversation.
  */
 
-import { DOCK_HEIGHT_DEFAULT } from './layout.ts';
 
 export type ChatStatus = 'offline' | 'connecting' | 'registering' | 'online' | 'reconnecting';
 
 /** Where chat lives: the bottom dock, or the side column with the other tools. */
-export type ChatHome = 'bottom' | 'side';
 
 /** Where server notices and errors go, since they belong to no channel. */
 export const SERVER_LOG = '*';
@@ -63,13 +61,11 @@ export interface ChatSettings {
     nick: string | null;
     server: string;
     port: number;
-    dock: ChatHome;
-    dockHeight: number;
     /** Rooms the user joined by hand, so they come back on the next launch. */
     rooms: string[];
 }
 
-export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: DOCK_HEIGHT_DEFAULT, rooms: [] };
+export const DEFAULT_CHAT: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, rooms: [] };
 
 /** Everyone shares this one, whatever server their windows are on. */
 export const LOBBY = '#LostHQ';

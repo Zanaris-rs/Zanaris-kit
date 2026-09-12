@@ -27,21 +27,35 @@ the old org, the owner's company or its domain into anything pushed.
 
 ## The layout invariant
 
-**Opening chrome must never resize the game view.** Reloading or rescaling that
-view costs the player their login, which is the one failure the layout exists to
-prevent. Chrome opening grows the *window* instead, falling back through
-`widen → shift → push`.
+**A running game is either visible or obviously suspended, never silently
+hidden by a gesture that reads as final.**
 
-One 1-D solver — `fitAxis` in `src/main/layout.ts` — is called once per axis, so
-the ladder is literally the same code on both. The axes deliberately disagree
-about who gives way:
+Closing the game pane destroys its view and says so first, through the same
+confirm the world switch uses. Keeping it alive behind a closed pane was
+considered and rejected: it preserves the login, which is the wrong thing to
+protect. A character still standing in the world with nobody watching it dies
+to events its player cannot see, and that is worse than the fresh login that
+reopening costs. Switching tabs is the other case and is fine — it hides the
+game the way another app in front of the window already does, which is what
+`backgroundThrottling: false` exists to support, and it reads as temporary.
 
-- **x**: the panel is sacrificed; content never drops below `MIN_CONTENT_WIDTH`.
-- **y**: the dock is protected down to `DOCK_HEIGHT_MIN`, and past that the
-  *content* gives way below `MIN_CONTENT_HEIGHT`.
+Everything else about the layout is `src/main/paneTree.ts`: a tab is a tree of
+leaves and n-ary splits, and one recursive walk turns it into a rect per pane.
+Two properties in there are load-bearing and easy to break —
 
-That asymmetry is intentional — the dock holds the conversation the user just
-asked to see. `docs/superpowers/specs/2026-09-07-chat-dock-design.md` argues it.
+- Shares are distributed by **largest remainder**, so children sum to their
+  container exactly. A round per child leaves a hairline of shell showing
+  between two native views at some window sizes and not others.
+- A split left holding one child is **collapsed into that child**. Without it
+  the tree accumulates single-child splits, and then a split along what looks
+  like the parent's axis nests instead of appending — so close-then-split stops
+  behaving like split on a fresh pane.
+
+> The old invariant said the opposite: opening chrome must never resize the
+> game, because resizing cost the login. The second half was never true —
+> `setBounds` does not reload a `WebContentsView`, only `loadURL` does — and the
+> first half went with the fixed columns that motivated it. The design is
+> `docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`.
 
 ## Where logic is allowed to live
 
@@ -49,14 +63,18 @@ asked to see. `docs/superpowers/specs/2026-09-07-chat-dock-design.md` argues it.
 no test infrastructure. Nothing in them can fail in CI.
 
 So anything decidable belongs in a pure module that `node --test` reaches without
-Electron: `main/layout.ts`, `main/chatDock.ts`, `main/hiscores/sources.ts`,
-`main/hiscores/service.ts`. Services take an injected `io` for exactly this reason
-— `ChatIo`, `HiscoresIo`, `WorldsIo` — so the lifecycle can be driven by hand in a
-test with no socket.
+Electron: `main/paneTree.ts`, `main/hiscores/sources.ts`, `main/hiscores/service.ts`.
+Services take an injected `io` for exactly this reason — `ChatIo`, `HiscoresIo`,
+`WorldsIo` — so the lifecycle can be driven by hand in a test with no socket.
+
+`main/paneHost.ts` is the seam between the two: it creates, bounds and destroys
+`WebContentsView`s and can therefore not be tested, so it holds no rules — every
+one of them is next door in `paneTree.ts`, and this only reconciles.
 
 Placement rules reimplemented in a window or a renderer are a defect, not a
-shortcut. `chatDock.ts` owns every tool-placement transition; if you find yourself
-setting `panelOpen` next to `activeTool`, you are rewriting it.
+shortcut. If you find yourself working out a pane's size in the shell, or
+clamping a seam there, you are rewriting `paneTree.ts`. The shell is given a
+list of rects and draws it; it does not know what a fraction is.
 
 ## Chat and IRC
 

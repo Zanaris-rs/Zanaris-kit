@@ -10,7 +10,9 @@ export interface MenuActions {
     /** Opens servers.json in the system editor. */
     editServers(): void;
     reloadServers(): void;
-    togglePanel(): void;
+    splitPane(axis: 'x' | 'y'): void;
+    closePane(): void;
+    evenOut(): void;
     /** Whether a world or detail switch is confirmed before it reloads the game. */
     setWarnOnSwitch(value: boolean): void;
     /** Pins the focused window above other apps, and remembers the choice for the windows opened after it. */
@@ -28,14 +30,12 @@ export interface MenuActions {
  * change, and once more when a newer release is found.
  *
  * `window` holds the inputs that belong to a window rather than to the app:
- * there is one menu for every window, so they track whichever has focus, and
- * both read false when none does — each item acts on the focused window, and
- * with no focus there is nothing for either to act on. Everything else here is
- * the app's and is the same whatever is in front.
+ * there is one menu for every window, so it tracks whichever has focus, and
+ * reads false when none does — the item acts on the focused window, and with no
+ * focus there is nothing to act on. Everything else here is the app's and is the
+ * same whatever is in front.
  */
 export interface MenuWindowState {
-    /** Whether the focused window's side column has anything that could open in it. */
-    panelAvailable: boolean;
     /** Whether the focused window is pinned above other apps. */
     alwaysOnTop: boolean;
 }
@@ -77,7 +77,10 @@ export function installMenu(
                 // Disabled rather than hidden where the panel has no legal
                 // occupant — a chat-only server with chat in the dock — so the
                 // shortcut reads as unavailable here instead of broken.
-                { label: 'Toggle Panel', accelerator: 'CmdOrCtrl+\\', enabled: window.panelAvailable, click: () => actions.togglePanel() },
+                { label: 'Split Right', accelerator: 'CmdOrCtrl+D', click: () => actions.splitPane('x') },
+                { label: 'Split Down', accelerator: 'CmdOrCtrl+Shift+D', click: () => actions.splitPane('y') },
+                { label: 'Close Pane', accelerator: 'CmdOrCtrl+W', click: () => actions.closePane() },
+                { label: 'Even Out', accelerator: 'CmdOrCtrl+Alt+=', click: () => actions.evenOut() },
                 // Acts on the focused window and reads back from it, so with
                 // nothing focused it is disabled rather than showing the
                 // remembered value as though some window were wearing it.

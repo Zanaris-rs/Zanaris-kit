@@ -15,6 +15,7 @@ import {
     type PaneNode,
     type Rect
 } from './paneTree.ts';
+import { PAGE_TOOLBAR_HEIGHT } from '../shared/layout.ts';
 import type { PageState, PaneView, SeamView } from '../shared/panes.ts';
 
 /**
@@ -97,7 +98,14 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         }
         for (const [paneId, view] of pageViews) {
             const rect = rects.get(paneId);
-            if (rect) view.setBounds(rect);
+            // The pane's toolbar is shell, drawn in the top of the pane's own
+            // rect, so the view starts below it. That cost comes out of the
+            // pane rather than the window — the same rule as before, applied
+            // per pane now that a pane holds exactly one page.
+            if (rect) {
+                const toolbar = Math.min(PAGE_TOOLBAR_HEIGHT, rect.height);
+                view.setBounds({ x: rect.x, y: rect.y + toolbar, width: rect.width, height: rect.height - toolbar });
+            }
             view.setVisible(Boolean(rect));
         }
     }
@@ -281,6 +289,14 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             return seams.find(s => s.splitId === splitId && s.index === index)?.size ?? seam.size;
         },
 
+        /** The view of the focused page pane, or of the only one, for capture mode. */
+        pageWebContents(): WebContentsView | null {
+            const focused = pageViews.get(focusedPaneId);
+            if (focused) return focused;
+            const first = paneIds(tree).find(id => pageViews.has(id));
+            return first ? pageViews.get(first) ?? null : null;
+        },
+
         go(where: 'back' | 'forward' | 'reload'): void {
             const view = pageViews.get(focusedPaneId);
             if (!view || view.webContents.isDestroyed()) return;
@@ -313,6 +329,7 @@ export interface PaneHost {
     setContent: (paneId: string, content: PaneContent) => void;
     evenOut: (splitId: string) => void;
     dragSeam: (splitId: string, index: number, px: number) => number;
+    pageWebContents: () => WebContentsView | null;
     go: (where: 'back' | 'forward' | 'reload') => void;
     destroy: () => void;
 }

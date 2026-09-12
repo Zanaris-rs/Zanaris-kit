@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { closePane, contentOf, evenOut, layoutTree, leaf, paneIds, seamPixels, setContent, setSeam, setFraction, split, splitPane } from './paneTree.ts';
+import { closePane, contentOf, evenOut, layoutTree, leaf, paneIds, parentSplitOf, seamPixels, setContent, setSeam, setFraction, split, splitPane } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -163,4 +163,12 @@ test('the layout reports each split the pixels it divides, seams already taken o
     const { splits } = layoutTree(tree, { x: 0, y: 0, width: 1004, height: 604 });
     assert.equal(splits.get('s1'), 1000, 'the outer split divides the width less its one seam');
     assert.equal(splits.get('s2'), 600, 'the inner one divides the full height less its own seam');
+});
+
+test('a pane knows the split it sits in, and a lone pane sits in none', () => {
+    const inner = split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('c', { kind: 'empty' })], [0.5, 0.5]);
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), inner], [0.5, 0.5]);
+    assert.equal(parentSplitOf(tree, 'a'), 's1');
+    assert.equal(parentSplitOf(tree, 'c'), 's2', 'the nearest split, not the root');
+    assert.equal(parentSplitOf(leaf('only', { kind: 'empty' }), 'only'), null);
 });

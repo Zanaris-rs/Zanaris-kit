@@ -3,7 +3,6 @@ import { dirname } from 'node:path';
 import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
-import { DOCK_HEIGHT_MIN, PAGE_WIDTH_DEFAULT, PAGE_WIDTH_MIN } from '../shared/layout.ts';
 import { isChannel } from './chat/protocol.ts';
 
 interface StateFile {
@@ -13,30 +12,7 @@ interface StateFile {
     chat: ChatSettings;
     singlePlayer: { cheats: boolean };
     hiscores: Record<string, string>;
-    pages: { width: number };
     alwaysOnTop: boolean;
-}
-
-/**
- * The reference pane's width, as the last seam drag left it.
- *
- * App-wide, but applied per window, and the difference from the chat dock is
- * deliberate. The dock's height is app-wide because *chat itself* is: one
- * conversation, so moving it anywhere moves it everywhere. A pane holds this
- * window's own tabs, so a drag in one window has no business resizing a pane
- * in another — and relaying out every window once per animation frame is
- * exactly the storm that would cost. So what is remembered here is the width
- * a newly opened pane starts at, refreshed by the last drag.
- *
- * 3000 is a sanity rail against a hand-edited file, not the real ceiling: the
- * true one depends on the display the window is on and is enforced at drag
- * time, where a screen is actually known.
- */
-function readPageWidth(x: unknown): number {
-    if (typeof x !== 'object' || x === null) return PAGE_WIDTH_DEFAULT;
-    const width = (x as Record<string, unknown>).width;
-    if (typeof width !== 'number' || !Number.isFinite(width)) return PAGE_WIDTH_DEFAULT;
-    return Math.round(Math.min(Math.max(width, PAGE_WIDTH_MIN), 3000));
 }
 
 // Well past base37's 12-character limit, so no real player name is ever
@@ -87,11 +63,6 @@ function readChat(x: unknown): ChatSettings {
     if (c.nick === null || (typeof c.nick === 'string' && c.nick !== '')) chat.nick = c.nick;
     if (typeof c.server === 'string' && c.server !== '') chat.server = c.server;
     if (typeof c.port === 'number' && Number.isInteger(c.port) && c.port >= 1 && c.port <= 65535) chat.port = c.port;
-    if (c.dock === 'bottom' || c.dock === 'side') chat.dock = c.dock;
-    // 2000 is a sanity rail against a hand-edited file, not the real ceiling: the
-    // true maximum depends on the display's work area and is enforced at drag
-    // time, where a screen is actually known. Nothing here has one to consult.
-    if (typeof c.dockHeight === 'number' && Number.isInteger(c.dockHeight)) chat.dockHeight = Math.min(Math.max(c.dockHeight, DOCK_HEIGHT_MIN), 2000);
     if (Array.isArray(c.rooms)) {
         const rooms: string[] = [];
         for (const room of c.rooms) {
@@ -143,7 +114,6 @@ export class AppState {
     private cheats = false;
     // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
     private hiscoresNames = new Map<string, string>();
-    private pageWidthPx = PAGE_WIDTH_DEFAULT;
     // Off until asked for: a window that floats over everything else is not
     // something to hand someone who never asked for it.
     private onTop = false;
@@ -158,7 +128,6 @@ export class AppState {
         this.chatSettings = defaultChat();
         this.cheats = false;
         this.hiscoresNames = new Map();
-        this.pageWidthPx = PAGE_WIDTH_DEFAULT;
         this.onTop = false;
         if (!existsSync(this.file)) return;
         try {
@@ -174,7 +143,6 @@ export class AppState {
             const sp = parsed?.singlePlayer;
             if (typeof sp === 'object' && sp !== null && typeof (sp as { cheats?: unknown }).cheats === 'boolean') this.cheats = (sp as { cheats: boolean }).cheats;
             this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
-            this.pageWidthPx = readPageWidth(parsed?.pages);
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
         } catch {
@@ -275,20 +243,6 @@ export class AppState {
         this.save();
     }
 
-    /** The width a newly opened reference pane takes, as the last drag left it. */
-    pageWidth(): number {
-        return this.pageWidthPx;
-    }
-
-    /**
-     * Staged rather than written, for the reason `stageChat` is: a seam drag
-     * lands one of these per animation frame, and `save` below rewrites the
-     * whole file. The caller debounces the write.
-     */
-    stagePageWidth(px: number): void {
-        this.pageWidthPx = px;
-    }
-
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
         const data: StateFile = {
@@ -298,7 +252,6 @@ export class AppState {
             chat: this.chatSettings,
             singlePlayer: { cheats: this.cheats },
             hiscores: Object.fromEntries(this.hiscoresNames),
-            pages: { width: this.pageWidthPx },
             alwaysOnTop: this.onTop
         };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);

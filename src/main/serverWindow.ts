@@ -1,26 +1,14 @@
 import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import {
-    MIN_CONTENT_HEIGHT,
-    MIN_CONTENT_WIDTH,
-    MIN_WINDOW_CONTENT_HEIGHT,
-    MIN_WINDOW_CONTENT_WIDTH,
-    PAGE_CONTROLS_HEIGHT,
-    PAGE_SEAM,
-    PAGE_WIDTH_MIN,
-    RAIL_WIDTH,
-    STRIP_HEIGHT,
-    type LayoutMode
-} from '../shared/layout';
-import type { ChatHome, ChatView } from '../shared/chat';
+import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT } from '../shared/layout';
+import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
-import type { PagesView } from '../shared/pages';
-import { computeLayout, dockOnFloor, paneWidth, preservedHeight, preservedWidth, sideWidth, splitWindow, type Rect, type Rects } from './layout';
-import { firstLegalSideOccupant, reduce, type Action, type Placement } from './chatDock';
-import { decideNavigation, decidePageNavigation } from './guard';
-import { activeTab, initialPane, paneLayoutWidth, paneOpen, reduce as reducePane, type PaneAction, type PaneState } from './pagePane';
+import type { PaneView, SeamView } from '../shared/panes';
+import { decideNavigation } from './guard';
+import { createPaneHost, type PaneHost } from './paneHost';
+import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
 import { WorldSwitch } from './worlds/switch';
@@ -32,7 +20,7 @@ import type { ServerWindowHandle, WindowSpec } from './windows';
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /** The content area a new window opens with: the canvas plus the page's controls strip. */
-const DEFAULT_CONTENT = { width: MIN_CONTENT_WIDTH, height: MIN_CONTENT_HEIGHT + PAGE_CONTROLS_HEIGHT };
+const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH, height: GAME_PREFERRED_HEIGHT };
 const PROBE_EVERY_MS = 10_000;
 const PROBE_TIMEOUT_MS = 3_000;
 
@@ -105,18 +93,16 @@ export interface ServerWindowDeps {
      */
     chat: () => ChatView;
     /**
-     * Where chat lives and how tall its dock is. Read through functions rather
-     * than passed as values: both are the app's rather than this window's, and
-     * they change under the window's feet while it is open.
+     * Whether a window opened now should float above other apps, as the last
+     * choice anywhere left it.
      */
-    chatHome: () => ChatHome;
-    chatDockHeight: () => number;
-    /** The width a newly opened reference pane starts at, as the last seam drag anywhere left it. */
-    pageWidth: () => number;
-    /** Whether a window opened now should float above other apps, as the last choice anywhere left it. */
     alwaysOnTop: () => boolean;
-    /** Remembers a seam drag. Staged, not written: a drag lands one of these per animation frame. */
-    rememberPageWidth: (px: number) => void;
+    /**
+     * Asks before the game pane is closed, since that destroys the view and
+     * disconnects the player. False keeps it. Main returns true without asking
+     * when the user has turned the warning off.
+     */
+    confirmCloseGame: () => Promise<boolean>;
     /** What this server remembered from last time, if anything. */
     remembered: RememberedWorld | null;
     /** Called whenever this window's world or detail changes. */
@@ -132,26 +118,25 @@ export interface ServerWindow extends ServerWindowHandle {
     readonly window: BrowserWindow;
     /** The shell view's webContents id, so IPC handlers can find the window from `event.sender`. */
     readonly shellContentsId: number;
-    togglePanel(): void;
-    /** The rail's tabs: opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. The Chat tab is routed by where chat lives: at the bottom it opens or closes the dock instead. */
-    selectTool(id: ToolId | null): void;
-    /** The →| control in this window: chat moves home, and this window's chrome rearranges around it. */
-    moveChat(home: ChatHome): void;
+    /** The rail: puts a tool in the focused pane, splitting the game's rather than replacing it. */
+    selectTool(id: ToolId): void;
     /** Whether this window floats above other apps. Read back from the window itself, not from a flag kept beside it. */
     alwaysOnTop(): boolean;
     setAlwaysOnTop(on: boolean): void;
-    /** Opens one of this server's links in the reference pane, or focuses it when it is already open. Anything not in `server.bookmarks` is refused. */
-    openPage(url: string): void;
-    activatePage(id: string): void;
-    closePage(id: string): void;
-    /** Hides the pane without destroying its views, so nothing reloads when it comes back. */
-    setPaneCollapsed(collapsed: boolean): void;
-    /** Sets the pane's width, clamped here. Returns the width actually applied, on every path including the one that changes nothing. */
-    setPaneWidth(px: number): number;
-    /** The pane's toolbar, acting on the tab in front. */
+    /** Splits a pane, putting an empty one showing the launcher in the new half. */
+    splitPane(paneId: string, axis: 'x' | 'y'): void;
+    /** Closes a pane. Asks first when it is the game's, since that disconnects the player. */
+    closePane(paneId: string): Promise<void>;
+    /** Puts something in a pane. A page must be one of this server's links, and a second game is refused. */
+    setPaneContent(paneId: string, content: PaneContent): void;
+    focusPane(paneId: string): void;
+    /** Drags a seam. Returns the position actually applied, on every path including the one that changes nothing. */
+    setSeam(splitId: string, index: number, px: number): number;
+    evenOut(splitId: string): void;
+    /** Even out the split the focused pane sits in. The View menu's item, which has a pane rather than a split to go on. */
+    evenOutFocused(): void;
+    /** The focused page pane's toolbar. */
     pageGo(where: 'back' | 'forward' | 'reload'): void;
-    /** The echo of a move made in another window: this one learns where chat goes without losing what it has open. */
-    syncChatHome(home: ChatHome): void;
     /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
     relayout(): void;
     state(): ShellState;
@@ -172,7 +157,7 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
-    /** The reference page in front, for capture mode. Resolves with null when the pane is closed or collapsed: there is no view to shoot. */
+    /** The focused page pane, for capture mode. Resolves with null when no pane holds a page: there is no view to shoot. */
     capturePage(): Promise<NativeImage | null>;
 }
 
@@ -217,10 +202,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const tools: ToolId[] = ['chat'];
     if (worldSwitch) tools.push('worlds');
     if (deps.hiscores) tools.push('hiscores');
-    // The whole of the per-server gating for the reference links: a window
-    // offers Guides exactly when its catalog entry has links to offer, so
-    // which servers get them is data rather than a condition written here.
-    if (server.bookmarks.length > 0) tools.push('guides');
     if (single) tools.push('singleplayer');
     // Which tools a window came up with is otherwise only visible by looking at
     // the rail, and a tool missing from it looks the same as a tool that drew
@@ -230,32 +211,17 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /** The URL main last asked the game view to load. The offline page may return to it; nothing else may navigate. */
     let expected = worldSwitch ? worldSwitch.url : server.url;
     let currentLatency: number | null = null;
+    /** Where the window's own chrome sits. The panes' rects belong to the host. */
+    let rects = { tabBar: { x: 0, y: 0, width: 0, height: 0 }, rail: { x: 0, y: 0, width: 0, height: 0 }, tree: { x: 0, y: 0, width: 0, height: 0 } };
     /**
-     * Where chat is and what the side column holds. Every transition of it goes
-     * through `reduce`, which owns the rules and is tested on its own.
+     * The live game view, or null once it has been closed.
      *
-     * The dock starts closed on every launch, whatever home the profile
-     * remembers. Chat does not connect until someone opens it and picks a nick
-     * — the property that keeps a capture run from ever opening a socket — so a
-     * dock that opened itself would either break that or greet a new user with
-     * a nick prompt they never asked for. Opening chat stays a deliberate act;
-     * only where it opens changed.
+     * Closing the game pane destroys it rather than hiding it. A view kept
+     * alive behind a closed pane is a character still standing in the world
+     * with nobody watching it, which is a worse failure than the fresh login
+     * that reopening costs — and the confirm in `index.ts` says so first.
      */
-    let placement: Placement = { home: deps.chatHome(), dockOpen: false, activeTool: null, panelOpen: false };
-    /**
-     * The reference pane: which LostHQ pages this window has open and how it is
-     * showing them. Every transition goes through `reducePane`, which owns the
-     * rules and is tested on its own; `syncPageViews` below is the only thing
-     * that creates or destroys a view, and it does so purely by following this.
-     */
-    let pane: PaneState = initialPane(deps.pageWidth());
-    /** One long-lived view per open tab, keyed by tab id. Switching tabs only moves visibility. */
-    const pageViews = new Map<string, WebContentsView>();
-    let mode: { x: LayoutMode; y: LayoutMode } = { x: 'widen', y: 'widen' };
-    let rects: Rects = splitWindow(DEFAULT_CONTENT.width + RAIL_WIDTH, STRIP_HEIGHT + DEFAULT_CONTENT.height, false, 0, 0, DEFAULT_CONTENT.width);
-    let contentWidth = DEFAULT_CONTENT.width;
-    let contentHeight = DEFAULT_CONTENT.height;
-    let applying = false;
+    let gameView: WebContentsView | null = null;
     let failedOver = false;
     let loadWaiter: ((result: LoadResult) => void) | null = null;
     let loadPromise: Promise<LoadResult> = Promise.resolve('loaded');
@@ -264,12 +230,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     const win = new BrowserWindow({
         width: DEFAULT_CONTENT.width + RAIL_WIDTH,
-        height: STRIP_HEIGHT + DEFAULT_CONTENT.height,
-        // The floor is MIN_WINDOW_CONTENT_* and not the canvas the window opens
-        // at: the window may be dragged well under the game's own size, and the
-        // client has its own answers for that. See the constants.
-        minWidth: MIN_WINDOW_CONTENT_WIDTH + RAIL_WIDTH,
-        minHeight: STRIP_HEIGHT + MIN_WINDOW_CONTENT_HEIGHT,
+        height: TAB_BAR_HEIGHT + DEFAULT_CONTENT.height,
+        // One pane's floor plus the chrome that never gives way. A constant
+        // now: the old minimum moved as the dock opened and closed, because it
+        // was protecting a region the layout was also protecting. Nothing is
+        // protected any more — every pane gives way together — so there is
+        // nothing left for the floor to track.
+        minWidth: PANE_MIN_WIDTH + RAIL_WIDTH,
+        minHeight: TAB_BAR_HEIGHT + PANE_MIN_HEIGHT,
         useContentSize: true,
         ...(deps.position ?? {}),
         title: spec.title,
@@ -279,21 +247,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // pinned comes up pinned rather than needing the menu again.
         alwaysOnTop: deps.alwaysOnTop()
     });
-
-    /**
-     * The floor the window may be dragged to, in the units setMinimumSize
-     * speaks. `useContentSize` made the constructor's minWidth and minHeight
-     * *content* constraints, while setMinimumSize takes a *window* size, frame
-     * and all — so rather than guess at the frame, this reads back what
-     * Electron made of the constructor's numbers and offsets from it. The dock
-     * is the same number of pixels in either space.
-     */
-    const minimum = win.getMinimumSize();
-    // The fallbacks are the two numbers just passed in, and are there only for the index type: Electron always returns both.
-    const minWindowWidth = minimum[0] ?? MIN_WINDOW_CONTENT_WIDTH + RAIL_WIDTH;
-    const minWindowHeight = minimum[1] ?? STRIP_HEIGHT + MIN_WINDOW_CONTENT_HEIGHT;
-    /** How much of the dock the current minimum already accounts for, so it is only set when it moves. */
-    let minimumDock = 0;
 
     const shellView = new WebContentsView({
         webPreferences: {
@@ -306,21 +259,50 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     });
     shellView.setBackgroundColor('#17120d');
 
-    const gameView = new WebContentsView({
-        webPreferences: {
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            webSecurity: true,
-            partition: spec.partition,
-            backgroundThrottling: false
-        }
-    });
-    gameView.setBackgroundColor('#000000');
+    /**
+     * Builds the game view and puts it in the window.
+     *
+     * `backgroundThrottling: false` is why a game keeps playing while it is not
+     * the tab in front, exactly as it already keeps playing with the whole
+     * window behind another app. That is the one thing the tab design rests on
+     * that no test here can prove.
+     */
+    function makeGameView(): WebContentsView {
+        const view = new WebContentsView({
+            webPreferences: {
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: true,
+                webSecurity: true,
+                partition: spec.partition,
+                backgroundThrottling: false
+            }
+        });
+        view.setBackgroundColor('#000000');
+        // Order matters: later children draw on top. Every game and page view
+        // sits over the shell, which draws the chrome and leaves their rects empty.
+        win.contentView.addChildView(view);
+        wireGameView(view);
+        return view;
+    }
 
-    // Order matters: later children draw on top. The game sits over the shell's empty content area.
     win.contentView.addChildView(shellView);
-    win.contentView.addChildView(gameView);
+    gameView = makeGameView();
+
+    /**
+     * The active tab's panes and the views inside them. Every rule about the
+     * tree is in `paneTree`, which is pure and tested; this end of it only
+     * names the gesture and lets the window lay out around the answer.
+     */
+    const host: PaneHost = createPaneHost({
+        window: win,
+        gameView: () => gameView,
+        bookmarks: () => server.bookmarks,
+        hosts: () => server.hosts,
+        log: line => deps.log(`${tag} ${line}`),
+        changed: () => applyLayout(),
+        touched: () => pushState()
+    });
 
     // ── labels ───────────────────────────────────────────────────────────
 
@@ -344,18 +326,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         return { ...deps.worlds.view(), current: worldSwitch.world, detail: worldSwitch.detail, showDetail: server.worlds.detail };
     }
 
-    function pagesView(): PagesView {
-        const active = activeTab(pane);
-        return {
-            tabs: pane.tabs.map(t => ({ id: t.id, bookmark: t.bookmark, label: t.label, active: t.id === pane.activeId })),
-            collapsed: pane.collapsed,
-            width: rects.page?.width ?? pane.width,
-            maxWidth: paneCeiling(),
-            active:
-                active && !pane.collapsed
-                    ? { title: active.title, url: active.url, canGoBack: active.canGoBack, canGoForward: active.canGoForward, loading: active.loading }
-                    : null
-        };
+    /** Which tools are placed in a pane somewhere, so the rail can light them rather than guess. */
+    function openTools(): ToolId[] {
+        const tree = host.tree();
+        const placed = paneIds(tree)
+            .map(id => contentOf(tree, id))
+            .filter(content => content?.kind === 'tool')
+            .map(content => (content as { kind: 'tool'; tool: ToolId }).tool);
+        return tools.filter(id => placed.includes(id));
     }
 
     function state(): ShellState {
@@ -365,19 +343,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             slot: spec.slot,
             title: title(),
             gameLabel: gameLabel(),
-            panelOpen: placement.panelOpen,
-            mode,
             rects,
+            panes: host.panes(),
+            seams: host.seams(),
             tools,
-            activeTool: placement.activeTool,
-            panelAvailable: firstLegalSideOccupant(tools, placement.home) !== null,
+            openTools: openTools(),
             worlds: worldsView(),
             hiscores: deps.hiscores?.view() ?? null,
-            pages: pagesView(),
             chat: deps.chat(),
-            chatHome: placement.home,
-            dockOpen: placement.dockOpen,
-            dockHeight: deps.chatDockHeight(),
             singlePlayer: single?.view() ?? null
         };
     }
@@ -393,109 +366,56 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     // ── layout ───────────────────────────────────────────────────────────
 
-    /** What the dock takes from the window: its remembered height while it is open, nothing while it is not. */
-    function dockHeight(): number {
-        return placement.dockOpen ? deps.chatDockHeight() : 0;
-    }
-
     /**
-     * The window's floor has to carry the dock too. Left alone at the
-     * construction-time height, dragging the window short with the dock open
-     * would crush the game below MIN_WINDOW_CONTENT_HEIGHT — the one thing the
-     * floor exists to prevent.
+     * Where everything goes.
      *
-     * What it carries is the dock the layout *granted*, in the window the
-     * layout granted it in — not the height the drag asked for. `dockOnFloor`
-     * has the arithmetic and the reason: a floor built from the request is a
-     * floor taller than the whole work area on any display too short for the
-     * dock, and the next drag would take the composer and the grip under the
-     * taskbar.
+     * The window no longer grows to accommodate what opens inside it. Nothing
+     * opens *beside* anything now — a split divides space that is already
+     * allocated — so the widen / shift / push ladder, the content extent
+     * carried across a chrome toggle and the per-axis mode the shell used to
+     * report all went with the chrome that motivated them. What is left is: the
+     * bar across the top, the rail down the right, and the tree in the rest.
+     *
+     * The tree's rect is inset by a pixel so the focus border has shell to be
+     * drawn on at the container's edge. Between panes it has the seam. A native
+     * view cannot be outlined from inside itself, and `layoutTree` is
+     * deliberately unaware that either of those is what the gap is for.
      */
-    function syncMinimumSize(granted: number, windowHeight: number): void {
-        const dock = dockOnFloor(granted, windowHeight);
-        if (dock === minimumDock) return;
-        minimumDock = dock;
-        // Under `applying` for the same reason setContentBounds is. macOS does
-        // not resize a live window onto a new minimum — measured, not assumed —
-        // but nothing promises the other platforms do not, and such a resize
-        // would arrive at the handler below as the user's own: it would take
-        // the half-grown window for the height they asked for and hand the
-        // content the dock's pixels.
-        applying = true;
-        win.setMinimumSize(minWindowWidth, minWindowHeight + dock);
-        applying = false;
-    }
-
     function applyLayout(): void {
         if (win.isDestroyed()) return;
-        const dock = dockHeight();
-        const current = win.getContentBounds();
-        const display = screen.getDisplayMatching(win.getBounds());
-        const result = computeLayout({
-            panelOpen: placement.panelOpen,
-            pageWidth: paneLayoutWidth(pane),
-            window: current,
-            workArea: display.workArea,
-            contentWidth,
-            contentHeight,
-            dockHeight: dock,
-            canResize: !win.isMaximized() && !win.isFullScreen()
-        });
-
-        mode = result.mode;
-        rects = result;
-        const w = result.window;
-        // The floor moves before the bounds are set and after they are solved:
-        // closing the dock has to lower it first, or the minimum that was
-        // carrying the dock clamps setContentBounds and the window never
-        // shrinks back — and only the solved layout knows how much dock there
-        // turned out to be room for.
-        syncMinimumSize(result.dock?.height ?? 0, w.height);
-        if (w.x !== current.x || w.y !== current.y || w.width !== current.width || w.height !== current.height) {
-            applying = true;
-            win.setContentBounds(w);
-            applying = false;
-        }
-        shellView.setBounds({ x: 0, y: 0, width: w.width, height: w.height });
-        gameView.setBounds(result.content);
-        syncPageBounds(result.page);
+        const { width, height } = win.getContentBounds();
+        const railW = Math.min(RAIL_WIDTH, width);
+        const below = Math.max(0, height - TAB_BAR_HEIGHT);
+        rects = {
+            tabBar: { x: 0, y: 0, width, height: Math.min(TAB_BAR_HEIGHT, height) },
+            rail: { x: width - railW, y: TAB_BAR_HEIGHT, width: railW, height: below },
+            tree: { x: 1, y: TAB_BAR_HEIGHT + 1, width: Math.max(0, width - railW - 2), height: Math.max(0, below - 2) }
+        };
+        shellView.setBounds({ x: 0, y: 0, width, height });
+        host.layout(rects.tree);
         pushState();
     }
 
-    win.on('resize', () => {
-        if (applying) return;
-        const bounds = win.getContentBounds();
-        // The pane comes off here exactly as it is added in applyLayout, or a
-        // resize with a page open would hand the pane's pixels to the game and
-        // grow the window by them again on the next layout.
-        contentWidth = preservedWidth(bounds.width, sideWidth(placement.panelOpen) + paneWidth(paneLayoutWidth(pane)));
-        // The y-axis twin of the line above: without it contentHeight would sit
-        // stale at its construction-time value forever, and computeLayout would
-        // fit the window back to that stale height on every layout event,
-        // fighting the user's own resize. The dock comes off here exactly as it
-        // is added in applyLayout, or a resize with the dock open would hand
-        // the dock's pixels to the content and grow the window by them again.
-        contentHeight = preservedHeight(bounds.height, STRIP_HEIGHT + dockHeight());
-        applyLayout();
-    });
-    // These change whether the window can be widened, so re-run the layout.
+    win.on('resize', () => applyLayout());
+    // A maximise or a fullscreen changes the content bounds without a resize
+    // event on every platform, so the layout is re-run for both.
     win.on('maximize', () => applyLayout());
     win.on('unmaximize', () => applyLayout());
     win.on('enter-full-screen', () => applyLayout());
     win.on('leave-full-screen', () => applyLayout());
 
-    // ── the panel and its tool ───────────────────────────────────────────
+    // ── the panes ────────────────────────────────────────────────────────
 
     let panelProbe: NodeJS.Timeout | null = null;
 
-    /** The whole list is probed only while this window shows the Worlds panel. */
+    /** The whole list is probed only while a Worlds pane is open somewhere in this window. */
     function syncPanelProbe(): void {
-        const wanted = placement.panelOpen && placement.activeTool === 'worlds' && worldSwitch !== null && deps.worlds !== null;
+        const wanted = openTools().includes('worlds') && worldSwitch !== null && deps.worlds !== null;
         if (wanted && !panelProbe) {
             const probeAll = (): void => {
-                if (deps.worlds && worldSwitch) void deps.worlds.probeAll(worldSwitch.detail);
+                void deps.worlds?.probeAll(worldSwitch!.detail);
             };
-            void deps.worlds!.list().then(probeAll);
+            probeAll();
             panelProbe = setInterval(probeAll, PROBE_EVERY_MS);
         } else if (!wanted && panelProbe) {
             clearInterval(panelProbe);
@@ -504,271 +424,85 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
-     * The one way placement moves. Every rule about which region chat ends up
-     * in lives in `reduce`; this end of it only names the gesture and redraws.
+     * The rail. Puts a tool in the focused pane — or splits that pane and uses
+     * the new half when it holds the game, so a click on the rail can never
+     * cost the player their view of the game. A tool already placed is brought
+     * into focus instead of opened a second time: the rail is a set of
+     * destinations, not a queue of requests.
      */
-    function place(action: Action): void {
-        placement = reduce(placement, action, tools);
-        applyLayout();
+    function selectTool(id: ToolId): void {
+        if (!tools.includes(id)) return;
+        const tree = host.tree();
+        const already = paneIds(tree).find(paneId => {
+            const content = contentOf(tree, paneId);
+            return content?.kind === 'tool' && content.tool === id;
+        });
+        if (already) {
+            host.focus(already);
+            return;
+        }
+        const target = host.focusedPaneId();
+        if (contentOf(tree, target)?.kind === 'game') {
+            host.split(target, 'x');
+            host.setContent(host.focusedPaneId(), { kind: 'tool', tool: id });
+        } else {
+            host.setContent(target, { kind: 'tool', tool: id });
+        }
+        deps.log(`${tag} opened ${id} in a pane`);
         syncPanelProbe();
     }
 
-    function selectTool(id: ToolId | null): void {
-        // Null is the shell asking for the panel shut: it works out the toggle
-        // itself and sends null rather than the tool already on show.
-        if (id === null) {
-            if (placement.panelOpen) place({ kind: 'toggle-panel' });
+    /**
+     * Puts something in a pane, with the two refusals main owes the shell.
+     *
+     * A page may only be one of this server's own links: there is no address
+     * box, so the shell has no legitimate reason to name anything else, and a
+     * page view lives in a session shared with every other window's. A second
+     * game is refused outright — the window is bound to one server and has one
+     * game view, so two game leaves are unrepresentable rather than merely
+     * unwanted.
+     */
+    function setPaneContent(paneId: string, content: PaneContent): void {
+        if (content.kind === 'page' && !server.bookmarks.some(b => b.url === content.bookmark)) {
+            deps.log(`${tag} refused to open ${content.bookmark}: not one of this server's links`);
             return;
         }
-        if (!tools.includes(id)) return;
-        if (id !== 'chat') {
-            place({ kind: 'rail-tool', tool: id });
-            return;
-        }
-        // The one rail tab whose meaning depends on where chat lives — the dock
-        // while chat is at the bottom, the panel while it is on the side — so
-        // the log says which of the two it just did. Which it is belongs to the
-        // rules, not here.
-        place({ kind: 'rail-chat' });
-        deps.log(`${tag} chat tab: dock ${placement.dockOpen ? 'open' : 'closed'}, panel ${placement.panelOpen ? 'open' : 'closed'}`);
-    }
-
-    function togglePanel(): void {
-        place({ kind: 'toggle-panel' });
-        deps.log(`${tag} panel ${placement.panelOpen ? 'opened' : 'closed'}`);
-    }
-
-    /**
-     * The two halves of an app-wide home change. Where chat goes is the app's,
-     * so every window hears about it; whether chat is open here is this
-     * window's, so only the window whose control was clicked rearranges around
-     * it. Which of the two a window gets is main's to decide, and the
-     * difference between them is the rules module's.
-     */
-    function moveChat(home: ChatHome): void {
-        place({ kind: 'move', to: home });
-        deps.log(`${tag} chat moved to the ${home}`);
-    }
-
-    function syncChatHome(home: ChatHome): void {
-        place({ kind: 'sync-home', to: home });
-        deps.log(`${tag} chat now lives at the ${home}`);
-    }
-
-    // ── the reference pane ───────────────────────────────────────────────
-
-    /**
-     * One session for every reference page in every window, so a LostHQ login
-     * is shared rather than asked for again per window. It is deliberately not
-     * the game's partition: nothing a guide page does should be able to touch
-     * the cookies the player is logged in with.
-     */
-    const PAGES_PARTITION = 'persist:pages';
-
-    /**
-     * The widest the pane can be dragged while the game still has its canvas on
-     * this display. The floor wins a tie — on a display too narrow for both,
-     * this comes out under PAGE_WIDTH_MIN and the reducer's own clamp keeps the
-     * pane at its floor, leaving `splitWindow` to decide what gives way.
-     */
-    function paneCeiling(): number {
-        const work = screen.getDisplayMatching(win.getBounds()).workArea;
-        return Math.max(PAGE_WIDTH_MIN, work.width - MIN_CONTENT_WIDTH - sideWidth(placement.panelOpen) - PAGE_SEAM);
-    }
-
-    /**
-     * Bounds and visibility for the open pages.
-     *
-     * Only the view about to show is given bounds. A hidden Chromium view still
-     * does the work of a resize, and during a seam drag that would be one per
-     * open tab per animation frame; the cost of waiting is a single reflow when
-     * a tab that was hidden through a resize comes back.
-     */
-    function syncPageBounds(page: Rect | null): void {
-        for (const [id, view] of pageViews) {
-            const visible = page !== null && id === pane.activeId;
-            if (visible) view.setBounds(page);
-            view.setVisible(visible);
-        }
-    }
-
-    /**
-     * The views, reconciled against the tabs.
-     *
-     * This is the only thing that creates or destroys one, and it does so
-     * purely by following `pane.tabs` — so a tab switch, which only moves
-     * `activeId`, cannot reload a page, because there is no path here that
-     * would. That is the pane's whole promise, and it is structural rather
-     * than remembered.
-     */
-    function syncPageViews(): void {
-        for (const tab of pane.tabs) {
-            if (!pageViews.has(tab.id)) createPageView(tab.id, tab.bookmark);
-        }
-        for (const id of [...pageViews.keys()]) {
-            if (!pane.tabs.some(t => t.id === id)) destroyPageView(id);
-        }
-    }
-
-    function destroyPageView(id: string): void {
-        const view = pageViews.get(id);
-        if (!view) return;
-        pageViews.delete(id);
-        if (!win.isDestroyed()) win.contentView.removeChildView(view);
-        if (!view.webContents.isDestroyed()) view.webContents.close();
-    }
-
-    function createPageView(id: string, url: string): void {
-        const view = new WebContentsView({
-            webPreferences: {
-                contextIsolation: true,
-                nodeIntegration: false,
-                sandbox: true,
-                webSecurity: true,
-                partition: PAGES_PARTITION
-                // backgroundThrottling is left at Chromium's default, unlike
-                // the game view: a reference page nobody is looking at should
-                // cost nothing, and none of them has a loop that has to keep
-                // running. A hidden page mid-boot does boot more slowly for it
-                // — Lost City's forums are Discourse, which keeps working long
-                // after its document is complete — but it does get there, which
-                // was checked rather than assumed.
+        if (content.kind === 'game') {
+            if (host.hasGame()) {
+                deps.log(`${tag} refused a second game pane`);
+                return;
             }
-        });
-        view.setBackgroundColor('#17120d');
-        view.setVisible(false);
-        win.contentView.addChildView(view);
-        pageViews.set(id, view);
-
-        const wc = view.webContents;
-        // The toolbar's whole state, read from main rather than reported by a
-        // preload: these views get none, which keeps "the shell is the only
-        // view with a preload" true of the pane as well as of the game.
-        const report = (): void => {
-            if (win.isDestroyed() || wc.isDestroyed()) return;
-            placePane({
-                kind: 'navigated',
-                id,
-                url: wc.getURL(),
-                title: wc.getTitle(),
-                canGoBack: wc.navigationHistory.canGoBack(),
-                canGoForward: wc.navigationHistory.canGoForward()
-            });
-        };
-        wc.on('page-title-updated', report);
-        wc.on('did-navigate', report);
-        // Fires on every hash change, and the clue coordinator changes its hash
-        // as you click around the map. The reducer answers an update that says
-        // nothing new with the state it already had, so these cost nothing.
-        wc.on('did-navigate-in-page', report);
-        wc.on('did-start-loading', () => placePane({ kind: 'loading', id, loading: true }));
-        wc.on('did-stop-loading', () => {
-            placePane({ kind: 'loading', id, loading: false });
-            report();
-        });
-        wc.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
-            // -3 is ERR_ABORTED: a load superseded by another, not a failure.
-            if (!isMainFrame || code === -3) return;
-            deps.log(`${tag} page ${id} could not load ${failed}: ${description} (${code})`);
-        });
-
-        const policy = (event: { preventDefault: () => void }, target: string): void => {
-            const decision = decidePageNavigation({ target, hosts: server.hosts });
-            if (decision === 'allow') return;
-            event.preventDefault();
-            if (decision === 'open-external') {
-                deps.log(`${tag} sent ${target} to the system browser`);
-                void shell.openExternal(target);
-            } else {
-                deps.log(`${tag} blocked ${target}`);
+            if (!gameView) {
+                gameView = makeGameView();
+                void loadGame(expected);
             }
-        };
-        wc.on('will-navigate', policy);
-        // Not optional: `tools.losthq.rs/map` answers a 301 and LostHQ's
-        // bestiary a 302, so a redirect is the ordinary case rather than the
-        // exotic one, and a policy that only saw `will-navigate` would let a
-        // redirect carry a page anywhere.
-        wc.on('will-redirect', policy);
-        wc.setWindowOpenHandler(({ url: target }) => {
-            if (/^https?:\/\//.test(target)) void shell.openExternal(target);
-            return { action: 'deny' };
-        });
-
-        void wc.loadURL(url);
+        }
+        host.setContent(paneId, content);
+        syncPanelProbe();
     }
 
     /**
-     * The one way the pane moves. Every rule about which tab is in front and
-     * what that costs the layout lives in `reducePane`; this end of it only
-     * names the gesture, reconciles the views and redraws.
+     * Closes a pane, asking first when it is the game's.
      *
-     * A no-op action stops here. The state is pushed on every layout, and
-     * `did-navigate-in-page` alone would otherwise have main serialising a
-     * whole ShellState per click on a map.
+     * Closing the game destroys its view, which disconnects the player. The
+     * alternative — keeping it alive behind a closed pane — is worse than the
+     * fresh login reopening costs: a character still standing in the world with
+     * nobody watching it dies to events its player cannot see. So the view goes,
+     * and the confirm says so before it does.
      */
-    function placePane(action: PaneAction): void {
-        if (win.isDestroyed()) return;
-        const next = reducePane(pane, action, { maxWidth: paneCeiling() });
-        if (next === pane) return;
-        const wasWidth = paneLayoutWidth(pane);
-        const wasShowing = pane.collapsed ? null : pane.activeId;
-        pane = next;
-        syncPageViews();
-        // Three different costs, and most updates owe only the last of them.
-        // A change in what the pane takes from the window needs the window
-        // laid out again; a change in which view is in front needs bounds and
-        // visibility; a title or a back button going grey needs neither, and
-        // `did-navigate-in-page` fires one of those on every hash change —
-        // the clue coordinator emits one per click on its map.
-        if (paneLayoutWidth(pane) !== wasWidth) {
-            applyLayout();
-            return;
+    async function closePane(paneId: string): Promise<void> {
+        const isGame = contentOf(host.tree(), paneId)?.kind === 'game';
+        if (isGame) {
+            if (!(await deps.confirmCloseGame())) return;
+            if (gameView) {
+                win.contentView.removeChildView(gameView);
+                if (!gameView.webContents.isDestroyed()) gameView.webContents.close();
+                gameView = null;
+            }
+            deps.log(`${tag} closed the game pane and disconnected`);
         }
-        if ((pane.collapsed ? null : pane.activeId) !== wasShowing) syncPageBounds(rects.page);
-        pushState();
-    }
-
-    function openPage(url: string): void {
-        // There is no address box, so the shell has no legitimate reason to
-        // name a page that is not one of this server's own links — and a page
-        // view lives in a session shared with every other window's.
-        const link = server.bookmarks.find(b => b.url === url);
-        if (!link) {
-            deps.log(`${tag} refused to open ${url}: not one of this server's links`);
-            return;
-        }
-        const had = pane.tabs.some(t => t.bookmark === link.url);
-        placePane({ kind: 'open', bookmark: link.url, label: link.name });
-        deps.log(`${tag} ${had ? 'brought' : 'opened'} ${link.name} ${had ? 'to the front of' : 'in'} the pane`);
-    }
-
-    function setPaneWidth(px: number): number {
-        if (typeof px !== 'number' || !Number.isFinite(px)) return rects.page?.width ?? pane.width;
-        placePane({ kind: 'resize', width: px });
-        // Written even when the clamp landed where the pane already was: the
-        // number is app-wide, and another window opening a pane next should get
-        // the width this drag actually reached.
-        deps.rememberPageWidth(pane.width);
-        // The width the pane was *drawn* at, not the one it asked for. The two
-        // part company whenever the window is too narrow for everything at once
-        // — `splitWindow` claws pixels back after the reducer has had its say —
-        // and the grip is showing the drawn one. Answering with the request
-        // would have every frame of a drag aim from a number the seam is not at.
-        return rects.page?.width ?? pane.width;
-    }
-
-    function pageGo(where: 'back' | 'forward' | 'reload'): void {
-        const active = activeTab(pane);
-        const view = active ? pageViews.get(active.id) : undefined;
-        if (!view || view.webContents.isDestroyed()) return;
-        const history = view.webContents.navigationHistory;
-        if (where === 'back') {
-            if (history.canGoBack()) history.goBack();
-        } else if (where === 'forward') {
-            if (history.canGoForward()) history.goForward();
-        } else {
-            view.webContents.reload();
-        }
+        host.close(paneId);
+        syncPanelProbe();
     }
 
     // ── the game view ────────────────────────────────────────────────────
@@ -792,7 +526,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         });
         refreshLabels();
         pushState();
-        void gameView.webContents.loadURL(url);
+        void gameView?.webContents.loadURL(url);
         return loadPromise;
     }
 
@@ -811,7 +545,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // did-finish-load settles nothing, so the waiter would wait forever.
         if (gameLoadPending) settleLoad('failed');
         failedOver = true;
-        void gameView.webContents.loadFile(STARTING_PAGE, {
+        void gameView?.webContents.loadFile(STARTING_PAGE, {
             query: {
                 state: override?.state ?? view.status,
                 version,
@@ -846,95 +580,108 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         waiter?.(result);
     }
 
-    // Nothing the page does may replace the game. The one exception is our
-    // own offline page returning to the page main asked for.
-    gameView.webContents.on('will-navigate', (event, url) => {
-        const decision = decideNavigation({ current: gameView.webContents.getURL(), target: url, expected });
-        if (decision === 'allow') return;
-        event.preventDefault();
-        if (decision === 'retry') {
-            deps.log(`${tag} retrying the world`);
-            // Forgetting the url is what lets the same one be loaded again: when the
-            // world is already up and only its page failed, retry() resolves off the
-            // ready status without changing it, so nothing notifies and syncSinglePlayer
-            // would otherwise see the url it has already loaded and do nothing.
-            loadedGameUrl = null;
-            void single?.retry().then(
-                () => syncSinglePlayer(),
-                () => syncSinglePlayer()
-            );
-            return;
-        }
-        if (decision === 'open-external') {
-            deps.log(`${tag} sent ${url} to the system browser`);
-            void shell.openExternal(url);
-        } else {
-            deps.log(`${tag} blocked navigation to ${url}`);
-        }
-    });
-    gameView.webContents.setWindowOpenHandler(({ url }) => {
-        if (/^https?:\/\//.test(url)) void shell.openExternal(url);
-        return { action: 'deny' };
-    });
-    gameView.webContents.on('context-menu', event => event.preventDefault());
-    // Mouse back and forward buttons would walk the history of world switches.
-    win.on('app-command', (event, command) => {
-        if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
-    });
-
-    gameView.webContents.on('did-start-navigation', (_event, url) => {
-        // A retry from the offline page is a fresh attempt.
-        if (!url.startsWith('file:')) failedOver = false;
-    });
-    gameView.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
-        // -3 is ERR_ABORTED: a load superseded by another, not a failure.
-        if (!isMainFrame || code === -3) return;
-        failedOver = true;
-        deps.log(`${tag} could not load ${url}: ${description} (${code})`);
-        settleLoad('failed');
-        if (single) {
-            // The service's own view says why the world is not there. When it says
-            // the world is running, the page itself is what failed, and the starting
-            // page has to say so rather than claim the world is up.
-            const running = single.view().status === 'ready';
-            showStarting(running ? { state: 'pagefailed', reason: 'The game page did not load, though the world is running.' } : undefined);
-            return;
-        }
-        void gameView.webContents.loadFile(OFFLINE_PAGE, {
-            query: { url: expected, name: gameLabel(), reason: description }
+    /**
+     * The game view's own handlers, wired to the view they belong to rather
+     * than to whichever one happened to exist at construction.
+     *
+     * This is a function because the game view is no longer permanent: closing
+     * its pane destroys it, and opening one builds another. Registering these
+     * once against the outer binding would leave a rebuilt view with no
+     * navigation guard at all — which is the one view in the app that must
+     * never accept a page-initiated navigation.
+     */
+    function wireGameView(view: WebContentsView): void {
+        const wc = view.webContents;
+        // Nothing the page does may replace the game. The one exception is our
+        // own offline page returning to the page main asked for.
+        wc.on('will-navigate', (event, url) => {
+            const decision = decideNavigation({ current: wc.getURL(), target: url, expected });
+            if (decision === 'allow') return;
+            event.preventDefault();
+            if (decision === 'retry') {
+                deps.log(`${tag} retrying the world`);
+                // Forgetting the url is what lets the same one be loaded again: when the
+                // world is already up and only its page failed, retry() resolves off the
+                // ready status without changing it, so nothing notifies and syncSinglePlayer
+                // would otherwise see the url it has already loaded and do nothing.
+                loadedGameUrl = null;
+                void single?.retry().then(
+                    () => syncSinglePlayer(),
+                    () => syncSinglePlayer()
+                );
+                return;
+            }
+            if (decision === 'open-external') {
+                deps.log(`${tag} sent ${url} to the system browser`);
+                void shell.openExternal(url);
+            } else {
+                deps.log(`${tag} blocked navigation to ${url}`);
+            }
         });
-    });
-    // `insertCSS` is per-document, so it must be re-applied on every navigation. `dom-ready`
-    // (Chromium's DOMContentLoaded) is the earliest hook Electron exposes for that;
-    // `did-finish-load` (below, used for the load waiter) waits for the 'load' event — every
-    // subresource — and is much later. dom-ready is *not* guaranteed ahead of first paint here:
-    // the client's own game code is a deferred `type="module"` script, which delays
-    // DOMContentLoaded until it has fetched and run, while Chromium can paint the
-    // already-parsed, already-styled page before that finishes. So a brief flash is possible —
-    // but only at sizes where the page actually overflows its view (the bare-canvas floor, or
-    // the dock pushing content below it; the default size never overflows) — and it is still
-    // strictly earlier than did-finish-load. World hopping and detail switching both funnel
-    // through `loadGame`'s `loadURL` on this same view, so they re-fire `dom-ready` and
-    // re-inject too — nothing server-specific is needed here.
-    gameView.webContents.on('dom-ready', () => {
-        // The kit's own offline and starting pages are already sized to fit; this is for the client.
-        if (gameView.webContents.getURL().startsWith('file:')) return;
-        void gameView.webContents.insertCSS(GAME_PAGE_CSS);
-    });
-    gameView.webContents.on('did-finish-load', () => {
-        const url = gameView.webContents.getURL();
-        if (url.startsWith('file:')) {
-            deps.log(`${tag} showing a kit page`);
-            return;
-        }
-        // Chromium commits its own error page under the failed URL before the offline page replaces it.
-        if (failedOver) return;
-        deps.log(`${tag} loaded ${url}`);
-        // Every load adds a history entry; none of them is somewhere to go back to.
-        gameView.webContents.navigationHistory.clear();
-        settleLoad('loaded');
-        void probeCurrent();
-    });
+        wc.setWindowOpenHandler(({ url }) => {
+            if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+            return { action: 'deny' };
+        });
+        wc.on('context-menu', event => event.preventDefault());
+        // Mouse back and forward buttons would walk the history of world switches.
+        win.on('app-command', (event, command) => {
+            if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
+        });
+
+        wc.on('did-start-navigation', (_event, url) => {
+            // A retry from the offline page is a fresh attempt.
+            if (!url.startsWith('file:')) failedOver = false;
+        });
+        wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+            // -3 is ERR_ABORTED: a load superseded by another, not a failure.
+            if (!isMainFrame || code === -3) return;
+            failedOver = true;
+            deps.log(`${tag} could not load ${url}: ${description} (${code})`);
+            settleLoad('failed');
+            if (single) {
+                // The service's own view says why the world is not there. When it says
+                // the world is running, the page itself is what failed, and the starting
+                // page has to say so rather than claim the world is up.
+                const running = single.view().status === 'ready';
+                showStarting(running ? { state: 'pagefailed', reason: 'The game page did not load, though the world is running.' } : undefined);
+                return;
+            }
+            void wc.loadFile(OFFLINE_PAGE, {
+                query: { url: expected, name: gameLabel(), reason: description }
+            });
+        });
+        // `insertCSS` is per-document, so it must be re-applied on every navigation. `dom-ready`
+        // (Chromium's DOMContentLoaded) is the earliest hook Electron exposes for that;
+        // `did-finish-load` (below, used for the load waiter) waits for the 'load' event — every
+        // subresource — and is much later. dom-ready is *not* guaranteed ahead of first paint here:
+        // the client's own game code is a deferred `type="module"` script, which delays
+        // DOMContentLoaded until it has fetched and run, while Chromium can paint the
+        // already-parsed, already-styled page before that finishes. So a brief flash is possible —
+        // but only at sizes where the page actually overflows its view (the bare-canvas floor, or
+        // the dock pushing content below it; the default size never overflows) — and it is still
+        // strictly earlier than did-finish-load. World hopping and detail switching both funnel
+        // through `loadGame`'s `loadURL` on this same view, so they re-fire `dom-ready` and
+        // re-inject too — nothing server-specific is needed here.
+        wc.on('dom-ready', () => {
+            // The kit's own offline and starting pages are already sized to fit; this is for the client.
+            if (wc.getURL().startsWith('file:')) return;
+            void wc.insertCSS(GAME_PAGE_CSS);
+        });
+        wc.on('did-finish-load', () => {
+            const url = wc.getURL();
+            if (url.startsWith('file:')) {
+                deps.log(`${tag} showing a kit page`);
+                return;
+            }
+            // Chromium commits its own error page under the failed URL before the offline page replaces it.
+            if (failedOver) return;
+            deps.log(`${tag} loaded ${url}`);
+            // Every load adds a history entry; none of them is somewhere to go back to.
+            wc.navigationHistory.clear();
+            settleLoad('loaded');
+            void probeCurrent();
+        });
+    }
 
     // ── the current world's latency ──────────────────────────────────────
 
@@ -972,7 +719,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (panelProbe) clearInterval(panelProbe);
         // The views go with the window; the `persist:pages` session does not, so
         // a LostHQ login outlives both this window and this launch.
-        for (const id of [...pageViews.keys()]) destroyPageView(id);
+        host.destroy();
         unsubscribeWorlds?.();
         unsubscribeSingle?.();
         single?.release();
@@ -1017,10 +764,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             win.focus();
         },
         close: () => win.close(),
-        togglePanel,
         selectTool,
-        moveChat,
-        syncChatHome,
         // Asked of the window rather than answered from a flag kept alongside
         // it. The window is where the state actually lives, so a copy here
         // would be a second one to keep in step, and the menu is built from
@@ -1037,12 +781,17 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             win.setAlwaysOnTop(on);
             deps.log(`${tag} ${on ? 'pinned above other windows' : 'unpinned'}`);
         },
-        openPage,
-        activatePage: id => placePane({ kind: 'activate', id }),
-        closePage: id => placePane({ kind: 'close', id }),
-        setPaneCollapsed: collapsed => placePane({ kind: 'set-collapsed', collapsed }),
-        setPaneWidth,
-        pageGo,
+        splitPane: (paneId, axis) => host.split(paneId, axis),
+        closePane,
+        setPaneContent,
+        focusPane: paneId => host.focus(paneId),
+        setSeam: (splitId, index, px) => host.dragSeam(splitId, index, px),
+        evenOut: splitId => host.evenOut(splitId),
+        evenOutFocused: () => {
+            const splitId = parentSplitOf(host.tree(), host.focusedPaneId());
+            if (splitId) host.evenOut(splitId);
+        },
+        pageGo: where => host.go(where),
         relayout: applyLayout,
         state,
         pushState,
@@ -1087,10 +836,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             await Promise.race([painted, new Promise(resolve => setTimeout(resolve, 1_500))]);
         },
         captureShell: () => shellView.webContents.capturePage(),
-        captureGame: () => gameView.webContents.capturePage(),
+        captureGame: () => gameView?.webContents.capturePage() ?? Promise.reject(new Error('no game view')),
         capturePage: async () => {
-            const active = activeTab(pane);
-            const view = active && !pane.collapsed ? pageViews.get(active.id) : undefined;
+            const view = host.pageWebContents();
             if (!view || view.webContents.isDestroyed()) return null;
             // Two frames, exactly as `settle` does for the shell, and for a
             // reason this feature demonstrated: a view that has just been shown

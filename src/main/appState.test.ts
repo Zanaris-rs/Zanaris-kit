@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppState } from './appState.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
-import { DOCK_HEIGHT_MIN, PAGE_WIDTH_DEFAULT, PAGE_WIDTH_MIN } from '../shared/layout.ts';
 
 const dirs: string[] = [];
 const tempFile = (): string => {
@@ -194,60 +193,6 @@ test('setChat leaves the remembered worlds and the warning alone', () => {
     assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
 });
 
-test('a stored dock and dockHeight round-trip together', () => {
-    const file = tempFile();
-    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dock: 'side', dockHeight: 260, rooms: ['#rscape'] };
-    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
-    const state = new AppState(file);
-    state.load();
-    assert.deepEqual(state.chat(), chat);
-    assert.deepEqual(state.world('lostcity'), REMEMBERED);
-});
-
-test("an invalid or missing dock falls back to 'bottom', keeping the rest of chat and the remembered worlds", () => {
-    const cases: unknown[] = ['sideways', 42, undefined];
-    for (const dock of cases) {
-        const file = tempFile();
-        const chat: Record<string, unknown> = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dockHeight: 260 };
-        if (dock !== undefined) chat.dock = dock;
-        writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
-        const state = new AppState(file);
-        state.load();
-        assert.deepEqual(state.chat(), { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dock: 'bottom', dockHeight: 260, rooms: [] }, `expected dock ${JSON.stringify(dock)} to fall back`);
-        assert.deepEqual(state.world('lostcity'), REMEMBERED);
-    }
-});
-
-test('dockHeight is clamped to its bounds, or falls back to the default when it is not an integer', () => {
-    const cases: Array<[unknown, number]> = [
-        [40, DOCK_HEIGHT_MIN],
-        [99999, 2000],
-        ['tall', DEFAULT_CHAT.dockHeight],
-        [180.5, DEFAULT_CHAT.dockHeight]
-    ];
-    for (const [dockHeight, expected] of cases) {
-        const file = tempFile();
-        const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dock: 'side', dockHeight };
-        writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
-        const state = new AppState(file);
-        state.load();
-        assert.deepEqual(state.chat(), { nick: 'lumbridge', server: 'irc.example.net', port: 6667, dock: 'side', dockHeight: expected, rooms: [] }, `expected dockHeight ${JSON.stringify(dockHeight)} to become ${expected}`);
-        assert.deepEqual(state.world('lostcity'), REMEMBERED);
-    }
-});
-
-test('setChat with dock and dockHeight saves, and a fresh instance reads them back', () => {
-    const file = tempFile();
-    const a = new AppState(file);
-    a.load();
-    a.setChat({ dock: 'side', dockHeight: 260 });
-    const b = new AppState(file);
-    b.load();
-    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, dock: 'side', dockHeight: 260 });
-    const written = JSON.parse(readFileSync(file, 'utf8'));
-    assert.deepEqual(written.chat, { ...DEFAULT_CHAT, dock: 'side', dockHeight: 260 });
-});
-
 test('a stored rooms list round-trips, and an older file with no rooms key loads clean', () => {
     const file = tempFile();
     const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, rooms: ['#rscape', '#help'] };
@@ -329,13 +274,13 @@ test('stageChat applies in memory and writes nothing until save is called', () =
     const a = new AppState(file);
     a.load();
     a.setChat({ nick: 'lumbridge' });
-    a.stageChat({ dockHeight: 260 });
-    assert.equal(a.chat().dockHeight, 260, 'the staged height is live in memory at once');
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).chat.dockHeight, DEFAULT_CHAT.dockHeight, 'and nothing has been written yet');
+    a.stageChat({ rooms: ['#rscape'] });
+    assert.deepEqual(a.chat().rooms, ['#rscape'], 'the staged value is live in memory at once');
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).chat.rooms, [], 'and nothing has been written yet');
     a.save();
     const b = new AppState(file);
     b.load();
-    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', dockHeight: 260 }, 'the save writes the staged height alongside everything else');
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', rooms: ['#rscape'] }, 'the save writes the staged value alongside everything else');
 });
 
 test('single-player cheats are off by default, persist, and survive a file without the key', () => {
@@ -425,45 +370,6 @@ test('setHiscoresName leaves the remembered worlds and chat settings alone', () 
 });
 
 // ── the reference pane's width ─────────────────────────────────────────────
-
-test('the pane width defaults, survives a round trip, and is clamped to its floor', () => {
-    const file = tempFile();
-    const state = new AppState(file);
-    state.load();
-    assert.equal(state.pageWidth(), PAGE_WIDTH_DEFAULT, 'a file with no pane block yet');
-
-    state.stagePageWidth(900);
-    state.save();
-    const again = new AppState(file);
-    again.load();
-    assert.equal(again.pageWidth(), 900);
-});
-
-test('a junk pane width costs only itself, not the rest of the file', () => {
-    const file = tempFile();
-    const state = new AppState(file);
-    state.load();
-    state.setWarnOnSwitch(false);
-    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), pages: { width: 'wide' } }));
-
-    const again = new AppState(file);
-    again.load();
-    assert.equal(again.pageWidth(), PAGE_WIDTH_DEFAULT);
-    assert.equal(again.warnOnSwitch(), false, 'the rest of the file still read');
-});
-
-test('a hand-edited pane width is railed at both ends', () => {
-    const file = tempFile();
-    for (const [written, expected] of [
-        [10, PAGE_WIDTH_MIN],
-        [99999, 3000]
-    ] as const) {
-        writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, pages: { width: written } }));
-        const state = new AppState(file);
-        state.load();
-        assert.equal(state.pageWidth(), expected);
-    }
-});
 
 // ── always on top ──────────────────────────────────────────────────────────
 

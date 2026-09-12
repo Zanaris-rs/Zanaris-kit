@@ -1,10 +1,13 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { PageView } from '../shared/pages';
+import type { PageState } from '../shared/panes';
 import { NavArrow, Reload } from './icons';
 
 /**
- * The reference pane's toolbar: back, forward, reload, and what the page calls
- * itself.
+ * A page pane's toolbar: back, forward, reload, and what the page calls itself.
+ *
+ * One per page pane rather than one per window, and it costs that pane's own
+ * height rather than the window's — the same rule as before, applied per pane
+ * now that a pane holds exactly one page.
  *
  * No address box. The pane shows the server's own curated links, main refuses
  * to open anything else, and a box that could only ever be read would be a
@@ -31,8 +34,8 @@ function Step({ label, on, disabled, children }: { label: string; on: () => void
     );
 }
 
-export default function PageToolbar({ view }: { view: PageView }): ReactNode {
-    const go = window.zanaris.pages.go;
+export default function PageToolbar({ view }: { view: PageState }): ReactNode {
+    const go = window.zanaris.panes.go;
     return (
         <div className="flex h-full items-center gap-[5px] px-1.5">
             <Step label="Back" disabled={!view.canGoBack} on={() => void go('back')}>

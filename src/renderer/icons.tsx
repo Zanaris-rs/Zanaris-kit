@@ -58,30 +58,6 @@ export function Bars(): ReactNode {
     );
 }
 
-/**
- * The panel toggle. Chrome rather than a tool, so it stays a stroked glyph in
- * the strip's own colour instead of becoming a sprite. It is drawn in the same
- * 18x18 box as the sprites at 1:1, which keeps its stroke the width the design
- * shows: scaling a 2px square-cut stroke is what makes it go soft.
- */
-export function PanelToggle(): ReactNode {
-    return (
-        <svg
-            width="18"
-            height="18"
-            viewBox="0 0 18 18"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            shapeRendering="crispEdges"
-        >
-            <rect x="3" y="4" width="12" height="10" />
-            <path d="M11.5 4v10" />
-        </svg>
-    );
-}
-
 /** Single player. A lit hearth on the stone: a warm flame over a dark grate, one flat sprite on the shared outline. */
 export function Hearth(): ReactNode {
     return (
@@ -89,32 +65,6 @@ export function Hearth(): ReactNode {
             <rect x="3" y="12" width="12" height="3.5" fill="#5a4a38" stroke={OUTLINE} strokeWidth="1.3" />
             <path d="M9 2.5c1.2 2 3.6 3.4 3.6 6.2A3.6 3.6 0 0 1 9 12.2a3.6 3.6 0 0 1-3.6-3.5c0-1.4.6-2.2 1.3-3 .1 1.1.6 1.7 1.3 1.9C7.7 5.4 8.2 3.8 9 2.5z" fill="#ffe139" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
             <path d="M9 7.4c.6 1 1.4 1.6 1.4 2.6A1.4 1.4 0 0 1 9 11.3a1.4 1.4 0 0 1-1.4-1.3c0-.9.8-1.6 1.4-2.6z" fill="#a70700" />
-        </svg>
-    );
-}
-
-/**
- * Move chat to the other edge. A block arrow driving into the edge it is aimed
- * at — a sprite like the tools rather than a stroked chrome glyph, because it
- * sits among the dock's own furniture rather than in the strip.
- *
- * One sprite serves both directions: a quarter turn is the whole difference
- * between "to the side" and "to the bottom", and two near-identical arrows
- * would be two arrows to keep in step. The label names the destination; this
- * only has to point at it.
- */
-export function MoveChat({ down = false }: { down?: boolean }): ReactNode {
-    return (
-        <svg
-            width="18"
-            height="18"
-            viewBox="0 0 18 18"
-            aria-hidden="true"
-            fill="none"
-            style={down ? { transform: 'rotate(90deg)' } : undefined}
-        >
-            <path d="M2 6.5h5V3.5L12 9l-5 5.5V11.5H2z" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
-            <rect x="14" y="2.5" width="2" height="13" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
         </svg>
     );
 }
@@ -153,22 +103,6 @@ export function CloseRoom(): ReactNode {
  * built from the same vocabulary: parchment cream, gold for the thing being
  * counted, one 1.2–1.3px outline, nothing stroked that could be filled.
  */
-
-/** Guides, the rail tab. The open book from the design sheet, which is what the list is a list of. */
-export function Book(): ReactNode {
-    return (
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
-            <path
-                d="M9 4.5C7.6 3 5.6 2.6 2.5 3v10.5c3-.4 5 0 6.5 1.5 1.5-1.5 3.5-1.9 6.5-1.5V3c-3.1-.4-5.1 0-6.5 1.5z"
-                fill="#ece7dc"
-                stroke={OUTLINE}
-                strokeWidth="1.2"
-                strokeLinejoin="round"
-            />
-            <path d="M9 4.5v10.5" stroke={OUTLINE} strokeWidth="1.2" />
-        </svg>
-    );
-}
 
 /** Forums. A notice pinned to a board — not a speech bubble, which Chat already owns. */
 function Forums(): ReactNode {
@@ -293,6 +227,21 @@ function PageLink(): ReactNode {
     );
 }
 
+export function Book(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
+            <path
+                d="M9 4.5C7.6 3 5.6 2.6 2.5 3v10.5c3-.4 5 0 6.5 1.5 1.5-1.5 3.5-1.9 6.5-1.5V3c-3.1-.4-5.1 0-6.5 1.5z"
+                fill="#ece7dc"
+                stroke={OUTLINE}
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+            />
+            <path d="M9 4.5v10.5" stroke={OUTLINE} strokeWidth="1.2" />
+        </svg>
+    );
+}
+
 const LINK_ICONS: Record<string, () => ReactNode> = {
     forums: Forums,
     coordinates: Coordinates,
@@ -336,27 +285,6 @@ export function Reload(): ReactNode {
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M14 9a5 5 0 1 1-1.6-3.7" strokeLinecap="round" />
             <path d="M14.3 2.6V6h-3.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-    );
-}
-
-/**
- * Collapse the pane, and bring it back. The same block arrow as MoveChat,
- * pointing at the edge the pane folds against — it is the same gesture, one
- * axis over.
- */
-export function PaneToggle({ open }: { open: boolean }): ReactNode {
-    return (
-        <svg
-            width="18"
-            height="18"
-            viewBox="0 0 18 18"
-            aria-hidden="true"
-            fill="none"
-            style={open ? undefined : { transform: 'scaleX(-1)' }}
-        >
-            <path d="M2 6.5h5V3.5L12 9l-5 5.5V11.5H2z" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
-            <rect x="14" y="2.5" width="2" height="13" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
         </svg>
     );
 }
