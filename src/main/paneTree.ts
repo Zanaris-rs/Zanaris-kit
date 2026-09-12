@@ -303,11 +303,18 @@ export function seamPixels(node: PaneNode, splitId: string, index: number, gross
     const here = found.children[index];
     const next = found.children[index + 1];
     if (!here || !next) return null;
-    const pair = found.fractions[index]! + found.fractions[index + 1]!;
+    // The sizes the split was actually drawn at, not the ones its fractions ask
+    // for. The two part company whenever `allocate` has had to pin somebody at
+    // their floor — which needs no illegal drag to reach, only a window that
+    // shrank, since nothing renormalises a fraction that was comfortable at one
+    // width and is under the floor at another. Reporting the fraction there
+    // would hand `Grip` a position the pane is not at, and every later key press
+    // would build on it.
+    const sizes = allocate(found.fractions, gross, found.children.map(child => minimumOf(child, found.axis)));
     return {
-        size: Math.round(found.fractions[index]! * gross),
+        size: sizes[index]!,
         min: minimumOf(here, found.axis),
-        max: Math.round(pair * gross) - minimumOf(next, found.axis)
+        max: sizes[index]! + sizes[index + 1]! - minimumOf(next, found.axis)
     };
 }
 

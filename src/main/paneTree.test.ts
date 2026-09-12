@@ -172,3 +172,25 @@ test('a pane knows the split it sits in, and a lone pane sits in none', () => {
     assert.equal(parentSplitOf(tree, 'c'), 's2', 'the nearest split, not the root');
     assert.equal(parentSplitOf(leaf('only', { kind: 'empty' }), 'only'), null);
 });
+
+test('a seam reports the size its pane was drawn at, not the size its fraction asked for', () => {
+    // Three panes in a container that can hold them, then one fraction driven
+    // far under the floor. `allocate` pins that pane at 120; the seam must say
+    // 120 too, because Grip builds its next request on what comes back — and a
+    // seam that answered with the fraction's raw ask would have every later
+    // key press aim from a position the pane is not at.
+    // Fractions that ask for less than the floor. Reachable without any illegal
+    // drag: a window shrinking renormalises nothing, so a share that was
+    // comfortable at one width is under the floor at another, and `allocate`
+    // pins the pane while the fraction stays where it was.
+    const tree = split(
+        's1',
+        'x',
+        [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' }), leaf('c', { kind: 'empty' }), leaf('d', { kind: 'empty' })],
+        [0.1, 0.1, 0.3, 0.5]
+    );
+    const rect = { x: 0, y: 0, width: 512, height: 300 };
+    const { panes, splits } = layoutTree(tree, rect);
+    assert.equal(panes.get('a')!.width, 120, 'drawn at the floor, not at the 50 its fraction asks for');
+    assert.equal(seamPixels(tree, 's1', 0, splits.get('s1')!)!.size, panes.get('a')!.width, 'and the seam reports the floor, not the fraction');
+});
