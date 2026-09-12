@@ -71,7 +71,21 @@ export const PAGE_TOOLBAR_HEIGHT = 32;
  * a pointer. This is the strip of shell left showing between them, and it is
  * the only thing there is to grab.
  */
-export const PAGE_SEAM = 4;
+/**
+ * The floor on any pane, on either axis.
+ *
+ * Deliberately far below anything useful: it is the point at which a pane
+ * stops being able to show that it exists, not the point at which its content
+ * is comfortable. What a given content *wants* is its preferred size, which
+ * the tree honours when first placing it and forgets thereafter — the user
+ * splitting a window into slivers is allowed to do that.
+ */
+export const PANE_MIN_WIDTH = 120;
+export const PANE_MIN_HEIGHT = 80;
+
+export const SEAM = 4;
+/** @deprecated The reference pane's name for {@link SEAM}, kept until `layout.ts` goes. */
+export const PAGE_SEAM = SEAM;
 
 /** How one axis accommodated its chrome: the window grew, grew and slid back onto the screen, or the content area gave way. */
 export type LayoutMode = 'widen' | 'shift' | 'push';
