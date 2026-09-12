@@ -1,9 +1,10 @@
 /** Channel names and payload types, shared by main, preload and the renderer so they can't drift. */
 import type { ServerDef } from './catalog';
-import type { LayoutMode, TabKind } from './layout';
+import type { LayoutMode } from './layout';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatHome, ChatView } from './chat';
 import type { HiscoresView } from './hiscores';
+import type { PagesView } from './pages';
 import type { SinglePlayerView } from './singleplayer';
 
 export const IPC = {
@@ -14,6 +15,13 @@ export const IPC = {
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
     worldsSetDetail: 'zanaris:worlds-set-detail',
+    pagesOpen: 'zanaris:pages-open',
+    pagesActivate: 'zanaris:pages-activate',
+    pagesClose: 'zanaris:pages-close',
+    pagesSetCollapsed: 'zanaris:pages-set-collapsed',
+    pagesSetWidth: 'zanaris:pages-set-width',
+    pagesGo: 'zanaris:pages-go',
+    pagesOpenExternal: 'zanaris:pages-open-external',
     hiscoresLookup: 'zanaris:hiscores-lookup',
     hiscoresOpenSite: 'zanaris:hiscores-open-site',
     chatState: 'zanaris:chat-state',
@@ -31,7 +39,7 @@ export const IPC = {
 } as const;
 
 /**
- * The tools a window can offer. Four so far; a registry is worth it when the
+ * The tools a window can offer. Five so far; a registry is worth it when the
  * list grows. This is the set, not the rail order — which tools a given window
  * offers and in what order is `serverWindow`'s to say, and it is deliberately
  * not spelled out again here: that order already lives in three places that
@@ -39,7 +47,7 @@ export const IPC = {
  * them cross-reference is the one that would go stale first and be believed
  * longest.
  */
-export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer'] as const;
+export const TOOL_IDS = ['worlds', 'hiscores', 'guides', 'chat', 'singleplayer'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
@@ -49,29 +57,32 @@ export interface Rect {
     height: number;
 }
 
-export interface TabInfo {
-    id: string;
-    kind: TabKind;
-    title: string;
-    url: string;
-    active: boolean;
-}
-
 export interface ShellState {
     windowId: number;
     server: ServerDef;
     slot: number;
     /** The window's title, which follows the world. */
     title: string;
-    tabs: TabInfo[];
+    /**
+     * What the strip says about the game: the server, its world, its detail
+     * and its latency. A read-out where a pinned game tab used to be — the
+     * game is never behind anything now, so there was nothing left to switch
+     * to and nothing for a tab to mean.
+     */
+    gameLabel: string;
     panelOpen: boolean;
     /** How each axis accommodated its chrome. The window moving and the game shrinking are different sentences, so both axes are kept rather than collapsed into one. */
     mode: { x: LayoutMode; y: LayoutMode };
     /** Where main placed things, relative to the window's content area, so the shell draws exactly there. */
     rects: {
         strip: Rect;
-        address: Rect | null;
         content: Rect;
+        /** The grabbable strip between the game and the pane. Null while the pane is not showing. */
+        seam: Rect | null;
+        /** Back, forward, reload and the page's title. Null while the pane is not showing. */
+        pageToolbar: Rect | null;
+        /** Where the active reference page's view sits. The shell leaves it empty. */
+        page: Rect | null;
         panel: Rect | null;
         rail: Rect;
         /** Only while the dock is open. Null while chat's home is the side column. */
@@ -92,6 +103,8 @@ export interface ShellState {
     worlds: WorldsView | null;
     /** Null when the server offers no hiscores — single player above all, where a one-player world has nothing to rank. */
     hiscores: HiscoresView | null;
+    /** The reference pane. Always present; a window with no links simply never opens one. */
+    pages: PagesView;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
     /** Where chat lives. App-wide: every window agrees. */
@@ -152,6 +165,30 @@ export interface ZanarisApi {
         lookup(name: string): Promise<void>;
         /** Opens the server's own hiscores page. */
         openSite(): Promise<void>;
+    };
+    pages: {
+        /**
+         * Opens one of this server's links in the pane, or brings it to the
+         * front when it is already open. Main checks the url against the
+         * window's own bookmarks and refuses anything else: there is no
+         * address box, so the shell has no business naming an arbitrary page.
+         */
+        open(url: string): Promise<void>;
+        activate(id: string): Promise<void>;
+        close(id: string): Promise<void>;
+        /** Hides the pane without closing it. The views stay alive, so nothing reloads when it comes back. */
+        setCollapsed(collapsed: boolean): Promise<void>;
+        /**
+         * Sets the pane's width in px. Resolves with the width main actually
+         * applied, after its own clamp — including when the request landed
+         * where the pane already was, so a caller sitting at a boundary always
+         * learns the true number rather than trusting its own guess.
+         */
+        setWidth(px: number): Promise<number>;
+        /** The pane's toolbar. Acts on the tab in front. */
+        go(where: 'back' | 'forward' | 'reload'): Promise<void>;
+        /** Opens one of this server's links in the system browser instead of the pane. Refused, like `open`, for anything that is not one of them. */
+        openExternal(url: string): Promise<void>;
     };
     singlePlayer: {
         /** Asks first when the world is running, since it restarts. */

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppState } from './appState.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
-import { DOCK_HEIGHT_MIN } from '../shared/layout.ts';
+import { DOCK_HEIGHT_MIN, PAGE_WIDTH_DEFAULT, PAGE_WIDTH_MIN } from '../shared/layout.ts';
 
 const dirs: string[] = [];
 const tempFile = (): string => {
@@ -422,4 +422,72 @@ test('setHiscoresName leaves the remembered worlds and chat settings alone', () 
     assert.deepEqual(b.world('lostcity'), REMEMBERED);
     assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
     assert.equal(b.hiscoresName('lostcity'), 'granny_grunt');
+});
+
+// ── the reference pane's width ─────────────────────────────────────────────
+
+test('the pane width defaults, survives a round trip, and is clamped to its floor', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.pageWidth(), PAGE_WIDTH_DEFAULT, 'a file with no pane block yet');
+
+    state.stagePageWidth(900);
+    state.save();
+    const again = new AppState(file);
+    again.load();
+    assert.equal(again.pageWidth(), 900);
+});
+
+test('a junk pane width costs only itself, not the rest of the file', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    state.setWarnOnSwitch(false);
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), pages: { width: 'wide' } }));
+
+    const again = new AppState(file);
+    again.load();
+    assert.equal(again.pageWidth(), PAGE_WIDTH_DEFAULT);
+    assert.equal(again.warnOnSwitch(), false, 'the rest of the file still read');
+});
+
+test('a hand-edited pane width is railed at both ends', () => {
+    const file = tempFile();
+    for (const [written, expected] of [
+        [10, PAGE_WIDTH_MIN],
+        [99999, 3000]
+    ] as const) {
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, pages: { width: written } }));
+        const state = new AppState(file);
+        state.load();
+        assert.equal(state.pageWidth(), expected);
+    }
+});
+
+// ── always on top ──────────────────────────────────────────────────────────
+
+test('always on top is off until asked for, and survives a round trip', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.alwaysOnTop(), false, 'a window that floats over everything is not a default');
+
+    state.setAlwaysOnTop(true);
+    const again = new AppState(file);
+    again.load();
+    assert.equal(again.alwaysOnTop(), true);
+});
+
+test('a junk always-on-top costs only itself, not the rest of the file', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    state.setWarnOnSwitch(false);
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), alwaysOnTop: 'yes' }));
+
+    const again = new AppState(file);
+    again.load();
+    assert.equal(again.alwaysOnTop(), false);
+    assert.equal(again.warnOnSwitch(), false, 'the rest of the file still read');
 });

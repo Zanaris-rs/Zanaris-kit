@@ -20,7 +20,7 @@ const TOOLS: readonly ToolId[] = TOOL_IDS;
  * tested against, not proof the window builds the same one. Reorder any of
  * them and the other two want the same edit.
  */
-const RAIL: readonly ToolId[] = ['chat', 'worlds', 'hiscores', 'singleplayer'];
+const RAIL: readonly ToolId[] = ['chat', 'worlds', 'hiscores', 'guides', 'singleplayer'];
 
 const base = (over: Partial<Placement> = {}): Placement => ({
     home: 'bottom',

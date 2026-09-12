@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, screen, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
@@ -10,7 +10,7 @@ import { Catalog } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
-import { installMenu, type MenuActions } from './menu';
+import { installMenu, type MenuActions, type MenuWindowState } from './menu';
 import { WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
 import { ChatService, offlineChat, tlsConnect } from './chat/service';
@@ -105,33 +105,42 @@ let update: LatestRelease | null = null;
 let singlePlayer: SinglePlayerService | null = null;
 
 /**
- * Whether the focused window's panel could open at all. Main decides it, from
- * the same rules that would refuse the open — a window whose only tool is chat,
- * with chat living in the dock, has no legal occupant for the side column — and
- * both the strip's toggle and the menu item below take their enabled state from
- * it rather than working it out a second time.
+ * The two menu items that belong to the focused window rather than to the app.
+ *
+ * Whether the panel could open at all is main's decision, from the same rules
+ * that would refuse the open — a window whose only tool is chat, with chat
+ * living in the dock, has no legal occupant for the side column — and both the
+ * strip's toggle and the menu item take their enabled state from it rather than
+ * working it out a second time. Whether the window is pinned is asked of the
+ * window itself, for the reason `alwaysOnTop` gives there.
+ *
+ * Both read false with nothing focused, which is what disables the two items:
+ * each acts on the focused window, and there is then no window to act on.
  */
-function panelAvailable(): boolean {
-    return focusedServerWindow()?.state().panelAvailable ?? false;
+function menuWindowState(): MenuWindowState {
+    const focused = focusedServerWindow();
+    return { panelAvailable: focused?.state().panelAvailable ?? false, alwaysOnTop: focused?.alwaysOnTop() ?? false };
 }
 
-/** What the menu was last built with, so the rebuild below only runs when the item would actually change. */
-let menuPanelAvailable = false;
+/** What the menu was last built with, so the rebuild below only runs when an item would actually change. */
+let menuWindow: MenuWindowState = { panelAvailable: false, alwaysOnTop: false };
 
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
-    menuPanelAvailable = panelAvailable();
-    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuPanelAvailable);
+    menuWindow = menuWindowState();
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow);
 }
 
 /**
- * One menu, many windows: the Toggle Panel item belongs to whichever window has
- * focus, so it is re-examined when focus moves, when a window closes out from
- * under it, and when chat's home changes app-wide — the three ways the answer
- * moves without the catalog, the warning or the update doing anything.
+ * One menu, many windows: Toggle Panel and Always on Top both belong to
+ * whichever window has focus, so they are re-examined when focus moves, when a
+ * window closes out from under them, and when chat's home changes app-wide —
+ * the ways either answer moves without the catalog, the warning or the update
+ * doing anything.
  */
-function syncMenuPanelItem(): void {
-    if (panelAvailable() !== menuPanelAvailable) installAppMenu();
+function syncMenuWindowItems(): void {
+    const now = menuWindowState();
+    if (now.panelAvailable !== menuWindow.panelAvailable || now.alwaysOnTop !== menuWindow.alwaysOnTop) installAppMenu();
 }
 
 /**
@@ -270,7 +279,7 @@ const windows = new ServerWindows((spec, onClosed) => {
             // Focus lands somewhere else, or nowhere, and the menu's panel item
             // belongs to whoever has it now. Closing the last window on macOS
             // fires no focus event at all, so it is done here as well.
-            syncMenuPanelItem();
+            syncMenuWindowItems();
         },
         {
             log,
@@ -281,6 +290,12 @@ const windows = new ServerWindows((spec, onClosed) => {
             chat: chatView,
             chatHome: () => appState.chat().dock,
             chatDockHeight: () => appState.chat().dockHeight,
+            pageWidth: () => appState.pageWidth(),
+            alwaysOnTop: () => appState.alwaysOnTop(),
+            rememberPageWidth: px => {
+                appState.stagePageWidth(px);
+                writeStagedStateWhenItSettles();
+            },
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
@@ -343,6 +358,23 @@ function setWarnOnSwitch(value: boolean): void {
     installAppMenu();
 }
 
+/**
+ * Pins the focused window, and remembers the choice for the windows opened
+ * after it. The doing is per window — four windows all claiming the top is four
+ * windows covering whatever each was pinned above — while what is written down
+ * is simply the last thing asked for anywhere, which is what a new window and
+ * the next launch start with.
+ *
+ * The menu is rebuilt from the window rather than from the number just saved:
+ * a window that refused the pin, or was destroyed between the click and here,
+ * must leave the checkbox unticked rather than claiming a state nothing is in.
+ */
+function setAlwaysOnTop(value: boolean): void {
+    focusedServerWindow()?.setAlwaysOnTop(value);
+    appState.setAlwaysOnTop(value);
+    installAppMenu();
+}
+
 const actions: MenuActions = {
     newWindow: () => {
         const focused = focusedServerWindow();
@@ -366,6 +398,7 @@ const actions: MenuActions = {
     },
     togglePanel: () => focusedServerWindow()?.togglePanel(),
     setWarnOnSwitch,
+    setAlwaysOnTop,
     // Only https reaches the system browser, as in serverWindow's window-open
     // handler: this opens whatever the menu carries, and the update item's url
     // came off the network.
@@ -452,6 +485,84 @@ ipcMain.handle(IPC.worldsSetDetail, async (event, detail: unknown) => {
  */
 const HISCORES_NAME_MAX = 30;
 
+// ── the reference pane ────────────────────────────────────────────────────
+
+/**
+ * The Guides list, the strip's tabs and the pane's own toolbar.
+ *
+ * Every one of these is a gesture in one window, so each finds its window from
+ * the sender and goes no further: unlike the chat dock, a pane belongs to the
+ * window it is in, and a drag here has no business resizing a pane over there.
+ *
+ * `pagesOpen` carries a url, and `openPage` checks it against that window's own
+ * bookmarks. There is no address box anywhere in the shell, so a url that is
+ * not one of the server's links can only be a bug or a compromised renderer,
+ * and a page view lives in a session shared with every other window's pages.
+ */
+ipcMain.handle(IPC.pagesOpen, (event, url: unknown) => {
+    if (typeof url !== 'string') return;
+    windowFor(event.sender)?.openPage(url);
+});
+
+ipcMain.handle(IPC.pagesActivate, (event, id: unknown) => {
+    if (typeof id !== 'string') return;
+    windowFor(event.sender)?.activatePage(id);
+});
+
+ipcMain.handle(IPC.pagesClose, (event, id: unknown) => {
+    if (typeof id !== 'string') return;
+    windowFor(event.sender)?.closePage(id);
+});
+
+ipcMain.handle(IPC.pagesSetCollapsed, (event, collapsed: unknown) => {
+    if (typeof collapsed !== 'boolean') return;
+    windowFor(event.sender)?.setPaneCollapsed(collapsed);
+});
+
+/**
+ * The seam. Clamping is main's, as it is for the dock: the ceiling depends on
+ * the display the dragging window is on, and a renderer is not something to
+ * take arithmetic on trust from.
+ *
+ * The applied width comes back on every path, including the ones that change
+ * nothing. A grip sitting at a boundary already reached has no way to tell its
+ * own guess was out of range unless it is told, and without the answer it would
+ * keep building the next request on a number main never held.
+ */
+ipcMain.handle(IPC.pagesSetWidth, (event, px: unknown): number => {
+    const sw = windowFor(event.sender);
+    if (!sw) return appState.pageWidth();
+    if (typeof px !== 'number' || !Number.isFinite(px)) return sw.state().pages.width;
+    return sw.setPaneWidth(px);
+});
+
+ipcMain.handle(IPC.pagesGo, (event, where: unknown) => {
+    if (where !== 'back' && where !== 'forward' && where !== 'reload') return;
+    windowFor(event.sender)?.pageGo(where);
+});
+
+/**
+ * The little square beside each link: this one outside the kit, please.
+ *
+ * Checked against the window's own bookmarks exactly as `pagesOpen` is — the
+ * two are the same list, and a handler that would hand any url to the system
+ * browser is a worse hole than one that would show it in a pane. https only,
+ * as everywhere else here: `servers.json` is a file the user edits by hand.
+ */
+ipcMain.handle(IPC.pagesOpenExternal, (event, url: unknown) => {
+    if (typeof url !== 'string') return;
+    const server = windowFor(event.sender)?.state().server;
+    if (!server?.bookmarks.some(b => b.url === url)) {
+        log(`[main] refused to open ${String(url)}: not one of that server's links`);
+        return;
+    }
+    if (!/^https:\/\//.test(url)) {
+        log(`[main] refused to open ${url}: not https`);
+        return;
+    }
+    void shell.openExternal(url);
+});
+
 /**
  * Awaited rather than fired and forgotten, though nothing is waiting on it
  * today. Nothing comes back over the wire — every row the panel draws arrives
@@ -498,13 +609,13 @@ ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
 /**
  * "Full hiscores" opens the server's own page in the system browser.
  *
- * The plan asked for a page tab in this window, and page tabs are not built:
- * `TabModel.open` exists and is tested, but nothing calls it, there is no view
- * for a page tab's content to draw in, and the strip's + and address row are
- * not wired. Waiting for them would leave the panel with a link that does
- * nothing, so the page opens outside the kit instead — a visible deviation from
- * the plan, which is why the panel's own label says where the link goes rather
- * than letting the browser window be how the user finds out.
+ * The reference pane could hold it now, but it deliberately does not: the pane
+ * shows the server's own curated links, and a hiscores page is not one of them
+ * — `openPage` refuses any url that is not in `server.bookmarks`, and widening
+ * that to "anything on an allowed host" would give the shell an address box it
+ * does not have. So the page opens outside the kit, and the panel's own label
+ * says where the link goes rather than letting the browser window be how the
+ * user finds out.
  *
  * https only, as in `openExternal` above and serverWindow's window-open
  * handler: `servers.json` is a file the user edits by hand, so this URL is no
@@ -607,7 +718,7 @@ ipcMain.handle(IPC.chatSetHome, (event, home: unknown) => {
     }
     // A home of 'bottom' takes chat out of the side column, which on a window
     // with no other tool leaves the panel with nothing it could open onto.
-    syncMenuPanelItem();
+    syncMenuWindowItems();
 });
 
 /**
@@ -616,12 +727,14 @@ ipcMain.handle(IPC.chatSetHome, (event, home: unknown) => {
  * sixty a second — writes once when the user lets go, short enough that
  * nothing plausible happens between the release and the write.
  */
-const DOCK_HEIGHT_SETTLE_MS = 400;
-let dockHeightWrite: NodeJS.Timeout | null = null;
+const DRAG_SETTLE_MS = 400;
+let stagedStateWrite: NodeJS.Timeout | null = null;
 
 /**
- * The height applies to every window's layout on the frame it arrives; only
- * the *write* waits for the drag to finish. AppState.save() is a synchronous
+ * A dragged number applies to the layout on the frame it arrives; only the
+ * *write* waits for the drag to finish. Both drags share this timer, because
+ * both stage into the same file and one save records whichever of them moved.
+ * AppState.save() is a synchronous
  * rewrite of the whole of state.json, and one per frame is two costs: on
  * Windows, where userData sits in a roamed and antivirus-scanned
  * AppData\Roaming, a multi-millisecond write per frame stutters the very drag
@@ -630,19 +743,19 @@ let dockHeightWrite: NodeJS.Timeout | null = null;
  * nick with it. (The write is not atomic, which is what makes that window a
  * real one — that predates the dock and is left alone here.)
  */
-function writeDockHeightWhenItSettles(): void {
-    if (dockHeightWrite) clearTimeout(dockHeightWrite);
-    dockHeightWrite = setTimeout(() => {
-        dockHeightWrite = null;
+function writeStagedStateWhenItSettles(): void {
+    if (stagedStateWrite) clearTimeout(stagedStateWrite);
+    stagedStateWrite = setTimeout(() => {
+        stagedStateWrite = null;
         appState.save();
-    }, DOCK_HEIGHT_SETTLE_MS);
+    }, DRAG_SETTLE_MS);
 }
 
-/** Writes a staged height now rather than on the timer. For the quit, which would otherwise leave the last drag of a session unremembered. */
-function flushDockHeight(): void {
-    if (!dockHeightWrite) return;
-    clearTimeout(dockHeightWrite);
-    dockHeightWrite = null;
+/** Writes staged values now rather than on the timer. For the quit, which would otherwise leave the last drag of a session unremembered. */
+function flushStagedState(): void {
+    if (!stagedStateWrite) return;
+    clearTimeout(stagedStateWrite);
+    stagedStateWrite = null;
     appState.save();
 }
 
@@ -673,7 +786,7 @@ ipcMain.handle(IPC.chatSetDockHeight, (event, px: unknown): number => {
     if (height === current) return height;
     appState.stageChat({ dockHeight: height });
     for (const other of serverWindows.values()) other.relayout();
-    writeDockHeightWhenItSettles();
+    writeStagedStateWhenItSettles();
     return height;
 });
 
@@ -723,6 +836,15 @@ ipcMain.handle(IPC.singlePlayerShowLog, async () => {
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
+/** `save` wants a capture that either produces an image or throws; a pane with nothing in it produces neither. */
+const shotOfThePage =
+    (sw: ServerWindow) =>
+    async (): Promise<NativeImage> => {
+        const image = await sw.capturePage();
+        if (!image) throw new Error('the pane is not showing a page');
+        return image;
+    };
+
 /**
  * Open every catalog server, wait for each game to load (or fail over to the
  * offline page), let the clients draw, then write each window's shell and game
@@ -730,7 +852,9 @@ const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(re
  * (the layout engine), and open a second instance of that server (slots and
  * partitions). A window's own webContents holds nothing, so the views are
  * captured one by one, and a view with no frame yet is skipped rather than
- * allowed to abort the run.
+ * allowed to abort the run. Last comes the reference pane: the Guides list,
+ * two pages open beside the game, and the first of them brought back to prove
+ * a tab switch did not reload it.
  */
 async function captureAndExit(dir: string): Promise<void> {
     mkdirSync(dir, { recursive: true });
@@ -876,7 +1000,7 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] ${id} switched to world ${target.id}: ${result}`);
                 await wait(Math.min(settleMs, 8_000));
                 await shoot(`${id}-w${target.id}`, hopper);
-                log(`[capture] tab now reads "${hopper.state().tabs[0]?.title}", title "${hopper.window.getTitle()}"`);
+                log(`[capture] the strip now reads "${hopper.state().gameLabel}", title "${hopper.window.getTitle()}"`);
                 log(`[capture] state file: ${existsSync(appState.file) ? readFileSync(appState.file, 'utf8').replace(/\s+/g, ' ') : '(none)'}`);
             }
 
@@ -988,6 +1112,60 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] singleplayer: ${single.state().singlePlayer?.status} on port ${single.state().singlePlayer?.port}`);
         }
 
+        // The reference pane. Last, because it is the one thing here that
+        // changes the window's width as well as its chrome, and every shot
+        // above is of a window whose game rect the pane has not touched.
+        //
+        // Three shots, because three separate claims are being made: the
+        // Guides list is a menu of this server's own links; a page renders
+        // beside the game rather than in front of it; and switching tabs does
+        // not reload — the last shot is the first page again, and its view was
+        // never destroyed, so what it photographs is the page as it was left.
+        // The reload claim is the pane's whole reason to exist and nothing
+        // else here can evidence it.
+        const reader = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.bookmarks.length > 0);
+        if (reader) {
+            const id = reader.state().server.id;
+            reader.window.moveTop();
+            reader.focus();
+            await wait(500);
+            showTool(reader, 'guides');
+            await wait(500);
+            log(`[capture] ${id} guides: ${reader.state().server.bookmarks.map(b => b.name).join(' · ')}`);
+            await shoot(`${id}-guides`, reader);
+
+            // Driven on the window rather than over IPC, as everything else
+            // here is: there is no renderer to send the request from.
+            for (const link of reader.state().server.bookmarks.slice(0, 2)) {
+                reader.openPage(link.url);
+                await wait(Math.min(settleMs, 8_000));
+            }
+            const pane = reader.state().pages;
+            log(
+                `[capture] ${id} pane: ${pane.tabs.map(t => t.label).join(' · ')} — showing "${pane.active?.title ?? 'nothing'}" (${pane.active?.url ?? '—'}) at ${pane.width}px, mode x ${reader.state().mode.x}`
+            );
+            await shoot(`${id}-pages`, reader);
+            // The page's own view, which neither half of shoot() reaches: the
+            // shell leaves the pane's rect empty and captureGame is the game.
+            // Without this the run could only claim a page loaded, never show one.
+            await save(`${id}-page`, shotOfThePage(reader));
+
+            const back = pane.tabs[0];
+            if (back) {
+                reader.activatePage(back.id);
+                // Generous, and not only for the page: capturePage hands back
+                // the last composited frame, and a view that has just been
+                // shown has not composited one yet.
+                await wait(Math.min(settleMs, 8_000));
+                const shown = reader.state().pages.active;
+                log(`[capture] ${id} switched back to ${back.label}: "${shown?.title ?? 'nothing'}" (${shown?.url ?? '—'}), ${shown?.loading ? 'still loading' : 'loaded'}`);
+                await shoot(`${id}-pages-back`, reader);
+                await save(`${id}-page-back`, shotOfThePage(reader));
+            }
+        } else {
+            log('[capture] pages skipped: no loaded window offers any links');
+        }
+
         const second = openServer(first.state().server);
         log(`[capture] ${second.state().title}: ${await loaded(second)}`);
         await wait(Math.min(settleMs, 8_000));
@@ -1005,6 +1183,12 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // The reference pages' shared session. They are somebody else's pages shown
+    // inside the kit, so they get the web and nothing else: no file the user
+    // did not ask for, and none of the permissions a browser would prompt over.
+    const pages = session.fromPartition('persist:pages');
+    pages.on('will-download', event => event.preventDefault());
+    pages.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     // Offline until a nick is set, which is why a capture run — whose profile has
     // none — never opens a socket.
     chat = new ChatService(appState.chat(), {
@@ -1075,7 +1259,7 @@ app.on('second-instance', () => {
 
 app.on('browser-window-focus', () => {
     reloadCatalogIfChanged();
-    syncMenuPanelItem();
+    syncMenuWindowItems();
 });
 
 /** Set once the world has been stopped for the quit, so the second quit goes through. */
@@ -1083,7 +1267,7 @@ let worldStoppedForQuit = false;
 app.on('before-quit', event => {
     quitting = true;
     // A height dragged and immediately quit on is still on the settle timer.
-    flushDockHeight();
+    flushStagedState();
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
     // The world writes the player's saves as it shuts down, so the quit waits for

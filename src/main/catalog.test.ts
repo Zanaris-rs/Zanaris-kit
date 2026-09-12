@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, statSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -51,7 +51,7 @@ test('the single-player entry runs on this computer and carries the engine revis
     assert.equal(typeof sp.revision, 'number');
     assert.equal(sp.worlds, null);
     assert.equal(sp.wiki?.home, 'https://2004.losthq.rs/');
-    assert.ok(sp.bookmarks.length >= 5);
+    assert.deepEqual(sp.bookmarks, [], 'the reference links are for the live servers, not a development world');
     assert.deepEqual(sp.hosts, ['127.0.0.1', '2004.losthq.rs', 'tools.losthq.rs']);
     for (const server of DEFAULT_SERVERS) assert.equal(server.kind, server.id === 'singleplayer' ? 'singleplayer' : 'remote');
 });
@@ -125,7 +125,33 @@ test('the built-ins carry the worlds, bookmarks and hiscores they should', () =>
         site: 'https://www.lostcitylabs.com/hiscores'
     });
     assert.equal(byId['singleplayer']!.hiscores, null, 'a one-player world has nobody to rank');
-    assert.ok(byId['lostcity']!.bookmarks.length >= 5);
+    // The reference links, and the whole of the per-server gating: Lost City's
+    // own forums and prices mean nothing on another server, so only it gets them.
+    const names = (id: string): string[] => byId[id]!.bookmarks.map(b => b.name);
+    assert.deepEqual(names('lostcity'), [
+        'Forums',
+        'Coordinates',
+        'Clue Help',
+        'Puzzle Solver',
+        'World Map',
+        'Markets',
+        'Quest Guides',
+        'Skill Guides',
+        'Skills Calculator',
+        'Bestiary',
+        'Item Database'
+    ]);
+    assert.deepEqual(
+        names('zanaris'),
+        names('lostcity').filter(n => n !== 'Forums' && n !== 'Markets')
+    );
+    assert.deepEqual(names('lostcitylabs'), [], 'no wiki, no links');
+    assert.deepEqual(names('singleplayer'), []);
+    // Two slugs do not match their names, and getting either wrong is a link
+    // that quietly lands on the wrong page.
+    const urlOf = (name: string): string => byId['lostcity']!.bookmarks.find(b => b.name === name)!.url;
+    assert.equal(urlOf('Bestiary'), 'https://2004.losthq.rs/?p=droptables');
+    assert.equal(urlOf('Skills Calculator'), 'https://2004.losthq.rs/?p=calculators');
     assert.equal(byId['zanaris']!.worlds?.source.kind, 'zanaris');
     assert.equal(byId['zanaris']!.worlds?.defaultWorld, 1);
     assert.equal(byId['lostcitylabs']!.worlds?.source.kind, 'static');
@@ -138,6 +164,23 @@ test('the built-ins carry the worlds, bookmarks and hiscores they should', () =>
     }
 });
 
+test('every link a server ships is on a host that server allows', () => {
+    // A page tab may only visit `hosts`, so a link whose host is missing from
+    // it does not open in the pane at all — it bounces to the system browser,
+    // silently, and looks like the link is broken.
+    for (const server of DEFAULT_SERVERS) {
+        for (const b of server.bookmarks) {
+            assert.ok(server.hosts.includes(hostOf(b.url)), `${server.id}: ${b.name} needs ${hostOf(b.url)} in hosts`);
+        }
+    }
+});
+
+test('every link names a sprite, so none of them draws the fallback', () => {
+    for (const server of DEFAULT_SERVERS) {
+        for (const b of server.bookmarks) assert.ok(b.icon, `${server.id}: ${b.name} has no icon`);
+    }
+});
+
 test('every built-in entry validates and lists its own game host', () => {
     const ids = DEFAULT_SERVERS.map(s => s.id);
     assert.equal(new Set(ids).size, ids.length, 'ids are unique');
@@ -145,11 +188,12 @@ test('every built-in entry validates and lists its own game host', () => {
         assert.ok(isServerDef(server), `${server.id} must validate`);
         assert.ok(server.hosts.includes(hostOf(server.url)), `${server.id} must allow its own host`);
         if (server.wiki) assert.ok(server.hosts.includes(hostOf(server.wiki.home)), `${server.id} must allow its wiki host`);
-        // `hosts` is the allowlist page tabs will consult once they land, and
-        // "Full hiscores" names a page a tab ought to be able to open, so the
-        // site's host belongs on it — even while that link goes out to the
-        // system browser instead, page tabs being unbuilt. The list is not
-        // idle in the meantime: `Catalog.refreshHiscores` tests a stored
+        // `hosts` is the allowlist the reference pane consults, and "Full
+        // hiscores" names a page the pane ought to be able to show, so the
+        // site's host belongs on it — even though that particular link goes out
+        // to the system browser, the pane being for the server's own curated
+        // links rather than for any url. The list has a second reader, which is
+        // why pruning it is never free: `Catalog.refreshHiscores` tests a stored
         // entry's own url host against this same array before it will adopt a
         // built-in's lookup, so these arrays are read on every launch and
         // pruning one is never free.
@@ -704,4 +748,105 @@ test('list returns copies', () => {
     catalog.load();
     catalog.list()[0]!.hosts.push('evil.example');
     assert.equal(catalog.list()[0]!.hosts.includes('evil.example'), false);
+});
+
+// ── the link lists, which belong to the kit rather than to the file ────────
+
+test('a stored built-in picks up links the kit has added since, and the hosts they need', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    const stored = servers.find(s => s.id === 'lostcity')!;
+    // The list as an older kit shipped it, on the hosts that kit allowed.
+    stored.bookmarks = [{ name: 'Quest guides', url: 'https://2004.losthq.rs/?p=questguides' }];
+    stored.hosts = ['w5-2004.lostcity.rs', '2004.losthq.rs'];
+    writeFileSync(file, JSON.stringify({ version: 4, servers }));
+    const catalog = new Catalog(file);
+    catalog.load();
+
+    const loaded = catalog.get('lostcity')!;
+    assert.equal(catalog.recovered, false, "adopting the kit's own links is not a recovery");
+    assert.deepEqual(loaded.bookmarks, DEFAULT_SERVERS.find(s => s.id === 'lostcity')!.bookmarks);
+    assert.ok(loaded.hosts.includes('lostcity.rs') && loaded.hosts.includes('razgals.github.io'));
+    assert.ok(loaded.hosts.includes('w5-2004.lostcity.rs'), 'and nothing the file already allowed is taken away');
+    // Rewritten, so the next launch does not do it all again.
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
+    assert.equal(written.servers.find(s => s.id === 'lostcity')!.bookmarks.length, 11);
+});
+
+test('a link added by hand survives the refresh; one the kit has retired does not', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    const stored = servers.find(s => s.id === 'zanaris')!;
+    stored.bookmarks = [
+        { name: 'Markets', url: 'https://markets.lostcity.rs' },
+        { name: 'My notes', url: 'https://example.com/notes' }
+    ];
+    writeFileSync(file, JSON.stringify({ version: 4, servers }));
+    const catalog = new Catalog(file);
+    catalog.load();
+
+    const loaded = catalog.get('zanaris')!;
+    assert.equal(
+        loaded.bookmarks.some(b => b.name === 'Markets'),
+        false,
+        "Markets moved to Lost City alone, and is the kit's to retire"
+    );
+    assert.deepEqual(loaded.bookmarks.at(-1), { name: 'My notes', url: 'https://example.com/notes' }, "the hand-added one is kept, after the kit's");
+    assert.equal(loaded.bookmarks.length, 10);
+});
+
+test('the refresh is idempotent: a file already current is not rewritten', () => {
+    const file = tempFile();
+    const catalog = new Catalog(file);
+    catalog.load();
+    const first = readFileSync(file, 'utf8');
+    const mtime = statSync(file).mtimeMs;
+    const again = new Catalog(file);
+    again.load();
+    assert.equal(readFileSync(file, 'utf8'), first);
+    assert.equal(statSync(file).mtimeMs, mtime, 'nothing changed, so nothing was written');
+});
+
+test('an entry that merely took a built-in id keeps its own links', () => {
+    const file = tempFile();
+    const mine: ServerDef = {
+        id: 'lostcity',
+        kind: 'remote',
+        name: 'Lost City',
+        url: 'https://my-private-world.example/rs2.cgi',
+        revision: 274,
+        wiki: null,
+        map: null,
+        hosts: ['my-private-world.example'],
+        notes: null,
+        worlds: null,
+        bookmarks: [{ name: 'Mine', url: 'https://example.com/' }],
+        hiscores: null
+    };
+    writeFileSync(file, JSON.stringify({ version: 4, servers: [mine] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    const loaded = catalog.get('lostcity')!;
+    assert.deepEqual(loaded.bookmarks, [{ name: 'Mine', url: 'https://example.com/' }], 'it is not on a Lost City host, so it is not Lost City');
+    assert.deepEqual(loaded.hosts, ['my-private-world.example']);
+});
+
+test('a link one built-in ships and another does not is not appended again on every launch', () => {
+    // The refresh keeps a stored bookmark the kit has never shipped *anywhere*.
+    // Tested against Lost City's own Forums on the Zanaris entry, which is
+    // exactly the shape a future server-specific link would have: shipped by
+    // one built-in, absent from another's list, and therefore retired rather
+    // than mistaken for the user's and duplicated.
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    servers.find(s => s.id === 'zanaris')!.bookmarks.push({ name: 'Forums', url: 'https://lostcity.rs', icon: 'forums' });
+    writeFileSync(file, JSON.stringify({ version: 4, servers }));
+
+    for (let launch = 0; launch < 3; launch++) {
+        const catalog = new Catalog(file);
+        catalog.load();
+        const zanaris = catalog.get('zanaris')!;
+        assert.deepEqual(zanaris.bookmarks, DEFAULT_SERVERS.find(s => s.id === 'zanaris')!.bookmarks, `launch ${launch + 1}`);
+        assert.equal(new Set(zanaris.bookmarks.map(b => b.url)).size, zanaris.bookmarks.length, 'and never a duplicate row');
+    }
 });

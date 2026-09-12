@@ -38,6 +38,15 @@ const api: ZanarisApi = {
         lookup: name => ipcRenderer.invoke(IPC.hiscoresLookup, name),
         openSite: () => ipcRenderer.invoke(IPC.hiscoresOpenSite)
     },
+    pages: {
+        open: url => ipcRenderer.invoke(IPC.pagesOpen, url),
+        activate: id => ipcRenderer.invoke(IPC.pagesActivate, id),
+        close: id => ipcRenderer.invoke(IPC.pagesClose, id),
+        setCollapsed: collapsed => ipcRenderer.invoke(IPC.pagesSetCollapsed, collapsed),
+        setWidth: px => ipcRenderer.invoke(IPC.pagesSetWidth, px),
+        go: where => ipcRenderer.invoke(IPC.pagesGo, where),
+        openExternal: url => ipcRenderer.invoke(IPC.pagesOpenExternal, url)
+    },
     singlePlayer: {
         setCheats: on => ipcRenderer.invoke(IPC.singlePlayerSetCheats, on),
         retry: () => ipcRenderer.invoke(IPC.singlePlayerRetry),

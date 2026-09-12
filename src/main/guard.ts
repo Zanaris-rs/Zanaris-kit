@@ -43,3 +43,30 @@ export function decideNavigation(nav: { current: string; target: string; expecte
     if (expectedOrigin !== null && target.origin === expectedOrigin) return 'block';
     return 'open-external';
 }
+
+/**
+ * What to do with a navigation a reference page started.
+ *
+ * A page tab is a browser, so within the server's allowlist it simply browses:
+ * LostHQ's guides link to each other constantly, and a clue page that could
+ * not reach the next clue page would not be worth opening. Everything else
+ * goes to the system browser rather than being followed here, where the
+ * session is shared by every window's pages and nothing has asked the user
+ * whether they meant to leave.
+ *
+ * The match is on `URL.host` — port included — and is exact. `hosts` has
+ * always enumerated hosts one by one, and a wildcard would quietly hand a
+ * whole domain to whoever can get a subdomain on it; the `local` entry's host
+ * carries a port, which `hostname` would drop.
+ */
+export function decidePageNavigation(nav: { target: string; hosts: readonly string[] }): 'allow' | 'open-external' | 'block' {
+    let target: URL;
+    try {
+        target = new URL(nav.target);
+    } catch {
+        return 'block';
+    }
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return 'block';
+    const host = target.host.toLowerCase();
+    return nav.hosts.some(allowed => allowed.toLowerCase() === host) ? 'allow' : 'open-external';
+}

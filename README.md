@@ -4,12 +4,13 @@ An Electron client that opens several 04scape servers at once, one window per
 server, where every window knows which server it is running and can hop
 between that server's worlds.
 
-**Status: single player — a world this computer runs — on top of milestone
-two of the server-windows design.** Server windows with the pinned game tab,
-the rail and panel, the widen / shift / push layout engine, and the Worlds
-tool: a world list with players and latency, a low / high detail switch, and
-the last world remembered per server. Page tabs, timers, screenshots and the
-other tools follow. The design is in
+**Status: the reference pane — LostHQ beside the game — on top of single
+player and milestone two of the server-windows design.** Server windows with
+the strip, the rail and panel, the widen / shift / push layout engine, the
+Worlds tool (a world list with players and latency, a low / high detail
+switch, and the last world remembered per server), and the Guides list: this
+server's reference links, opening as tabs in a pane beside the game that stay
+exactly as you left them. Timers, screenshots and the other tools follow. The design is in
 `docs/superpowers/specs/2026-09-05-server-windows-design.md`, which also maps
 LostHQ's LostKit 2 onto it; the plans are under `docs/superpowers/plans/`.
 
@@ -50,11 +51,12 @@ startup the app opens the first server in the catalog, Lost City. On macOS the
 app keeps running with no windows and the dock menu opens one; elsewhere
 closing the last window quits, since the menu lives in the window.
 
-A **server window** is bound to one catalog entry for its whole life. Its tab
-strip starts with the pinned game tab, which reads "Lost City · W5 · low ·
-43 ms": the server, the world, the detail level and the latency to that
-world's host, measured every ten seconds. A rail runs down the right edge; its
-first tool is **Worlds**. The panel it opens (or Cmd/Ctrl+\) shows Low / High
+A **server window** is bound to one catalog entry for its whole life. Its
+strip starts with a badge reading "Lost City · W5 · low · 43 ms": the server,
+the world, the detail level and the latency to that world's host, measured
+every ten seconds. The game is never behind anything, so that is a read-out
+rather than a tab — what follows it are the reference pages this window has
+open. A rail runs down the right edge; its first tool is **Worlds**. The panel it opens (or Cmd/Ctrl+\) shows Low / High
 detail, then every world with region, players online, members or free, and
 latency, the current world marked. Choosing a world loads it in the same
 window; flipping detail reloads the current world. The world and detail you
@@ -72,6 +74,14 @@ partition (`persist:server:<id>:2`) and the title "Lost City — World 5 (2)",
 so two accounts on one server never share cookies or client prefs. Slot
 numbers are reused once a window closes.
 
+**View > Always on Top** pins the window you are in above other apps, so the
+game stays visible while you are reading something outside the kit. It pins
+the focused window rather than all of them — four windows all claiming the top
+is four windows covering whatever each was pinned above — and the checkbox
+follows focus, so it reads the window in front of you and is greyed out when
+none is. What is remembered is simply the last thing you asked for: windows
+opened after it, and the next launch, start pinned or unpinned to match.
+
 **Hiscores** is the rail's other server tool, offered for the three remote
 servers only — a one-player world has nobody to rank, so single player never
 gets it. A name box and a Look up button sit above a Skill · Rank · Lvl · XP
@@ -88,9 +98,31 @@ genuine tenth the client keeps internally; main's parser floors it away before
 the panel ever sees it, matching the whole numbers Zanaris and Labs already
 send, which is the one place comparing the panel against the raw API will look
 wrong without being wrong. The **Full hiscores** link at the foot opens the
-server's own page in your system browser rather than a tab in this window —
-page tabs are not built yet, so the label says where the link goes rather than
-leaving a new window to explain itself.
+server's own page in your system browser rather than in the reference pane —
+the pane shows the server's own curated links and refuses anything else, so the
+label says where the link goes rather than leaving a new window to explain
+itself.
+
+**Guides** is the way into the reference pane. Its panel lists this server's
+links, in order — for Lost City: Forums, Coordinates, Clue Help, Puzzle
+Solver, World Map, Markets, Quest Guides, Skill Guides, Skills Calculator,
+Bestiary and Item Database; for Zanaris the nine of those that are not Lost
+City's own forums and prices; for Lost City Labs and single player nothing, so
+the tool never appears on their rails. Clicking one opens it as a tab in a pane beside the game, and
+leaves the list up so the next one is another click. The pane is a column of
+its own rather than something laid over the game, and opening it widens the
+window rather than taking the width out of the game — until the display runs
+out of room, where the give-way order under **Layout** below takes over.
+
+Each tab keeps its own live view for as long as it is open, so switching
+between them is instant and nothing reloads — a half-filled coordinate
+lookup, a map panned to where you are standing and a drop table scrolled to
+the right row are all still there when you come back to them. The pane has
+back, forward and reload and no address box: it browses freely within the
+hosts that server allows, and a link off them opens in your system browser
+instead. The seam between the game and the pane can be dragged, and where you
+leave it is where the next pane opens. Closing the last tab closes the pane;
+the control in the strip hides it without closing anything.
 
 **Single player** needs no server at all: the kit carries the Lost City engine
 and the game's files, and File > New Window For > Single player starts a world
@@ -232,8 +264,10 @@ seeded on first run, one entry per server, now at file version 4:
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 `{url}` and `{lowmem}`, whether detail is switchable, the default world),
-`bookmarks` for the page-tab menu that arrives next milestone (LostHQ's
-guides, the clue coordinator, the world map, markets), the `hosts` page tabs
+`bookmarks` — the reference links the Guides list offers, which is also the
+whole of which servers offer it: Lost City has eleven including its own forums
+and prices, Zanaris the nine that are not Lost City's, and Labs and single
+player none, so the tool never reaches their rails — the `hosts` those pages
 may visit, and a wiki URL that never claims which revision it describes, since
 losthq moves on its own schedule. The three remote entries also carry a
 `hiscores` block: a `source` — a `kind` naming which of the three lookup APIs
@@ -331,10 +365,15 @@ The active mode is stated per axis rather than silently substituted — "the
 window moved left" and "the height came out of the game area" are
 different sentences, and hitting both at once deserves both.
 
-The two axes disagree, on purpose, about who gives way first. On x, `push`
-shrinks the content because the panel is one of several tools sharing a 320px
-column and can simply be closed, so the content rect still never drops below
-765 wide unless the user shrinks the window that far themselves. On y the
+The two axes disagree, on purpose, about who gives way first. On x the game
+gives up whatever it has above its canvas, and then the chrome is spent in the
+order of how little the user asked for it: the panel first, all the way to
+nothing, because it is one of several tools sharing a 320px column and closing
+it is one click on the rail; then the reference pane, down to the 480px below
+which a page stops being readable; and only past both does the content rect go
+under 765 wide. That last step is new — a 1440px display cannot hold 765 of
+game, 720 of pane, 320 of panel and the rail at once — and collapsing the pane
+is the click that undoes it. On y the
 dock holds the conversation the user just asked to see, and a chat window
 that silently becomes nothing is worse than a game canvas a few pixels
 shorter — so the dock is the one thing here that never gets silently
@@ -468,7 +507,7 @@ src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/main/layout.ts          pure: window and view rects; widen / shift / push        (tested)
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
-src/main/tabs.ts            pure: the pinned game tab and page tabs                 (tested)
+src/main/pagePane.ts        pure: the reference pane's tabs, collapse and width      (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
 src/main/chatDock.ts        pure: where chat lives, and what the side column shows  (tested)
@@ -500,9 +539,10 @@ the reload button) is parked in `git stash`.
 
 ## Next
 
-3. **Page tabs.** `+` with the server's bookmarks, the address row, wiki
-   search, the map action, the per-server host allowlist, per-tab zoom.
+3. **The reference pane, beyond the links.** An address row and wiki search,
+   per-tab zoom, tearing a page off into its own window, and reopening the
+   pages that were open at quit.
 4. **Shared tools.** Screenshot cropped to the canvas, timers with an AFK
-   reset, notes, settings, always-on-top.
+   reset, notes, settings.
 5. **Chat.** IRC on SwiftIRC, joining `#LostHQ` and `#LostCity`.
 6. **Server tools.** Clue lookup and calculators, with the data pack loader.

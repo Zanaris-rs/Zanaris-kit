@@ -195,10 +195,12 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
             {view.site && (
                 <p className="px-2.5 pb-2 text-[12px]">
                     {/*
-                     * This leaves the kit. The plan wanted the server's page as a tab
-                     * in this window, but page tabs are not built — so it opens in the
-                     * system browser, and the label says so rather than letting the
-                     * window that appears be the way the user finds out.
+                     * This leaves the kit, and not for want of somewhere to put it:
+                     * the reference pane could hold it, but the pane shows the
+                     * server's own curated links and main refuses any url that is
+                     * not one of them. So it opens in the system browser, and the
+                     * label says so rather than letting the window that appears be
+                     * the way the user finds out.
                      */}
                     <button type="button" onClick={() => void window.zanaris.hiscores.openSite()} className="link">
                         Full hiscores <span className="text-dim">— opens in your browser</span>

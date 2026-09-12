@@ -1,4 +1,4 @@
-import { app, Menu, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
 import type { LatestRelease } from './update';
@@ -13,6 +13,8 @@ export interface MenuActions {
     togglePanel(): void;
     /** Whether a world or detail switch is confirmed before it reloads the game. */
     setWarnOnSwitch(value: boolean): void;
+    /** Pins the focused window above other apps, and remembers the choice for the windows opened after it. */
+    setAlwaysOnTop(value: boolean): void;
     /** Opens a web page in the system browser: the release page, the repository. */
     openExternal(url: string): void;
 }
@@ -22,15 +24,29 @@ export interface MenuActions {
  * Native menus follow the platform's Title Case; everything the renderer
  * draws is sentence case. Rebuilt whenever the catalog changes so the server
  * submenu stays current, whenever the switch warning is turned on or off so
- * its checkbox agrees, when the focused window's panel becomes available or
- * stops being, and once more when a newer release is found.
+ * its checkbox agrees, when either of the two window-scoped items below would
+ * change, and once more when a newer release is found.
  *
- * `panelAvailable` is the one input here that belongs to a window rather than
- * the app: there is one menu for every window, so it tracks whichever window
- * has focus, and is false when none does — the toggle acts on the focused
- * window and there is nothing for it to act on.
+ * `window` holds the inputs that belong to a window rather than to the app:
+ * there is one menu for every window, so they track whichever has focus, and
+ * both read false when none does — each item acts on the focused window, and
+ * with no focus there is nothing for either to act on. Everything else here is
+ * the app's and is the same whatever is in front.
  */
-export function installMenu(servers: readonly ServerDef[], actions: MenuActions, warnOnSwitch: boolean, update: LatestRelease | null, panelAvailable: boolean): void {
+export interface MenuWindowState {
+    /** Whether the focused window's side column has anything that could open in it. */
+    panelAvailable: boolean;
+    /** Whether the focused window is pinned above other apps. */
+    alwaysOnTop: boolean;
+}
+
+export function installMenu(
+    servers: readonly ServerDef[],
+    actions: MenuActions,
+    warnOnSwitch: boolean,
+    update: LatestRelease | null,
+    window: MenuWindowState
+): void {
     const isMac = process.platform === 'darwin';
     const serverItems = (): MenuItemConstructorOptions[] =>
         servers.length === 0
@@ -61,7 +77,17 @@ export function installMenu(servers: readonly ServerDef[], actions: MenuActions,
                 // Disabled rather than hidden where the panel has no legal
                 // occupant — a chat-only server with chat in the dock — so the
                 // shortcut reads as unavailable here instead of broken.
-                { label: 'Toggle Panel', accelerator: 'CmdOrCtrl+\\', enabled: panelAvailable, click: () => actions.togglePanel() },
+                { label: 'Toggle Panel', accelerator: 'CmdOrCtrl+\\', enabled: window.panelAvailable, click: () => actions.togglePanel() },
+                // Acts on the focused window and reads back from it, so with
+                // nothing focused it is disabled rather than showing the
+                // remembered value as though some window were wearing it.
+                {
+                    label: 'Always on Top',
+                    type: 'checkbox',
+                    checked: window.alwaysOnTop,
+                    enabled: BrowserWindow.getFocusedWindow() !== null,
+                    click: item => actions.setAlwaysOnTop(item.checked)
+                },
                 { type: 'separator' },
                 { role: 'togglefullscreen' },
                 { role: 'toggleDevTools' }

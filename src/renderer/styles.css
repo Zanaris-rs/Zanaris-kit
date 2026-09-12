@@ -272,36 +272,47 @@ input {
 }
 
 /*
- * The dock's resize grip. It sits exactly on the groove `.dock`'s own
- * box-shadow already draws along the top, inside the border rather than
- * before it, and paints nothing of its own at rest — the groove alone reads
- * as the seam. Hover and focus are what turn it into a control: a highlight
- * that was there all the time would be a second line drawn across the window
- * on every server the dock ever opens on, whether anyone meant to grab it or
- * not.
+ * The two resize grips: the dock's top edge and the reference pane's seam.
+ *
+ * The dock's sits exactly on the groove `.dock`'s own box-shadow already draws
+ * along the top, inside the border rather than before it. The pane's is the
+ * strip of shell main leaves between the game view and the page view, which is
+ * the only thing there is to grab: both of those are native views stacked
+ * above everything drawn on this side.
+ *
+ * Neither paints anything of its own at rest — the groove and the dark gap
+ * already read as seams. Hover and focus are what turn one into a control: a
+ * highlight that was there all the time would be a second line drawn across
+ * the window whenever the dock or the pane is open, whether anyone meant to
+ * grab it or not.
  */
-.dock-grip {
-    cursor: ns-resize;
+.grip {
     /* A custom pointer drag, not a scroll or a browser gesture. */
     touch-action: none;
 }
-.dock-grip:hover {
+.grip-y {
+    cursor: ns-resize;
+}
+.grip-x {
+    cursor: ew-resize;
+}
+.grip:hover {
     background: rgba(255, 255, 255, 0.16);
 }
 /*
- * Focus does not get the global gold ring. The grip's top edge is flush with
- * the game's own view — a separate native WebContentsView stacked above
- * everything the shell draws, reachable by no z-index on this side — and its
- * right edge, when the dock runs under an open panel, sits exactly on the
- * rail, a later DOM sibling that paints over anything bleeding past the
- * dock's own box. A ring drawn outward from a strip this thin loses both of
- * those edges: a partial frame, not a focus indicator. `outline: none` here
+ * Focus does not get the global gold ring. A grip's edges are flush with
+ * native WebContentsViews — the game, and the pane's page — which are stacked
+ * above everything the shell draws and reachable by no z-index on this side;
+ * the dock's right edge, when it runs under an open panel, sits exactly on
+ * the rail, a later DOM sibling that paints over anything bleeding past the
+ * dock's own box. A ring drawn outward from a strip this thin loses those
+ * edges: a partial frame, not a focus indicator. `outline: none` here
  * is not the usual anti-pattern of deleting the indicator — it is replaced by
  * a fill entirely inside the grip's own 4px, which nothing can paint over,
  * the same way `.tab-on` shows "selected" as lit stone rather than a ring
  * around a tab.
  */
-.dock-grip:focus-visible {
+.grip:focus-visible {
     outline: none;
     background: var(--color-gold);
 }

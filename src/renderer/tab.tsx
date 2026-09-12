@@ -51,8 +51,20 @@ export default function Tab({
     /** The detail some tabs carry to the right of the label: a revision, an unread count. */
     after?: ReactNode;
 }): ReactNode {
-    /* The open tab is a raised tile; the rest are tabs cut into the stone. */
-    const skin = `flex items-center gap-[7px] px-2.5 ${open ? 'tile' : 'tab text-dim'}`;
+    /*
+     * One pair of faces for both states, the rail's own: resting is a tab cut
+     * into the stone, open lifts to the lit face above it.
+     *
+     * The open one used to be a `.tile`, which is the *same* fill as the bar it
+     * sits on — so it read as the background with an outline round it, while
+     * the resting tab, darker and shadowed from above-left, was the only tab on
+     * the strip with a strong physical read. The eye picked the resting one as
+     * the open one. Lit stone is a step above the bar rather than level with
+     * it, which is the whole of the fix, and it is what the rail has always
+     * done. It also settles a wobble: `.tile` is a 2px border and `.tab` a 1px
+     * one, so a tab used to change size by two pixels on being opened.
+     */
+    const skin = `flex items-center gap-[7px] px-2.5 ${open ? 'tab tab-on' : 'tab text-dim'}`;
     /* A real button already has the role it needs, so only the strip's read-out names one. */
     const announce: { role?: 'tab'; 'aria-selected'?: boolean; 'aria-current'?: true } =
         role === 'tab' ? { role: 'tab', 'aria-selected': open } : { 'aria-current': open || undefined };

@@ -8,16 +8,36 @@ import { isWorldsDef } from './worlds/sources.ts';
 /** LostHQ has no discoverable search endpoint (its index.php?search= returns the homepage). */
 const LOSTHQ: WikiDef = { home: 'https://2004.losthq.rs/', search: null };
 
-/** Pages LostHQ serves today, plus the tools LostKit's nav bar links to. */
-const LOSTHQ_BOOKMARKS: Bookmark[] = [
-    { name: 'Quest guides', url: 'https://2004.losthq.rs/?p=questguides' },
-    { name: 'Skill guides', url: 'https://2004.losthq.rs/?p=skillguides' },
-    { name: 'Clue help', url: 'https://2004.losthq.rs/?p=clueguides' },
-    { name: 'Item database', url: 'https://2004.losthq.rs/?p=itemdb' },
-    { name: 'Skills calculator', url: 'https://2004.losthq.rs/?p=calculators' },
-    { name: 'Clue coordinates', url: 'https://tools.losthq.rs/cluecoordinator/' },
-    { name: 'World map', url: 'https://tools.losthq.rs/map' }
+/**
+ * The reference links the Guides list offers, in the order it draws them.
+ *
+ * These are the community's own tools, not ours, and two of the slugs do not
+ * match their names — the bestiary is served at `?p=droptables`, the skills
+ * calculator at `?p=calculators` — so they are written out rather than
+ * derived. `icon` names a sprite the renderer knows; see `iconFor` there.
+ *
+ * Which servers get which of them is the whole of the per-server gating, and
+ * it lives here as data rather than as a condition anywhere else: a window
+ * offers the Guides tool exactly when its entry has bookmarks.
+ */
+const GUIDE_LINKS: Bookmark[] = [
+    { name: 'Coordinates', url: 'https://tools.losthq.rs/cluecoordinator/', icon: 'coordinates' },
+    { name: 'Clue Help', url: 'https://2004.losthq.rs/?p=clueguides', icon: 'cluehelp' },
+    { name: 'Puzzle Solver', url: 'https://razgals.github.io/Clue-Puzzle-Solver-Standalone/', icon: 'puzzle' },
+    { name: 'World Map', url: 'https://tools.losthq.rs/map', icon: 'worldmap' },
+    { name: 'Quest Guides', url: 'https://2004.losthq.rs/?p=questguides', icon: 'questguides' },
+    { name: 'Skill Guides', url: 'https://2004.losthq.rs/?p=skillguides', icon: 'skillguides' },
+    { name: 'Skills Calculator', url: 'https://2004.losthq.rs/?p=calculators', icon: 'calculator' },
+    { name: 'Bestiary', url: 'https://2004.losthq.rs/?p=droptables', icon: 'bestiary' },
+    { name: 'Item Database', url: 'https://2004.losthq.rs/?p=itemdb', icon: 'itemdb' }
 ];
+
+/** Lost City's own two, which mean nothing on another server: its forums and its prices. */
+const LOSTCITY_FORUMS: Bookmark = { name: 'Forums', url: 'https://lostcity.rs', icon: 'forums' };
+const LOSTCITY_MARKETS: Bookmark = { name: 'Markets', url: 'https://markets.lostcity.rs', icon: 'markets' };
+
+/** Lost City's list, in the order the nav has always shown it: forums first, markets among the tools. */
+const LOSTCITY_LINKS: Bookmark[] = [LOSTCITY_FORUMS, ...GUIDE_LINKS.slice(0, 4), LOSTCITY_MARKETS, ...GUIDE_LINKS.slice(4)];
 
 /**
  * Lost City's lookup, hoisted because the version 3 → 4 migration matches the
@@ -55,7 +75,11 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         revision: 274,
         wiki: LOSTHQ,
         map: 'https://tools.losthq.rs/map',
-        hosts: ['w5-2004.lostcity.rs', '2004.lostcity.rs', '2004.losthq.rs', 'tools.losthq.rs', 'markets.lostcity.rs'],
+        // `lostcity.rs` is the forums and `razgals.github.io` the puzzle solver;
+        // both are here because a page tab may not visit a host this list does not
+        // name. Widening it also widens what `refreshHiscores` below will accept as
+        // being this built-in — see the note there.
+        hosts: ['w5-2004.lostcity.rs', '2004.lostcity.rs', 'lostcity.rs', '2004.losthq.rs', 'tools.losthq.rs', 'markets.lostcity.rs', 'razgals.github.io'],
         notes: null,
         worlds: {
             source: { kind: 'losthq', url: 'https://2004.losthq.rs/pages/api/worlds.php' },
@@ -63,7 +87,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
             detail: true,
             defaultWorld: 5
         },
-        bookmarks: [...LOSTHQ_BOOKMARKS, { name: 'Markets', url: 'https://markets.lostcity.rs' }],
+        bookmarks: LOSTCITY_LINKS.map(copyBookmark),
         hiscores: LOSTCITY_HISCORES
     },
     {
@@ -74,7 +98,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         revision: 274,
         wiki: LOSTHQ,
         map: 'https://tools.losthq.rs/map',
-        hosts: ['w1.04.zanaris.rs', 'zanaris.rs', '2004.losthq.rs', 'tools.losthq.rs'],
+        hosts: ['w1.04.zanaris.rs', 'zanaris.rs', '2004.losthq.rs', 'tools.losthq.rs', 'razgals.github.io'],
         notes: null,
         worlds: {
             source: { kind: 'zanaris', url: 'https://zanaris.rs/worlds.json' },
@@ -82,7 +106,8 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
             detail: true,
             defaultWorld: 1
         },
-        bookmarks: [...LOSTHQ_BOOKMARKS],
+        // Everything but Lost City's own forums and prices.
+        bookmarks: GUIDE_LINKS.map(copyBookmark),
         hiscores: {
             source: { kind: 'zanaris', url: 'https://zanaris.rs/api/hiscores/player/{name}' },
             site: 'https://zanaris.rs/hiscores'
@@ -122,7 +147,10 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         hosts: ['127.0.0.1', '2004.losthq.rs', 'tools.losthq.rs'],
         notes: 'Runs on this computer. No account needed.',
         worlds: null,
-        bookmarks: [...LOSTHQ_BOOKMARKS],
+        // The reference links are offered on the two live servers people play
+        // on and nowhere else. A development world is not one of them, and a
+        // window with no bookmarks gets no Guides tab on its rail.
+        bookmarks: [],
         // A one-player world has nobody to rank, so single player offers no lookup.
         hiscores: null
     }
@@ -257,6 +285,7 @@ function isHiscoresDef(x: unknown): x is HiscoresDef {
 function isBookmark(x: unknown): x is Bookmark {
     if (typeof x !== 'object' || x === null) return false;
     const b = x as Record<string, unknown>;
+    if (b.icon !== undefined && !isString(b.icon)) return false;
     return isString(b.name) && b.name.trim() !== '' && isString(b.url) && parseServerUrl(b.url).ok;
 }
 
@@ -415,8 +444,9 @@ export class Catalog {
             this.servers = migrated;
             const refreshed = this.refreshSinglePlayer();
             const adopted = this.refreshHiscores();
+            const relinked = this.refreshBookmarks();
             // An older file is rewritten in the current shape; that is an upgrade, not a recovery.
-            if (refreshed || adopted || (parsed as { version?: unknown }).version !== 4) this.save();
+            if (refreshed || adopted || relinked || (parsed as { version?: unknown }).version !== 4) this.save();
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
             this.servers = DEFAULT_SERVERS.map(copy);
@@ -473,6 +503,51 @@ export class Catalog {
             if (sameHiscores(stored.hiscores, builtIn.hiscores)) continue;
             stored.hiscores = builtIn.hiscores === null ? null : structuredClone(builtIn.hiscores);
             changed = true;
+        }
+        return changed;
+    }
+
+    /**
+     * The reference links a built-in server offers, and the hosts its pages may
+     * visit, are the kit's knowledge rather than a choice the user made: the add
+     * form has never offered either, and the two move together — a link the kit
+     * adds is useless unless its host is allowed, and a stored entry that froze
+     * the old pair would offer the old list forever, since nothing re-runs a
+     * migration on a file already at the current version.
+     *
+     * What the user *can* do is add a bookmark by hand, and that survives: a
+     * stored bookmark whose URL the kit has never shipped is kept and appended
+     * after the kit's own. The test is against every link this kit ships
+     * anywhere rather than just this server's, so a link that moves between
+     * servers — as Markets did, from everyone to Lost City alone — is retired
+     * rather than mistaken for the user's, and a link one server has and
+     * another does not is not appended to its own list a second time on every
+     * launch.
+     *
+     * Hosts are unioned rather than replaced, so a host added by hand is never
+     * taken away; the guard below is the same one `refreshHiscores` uses, and
+     * for the same reason.
+     */
+    private refreshBookmarks(): boolean {
+        const shipped = new Set(DEFAULT_SERVERS.flatMap(s => s.bookmarks).map(b => b.url));
+        let changed = false;
+        for (const stored of this.servers) {
+            const builtIn = DEFAULT_SERVERS.find(s => s.id === stored.id && s.kind === stored.kind);
+            if (!builtIn) continue;
+            const url = parseServerUrl(stored.url);
+            if (!url.ok || !builtIn.hosts.includes(hostOf(url.url))) continue;
+
+            const mine = stored.bookmarks.filter(b => !shipped.has(b.url));
+            const wanted = [...builtIn.bookmarks, ...mine].map(copyBookmark);
+            if (!sameBookmarks(stored.bookmarks, wanted)) {
+                stored.bookmarks = wanted;
+                changed = true;
+            }
+            const hosts = [...new Set([...stored.hosts, ...builtIn.hosts])];
+            if (hosts.length !== stored.hosts.length) {
+                stored.hosts = hosts;
+                changed = true;
+            }
         }
         return changed;
     }
@@ -537,6 +612,16 @@ export class Catalog {
 
 function copy(s: ServerDef): ServerDef {
     return structuredClone(s);
+}
+
+/** DEFAULT_SERVERS shares its link lists between entries, so each entry takes its own copy of each. */
+function copyBookmark(b: Bookmark): Bookmark {
+    return { ...b };
+}
+
+/** Whether two lists say the same thing, in the same order, so a refresh only rewrites the file when it must. */
+function sameBookmarks(a: readonly Bookmark[], b: readonly Bookmark[]): boolean {
+    return a.length === b.length && a.every((x, i) => x.name === b[i]!.name && x.url === b[i]!.url && x.icon === b[i]!.icon);
 }
 
 /** Whether two hiscores blocks say the same thing, field by field, so a refresh only rewrites the file when it must. */

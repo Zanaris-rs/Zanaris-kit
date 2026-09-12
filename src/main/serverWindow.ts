@@ -1,14 +1,26 @@
 import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { ADDRESS_HEIGHT, MIN_CONTENT_HEIGHT, MIN_CONTENT_WIDTH, PAGE_CONTROLS_HEIGHT, RAIL_WIDTH, STRIP_HEIGHT, type LayoutMode } from '../shared/layout';
+import {
+    MIN_CONTENT_HEIGHT,
+    MIN_CONTENT_WIDTH,
+    MIN_WINDOW_CONTENT_HEIGHT,
+    MIN_WINDOW_CONTENT_WIDTH,
+    PAGE_CONTROLS_HEIGHT,
+    PAGE_SEAM,
+    PAGE_WIDTH_MIN,
+    RAIL_WIDTH,
+    STRIP_HEIGHT,
+    type LayoutMode
+} from '../shared/layout';
 import type { ChatHome, ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
-import { computeLayout, dockOnFloor, sideWidth, splitWindow, type Rects } from './layout';
+import type { PagesView } from '../shared/pages';
+import { computeLayout, dockOnFloor, paneWidth, preservedHeight, preservedWidth, sideWidth, splitWindow, type Rect, type Rects } from './layout';
 import { firstLegalSideOccupant, reduce, type Action, type Placement } from './chatDock';
-import { decideNavigation } from './guard';
-import { GAME_TAB_ID, TabModel } from './tabs';
+import { decideNavigation, decidePageNavigation } from './guard';
+import { activeTab, initialPane, paneLayoutWidth, paneOpen, reduce as reducePane, type PaneAction, type PaneState } from './pagePane';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
 import { WorldSwitch } from './worlds/switch';
@@ -99,6 +111,12 @@ export interface ServerWindowDeps {
      */
     chatHome: () => ChatHome;
     chatDockHeight: () => number;
+    /** The width a newly opened reference pane starts at, as the last seam drag anywhere left it. */
+    pageWidth: () => number;
+    /** Whether a window opened now should float above other apps, as the last choice anywhere left it. */
+    alwaysOnTop: () => boolean;
+    /** Remembers a seam drag. Staged, not written: a drag lands one of these per animation frame. */
+    rememberPageWidth: (px: number) => void;
     /** What this server remembered from last time, if anything. */
     remembered: RememberedWorld | null;
     /** Called whenever this window's world or detail changes. */
@@ -119,6 +137,19 @@ export interface ServerWindow extends ServerWindowHandle {
     selectTool(id: ToolId | null): void;
     /** The →| control in this window: chat moves home, and this window's chrome rearranges around it. */
     moveChat(home: ChatHome): void;
+    /** Whether this window floats above other apps. Read back from the window itself, not from a flag kept beside it. */
+    alwaysOnTop(): boolean;
+    setAlwaysOnTop(on: boolean): void;
+    /** Opens one of this server's links in the reference pane, or focuses it when it is already open. Anything not in `server.bookmarks` is refused. */
+    openPage(url: string): void;
+    activatePage(id: string): void;
+    closePage(id: string): void;
+    /** Hides the pane without destroying its views, so nothing reloads when it comes back. */
+    setPaneCollapsed(collapsed: boolean): void;
+    /** Sets the pane's width, clamped here. Returns the width actually applied, on every path including the one that changes nothing. */
+    setPaneWidth(px: number): number;
+    /** The pane's toolbar, acting on the tab in front. */
+    pageGo(where: 'back' | 'forward' | 'reload'): void;
     /** The echo of a move made in another window: this one learns where chat goes without losing what it has open. */
     syncChatHome(home: ChatHome): void;
     /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
@@ -141,6 +172,8 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
+    /** The reference page in front, for capture mode. Resolves with null when the pane is closed or collapsed: there is no view to shoot. */
+    capturePage(): Promise<NativeImage | null>;
 }
 
 /**
@@ -156,7 +189,6 @@ export interface ServerWindow extends ServerWindowHandle {
 export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps: ServerWindowDeps): ServerWindow {
     const { server } = spec;
     const tag = `[${spec.title}]`;
-    const tabs = new TabModel({ title: server.name, url: server.url });
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
     const single = server.kind === 'singleplayer' ? deps.singlePlayer : null;
     /**
@@ -185,6 +217,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const tools: ToolId[] = ['chat'];
     if (worldSwitch) tools.push('worlds');
     if (deps.hiscores) tools.push('hiscores');
+    // The whole of the per-server gating for the reference links: a window
+    // offers Guides exactly when its catalog entry has links to offer, so
+    // which servers get them is data rather than a condition written here.
+    if (server.bookmarks.length > 0) tools.push('guides');
     if (single) tools.push('singleplayer');
     // Which tools a window came up with is otherwise only visible by looking at
     // the rail, and a tool missing from it looks the same as a tool that drew
@@ -206,8 +242,17 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * only where it opens changed.
      */
     let placement: Placement = { home: deps.chatHome(), dockOpen: false, activeTool: null, panelOpen: false };
+    /**
+     * The reference pane: which LostHQ pages this window has open and how it is
+     * showing them. Every transition goes through `reducePane`, which owns the
+     * rules and is tested on its own; `syncPageViews` below is the only thing
+     * that creates or destroys a view, and it does so purely by following this.
+     */
+    let pane: PaneState = initialPane(deps.pageWidth());
+    /** One long-lived view per open tab, keyed by tab id. Switching tabs only moves visibility. */
+    const pageViews = new Map<string, WebContentsView>();
     let mode: { x: LayoutMode; y: LayoutMode } = { x: 'widen', y: 'widen' };
-    let rects: Rects = splitWindow(DEFAULT_CONTENT.width + RAIL_WIDTH, STRIP_HEIGHT + DEFAULT_CONTENT.height, false, 0, 'game');
+    let rects: Rects = splitWindow(DEFAULT_CONTENT.width + RAIL_WIDTH, STRIP_HEIGHT + DEFAULT_CONTENT.height, false, 0, 0, DEFAULT_CONTENT.width);
     let contentWidth = DEFAULT_CONTENT.width;
     let contentHeight = DEFAULT_CONTENT.height;
     let applying = false;
@@ -220,13 +265,19 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const win = new BrowserWindow({
         width: DEFAULT_CONTENT.width + RAIL_WIDTH,
         height: STRIP_HEIGHT + DEFAULT_CONTENT.height,
-        minWidth: MIN_CONTENT_WIDTH + RAIL_WIDTH,
-        minHeight: STRIP_HEIGHT + MIN_CONTENT_HEIGHT,
+        // The floor is MIN_WINDOW_CONTENT_* and not the canvas the window opens
+        // at: the window may be dragged well under the game's own size, and the
+        // client has its own answers for that. See the constants.
+        minWidth: MIN_WINDOW_CONTENT_WIDTH + RAIL_WIDTH,
+        minHeight: STRIP_HEIGHT + MIN_WINDOW_CONTENT_HEIGHT,
         useContentSize: true,
         ...(deps.position ?? {}),
         title: spec.title,
         backgroundColor: '#17120d',
-        show: false
+        show: false,
+        // The last choice made anywhere, so a window opened while the app is
+        // pinned comes up pinned rather than needing the menu again.
+        alwaysOnTop: deps.alwaysOnTop()
     });
 
     /**
@@ -239,8 +290,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      */
     const minimum = win.getMinimumSize();
     // The fallbacks are the two numbers just passed in, and are there only for the index type: Electron always returns both.
-    const minWindowWidth = minimum[0] ?? MIN_CONTENT_WIDTH + RAIL_WIDTH;
-    const minWindowHeight = minimum[1] ?? STRIP_HEIGHT + MIN_CONTENT_HEIGHT;
+    const minWindowWidth = minimum[0] ?? MIN_WINDOW_CONTENT_WIDTH + RAIL_WIDTH;
+    const minWindowHeight = minimum[1] ?? STRIP_HEIGHT + MIN_WINDOW_CONTENT_HEIGHT;
     /** How much of the dock the current minimum already accounts for, so it is only set when it moves. */
     let minimumDock = 0;
 
@@ -283,8 +334,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     function refreshLabels(): void {
-        tabs.setTitle(GAME_TAB_ID, gameLabel());
-        tabs.setUrl(GAME_TAB_ID, expected);
         if (!win.isDestroyed()) win.setTitle(title());
     }
 
@@ -295,14 +344,27 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         return { ...deps.worlds.view(), current: worldSwitch.world, detail: worldSwitch.detail, showDetail: server.worlds.detail };
     }
 
+    function pagesView(): PagesView {
+        const active = activeTab(pane);
+        return {
+            tabs: pane.tabs.map(t => ({ id: t.id, bookmark: t.bookmark, label: t.label, active: t.id === pane.activeId })),
+            collapsed: pane.collapsed,
+            width: rects.page?.width ?? pane.width,
+            maxWidth: paneCeiling(),
+            active:
+                active && !pane.collapsed
+                    ? { title: active.title, url: active.url, canGoBack: active.canGoBack, canGoForward: active.canGoForward, loading: active.loading }
+                    : null
+        };
+    }
+
     function state(): ShellState {
-        const active = tabs.active.id;
         return {
             windowId: spec.id,
             server,
             slot: spec.slot,
             title: title(),
-            tabs: tabs.list().map(t => ({ ...t, active: t.id === active })),
+            gameLabel: gameLabel(),
             panelOpen: placement.panelOpen,
             mode,
             rects,
@@ -311,6 +373,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             panelAvailable: firstLegalSideOccupant(tools, placement.home) !== null,
             worlds: worldsView(),
             hiscores: deps.hiscores?.view() ?? null,
+            pages: pagesView(),
             chat: deps.chat(),
             chatHome: placement.home,
             dockOpen: placement.dockOpen,
@@ -338,8 +401,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /**
      * The window's floor has to carry the dock too. Left alone at the
      * construction-time height, dragging the window short with the dock open
-     * would crush the game below MIN_CONTENT_HEIGHT — the one thing the floor
-     * exists to prevent.
+     * would crush the game below MIN_WINDOW_CONTENT_HEIGHT — the one thing the
+     * floor exists to prevent.
      *
      * What it carries is the dock the layout *granted*, in the window the
      * layout granted it in — not the height the drag asked for. `dockOnFloor`
@@ -370,7 +433,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         const display = screen.getDisplayMatching(win.getBounds());
         const result = computeLayout({
             panelOpen: placement.panelOpen,
-            activeTabKind: tabs.active.kind,
+            pageWidth: paneLayoutWidth(pane),
             window: current,
             workArea: display.workArea,
             contentWidth,
@@ -395,21 +458,24 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         }
         shellView.setBounds({ x: 0, y: 0, width: w.width, height: w.height });
         gameView.setBounds(result.content);
+        syncPageBounds(result.page);
         pushState();
     }
 
     win.on('resize', () => {
         if (applying) return;
         const bounds = win.getContentBounds();
-        contentWidth = Math.max(MIN_CONTENT_WIDTH, bounds.width - sideWidth(placement.panelOpen));
+        // The pane comes off here exactly as it is added in applyLayout, or a
+        // resize with a page open would hand the pane's pixels to the game and
+        // grow the window by them again on the next layout.
+        contentWidth = preservedWidth(bounds.width, sideWidth(placement.panelOpen) + paneWidth(paneLayoutWidth(pane)));
         // The y-axis twin of the line above: without it contentHeight would sit
         // stale at its construction-time value forever, and computeLayout would
         // fit the window back to that stale height on every layout event,
         // fighting the user's own resize. The dock comes off here exactly as it
         // is added in applyLayout, or a resize with the dock open would hand
         // the dock's pixels to the content and grow the window by them again.
-        const addressHeight = tabs.active.kind === 'page' ? ADDRESS_HEIGHT : 0;
-        contentHeight = Math.max(MIN_CONTENT_HEIGHT, bounds.height - STRIP_HEIGHT - addressHeight - dockHeight());
+        contentHeight = preservedHeight(bounds.height, STRIP_HEIGHT + dockHeight());
         applyLayout();
     });
     // These change whether the window can be widened, so re-run the layout.
@@ -487,6 +553,222 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function syncChatHome(home: ChatHome): void {
         place({ kind: 'sync-home', to: home });
         deps.log(`${tag} chat now lives at the ${home}`);
+    }
+
+    // ── the reference pane ───────────────────────────────────────────────
+
+    /**
+     * One session for every reference page in every window, so a LostHQ login
+     * is shared rather than asked for again per window. It is deliberately not
+     * the game's partition: nothing a guide page does should be able to touch
+     * the cookies the player is logged in with.
+     */
+    const PAGES_PARTITION = 'persist:pages';
+
+    /**
+     * The widest the pane can be dragged while the game still has its canvas on
+     * this display. The floor wins a tie — on a display too narrow for both,
+     * this comes out under PAGE_WIDTH_MIN and the reducer's own clamp keeps the
+     * pane at its floor, leaving `splitWindow` to decide what gives way.
+     */
+    function paneCeiling(): number {
+        const work = screen.getDisplayMatching(win.getBounds()).workArea;
+        return Math.max(PAGE_WIDTH_MIN, work.width - MIN_CONTENT_WIDTH - sideWidth(placement.panelOpen) - PAGE_SEAM);
+    }
+
+    /**
+     * Bounds and visibility for the open pages.
+     *
+     * Only the view about to show is given bounds. A hidden Chromium view still
+     * does the work of a resize, and during a seam drag that would be one per
+     * open tab per animation frame; the cost of waiting is a single reflow when
+     * a tab that was hidden through a resize comes back.
+     */
+    function syncPageBounds(page: Rect | null): void {
+        for (const [id, view] of pageViews) {
+            const visible = page !== null && id === pane.activeId;
+            if (visible) view.setBounds(page);
+            view.setVisible(visible);
+        }
+    }
+
+    /**
+     * The views, reconciled against the tabs.
+     *
+     * This is the only thing that creates or destroys one, and it does so
+     * purely by following `pane.tabs` — so a tab switch, which only moves
+     * `activeId`, cannot reload a page, because there is no path here that
+     * would. That is the pane's whole promise, and it is structural rather
+     * than remembered.
+     */
+    function syncPageViews(): void {
+        for (const tab of pane.tabs) {
+            if (!pageViews.has(tab.id)) createPageView(tab.id, tab.bookmark);
+        }
+        for (const id of [...pageViews.keys()]) {
+            if (!pane.tabs.some(t => t.id === id)) destroyPageView(id);
+        }
+    }
+
+    function destroyPageView(id: string): void {
+        const view = pageViews.get(id);
+        if (!view) return;
+        pageViews.delete(id);
+        if (!win.isDestroyed()) win.contentView.removeChildView(view);
+        if (!view.webContents.isDestroyed()) view.webContents.close();
+    }
+
+    function createPageView(id: string, url: string): void {
+        const view = new WebContentsView({
+            webPreferences: {
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: true,
+                webSecurity: true,
+                partition: PAGES_PARTITION
+                // backgroundThrottling is left at Chromium's default, unlike
+                // the game view: a reference page nobody is looking at should
+                // cost nothing, and none of them has a loop that has to keep
+                // running. A hidden page mid-boot does boot more slowly for it
+                // — Lost City's forums are Discourse, which keeps working long
+                // after its document is complete — but it does get there, which
+                // was checked rather than assumed.
+            }
+        });
+        view.setBackgroundColor('#17120d');
+        view.setVisible(false);
+        win.contentView.addChildView(view);
+        pageViews.set(id, view);
+
+        const wc = view.webContents;
+        // The toolbar's whole state, read from main rather than reported by a
+        // preload: these views get none, which keeps "the shell is the only
+        // view with a preload" true of the pane as well as of the game.
+        const report = (): void => {
+            if (win.isDestroyed() || wc.isDestroyed()) return;
+            placePane({
+                kind: 'navigated',
+                id,
+                url: wc.getURL(),
+                title: wc.getTitle(),
+                canGoBack: wc.navigationHistory.canGoBack(),
+                canGoForward: wc.navigationHistory.canGoForward()
+            });
+        };
+        wc.on('page-title-updated', report);
+        wc.on('did-navigate', report);
+        // Fires on every hash change, and the clue coordinator changes its hash
+        // as you click around the map. The reducer answers an update that says
+        // nothing new with the state it already had, so these cost nothing.
+        wc.on('did-navigate-in-page', report);
+        wc.on('did-start-loading', () => placePane({ kind: 'loading', id, loading: true }));
+        wc.on('did-stop-loading', () => {
+            placePane({ kind: 'loading', id, loading: false });
+            report();
+        });
+        wc.on('did-fail-load', (_event, code, description, failed, isMainFrame) => {
+            // -3 is ERR_ABORTED: a load superseded by another, not a failure.
+            if (!isMainFrame || code === -3) return;
+            deps.log(`${tag} page ${id} could not load ${failed}: ${description} (${code})`);
+        });
+
+        const policy = (event: { preventDefault: () => void }, target: string): void => {
+            const decision = decidePageNavigation({ target, hosts: server.hosts });
+            if (decision === 'allow') return;
+            event.preventDefault();
+            if (decision === 'open-external') {
+                deps.log(`${tag} sent ${target} to the system browser`);
+                void shell.openExternal(target);
+            } else {
+                deps.log(`${tag} blocked ${target}`);
+            }
+        };
+        wc.on('will-navigate', policy);
+        // Not optional: `tools.losthq.rs/map` answers a 301 and LostHQ's
+        // bestiary a 302, so a redirect is the ordinary case rather than the
+        // exotic one, and a policy that only saw `will-navigate` would let a
+        // redirect carry a page anywhere.
+        wc.on('will-redirect', policy);
+        wc.setWindowOpenHandler(({ url: target }) => {
+            if (/^https?:\/\//.test(target)) void shell.openExternal(target);
+            return { action: 'deny' };
+        });
+
+        void wc.loadURL(url);
+    }
+
+    /**
+     * The one way the pane moves. Every rule about which tab is in front and
+     * what that costs the layout lives in `reducePane`; this end of it only
+     * names the gesture, reconciles the views and redraws.
+     *
+     * A no-op action stops here. The state is pushed on every layout, and
+     * `did-navigate-in-page` alone would otherwise have main serialising a
+     * whole ShellState per click on a map.
+     */
+    function placePane(action: PaneAction): void {
+        if (win.isDestroyed()) return;
+        const next = reducePane(pane, action, { maxWidth: paneCeiling() });
+        if (next === pane) return;
+        const wasWidth = paneLayoutWidth(pane);
+        const wasShowing = pane.collapsed ? null : pane.activeId;
+        pane = next;
+        syncPageViews();
+        // Three different costs, and most updates owe only the last of them.
+        // A change in what the pane takes from the window needs the window
+        // laid out again; a change in which view is in front needs bounds and
+        // visibility; a title or a back button going grey needs neither, and
+        // `did-navigate-in-page` fires one of those on every hash change —
+        // the clue coordinator emits one per click on its map.
+        if (paneLayoutWidth(pane) !== wasWidth) {
+            applyLayout();
+            return;
+        }
+        if ((pane.collapsed ? null : pane.activeId) !== wasShowing) syncPageBounds(rects.page);
+        pushState();
+    }
+
+    function openPage(url: string): void {
+        // There is no address box, so the shell has no legitimate reason to
+        // name a page that is not one of this server's own links — and a page
+        // view lives in a session shared with every other window's.
+        const link = server.bookmarks.find(b => b.url === url);
+        if (!link) {
+            deps.log(`${tag} refused to open ${url}: not one of this server's links`);
+            return;
+        }
+        const had = pane.tabs.some(t => t.bookmark === link.url);
+        placePane({ kind: 'open', bookmark: link.url, label: link.name });
+        deps.log(`${tag} ${had ? 'brought' : 'opened'} ${link.name} ${had ? 'to the front of' : 'in'} the pane`);
+    }
+
+    function setPaneWidth(px: number): number {
+        if (typeof px !== 'number' || !Number.isFinite(px)) return rects.page?.width ?? pane.width;
+        placePane({ kind: 'resize', width: px });
+        // Written even when the clamp landed where the pane already was: the
+        // number is app-wide, and another window opening a pane next should get
+        // the width this drag actually reached.
+        deps.rememberPageWidth(pane.width);
+        // The width the pane was *drawn* at, not the one it asked for. The two
+        // part company whenever the window is too narrow for everything at once
+        // — `splitWindow` claws pixels back after the reducer has had its say —
+        // and the grip is showing the drawn one. Answering with the request
+        // would have every frame of a drag aim from a number the seam is not at.
+        return rects.page?.width ?? pane.width;
+    }
+
+    function pageGo(where: 'back' | 'forward' | 'reload'): void {
+        const active = activeTab(pane);
+        const view = active ? pageViews.get(active.id) : undefined;
+        if (!view || view.webContents.isDestroyed()) return;
+        const history = view.webContents.navigationHistory;
+        if (where === 'back') {
+            if (history.canGoBack()) history.goBack();
+        } else if (where === 'forward') {
+            if (history.canGoForward()) history.goForward();
+        } else {
+            view.webContents.reload();
+        }
     }
 
     // ── the game view ────────────────────────────────────────────────────
@@ -688,6 +970,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     win.on('closed', () => {
         if (currentProbe) clearInterval(currentProbe);
         if (panelProbe) clearInterval(panelProbe);
+        // The views go with the window; the `persist:pages` session does not, so
+        // a LostHQ login outlives both this window and this launch.
+        for (const id of [...pageViews.keys()]) destroyPageView(id);
         unsubscribeWorlds?.();
         unsubscribeSingle?.();
         single?.release();
@@ -736,6 +1021,28 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         selectTool,
         moveChat,
         syncChatHome,
+        // Asked of the window rather than answered from a flag kept alongside
+        // it. The window is where the state actually lives, so a copy here
+        // would be a second one to keep in step, and the menu is built from
+        // whichever window has focus — a place where the copy that went stale
+        // would be checked against a different window entirely. It also answers
+        // honestly for a window on its way out, where a remembered `true` would
+        // tick the box for something already gone. (macOS keeps the level
+        // across fullscreen, checked rather than assumed, so there is no
+        // platform surprise for this to be guarding against — only the two
+        // reasons above.)
+        alwaysOnTop: () => !win.isDestroyed() && win.isAlwaysOnTop(),
+        setAlwaysOnTop: on => {
+            if (win.isDestroyed()) return;
+            win.setAlwaysOnTop(on);
+            deps.log(`${tag} ${on ? 'pinned above other windows' : 'unpinned'}`);
+        },
+        openPage,
+        activatePage: id => placePane({ kind: 'activate', id }),
+        closePage: id => placePane({ kind: 'close', id }),
+        setPaneCollapsed: collapsed => placePane({ kind: 'set-collapsed', collapsed }),
+        setPaneWidth,
+        pageGo,
         relayout: applyLayout,
         state,
         pushState,
@@ -780,6 +1087,23 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             await Promise.race([painted, new Promise(resolve => setTimeout(resolve, 1_500))]);
         },
         captureShell: () => shellView.webContents.capturePage(),
-        captureGame: () => gameView.webContents.capturePage()
+        captureGame: () => gameView.webContents.capturePage(),
+        capturePage: async () => {
+            const active = activeTab(pane);
+            const view = active && !pane.collapsed ? pageViews.get(active.id) : undefined;
+            if (!view || view.webContents.isDestroyed()) return null;
+            // Two frames, exactly as `settle` does for the shell, and for a
+            // reason this feature demonstrated: a view that has just been shown
+            // has not composited since, so capturePage hands back the frame it
+            // was hidden on. That photographed a forum that had long since
+            // finished booting as a page still showing its loading spinner —
+            // a stale frame reported as a broken feature, which is the whole
+            // hazard the shell's own settle exists for.
+            const painted = view.webContents
+                .executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
+                .catch(() => undefined);
+            await Promise.race([painted, new Promise(resolve => setTimeout(resolve, 1_500))]);
+            return view.webContents.capturePage();
+        }
     };
 }
