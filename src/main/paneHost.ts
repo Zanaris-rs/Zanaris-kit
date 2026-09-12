@@ -16,7 +16,8 @@ import {
     type Rect
 } from './paneTree.ts';
 import { PAGE_TOOLBAR_HEIGHT } from '../shared/layout.ts';
-import type { PageState, PaneView, SeamView } from '../shared/panes.ts';
+import { closeTab, newTab, openTabs, selectTab, type TabSet } from './tabs.ts';
+import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
 
 /**
  * One tab's panes, and the native views inside them.
@@ -57,10 +58,27 @@ export interface PaneHostDeps {
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
-    let tree: PaneNode = leaf('pane-1', { kind: 'empty' });
-    let focusedPaneId = 'pane-1';
+    let set: TabSet = openTabs('tab-1', 'pane-1');
     let nextPane = 2;
     let nextSplit = 1;
+    let nextTab = 2;
+
+    const active = (): PaneNode => set.tabs.find(t => t.id === set.activeId)!.tree;
+    const focused = (): string => set.tabs.find(t => t.id === set.activeId)!.focusedPaneId;
+    /** Every pane in every tab. View reconciliation works over this, not over the active tab: a page in a background tab stays alive, which is the whole point of a tab. */
+    const allPaneIds = (): string[] => set.tabs.flatMap(tab => paneIds(tab.tree));
+    const contentAnywhere = (paneId: string): PaneContent | null => {
+        for (const tab of set.tabs) {
+            const found = contentOf(tab.tree, paneId);
+            if (found) return found;
+        }
+        return null;
+    };
+    /** Replaces the active tab's tree, leaving the others untouched. */
+    const withActive = (tree: PaneNode, focus?: string): TabSet => ({
+        ...set,
+        tabs: set.tabs.map(tab => (tab.id === set.activeId ? { ...tab, tree, focusedPaneId: focus ?? tab.focusedPaneId } : tab))
+    });
 
     const pageViews = new Map<string, WebContentsView>();
     const pageStates = new Map<string, PageState>();
@@ -90,8 +108,14 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
      */
     function place(): void {
         const game = deps.gameView();
+        const tree = active();
         const gamePane = paneIds(tree).find(id => contentOf(tree, id)?.kind === 'game');
         if (game) {
+            // A game in a background tab has no rect, so it is hidden — and
+            // keeps running, exactly as it does when the whole window is behind
+            // another application. That is what `backgroundThrottling: false`
+            // is for, and it is the one thing the tab design rests on that no
+            // test here can prove.
             const rect = gamePane ? rects.get(gamePane) : undefined;
             if (rect) game.setBounds(rect);
             game.setVisible(Boolean(rect));
@@ -112,13 +136,13 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
     /** The views, reconciled against the page leaves. The only thing that creates or destroys one. */
     function syncViews(): void {
-        for (const paneId of paneIds(tree)) {
-            const content = contentOf(tree, paneId);
+        for (const paneId of allPaneIds()) {
+            const content = contentAnywhere(paneId);
             if (content?.kind !== 'page' || pageViews.has(paneId)) continue;
             createPageView(paneId, content.bookmark);
         }
         for (const paneId of [...pageViews.keys()]) {
-            if (contentOf(tree, paneId)?.kind !== 'page') destroyPageView(paneId);
+            if (contentAnywhere(paneId)?.kind !== 'page') destroyPageView(paneId);
         }
     }
 
@@ -210,75 +234,112 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     }
 
     function focus(paneId: string): void {
-        if (focusedPaneId === paneId || !paneIds(tree).includes(paneId)) return;
-        focusedPaneId = paneId;
+        if (focused() === paneId || !paneIds(active()).includes(paneId)) return;
+        set = withActive(active(), paneId);
         deps.touched();
     }
 
     /** Applies a new tree: reconcile the views, then let the window lay out around it. */
     function adopt(next: PaneNode): void {
-        if (next === tree) return;
-        tree = next;
-        if (!paneIds(tree).includes(focusedPaneId)) focusedPaneId = paneIds(tree)[0] ?? focusedPaneId;
+        if (next === active()) return;
+        const survives = paneIds(next).includes(focused());
+        set = withActive(next, survives ? undefined : paneIds(next)[0]);
         syncViews();
         deps.changed();
     }
 
     return {
-        tree: () => tree,
-        focusedPaneId: () => focusedPaneId,
-        hasGame: () => paneIds(tree).some(id => contentOf(tree, id)?.kind === 'game'),
+        tree: active,
+        focusedPaneId: focused,
+        hasGame: () => set.tabs.some(tab => paneIds(tab.tree).some(id => contentOf(tab.tree, id)?.kind === 'game')),
 
         layout(rect: Rect): void {
-            const solved = layoutTree(tree, rect);
+            const solved = layoutTree(active(), rect);
             rects = solved.panes;
             seams = solved.seams.map(seam => {
                 const gross = solved.splits.get(seam.splitId) ?? 0;
-                const px = seamPixels(tree, seam.splitId, seam.index, gross);
+                const px = seamPixels(active(), seam.splitId, seam.index, gross);
                 return { splitId: seam.splitId, index: seam.index, axis: seam.axis, rect: seam.rect, gross, size: px?.size ?? 0, min: px?.min ?? 0, max: px?.max ?? 0 };
             });
             place();
         },
 
         panes(): PaneView[] {
+            const tree = active();
             return paneIds(tree).map(paneId => ({
                 paneId,
                 rect: rects.get(paneId) ?? { x: 0, y: 0, width: 0, height: 0 },
                 content: contentOf(tree, paneId) ?? { kind: 'empty' },
-                focused: paneId === focusedPaneId,
+                focused: paneId === focused(),
                 page: pageStates.get(paneId) ?? null
+            }));
+        },
+
+        tabs(): TabView[] {
+            return set.tabs.map(tab => ({
+                id: tab.id,
+                label: labelOfTab(tab.tree, tab.focusedPaneId),
+                active: tab.id === set.activeId,
+                hasGame: paneIds(tab.tree).some(id => contentOf(tab.tree, id)?.kind === 'game')
             }));
         },
 
         seams: () => seams,
         focus,
 
+        newTab(): void {
+            set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`);
+            deps.changed();
+        },
+
+        /** Returns false when that was the last tab — the window's cue to close. */
+        closeTab(tabId: string): boolean {
+            const next = closeTab(set, tabId);
+            if (next === null) return false;
+            if (next === set) return true;
+            set = next;
+            // The tab's panes went with it, so its page views have nothing left
+            // pointing at them. Reconciled rather than tracked: `syncViews`
+            // follows the tabs, and a view whose pane is gone from every tab is
+            // exactly what it destroys.
+            syncViews();
+            deps.changed();
+            return true;
+        },
+
+        selectTab(tabId: string): void {
+            const next = selectTab(set, tabId);
+            if (next === set) return;
+            set = next;
+            deps.changed();
+        },
+
         split(paneId: string, axis: 'x' | 'y'): void {
             const born = `pane-${nextPane++}`;
-            adopt(splitPane(tree, paneId, axis, { paneId: born, splitId: `split-${nextSplit++}` }));
+            adopt(splitPane(active(), paneId, axis, { paneId: born, splitId: `split-${nextSplit++}` }));
             focus(born);
         },
 
         close(paneId: string): void {
-            adopt(closePane(tree, paneId));
+            adopt(closePane(active(), paneId));
         },
 
         setContent(paneId: string, content: PaneContent): void {
-            adopt(setContent(tree, paneId, content));
+            adopt(setContent(active(), paneId, content));
         },
 
         evenOut(splitId: string): void {
-            adopt(evenOut(tree, splitId));
+            adopt(evenOut(active(), splitId));
         },
 
         dragSeam(splitId: string, index: number, px: number): number {
             const seam = seams.find(s => s.splitId === splitId && s.index === index);
             if (!seam) return 0;
-            const next = setSeam(tree, splitId, index, px, seam.gross);
-            // The tree is adopted without reconciling views: a drag cannot
-            // change which panes exist, only how big they are.
-            if (next !== tree) {
-                tree = next;
+            const next = setSeam(active(), splitId, index, px, seam.gross);
+            // Adopted without reconciling views: a drag cannot change which
+            // panes exist, only how big they are.
+            if (next !== active()) {
+                set = withActive(next);
                 deps.changed();
             }
             // The size the seam was *drawn* at, not the one it asked for. The
@@ -291,14 +352,14 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         /** The view of the focused page pane, or of the only one, for capture mode. */
         pageWebContents(): WebContentsView | null {
-            const focused = pageViews.get(focusedPaneId);
-            if (focused) return focused;
-            const first = paneIds(tree).find(id => pageViews.has(id));
+            const own = pageViews.get(focused());
+            if (own) return own;
+            const first = paneIds(active()).find(id => pageViews.has(id));
             return first ? pageViews.get(first) ?? null : null;
         },
 
         go(where: 'back' | 'forward' | 'reload'): void {
-            const view = pageViews.get(focusedPaneId);
+            const view = pageViews.get(focused());
             if (!view || view.webContents.isDestroyed()) return;
             const history = view.webContents.navigationHistory;
             if (where === 'back') {
@@ -316,14 +377,34 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     };
 }
 
+/** What a tab button says: whatever its focused pane holds. */
+function labelOfTab(tree: PaneNode, focusedPaneId: string): string {
+    const content = contentOf(tree, focusedPaneId);
+    switch (content?.kind) {
+        case 'game':
+            return 'Game';
+        case 'tool':
+            return content.tool === 'singleplayer' ? 'Single player' : content.tool[0]!.toUpperCase() + content.tool.slice(1);
+        case 'page':
+            return 'Page';
+        default:
+            return 'Empty';
+    }
+}
+
 export interface PaneHost {
     tree: () => PaneNode;
     focusedPaneId: () => string;
     hasGame: () => boolean;
     layout: (rect: Rect) => void;
     panes: () => PaneView[];
+    tabs: () => TabView[];
     seams: () => SeamView[];
     focus: (paneId: string) => void;
+    newTab: () => void;
+    /** False when that was the last tab, which is the window's cue to close. */
+    closeTab: (tabId: string) => boolean;
+    selectTab: (tabId: string) => void;
     split: (paneId: string, axis: 'x' | 'y') => void;
     close: (paneId: string) => void;
     setContent: (paneId: string, content: PaneContent) => void;

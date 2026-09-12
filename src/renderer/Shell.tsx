@@ -2,9 +2,10 @@ import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } fro
 import type { Rect, ShellState, ToolId } from '../shared/ipc';
 import type { PaneView, SeamView } from '../shared/panes';
 import { PAGE_TOOLBAR_HEIGHT } from '../shared/layout';
-import { Bars, Chat as ChatIcon, Globe, Hearth } from './icons';
+import { Bars, Chat as ChatIcon, CloseRoom, Globe, Hearth, Plus } from './icons';
 import Grip from './grip';
 import Launcher from './Launcher';
+import Tab from './tab';
 import PageToolbar from './pageToolbar';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
@@ -35,6 +36,18 @@ const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
  * neither a pane nor a tab.
  */
 const BADGE_BOX: CSSProperties = { height: 26, width: 'auto' };
+/**
+ * A tab and its close are one item of the bar, the way a room and its close are
+ * one item of chat's row: the close reads as part of the workspace it shuts
+ * rather than as another piece of the bar's furniture.
+ *
+ * `min-w-0` because these do run out of room — a window can hold as many tabs
+ * as the user makes, and a bar that could not shrink them would push the new-tab
+ * control off its own right edge instead.
+ */
+const TAB_SLOT = 'flex min-w-0 items-center gap-[2px]';
+/** Sized inline for the reason `tab.tsx` sizes its own box inline: `.tab` carries the rail's 36x34 square and is unlayered CSS, which beats a utility of equal specificity whatever the order. */
+const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 
 /**
  * The ring drawn around the focused pane.
@@ -160,11 +173,58 @@ export default function Shell(): ReactNode {
     return (
         <div className="relative h-full overflow-hidden bg-ink text-cream">
             <div style={at(rects.tabBar)} className="flex flex-col">
-                <header style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
+                <header role="tablist" style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
+                    {/*
+                     * The window's read-out, not any tab's: the window is bound
+                     * to one server and has one game, so it sits before the tabs
+                     * rather than among them. A tile says that without claiming
+                     * to be a control — the tabs beside it are cut into the
+                     * stone or lifted above it, and a tile is neither.
+                     */}
                     <div style={BADGE_BOX} title={state.gameLabel} className="tile flex min-w-0 items-center gap-[7px] px-2.5">
                         <span className="truncate">{state.gameLabel}</span>
                         <span className="shrink-0 text-[12px] text-faint">{revision}</span>
                     </div>
+                    {state.tabs.map(tab => (
+                        <div key={tab.id} className={TAB_SLOT}>
+                            <Tab
+                                role="tab"
+                                label={tab.label}
+                                title={tab.hasGame ? `${tab.label} — the game is in this tab` : tab.label}
+                                open={tab.active}
+                                onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
+                                /*
+                                 * The character is in here. A running game in a
+                                 * background tab is still in the world, so the
+                                 * bar says which tab to come back to rather than
+                                 * leaving it to be remembered.
+                                 */
+                                after={tab.hasGame ? <span className="ml-1 text-gold">&bull;</span> : undefined}
+                            />
+                            {/* Beside the tab, never in its `after`, which renders inside the
+                                tab's own button — a button within a button is invalid HTML that
+                                no two browsers agree on. */}
+                            <button
+                                type="button"
+                                title={`Close ${tab.label}`}
+                                aria-label={`Close ${tab.label}`}
+                                onClick={() => void window.zanaris.panes.closeTab(tab.id)}
+                                className="tile flex w-[24px] shrink-0 items-center justify-center self-stretch text-faint hover:text-cream"
+                            >
+                                <CloseRoom />
+                            </button>
+                        </div>
+                    ))}
+                    <button
+                        type="button"
+                        title="New tab"
+                        aria-label="New tab"
+                        onClick={() => void window.zanaris.panes.newTab()}
+                        style={NEW_TAB_BOX}
+                        className="tab shrink-0"
+                    >
+                        <Plus />
+                    </button>
                 </header>
                 {/* The client parts its bars with a dark rule lit along the top, never a flat hairline. */}
                 <div className="h-[2px] shrink-0 bg-edge-dark shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]" />

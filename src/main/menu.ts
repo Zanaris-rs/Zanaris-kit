@@ -13,6 +13,10 @@ export interface MenuActions {
     splitPane(axis: 'x' | 'y'): void;
     closePane(): void;
     evenOut(): void;
+    newTab(): void;
+    closeTab(): void;
+    /** Cmd/Ctrl+1..9. Out of range is a no-op, so a window with three tabs ignores the other six. */
+    selectTabAt(index: number): void;
     /** Whether a world or detail switch is confirmed before it reloads the game. */
     setWarnOnSwitch(value: boolean): void;
     /** Pins the focused window above other apps, and remembers the choice for the windows opened after it. */
@@ -77,6 +81,20 @@ export function installMenu(
                 // Disabled rather than hidden where the panel has no legal
                 // occupant — a chat-only server with chat in the dock — so the
                 // shortcut reads as unavailable here instead of broken.
+                { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => actions.newTab() },
+                { label: 'Close Tab', accelerator: 'CmdOrCtrl+Shift+W', click: () => actions.closeTab() },
+                /*
+                 * Hidden, because nine items of "Select Tab 1..9" is most of a
+                 * menu for something nobody reads it to discover — but real, so
+                 * the accelerators fire. `visible: false` still registers them.
+                 */
+                ...Array.from({ length: 9 }, (_unused, i) => ({
+                    label: `Select Tab ${i + 1}`,
+                    accelerator: `CmdOrCtrl+${i + 1}`,
+                    visible: false,
+                    click: () => actions.selectTabAt(i)
+                })),
+                { type: 'separator' as const },
                 { label: 'Split Right', accelerator: 'CmdOrCtrl+D', click: () => actions.splitPane('x') },
                 { label: 'Split Down', accelerator: 'CmdOrCtrl+Shift+D', click: () => actions.splitPane('y') },
                 { label: 'Close Pane', accelerator: 'CmdOrCtrl+W', click: () => actions.closePane() },

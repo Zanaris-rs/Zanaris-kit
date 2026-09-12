@@ -401,6 +401,17 @@ const actions: MenuActions = {
         if (sw) void sw.closePane(sw.state().panes.find(p => p.focused)?.paneId ?? '');
     },
     evenOut: () => focusedServerWindow()?.evenOutFocused(),
+    newTab: () => focusedServerWindow()?.newTab(),
+    closeTab: () => {
+        const sw = focusedServerWindow();
+        const active = sw?.state().tabs.find(t => t.active);
+        if (sw && active) sw.closeTab(active.id);
+    },
+    selectTabAt: index => {
+        const sw = focusedServerWindow();
+        const tab = sw?.state().tabs[index];
+        if (sw && tab) sw.selectTab(tab.id);
+    },
     // Only https reaches the system browser, as in serverWindow's window-open
     // handler: this opens whatever the menu carries, and the update item's url
     // came off the network.
@@ -555,6 +566,18 @@ ipcMain.handle(IPC.paneEvenOut, (event, splitId: unknown) => {
 ipcMain.handle(IPC.paneGo, (event, where: unknown) => {
     if (where !== 'back' && where !== 'forward' && where !== 'reload') return;
     windowFor(event.sender)?.pageGo(where);
+});
+
+ipcMain.handle(IPC.tabNew, event => windowFor(event.sender)?.newTab());
+
+ipcMain.handle(IPC.tabClose, (event, tabId: unknown) => {
+    if (typeof tabId !== 'string') return;
+    windowFor(event.sender)?.closeTab(tabId);
+});
+
+ipcMain.handle(IPC.tabSelect, (event, tabId: unknown) => {
+    if (typeof tabId !== 'string') return;
+    windowFor(event.sender)?.selectTab(tabId);
 });
 
 ipcMain.handle(IPC.paneOpenExternal, (event, url: unknown) => {

@@ -3,7 +3,7 @@ import type { ServerDef } from './catalog';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatView } from './chat';
 import type { HiscoresView } from './hiscores';
-import type { PaneView, SeamView } from './panes';
+import type { PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
 import type { SinglePlayerView } from './singleplayer';
 
@@ -18,6 +18,9 @@ export const IPC = {
     paneSetSeam: 'zanaris:pane-set-seam',
     paneEvenOut: 'zanaris:pane-even-out',
     paneGo: 'zanaris:pane-go',
+    tabNew: 'zanaris:tab-new',
+    tabClose: 'zanaris:tab-close',
+    tabSelect: 'zanaris:tab-select',
     paneOpenExternal: 'zanaris:pane-open-external',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
@@ -77,6 +80,8 @@ export interface ShellState {
         /** The region the active tab's panes are laid out in: everything below the bar and left of the rail, inset by the pixel the focus border is drawn in. */
         tree: Rect;
     };
+    /** This window's workspace tabs. Each is a whole arrangement of the same server's things, not a different server. */
+    tabs: TabView[];
     /**
      * Every pane of the active tab, in reading order. The shell draws the tool
      * and empty ones and leaves the game and page rects alone — those are
@@ -170,6 +175,11 @@ export interface ZanarisApi {
         evenOut(splitId: string): Promise<void>;
         /** The focused page pane's toolbar. */
         go(where: 'back' | 'forward' | 'reload'): Promise<void>;
+        /** A new workspace tab, holding one empty pane. */
+        newTab(): Promise<void>;
+        /** Closes a tab and everything in it. Closing the last one closes the window. */
+        closeTab(tabId: string): Promise<void>;
+        selectTab(tabId: string): Promise<void>;
         /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */
         openExternal(url: string): Promise<void>;
     };

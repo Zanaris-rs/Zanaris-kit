@@ -43,6 +43,9 @@ const api: ZanarisApi = {
         setSeam: (splitId, index, px) => ipcRenderer.invoke(IPC.paneSetSeam, splitId, index, px),
         evenOut: splitId => ipcRenderer.invoke(IPC.paneEvenOut, splitId),
         go: where => ipcRenderer.invoke(IPC.paneGo, where),
+        newTab: () => ipcRenderer.invoke(IPC.tabNew),
+        closeTab: tabId => ipcRenderer.invoke(IPC.tabClose, tabId),
+        selectTab: tabId => ipcRenderer.invoke(IPC.tabSelect, tabId),
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
     },
     singlePlayer: {

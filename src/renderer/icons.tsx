@@ -79,6 +79,15 @@ export function Hearth(): ReactNode {
  * drawn to the same bounds as a globe reads as heavier than everything it
  * sits beside rather than as the smallest control in the row.
  */
+/** The new-tab control. Drawn as the same thick, outlined cross the close is, turned a quarter — they are the same pair of gestures and should read as a pair. */
+export function Plus(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
+            <path d="M7.2 3.2h3.6v4h4v3.6h-4v4H7.2v-4h-4V7.2h4Z" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
 export function CloseRoom(): ReactNode {
     return (
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">

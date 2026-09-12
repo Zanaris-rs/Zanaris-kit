@@ -137,6 +137,10 @@ export interface ServerWindow extends ServerWindowHandle {
     evenOutFocused(): void;
     /** The focused page pane's toolbar. */
     pageGo(where: 'back' | 'forward' | 'reload'): void;
+    newTab(): void;
+    /** Closes a tab and everything in it. Closing the last one closes the window, as it always has. */
+    closeTab(tabId: string): void;
+    selectTab(tabId: string): void;
     /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
     relayout(): void;
     state(): ShellState;
@@ -344,6 +348,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             title: title(),
             gameLabel: gameLabel(),
             rects,
+            tabs: host.tabs(),
             panes: host.panes(),
             seams: host.seams(),
             tools,
@@ -792,6 +797,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (splitId) host.evenOut(splitId);
         },
         pageGo: where => host.go(where),
+        newTab: () => host.newTab(),
+        closeTab: tabId => {
+            // The last tab closing is the window closing — which is the same
+            // gesture it has always been, and goes through `win.close()` so the
+            // confirm and the teardown are the ones that already exist.
+            if (!host.closeTab(tabId)) win.close();
+        },
+        selectTab: tabId => host.selectTab(tabId),
         relayout: applyLayout,
         state,
         pushState,
