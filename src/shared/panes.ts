@@ -1,0 +1,51 @@
+/** What a tab's panes look like to the shell, which draws the chrome around them. */
+import type { PaneContent, Rect } from '../main/paneTree.ts';
+
+export type { PaneContent, Rect };
+
+/** A page pane's own navigation state, as its toolbar reads it. One per page leaf, not one per window. */
+export interface PageState {
+    url: string;
+    title: string;
+    canGoBack: boolean;
+    canGoForward: boolean;
+    loading: boolean;
+}
+
+export interface PaneView {
+    paneId: string;
+    /** Where main put it, relative to the window's content area. The shell draws tool and empty panes here and leaves game and page rects alone. */
+    rect: Rect;
+    content: PaneContent;
+    focused: boolean;
+    /** Null unless `content.kind === 'page'`. */
+    page: PageState | null;
+}
+
+export interface SeamView {
+    splitId: string;
+    /** The seam sits after this child, so dragging it moves children `index` and `index + 1`. */
+    index: number;
+    axis: 'x' | 'y';
+    rect: Rect;
+    /**
+     * The pane before the seam, in pixels: where it is now and how far it may
+     * travel. `Grip` drags a boundary rather than a ratio, so the tree does the
+     * conversion and the shell never has to know about fractions, minimums or
+     * how many seams a split contains.
+     */
+    size: number;
+    min: number;
+    max: number;
+    /** The px the split divides, seams already taken off. Sent back with a drag so main can refuse a stale one. */
+    gross: number;
+}
+
+export interface TabView {
+    id: string;
+    /** What the tab button says: the focused pane's content, or "Empty". */
+    label: string;
+    active: boolean;
+    /** Whether this tab holds the live game, so the bar can mark where the character is. */
+    hasGame: boolean;
+}

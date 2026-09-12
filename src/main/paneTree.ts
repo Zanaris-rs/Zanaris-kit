@@ -282,3 +282,41 @@ export function evenOut(node: PaneNode, splitId: string): PaneNode {
     if (node.splitId === splitId) return { ...node, fractions: node.children.map(() => 1 / node.children.length) };
     return { ...node, children: node.children.map(child => evenOut(child, splitId)) };
 }
+
+/**
+ * Where a seam sits and how far it may travel, in the pixels `Grip` speaks.
+ *
+ * The grip drags a boundary, not a ratio, so the conversion happens here
+ * rather than in the shell — which would otherwise need to know the tree, the
+ * minimums and the seam count to turn a pointer position into a fraction.
+ * Null when there is no such seam, so a stale request from a shell whose tree
+ * has moved on is refused rather than acted on.
+ */
+export function seamPixels(node: PaneNode, splitId: string, index: number, gross: number): { size: number; min: number; max: number } | null {
+    const found = findSplit(node, splitId);
+    if (!found) return null;
+    const here = found.children[index];
+    const next = found.children[index + 1];
+    if (!here || !next) return null;
+    const pair = found.fractions[index]! + found.fractions[index + 1]!;
+    return {
+        size: Math.round(found.fractions[index]! * gross),
+        min: minimumOf(here, found.axis),
+        max: Math.round(pair * gross) - minimumOf(next, found.axis)
+    };
+}
+
+/** Moves a seam to a pixel position. The px-facing twin of `setFraction`, which owns the clamp. */
+export function setSeam(node: PaneNode, splitId: string, index: number, px: number, gross: number): PaneNode {
+    return gross <= 0 ? node : setFraction(node, splitId, index, px / gross, gross);
+}
+
+function findSplit(node: PaneNode, splitId: string): (PaneNode & { kind: 'split' }) | null {
+    if (node.kind === 'leaf') return null;
+    if (node.splitId === splitId) return node;
+    for (const child of node.children) {
+        const found = findSplit(child, splitId);
+        if (found) return found;
+    }
+    return null;
+}

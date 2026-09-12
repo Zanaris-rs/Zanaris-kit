@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { closePane, contentOf, evenOut, layoutTree, leaf, paneIds, setContent, setFraction, split, splitPane } from './paneTree.ts';
+import { closePane, contentOf, evenOut, layoutTree, leaf, paneIds, seamPixels, setContent, setSeam, setFraction, split, splitPane } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -138,4 +138,21 @@ test('evening out a split gives every child the same share, leaving other splits
     const next = evenOut(tree, 's1');
     assert.deepEqual(next.kind === 'split' && next.fractions, [0.5, 0.5]);
     assert.deepEqual(next.kind === 'split' && next.children[1]!.kind === 'split' && next.children[1]!.fractions, [0.9, 0.1], 'the nested split is untouched');
+});
+
+test('a seam reports where it is and how far it may travel, in pixels', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.4, 0.6]);
+    // 1000 of gross: a is at 400, and the pair may run from a's own 120 floor
+    // up to 1000 less b's 120.
+    assert.deepEqual(seamPixels(tree, 's1', 0, 1000), { size: 400, min: 120, max: 880 });
+});
+
+test('a seam in a split that is not there reports nothing', () => {
+    assert.equal(seamPixels(leaf('a', { kind: 'empty' }), 'nope', 0, 1000), null);
+});
+
+test('a seam moved in pixels lands there, and is clamped the same way a fraction is', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    assert.equal(seamPixels(setSeam(tree, 's1', 0, 300, 1000), 's1', 0, 1000)!.size, 300);
+    assert.equal(seamPixels(setSeam(tree, 's1', 0, 10, 1000), 's1', 0, 1000)!.size, 120, 'clamped at the floor, not obeyed');
 });
