@@ -106,7 +106,12 @@ const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
 let quitting = false;
 const catalog = new Catalog(join(userData, 'servers.json'));
 /** Capture mode keeps its state beside its screenshots, so a test switch never changes what the next real launch opens. */
-const appState = new AppState(join(CAPTURE_DIR ?? userData, 'state.json'));
+// Not `CAPTURE_DIR` any more. Capture mode used to redirect this one file into
+// the screenshots folder so a run could not touch the real profile; it now
+// takes a whole profile of its own, above, which covers servers.json, the
+// single-instance lock and Chromium's own data as well. Keeping both split a
+// capture's state across two places for no remaining reason.
+const appState = new AppState(join(userData, 'state.json'));
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
 /** One hiscores lookup per server, shared the same way, so a name looked up in one window is on the table in the others. */
@@ -306,6 +311,11 @@ const windows = new ServerWindows((spec, onClosed) => {
             chat: chatView,
             alwaysOnTop: () => appState.alwaysOnTop(),
             confirmCloseGame: () => confirmCloseGame(spec),
+            rememberedLayout: appState.layout(spec.server.id),
+            rememberLayout: set => {
+                appState.stageLayout(spec.server.id, set);
+                writeStagedStateWhenItSettles();
+            },
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,

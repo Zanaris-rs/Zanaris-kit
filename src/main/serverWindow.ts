@@ -9,6 +9,7 @@ import type { PaneView, SeamView } from '../shared/panes';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
+import type { TabSet } from './tabs';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
 import { WorldSwitch } from './worlds/switch';
@@ -103,6 +104,10 @@ export interface ServerWindowDeps {
      * when the user has turned the warning off.
      */
     confirmCloseGame: () => Promise<boolean>;
+    /** The pane layout this server's windows were last left in, or null to open fresh on the game. */
+    rememberedLayout: TabSet | null;
+    /** Remembers an arrangement. Staged, not written: a seam drag lands one of these per animation frame. */
+    rememberLayout: (set: TabSet) => void;
     /** What this server remembered from last time, if anything. */
     remembered: RememberedWorld | null;
     /** Called whenever this window's world or detail changes. */
@@ -304,7 +309,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         bookmarks: () => server.bookmarks,
         hosts: () => server.hosts,
         log: line => deps.log(`${tag} ${line}`),
+        remembered: deps.rememberedLayout,
         changed: () => applyLayout(),
+        remember: set => deps.rememberLayout(set),
         touched: () => pushState()
     });
 

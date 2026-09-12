@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaf, split } from './paneTree.ts';
-import { closeTab, labelOfTab, newTab, openTabs, selectTab } from './tabs.ts';
+import { closeTab, labelOfTab, newTab, nextIds, openTabs, readTabSet, selectTab } from './tabs.ts';
 
 test('a window opens on whatever it was given — the game, not a launcher', () => {
     const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
@@ -60,4 +60,40 @@ test('a tab with no game is named for the pane in focus', () => {
     const tree = split('s1', 'x', [leaf('a', { kind: 'tool', tool: 'hiscores' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
     assert.equal(labelOfTab(tree, 'a'), 'Hiscores');
     assert.equal(labelOfTab(tree, 'b'), 'Empty');
+});
+
+test('a stored layout round-trips', () => {
+    const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
+    assert.deepEqual(readTabSet(JSON.parse(JSON.stringify(set))), set);
+});
+
+test('a layout that is not a layout is refused rather than half-loaded', () => {
+    for (const junk of [null, 42, 'tabs', {}, { tabs: [], activeId: 'a' }, { tabs: [{ id: 'a' }], activeId: 'a' }]) {
+        assert.equal(readTabSet(junk), null, `expected ${JSON.stringify(junk)} to be refused`);
+    }
+});
+
+test('a layout whose active tab is not in it is refused', () => {
+    const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
+    assert.equal(readTabSet({ ...set, activeId: 'gone' }), null);
+});
+
+test('a split whose fractions do not match its children is refused', () => {
+    const bad = { tabs: [{ id: 't', focusedPaneId: 'a', tree: { kind: 'split', splitId: 's', axis: 'x', children: [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], fractions: [1] } }], activeId: 't' };
+    assert.equal(readTabSet(bad), null);
+});
+
+test('two panes sharing an id are refused — a view is keyed by it', () => {
+    const bad = { tabs: [{ id: 't', focusedPaneId: 'a', tree: split('s', 'x', [leaf('a', { kind: 'empty' }), leaf('a', { kind: 'empty' })], [0.5, 0.5]) }], activeId: 't' };
+    assert.equal(readTabSet(bad), null);
+});
+
+test('a second game anywhere in the layout is refused — there is one view', () => {
+    const bad = { tabs: [{ id: 't', focusedPaneId: 'a', tree: split('s', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'game' })], [0.5, 0.5]) }], activeId: 't' };
+    assert.equal(readTabSet(bad), null);
+});
+
+test('the next ids carry on past whatever was restored', () => {
+    const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-7', 'pane-4');
+    assert.deepEqual(nextIds(set), { pane: 5, tab: 8, split: 1 });
 });

@@ -356,6 +356,13 @@ actually stops the two axes inducing each other — and separately swaps that
 `100vh` for a percentage of the view's own height, which keeps the canvas centred
 in an oversized pane now that `vh` is gone rather than fixing anything itself.
 
+The arrangement is remembered per server, the way the world and detail already
+are: the next window for that server opens with the tabs, splits and seam
+positions you left it with. A stored layout is validated whole and refused
+whole — one server's entry edited into nonsense costs that server its
+arrangement and nothing else, and a window with no stored layout opens on the
+game.
+
 The floor on a pane is 120x80: the point at which it stops being able to show
 that it exists, not the point at which its content is comfortable. A pane that
 lands under it is held there and its siblings pay; when even the minimums do not
@@ -520,8 +527,8 @@ the reload button) is parked in `git stash`.
 ## Next
 
 3. **The reference pane, beyond the links.** An address row and wiki search,
-   per-tab zoom, tearing a page off into its own window, and reopening the
-   pages that were open at quit.
+   per-pane zoom, and tearing a pane off into its own window. (Reopening what
+   was open at quit landed with the pane tree.)
 4. **Shared tools.** Screenshot cropped to the canvas, timers with an AFK
    reset, notes, settings.
 5. **Chat.** IRC on SwiftIRC, joining `#LostHQ` and `#LostCity`.

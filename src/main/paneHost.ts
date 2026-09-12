@@ -16,7 +16,7 @@ import {
     type Rect
 } from './paneTree.ts';
 import { PAGE_TOOLBAR_HEIGHT } from '../shared/layout.ts';
-import { closeTab, labelOfTab, newTab, openTabs, selectTab, type TabSet } from './tabs.ts';
+import { closeTab, labelOfTab, newTab, nextIds, openTabs, selectTab, type TabSet } from './tabs.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
 
 /**
@@ -51,17 +51,22 @@ export interface PaneHostDeps {
     bookmarks: () => readonly { url: string; name: string }[];
     hosts: () => readonly string[];
     log: (line: string) => void;
+    /** The layout this server's windows were last left in, or null to open fresh on the game. */
+    remembered: TabSet | null;
     /** The tree's shape changed: lay the window out again and push state. */
     changed: () => void;
+    /** The arrangement moved. Staged, not written: a seam drag lands one of these per animation frame. */
+    remember: (set: TabSet) => void;
     /** Nothing geometric moved — a title, a back button. Push state only. */
     touched: () => void;
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
-    let set: TabSet = openTabs('tab-1', 'pane-1', { kind: 'game' });
-    let nextPane = 2;
-    let nextSplit = 1;
-    let nextTab = 2;
+    let set: TabSet = deps.remembered ?? openTabs('tab-1', 'pane-1', { kind: 'game' });
+    const resume = nextIds(set);
+    let nextPane = resume.pane;
+    let nextSplit = resume.split;
+    let nextTab = resume.tab;
 
     const active = (): PaneNode => set.tabs.find(t => t.id === set.activeId)!.tree;
     const focused = (): string => set.tabs.find(t => t.id === set.activeId)!.focusedPaneId;
@@ -245,6 +250,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         const survives = paneIds(next).includes(focused());
         set = withActive(next, survives ? undefined : paneIds(next)[0]);
         syncViews();
+        deps.remember(set);
         deps.changed();
     }
 
@@ -289,6 +295,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         newTab(): void {
             set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`);
+            deps.remember(set);
             deps.changed();
         },
 
@@ -298,6 +305,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             if (next === null) return false;
             if (next === set) return true;
             set = next;
+            deps.remember(set);
             // The tab's panes went with it, so its page views have nothing left
             // pointing at them. Reconciled rather than tracked: `syncViews`
             // follows the tabs, and a view whose pane is gone from every tab is
@@ -311,6 +319,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             const next = selectTab(set, tabId);
             if (next === set) return;
             set = next;
+            deps.remember(set);
             deps.changed();
         },
 
@@ -340,6 +349,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             // panes exist, only how big they are.
             if (next !== active()) {
                 set = withActive(next);
+                deps.remember(set);
                 deps.changed();
             }
             // The size the seam was *drawn* at, not the one it asked for. The
