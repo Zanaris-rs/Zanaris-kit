@@ -183,7 +183,7 @@ export default function Grip({
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
         const step = event.shiftKey ? STEP_COARSE : STEP;
         // The same way round as the pointer: the arrow that moves the seam
-        // forward is the one that grows the pane behind it.
+        // forward is the one that grows the pane before it.
         const grow = axis === 'y' ? 'ArrowDown' : 'ArrowRight';
         const shrink = axis === 'y' ? 'ArrowUp' : 'ArrowLeft';
         switch (event.key) {

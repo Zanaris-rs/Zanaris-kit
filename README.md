@@ -51,12 +51,14 @@ startup the app opens the first server in the catalog, Lost City. On macOS the
 app keeps running with no windows and the dock menu opens one; elsewhere
 closing the last window quits, since the menu lives in the window.
 
-A **server window** is bound to one catalog entry for its whole life. Its
-strip starts with a badge reading "Lost City · W5 · low · 43 ms": the server,
-the world, the detail level and the latency to that world's host, measured
-every ten seconds. The game is never behind anything, so that is a read-out
-rather than a tab — what follows it are the reference pages this window has
-open. A rail runs down the right edge; its first tool is **Worlds**. Clicking
+A **server window** is bound to one catalog entry for its whole life. The game
+pane's own header reads "Lost City · W5 · low · 43 ms": the server, the world,
+the detail level and the latency to that world's host, measured every ten
+seconds. It is the window's fact rather than the pane's — one server, one game —
+and it sat at the left of the tab bar for exactly that reason, until it became
+clear that a read-out nobody can place is a read-out nobody reads. Beside the
+game it describes, it is obviously about the thing under it, and the bar is left
+to tabs. A rail runs down the right edge; its first tool is **Worlds**. Clicking
 it puts the tool in the pane you are standing in — or splits that pane, when it
 holds the game, so a click on the rail never costs you your view of it. What it
 shows is Low / High
@@ -111,10 +113,19 @@ pane shows. It lists this server's links, in order — for Lost City: Forums,
 Coordinates, Clue Help, Puzzle Solver, World Map, Markets, Quest Guides, Skill
 Guides, Skills Calculator, Bestiary and Item Database; for Zanaris the nine of
 those that are not Lost City's own forums and prices; for Lost City Labs and
-single player nothing — alongside the tools this window offers and the game, if
-no other pane has it. Clicking one fills the pane you are looking at. Split
-first and you fill the new half instead, which is how two pages end up side by
-side.
+single player nothing — alongside the tools this window offers and the game.
+Clicking one fills the pane you are looking at. Split first and you fill the new
+half instead, which is how two pages end up side by side.
+
+There is one game per window and there always will be: two of them side by side
+would read as an endorsement of multi-boxing, and the window has one storage
+partition and one login. So the launcher's game entry **moves** the game rather
+than offering a second — it says "Move game here" when the game is somewhere
+else, in this tab or another, and the pane it leaves shows the launcher. That
+costs nothing: the view is repositioned, never reloaded, so a move keeps you
+logged in exactly as dragging a seam does. Only a window whose game pane has
+been closed pays a fresh login, and that is the close doing it rather than the
+move.
 
 There is no Guides tool any more. A chooser inside the pane it is about to fill
 is a shorter path than a panel that opens somewhere else and puts the page
@@ -123,12 +134,12 @@ somewhere else again.
 Each tab keeps its own live view for as long as it is open, so switching
 between them is instant and nothing reloads — a half-filled coordinate
 lookup, a map panned to where you are standing and a drop table scrolled to
-the right row are all still there when you come back to them. The pane has
-back, forward and reload and no address box: it browses freely within the
-hosts that server allows, and a link off them opens in your system browser
-instead. The seam between the game and the pane can be dragged, and where you
-leave it is where the next pane opens. Closing the last tab closes the pane;
-the control in the strip hides it without closing anything.
+the right row are all still there when you come back to them. A page pane's
+header carries back, forward and reload and no address box: it browses freely
+within the hosts that server allows, and a link off them opens in your system
+browser instead. Every seam drags, on both axes, and the pane before a seam —
+the one to its left, or above it — is the one that grows as you push the seam
+away from it.
 
 **Single player** needs no server at all: the kit carries the Lost City engine
 and the game's files, and File > New Window For > Single player starts a world
@@ -332,10 +343,31 @@ Cmd/Ctrl+T, Cmd/Ctrl+Shift+W and Cmd/Ctrl+1 to 9. **Cmd/Ctrl+W closes a pane,
 not the window** — the window goes when its last tab does.
 
 A fresh pane is empty and shows a launcher: this server's links, the tools this
-window offers, and the game if no other pane has it. That list is why there is
-no longer a Guides tool — a chooser in the pane it is about to fill is a shorter
-path than a panel that opens somewhere else and puts the page somewhere else
-again.
+window offers, and the game. That list is why there is no longer a Guides tool —
+a chooser in the pane it is about to fill is a shorter path than a panel that
+opens somewhere else and puts the page somewhere else again.
+
+**Every pane has a header**, 32px of stone across its top, and the native views
+are inset below it so it costs that pane's height rather than the window's. It
+carries three things and refuses a fourth. The pane's **name** comes first — a
+link's curated name from the catalog rather than the page's own `<title>`, which
+changes as you click through a wiki and would make the pane's identity move
+under it; then the tool's name, or "Game", or "Empty". Then **that pane's own
+controls**, which only a page has: back, forward, reload. Then a **dropdown**
+that changes what the pane holds, offering the same list the launcher does.
+Nothing else gets controls: Hiscores' name box, Worlds' detail switch and chat's
+Send stay in the pane body, because they are the pane's *work* rather than its
+identity, and a header that collected them would become a second body.
+
+The dropdown is a native menu main pops rather than a panel the shell draws.
+In a game or page pane the header sits directly above a `WebContentsView`, so
+anything drawn below it by the shell would open behind that view — and building
+it in main is what lets one menu serve all four kinds of pane, the same way the
+right-click menu does. Which items it offers, what they are called and which one
+is already showing are decided in `main/paneMenu.ts`, which is pure and tested,
+for the reason the right-click menu is: an item offered and then refused is
+worse than one never offered, and the launcher would otherwise be a second
+opinion about the same question. It was a second opinion, and it was wrong.
 
 The window never resizes itself any more. Opening the old panel or dock grew the
 window rather than shrinking the game, through a `widen → shift → push` ladder,
@@ -351,8 +383,9 @@ What a small game pane costs is the bottom of the canvas. The served page does
 not rescale to follow unless the player picked **Auto Sizing** from the controls
 under the game, so the canvas clips rather than shrinking — still reachable by
 scrolling, though with no bar to hint at it, since the injected stylesheet hides
-them. 765x503 is now what a game pane *asks for* when it is first placed, not a
-floor anything protects.
+them. 765x503 plus the client page's controls strip plus the pane header — 765
+by 567 — is what a game pane *asks for* when it is first placed, and what the
+window opens at, not a floor anything protects.
 
 Below that the client page is not ours: every server serves the same template,
 and its own `overflow: auto` around a `100vh` centring column can put up a
@@ -422,25 +455,24 @@ One capture run with every catalog server open at once:
 
 | window | game | shell |
 |---|---|---|
-| Lost City | login screen at World 5 | "Lost City · W5 · low · 239 ms", the globe on the rail |
-| Zanaris | login screen | "Zanaris · W1 · low · N ms" |
-| Lost City Labs | login screen | "Lost City Labs · W1 · N ms", no detail since Labs has no switch |
-| Lost City, Worlds open | untouched | five worlds with region, players and latency, W5 marked in gold, the red Low detail slab pressed; mode **widen** |
-| Lost City, after choosing W1 | login screen at World 1 | "Lost City · W1 · low · 294 ms", W1 marked; title "Lost City — World 1" |
-| Lost City, Hiscores open | untouched | "Showing granny_grunt", Overall picked out in gold at rank 18, level 1,724, 143,195,458 xp, then Attack down to Crafting in view, 20 rows in all. Every xp is a whole number — Attack reads 13,073,159, the floor of the raw `value` 130731598 |
-| Zanaris, Hiscores open | untouched | the header row and nothing else, with "No hiscores entry for that name." in warn: `zezima` is nobody on Zanaris, and the panel says so rather than showing an empty table |
+| Lost City | the whole login screen, canvas and controls strip, nothing clipped at the window's own opening size of 815x605 | one pane headed "Game · Lost City · W5 · low · 210 ms · rev 274"; tabs and the `+` alone in the bar above it |
+| Zanaris | login screen | "Game · Zanaris · W1 · low · 268 ms" |
+| Lost City Labs | login screen | "Game · Lost City Labs · W1 · N ms", no detail since Labs has no switch |
+| Lost City, split right | untouched at 765→381px wide | the new pane headed "Empty", its launcher offering Chat, Worlds, Hiscores, **Move game here**, then the eleven links under a rule |
+| Lost City, Worlds open | untouched | the pane headed "Worlds" with no heading of its own inside it, the red Low detail slab pressed |
+| Lost City, Hiscores and Chat open beside the game | untouched | three headers — "Game" with its read-out, "Chat", "Hiscores" — and "Showing granny_grunt", Overall in gold at rank 18, level 1,724, 143,195,458 xp. Every xp is a whole number: Attack reads 13,073,159, the floor of the raw `value` 130731598 |
+| Zanaris, Hiscores open | untouched | the header row and nothing else, with "No hiscores entry for that name." in warn: `zezima` is nobody on Zanaris, and the pane says so rather than showing an empty table |
 | Lost City Labs, Hiscores open | untouched | "Showing knight", Overall in gold at rank 1, level 1,176, 18,174,678 xp; 22 rows in all, Labs' later revision sending the Slayer and Farming lines 274 never does |
-| Lost City (2), opened after the hop | login screen at World 1, the remembered world | slot 2, `persist:server:lostcity:2` |
+| Zanaris, two pages stacked | untouched | both page panes headed with their catalog names — "Coord…", "Clue H…" — before their back, forward and reload, the name truncating rather than vanishing at 189px |
+| Lost City, seam dragged | 190px wide | asked for 190px of 761 and got 190; the game pane's header keeps its name and drops "rev 274", which is the half worth losing |
+| Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, restored into the same arrangement the first window was left in — so its shell frame is byte-identical to that window's, which is the one duplicate in the run and a real one |
 
-The Zanaris and Labs frames caught the panel before its pixel font landed, so
-the title and the Look up label are blank in those two — everything drawn in
-the sans face, the table and its message included, is there. They evidence the
-lookup, not the chrome around it.
+The world list came back empty in that run and no hop happened: the Worlds pane
+has no fetch of its own on open, so it shows "No worlds listed. Try again"
+until refresh is pressed. That is a gap of its own rather than anything the
+panes changed.
 
-The version 1 `servers.json` on disk migrated in place during that run, with
-no recovery prompt, and the state file recorded the hop.
-
-371 tests cover the pure modules: layout, catalog (validation, defaults, file
+424 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, a version 1, 2 or 3 file each migrating into version 4, and a
 built-in's hiscores block re-adopted from the defaults), slots, tabs, the
 window registry, the world sources against the real API payloads (including a
@@ -450,10 +482,18 @@ hiscores sources against each server's own payload (the xp floor, Lost City's
 empty 200, and the 404s that are and are not a missing player), the hiscores
 service (supersession by sequence number, the last table kept through a
 failure, the rate-limit message), the per-window switch state, the app state
-store, the navigation guard, and the latency probe against a local listener.
+store, the navigation guard, the latency probe against a local listener, the
+pane tree and its solver, the workspace tabs — including moving the game out of
+one tab and into another — and what a pane is called and may be turned into.
 
 ## Known
 
+- **The Worlds pane does not fetch on open.** Nothing calls the world service's
+  `list()` except the pane's own refresh button, so a freshly opened Worlds
+  pane reads "No worlds listed. Try again" until it is pressed. Two capture
+  runs on this branch both logged `worlds: idle`. It predates the pane tree —
+  the same code is in the commit before it — and is the next thing to fix in
+  that tool.
 - **Latency measures the front door, not the game.** The probe is a TCP connect
   to the world's web host, so for a server behind a CDN it times the nearest
   edge rather than the game server. Lost City's Singapore world reads 45 ms
@@ -500,6 +540,8 @@ src/shared/catalog.ts       ServerDef and the add-form input
 src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorld
 src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/main/paneTree.ts        pure: the split tree, its solver, splits and drags      (tested)
+src/main/tabs.ts            pure: workspace tabs, moving the game, stored layouts   (tested)
+src/main/paneMenu.ts        pure: a pane's name, its gestures, what it may become    (tested)
 src/main/paneHost.ts        the views inside a tab's panes; holds no rules
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
@@ -519,8 +561,10 @@ src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.zanaris bridge
 src/renderer/Shell.tsx      the bar, the rail, and every pane where main put it
+src/renderer/paneHeader.tsx a pane's name, its own controls, and what it may become
 src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
-src/renderer/tab.tsx        the shared tab button, worn by the strip and the dock header
+src/renderer/grip.tsx       one draggable seam, and its keyboard path
+src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
 src/renderer/tools/Worlds.tsx
 static/offline.html         shown when a server can't be reached
 ```
