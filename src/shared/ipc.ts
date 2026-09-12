@@ -18,6 +18,7 @@ export const IPC = {
     paneSetSeam: 'zanaris:pane-set-seam',
     paneEvenOut: 'zanaris:pane-even-out',
     paneGo: 'zanaris:pane-go',
+    paneContextMenu: 'zanaris:pane-context-menu',
     tabNew: 'zanaris:tab-new',
     tabClose: 'zanaris:tab-close',
     tabSelect: 'zanaris:tab-select',
@@ -175,6 +176,14 @@ export interface ZanarisApi {
         evenOut(splitId: string): Promise<void>;
         /** The focused page pane's toolbar. */
         go(where: 'back' | 'forward' | 'reload'): Promise<void>;
+        /**
+         * Raises the pane menu, for a right-click the shell saw. Main builds it
+         * — a right-click on a game or a page never reaches the shell, so the
+         * menu has to exist there anyway, and one menu is the only way all
+         * three kinds of pane offer the same one. Coordinates are the window's,
+         * which is what the shell's own are.
+         */
+        contextMenu(paneId: string, x: number, y: number): Promise<void>;
         /** A new workspace tab, holding one empty pane. */
         newTab(): Promise<void>;
         /** Closes a tab and everything in it. Closing the last one closes the window. */

@@ -1,4 +1,4 @@
-import { BrowserWindow, WebContentsView, screen, shell, type NativeImage } from 'electron';
+import { BrowserWindow, Menu, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT } from '../shared/layout';
@@ -8,6 +8,7 @@ import type { SinglePlayerView } from '../shared/singleplayer';
 import type { PaneView, SeamView } from '../shared/panes';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
+import { paneMenuItems } from './paneMenu';
 import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
 import type { TabSet } from './tabs';
 import { loadShell, preloadPath } from './renderer';
@@ -135,6 +136,8 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Puts something in a pane. A page must be one of this server's links, and a second game is refused. */
     setPaneContent(paneId: string, content: PaneContent): void;
     focusPane(paneId: string): void;
+    /** Raises the pane menu at a point in the window. */
+    showPaneMenu(paneId: string, x: number, y: number): void;
     /** Drags a seam. Returns the position actually applied, on every path including the one that changes nothing. */
     setSeam(splitId: string, index: number, px: number): number;
     evenOut(splitId: string): void;
@@ -312,6 +315,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         remembered: deps.rememberedLayout,
         changed: () => applyLayout(),
         remember: set => deps.rememberLayout(set),
+        contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState()
     });
 
@@ -494,6 +498,46 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
+     * The pane menu, raised by a right-click anywhere in a pane.
+     *
+     * Built in main rather than drawn by the shell because a right-click on a
+     * game or a page never reaches the shell — those are native views stacked
+     * above it, and only they see the pointer. One builder with three callers
+     * is the only way the menu is the same object everywhere; a shell-drawn one
+     * would have had to be a second menu for the two kinds of pane it cannot
+     * cover, and two menus are two menus that drift.
+     *
+     * Which items are legal is `paneMenu.ts`, which is pure and tested against
+     * the same minimums the solver enforces — an item offered and then refused
+     * is worse than one never offered.
+     */
+    function showPaneMenu(paneId: string, x: number, y: number): void {
+        if (win.isDestroyed()) return;
+        const rect = host.rectOf(paneId);
+        if (!rect) return;
+        // Right-clicking a pane focuses it first, so the menu acts on what was
+        // clicked rather than on whatever happened to have focus — every item
+        // below names the pane, but Even Out and the accelerators do not.
+        host.focus(paneId);
+        const menu = Menu.buildFromTemplate(
+            paneMenuItems(host.tree(), paneId, rect).map(item => ({
+                label: item.label,
+                enabled: item.enabled,
+                click: () => {
+                    if (item.id === 'split-x') host.split(paneId, 'x');
+                    else if (item.id === 'split-y') host.split(paneId, 'y');
+                    else if (item.id === 'close') void closePane(paneId);
+                    else {
+                        const splitId = parentSplitOf(host.tree(), paneId);
+                        if (splitId) host.evenOut(splitId);
+                    }
+                }
+            }))
+        );
+        menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
+    }
+
+    /**
      * Closes a pane, asking first when it is the game's.
      *
      * Closing the game destroys its view, which disconnects the player. The
@@ -634,7 +678,18 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (/^https?:\/\//.test(url)) void shell.openExternal(url);
             return { action: 'deny' };
         });
-        wc.on('context-menu', event => event.preventDefault());
+        // The game's own menu is refused — nothing Chromium offers on a canvas
+        // is any use, and Inspect Element on a game page is not something to
+        // hand a player by accident — and the pane menu takes its place. The
+        // view's coordinates go back into the window's, which is where popup
+        // wants them.
+        wc.on('context-menu', (event, params) => {
+            event.preventDefault();
+            const tree = host.tree();
+            const gamePane = paneIds(tree).find(id => contentOf(tree, id)?.kind === 'game');
+            const rect = gamePane ? host.rectOf(gamePane) : null;
+            if (gamePane && rect) showPaneMenu(gamePane, rect.x + params.x, rect.y + params.y);
+        });
         // Mouse back and forward buttons would walk the history of world switches.
         win.on('app-command', (event, command) => {
             if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
@@ -797,6 +852,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         closePane,
         setPaneContent,
         focusPane: paneId => host.focus(paneId),
+        showPaneMenu,
         setSeam: (splitId, index, px) => host.dragSeam(splitId, index, px),
         evenOut: splitId => host.evenOut(splitId),
         evenOutFocused: () => {

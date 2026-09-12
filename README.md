@@ -323,6 +323,14 @@ moving exactly the two panes either side of it. Repeated splitting halves each
 time, as it does in iTerm and tmux, and **Even Out** in the View menu is what
 answers "make these the same size".
 
+Right-clicking a pane offers Split Right, Split Down, Even Out and Close, and
+focuses that pane first so the menu acts on what was clicked. A split that
+could not be drawn — either half under the 120x80 floor — is offered greyed
+rather than offered and then refused. The same four are in the View menu with
+Cmd/Ctrl+D, Cmd/Ctrl+Shift+D, Cmd/Ctrl+W and Cmd/Ctrl+Alt+=; tabs are
+Cmd/Ctrl+T, Cmd/Ctrl+Shift+W and Cmd/Ctrl+1 to 9. **Cmd/Ctrl+W closes a pane,
+not the window** — the window goes when its last tab does.
+
 A fresh pane is empty and shows a launcher: this server's links, the tools this
 window offers, and the game if no other pane has it. That list is why there is
 no longer a Guides tool — a chooser in the pane it is about to fill is a shorter

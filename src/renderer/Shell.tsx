@@ -236,6 +236,17 @@ export default function Shell(): ReactNode {
                     <div
                         style={at(pane.rect)}
                         onPointerDownCapture={() => void window.zanaris.panes.focus(pane.paneId)}
+                        /*
+                         * Only tool and empty panes reach this. A right-click on
+                         * a game or a page lands on the native view stacked
+                         * above the shell, and main raises the same menu from
+                         * there. clientX/Y are already the window's, because the
+                         * shell view spans the whole content area.
+                         */
+                        onContextMenu={event => {
+                            event.preventDefault();
+                            void window.zanaris.panes.contextMenu(pane.paneId, event.clientX, event.clientY);
+                        }}
                         className={`flex flex-col overflow-hidden bg-ink${pane.content.kind === 'tool' ? ' tile' : ''}`}
                         /* A game or page pane is a hole for a native view; nothing in it is the shell's to describe. */
                         aria-hidden={pane.content.kind === 'game' || pane.content.kind === 'page' ? 'true' : undefined}

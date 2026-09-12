@@ -59,6 +59,8 @@ export interface PaneHostDeps {
     remember: (set: TabSet) => void;
     /** Nothing geometric moved — a title, a back button. Push state only. */
     touched: () => void;
+    /** A right-click landed on a pane, in window coordinates. */
+    contextMenu: (paneId: string, x: number, y: number) => void;
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
@@ -212,6 +214,16 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.log(`pane ${paneId} could not load ${failed}: ${description} (${code})`);
         });
         wc.on('focus', () => focus(paneId));
+        // A right-click on a page never reaches the shell — this view is
+        // stacked above it — so the pane menu is raised from here instead, with
+        // the view's own coordinates put back into the window's. The toolbar
+        // above it is shell, and the view starts below it, so that inset is
+        // part of the offset.
+        wc.on('context-menu', (_event, params) => {
+            const rect = rects.get(paneId);
+            if (!rect) return;
+            deps.contextMenu(paneId, rect.x + params.x, rect.y + Math.min(PAGE_TOOLBAR_HEIGHT, rect.height) + params.y);
+        });
 
         const policy = (event: { preventDefault: () => void }, target: string): void => {
             const decision = decidePageNavigation({ target, hosts: deps.hosts() });
@@ -292,6 +304,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         seams: () => seams,
         focus,
+        rectOf: (paneId: string) => rects.get(paneId) ?? null,
 
         newTab(): void {
             set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`);
@@ -396,6 +409,8 @@ export interface PaneHost {
     tabs: () => TabView[];
     seams: () => SeamView[];
     focus: (paneId: string) => void;
+    /** Where a pane was last drawn, for anything that needs its size — the context menu asks whether it can still be halved. */
+    rectOf: (paneId: string) => Rect | null;
     newTab: () => void;
     /** False when that was the last tab, which is the window's cue to close. */
     closeTab: (tabId: string) => boolean;
