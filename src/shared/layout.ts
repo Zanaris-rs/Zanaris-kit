@@ -33,8 +33,25 @@ export const SEAM = 4;
 export const PANE_MIN_WIDTH = 120;
 export const PANE_MIN_HEIGHT = 80;
 
-/** A page pane's own toolbar: back, forward, reload, title. Costs that pane's height, never the window's. */
-export const PAGE_TOOLBAR_HEIGHT = 32;
+/**
+ * Every pane's own header: what the pane is called, whatever controls belong to
+ * that one thing, and the dropdown that changes what the pane holds.
+ *
+ * On all four kinds, not only on pages. A pane that could not say what it was
+ * relied on its content to introduce itself, which the game and a reference page
+ * cannot do at all — they are native views with nothing of ours drawn in them —
+ * and which cost the tools a heading apiece in a window where every pane already
+ * has an edge and a focus ring. The game and page views are inset below it by
+ * this much, so it costs that pane's own height and never the window's.
+ */
+export const PANE_HEADER_HEIGHT = 32;
+
+/**
+ * The pixel of shell left around the tree so the focused pane's ring has
+ * somewhere to land. Between panes the seam provides it; at the container's edge
+ * there is nothing else, and a native view cannot be outlined from inside itself.
+ */
+export const TREE_INSET = 1;
 
 /**
  * The client page's controls strip below the canvas: `max(2vh, 24px)` tall with
@@ -45,8 +62,15 @@ export const PAGE_CONTROLS_HEIGHT = 32;
 
 /**
  * What a game pane asks for when it is first placed, and what a double-click on
- * its seam snaps it back to: the stock 765x503 canvas plus the client page's own
- * controls strip below it.
+ * its seam snaps it back to.
+ *
+ * Three bands make up the height, and each is there because something would be
+ * cut off without it: the stock 503px canvas, the client page's own controls
+ * strip below it, and the pane header above it, which the view is inset by. The
+ * header was the last to arrive and is why this grew from 535 — a pane asking
+ * for exactly the canvas and the strip would have had the header eat the bottom
+ * of the canvas at the size the window opens at, which is the one size nobody
+ * chose and everybody sees.
  *
  * A preference, not a floor. Nothing protects it once the user has dragged a
  * seam past it — the game is an ordinary pane now, and a pane smaller than its
@@ -56,4 +80,4 @@ export const PAGE_CONTROLS_HEIGHT = 32;
  * scrolling.
  */
 export const GAME_PREFERRED_WIDTH = 765;
-export const GAME_PREFERRED_HEIGHT = 503 + PAGE_CONTROLS_HEIGHT;
+export const GAME_PREFERRED_HEIGHT = 503 + PAGE_CONTROLS_HEIGHT + PANE_HEADER_HEIGHT;

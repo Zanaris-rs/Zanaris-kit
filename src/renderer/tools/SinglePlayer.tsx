@@ -25,9 +25,6 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {/* The client centres a panel's title over its contents, so this one is centred too. */}
-            <h2 className="title">Single player</h2>
-
             <div className="px-2.5">
                 <p className={view.status === 'failed' ? 'text-warn' : 'text-cream'} aria-live="polite">
                     {status}

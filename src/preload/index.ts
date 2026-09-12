@@ -44,6 +44,7 @@ const api: ZanarisApi = {
         evenOut: splitId => ipcRenderer.invoke(IPC.paneEvenOut, splitId),
         go: where => ipcRenderer.invoke(IPC.paneGo, where),
         contextMenu: (paneId, x, y) => ipcRenderer.invoke(IPC.paneContextMenu, paneId, x, y),
+        contentMenu: (paneId, x, y) => ipcRenderer.invoke(IPC.paneContentMenu, paneId, x, y),
         newTab: () => ipcRenderer.invoke(IPC.tabNew),
         closeTab: tabId => ipcRenderer.invoke(IPC.tabClose, tabId),
         selectTab: tabId => ipcRenderer.invoke(IPC.tabSelect, tabId),

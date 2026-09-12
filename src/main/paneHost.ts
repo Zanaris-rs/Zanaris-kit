@@ -15,7 +15,7 @@ import {
     type PaneNode,
     type Rect
 } from './paneTree.ts';
-import { PAGE_TOOLBAR_HEIGHT } from '../shared/layout.ts';
+import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
 import { paneContentItems, paneName } from './paneMenu.ts';
 import { closeTab, labelOfTab, moveGame, newTab, nextIds, openTabs, selectTab, type TabSet } from './tabs.ts';
 import type { ToolId } from '../shared/ipc.ts';
@@ -115,21 +115,28 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             // is for, and it is the one thing the tab design rests on that no
             // test here can prove.
             const rect = gamePane ? rects.get(gamePane) : undefined;
-            if (rect) game.setBounds(rect);
+            if (rect) game.setBounds(below(rect));
             game.setVisible(Boolean(rect));
         }
         for (const [paneId, view] of pageViews) {
             const rect = rects.get(paneId);
-            // The pane's toolbar is shell, drawn in the top of the pane's own
-            // rect, so the view starts below it. That cost comes out of the
-            // pane rather than the window — the same rule as before, applied
-            // per pane now that a pane holds exactly one page.
-            if (rect) {
-                const toolbar = Math.min(PAGE_TOOLBAR_HEIGHT, rect.height);
-                view.setBounds({ x: rect.x, y: rect.y + toolbar, width: rect.width, height: rect.height - toolbar });
-            }
+            if (rect) view.setBounds(below(rect));
             view.setVisible(Boolean(rect));
         }
+    }
+
+    /**
+     * A pane's rect less its header, which is the strip of shell drawn at the
+     * top of it. Every native view is inset by this — the game's as much as a
+     * page's — so the header always has the pane it names to sit in, and that
+     * cost comes out of the pane rather than out of the window.
+     *
+     * Clamped, because a pane can be dragged shorter than its own header: a
+     * negative height is not something to hand `setBounds`.
+     */
+    function below(rect: Rect): Rect {
+        const header = Math.min(PANE_HEADER_HEIGHT, rect.height);
+        return { x: rect.x, y: rect.y + header, width: rect.width, height: rect.height - header };
     }
 
     /** The views, reconciled against the page leaves. The only thing that creates or destroys one. */
@@ -207,13 +214,14 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         wc.on('focus', () => focus(paneId));
         // A right-click on a page never reaches the shell — this view is
         // stacked above it — so the pane menu is raised from here instead, with
-        // the view's own coordinates put back into the window's. The toolbar
+        // the view's own coordinates put back into the window's. The header
         // above it is shell, and the view starts below it, so that inset is
         // part of the offset.
         wc.on('context-menu', (_event, params) => {
             const rect = rects.get(paneId);
             if (!rect) return;
-            deps.contextMenu(paneId, rect.x + params.x, rect.y + Math.min(PAGE_TOOLBAR_HEIGHT, rect.height) + params.y);
+            const view = below(rect);
+            deps.contextMenu(paneId, view.x + params.x, view.y + params.y);
         });
 
         const policy = (event: { preventDefault: () => void }, target: string): void => {

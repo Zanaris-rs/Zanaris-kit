@@ -1,12 +1,11 @@
 import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Rect, ShellState, ToolId } from '../shared/ipc';
 import type { PaneView, SeamView } from '../shared/panes';
-import { PAGE_TOOLBAR_HEIGHT } from '../shared/layout';
 import { Bars, Chat as ChatIcon, CloseRoom, Globe, Hearth, Plus } from './icons';
 import Grip from './grip';
 import Launcher from './Launcher';
+import PaneHeader from './paneHeader';
 import Tab from './tab';
-import PageToolbar from './pageToolbar';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
 import SinglePlayer from './tools/SinglePlayer';
@@ -26,16 +25,10 @@ function revisionOf(state: ShellState): string {
 
 /** The bar spans the window, so only its underside is bevelled. */
 const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
-/* A tab is not one of the surfaces that carry the stone's text shadow, and a gold
-   digit on a lit sprite needs one of its own to stay a digit. */
+/* The rail's unread count sits on a `.tab`, which is not one of the surfaces that
+   carry the stone's text shadow, and a gold digit on a lit sprite needs one of its
+   own to stay a digit. */
 const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
-/**
- * The game's read-out keeps the raised tile it has always had. It sits at the
- * left of the bar rather than among anything, because it is the window's: the
- * window is bound to one server and has one game, so the read-out belongs to
- * neither a pane nor a tab.
- */
-const BADGE_BOX: CSSProperties = { height: 26, width: 'auto' };
 /**
  * A tab and its close are one item of the bar, the way a room and its close are
  * one item of chat's row: the close reads as part of the workspace it shuts
@@ -74,26 +67,21 @@ function unreadChat(state: ShellState): number {
 }
 
 /**
- * What the shell draws inside one pane.
+ * What the shell draws inside one pane, under the header every pane now has.
  *
  * Two of the four kinds draw nothing at all: a game or a page is a native
- * WebContentsView that main has already positioned on top of this rect, so the
- * shell leaves it empty exactly as it left the old content rect empty. A page
- * still gets its toolbar, which is shell, drawn in the top of the pane's own
- * rect — the view below it is inset by the same constant.
+ * WebContentsView that main has already positioned over this rect, inset below
+ * the header, so the shell leaves the rest of the pane empty exactly as it left
+ * the old content rect empty. A page's back, forward and reload moved up into
+ * the header with everything else that names a pane rather than works in one.
  */
 function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
     switch (pane.content.kind) {
         case 'empty':
             return <Launcher paneId={pane.paneId} links={state.server.bookmarks} contents={pane.contents ?? []} />;
         case 'game':
-            return null;
         case 'page':
-            return pane.page ? (
-                <div style={{ height: PAGE_TOOLBAR_HEIGHT, borderLeft: 'none', borderRight: 'none' }} className="tile">
-                    <PageToolbar view={pane.page} />
-                </div>
-            ) : null;
+            return null;
         case 'tool':
             switch (pane.content.tool) {
                 case 'chat':
@@ -106,6 +94,27 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
                     return state.singlePlayer ? <SinglePlayer view={state.singlePlayer} /> : null;
             }
     }
+}
+
+/**
+ * What the game pane's header says about the game: the server, its world, its
+ * detail and the latency to that world's host, plus the revision it runs.
+ *
+ * It is still the window's fact rather than the pane's — one server, one game —
+ * which is why it used to sit at the left of the tab bar. What that missed is
+ * that a read-out nobody can place is a read-out nobody reads: beside the game
+ * it describes, it is obviously about the thing under it, and the bar is left to
+ * tabs. A pane with no game shows none of this, which is itself the honest
+ * answer to "where is my character".
+ */
+function GameReadout({ state }: { state: ShellState }): ReactNode {
+    /* No shadow of its own, unlike the rail's count: the header is a `.tile`, and every tile already puts one under its text. */
+    return (
+        <span title={state.gameLabel} className="flex min-w-0 shrink items-center gap-[7px] truncate">
+            <span className="truncate">{state.gameLabel}</span>
+            <span className="shrink-0 text-[12px] text-faint">{revisionOf(state)}</span>
+        </span>
+    );
 }
 
 /**
@@ -159,25 +168,21 @@ export default function Shell(): ReactNode {
     if (!state) return <div className="h-full bg-ink" />;
 
     const { rects } = state;
-    const revision = revisionOf(state);
     const tools = TOOLS.filter(t => state.tools.includes(t.id));
     const unread = unreadChat(state);
 
     return (
         <div className="relative h-full overflow-hidden bg-ink text-cream">
             <div style={at(rects.tabBar)} className="flex flex-col">
+                {/*
+                 * Tabs and the control that makes one, and nothing else. The
+                 * game's read-out used to sit at this bar's left on the grounds
+                 * that it was the window's rather than any tab's — true, but it
+                 * left the bar reading as two unrelated things, and a read-out
+                 * about the game is easiest to believe beside the game. It is in
+                 * the game pane's own header now.
+                 */}
                 <header role="tablist" style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
-                    {/*
-                     * The window's read-out, not any tab's: the window is bound
-                     * to one server and has one game, so it sits before the tabs
-                     * rather than among them. A tile says that without claiming
-                     * to be a control — the tabs beside it are cut into the
-                     * stone or lifted above it, and a tile is neither.
-                     */}
-                    <div style={BADGE_BOX} title={state.gameLabel} className="tile flex min-w-0 items-center gap-[7px] px-2.5">
-                        <span className="truncate">{state.gameLabel}</span>
-                        <span className="shrink-0 text-[12px] text-faint">{revision}</span>
-                    </div>
                     {state.tabs.map(tab => (
                         <div key={tab.id} className={TAB_SLOT}>
                             <Tab
@@ -230,20 +235,27 @@ export default function Shell(): ReactNode {
                         style={at(pane.rect)}
                         onPointerDownCapture={() => void window.zanaris.panes.focus(pane.paneId)}
                         /*
-                         * Only tool and empty panes reach this. A right-click on
-                         * a game or a page lands on the native view stacked
-                         * above the shell, and main raises the same menu from
-                         * there. clientX/Y are already the window's, because the
-                         * shell view spans the whole content area.
+                         * A tool or empty pane anywhere, and every pane's header
+                         * — that strip is shell whatever the pane holds. What
+                         * does not reach here is a right-click on the game or a
+                         * page *below* its header: that lands on the native view
+                         * stacked above the shell, and main raises the same menu
+                         * from there. clientX/Y are already the window's,
+                         * because the shell view spans the whole content area.
                          */
                         onContextMenu={event => {
                             event.preventDefault();
                             void window.zanaris.panes.contextMenu(pane.paneId, event.clientX, event.clientY);
                         }}
                         className={`flex flex-col overflow-hidden bg-ink${pane.content.kind === 'tool' ? ' tile' : ''}`}
-                        /* A game or page pane is a hole for a native view; nothing in it is the shell's to describe. */
-                        aria-hidden={pane.content.kind === 'game' || pane.content.kind === 'page' ? 'true' : undefined}
                     >
+                        {/*
+                         * Every pane, including the two whose bodies are holes
+                         * for a native view: the header is the only part of a
+                         * game or page pane the shell draws, and the only place
+                         * either can say what it is.
+                         */}
+                        <PaneHeader pane={pane} readout={pane.content.kind === 'game' ? <GameReadout state={state} /> : undefined} />
                         <PaneBody pane={pane} state={state} />
                     </div>
                 </Fragment>

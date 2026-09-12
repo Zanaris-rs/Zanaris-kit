@@ -85,9 +85,6 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
     const loading = view.status === 'loading';
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {/* The client centres a panel's title over its contents, so this one is centred too. */}
-            <h2 className="title">Worlds</h2>
-
             {view.showDetail && (
                 <div className="px-2.5 pb-[7px]">
                     <DetailSwitch detail={view.detail} />

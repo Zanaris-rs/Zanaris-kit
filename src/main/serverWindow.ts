@@ -1,14 +1,14 @@
 import { BrowserWindow, Menu, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT } from '../shared/layout';
+import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT, TREE_INSET } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
 import type { PaneView, SeamView } from '../shared/panes';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
-import { paneMenuItems } from './paneMenu';
+import { paneContentItems, paneMenuItems } from './paneMenu';
 import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
 import type { TabSet } from './tabs';
 import { loadShell, preloadPath } from './renderer';
@@ -21,8 +21,14 @@ import type { ServerWindowHandle, WindowSpec } from './windows';
 
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
-/** The content area a new window opens with: the canvas plus the page's controls strip. */
-const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH, height: GAME_PREFERRED_HEIGHT };
+/**
+ * The content area a new window opens with: a game pane at its preferred size,
+ * plus the pixel of shell the tree is inset by on each side so the focus ring
+ * has somewhere to land. Without the inset the window would open two pixels
+ * short of the size the game pane asks for, and clip the bottom of the canvas
+ * at the one size nobody chose.
+ */
+const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH + TREE_INSET * 2, height: GAME_PREFERRED_HEIGHT + TREE_INSET * 2 };
 const PROBE_EVERY_MS = 10_000;
 const PROBE_TIMEOUT_MS = 3_000;
 
@@ -133,11 +139,13 @@ export interface ServerWindow extends ServerWindowHandle {
     splitPane(paneId: string, axis: 'x' | 'y'): void;
     /** Closes a pane. Asks first when it is the game's, since that disconnects the player. */
     closePane(paneId: string): Promise<void>;
-    /** Puts something in a pane. A page must be one of this server's links, and a second game is refused. */
+    /** Puts something in a pane. A page must be one of this server's links; asking for the game moves it out of whatever pane held it. */
     setPaneContent(paneId: string, content: PaneContent): void;
     focusPane(paneId: string): void;
     /** Raises the pane menu at a point in the window. */
     showPaneMenu(paneId: string, x: number, y: number): void;
+    /** Raises a pane header's dropdown — everything that pane could become — at a point in the window. */
+    showPaneContentMenu(paneId: string, x: number, y: number): void;
     /** Drags a seam. Returns the position actually applied, on every path including the one that changes nothing. */
     setSeam(splitId: string, index: number, px: number): number;
     evenOut(splitId: string): void;
@@ -406,7 +414,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         rects = {
             tabBar: { x: 0, y: 0, width, height: Math.min(TAB_BAR_HEIGHT, height) },
             rail: { x: width - railW, y: TAB_BAR_HEIGHT, width: railW, height: below },
-            tree: { x: 1, y: TAB_BAR_HEIGHT + 1, width: Math.max(0, width - railW - 2), height: Math.max(0, below - 2) }
+            tree: {
+                x: TREE_INSET,
+                y: TAB_BAR_HEIGHT + TREE_INSET,
+                width: Math.max(0, width - railW - TREE_INSET * 2),
+                height: Math.max(0, below - TREE_INSET * 2)
+            }
         };
         shellView.setBounds({ x: 0, y: 0, width, height });
         host.layout(rects.tree);
@@ -541,6 +554,42 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             }))
         );
         menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
+    }
+
+    /**
+     * The dropdown in a pane's header: everything that pane could become.
+     *
+     * Native, and built here, for the reason the gesture menu above is: the
+     * header of a game or a page pane sits directly over a native view, and a
+     * list the shell drew would open behind it. Building it in main is also
+     * what lets one object serve all four kinds of pane — the launcher an empty
+     * pane shows is the same list from the same function, wearing the stone
+     * instead of the system's chrome.
+     *
+     * Which items exist, what they are called and which one is already showing
+     * are `paneMenu.ts`'s, not this function's and certainly not the shell's.
+     * The game's label is the one that moves: it reads "Move game here" while
+     * the game is in some other pane of this window, in this tab or another.
+     */
+    function showPaneContentMenu(paneId: string, x: number, y: number): void {
+        if (win.isDestroyed()) return;
+        host.focus(paneId);
+        const items = paneContentItems({ trees: host.trees(), paneId, tools, links: server.bookmarks });
+        const template = items.flatMap((item, i) => [
+            // The links are a different kind of destination from the window's
+            // own things, and the group each item arrives in is what says where
+            // that line falls — the same rule the launcher draws.
+            ...(i > 0 && item.group === 'link' && items[i - 1]!.group !== 'link' ? [{ type: 'separator' as const }] : []),
+            {
+                label: item.label,
+                // A radio rather than a checkbox: a pane holds exactly one
+                // thing, so these are alternatives rather than a set of toggles.
+                type: 'radio' as const,
+                checked: item.current,
+                click: () => setPaneContent(paneId, item.content)
+            }
+        ]);
+        Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
     /**
@@ -694,7 +743,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             const tree = host.tree();
             const gamePane = paneIds(tree).find(id => contentOf(tree, id)?.kind === 'game');
             const rect = gamePane ? host.rectOf(gamePane) : null;
-            if (gamePane && rect) showPaneMenu(gamePane, rect.x + params.x, rect.y + params.y);
+            // The view starts below the pane's header, so that inset is part of
+            // putting the view's coordinates back into the window's.
+            if (gamePane && rect) showPaneMenu(gamePane, rect.x + params.x, rect.y + Math.min(PANE_HEADER_HEIGHT, rect.height) + params.y);
         });
         // Mouse back and forward buttons would walk the history of world switches.
         win.on('app-command', (event, command) => {
@@ -859,6 +910,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         setPaneContent,
         focusPane: paneId => host.focus(paneId),
         showPaneMenu,
+        showPaneContentMenu,
         setSeam: (splitId, index, px) => host.dragSeam(splitId, index, px),
         evenOut: splitId => host.evenOut(splitId),
         evenOutFocused: () => {

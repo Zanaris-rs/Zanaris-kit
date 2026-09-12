@@ -600,6 +600,12 @@ ipcMain.handle(IPC.paneContextMenu, (event, paneId: unknown, x: unknown, y: unkn
     windowFor(event.sender)?.showPaneMenu(paneId, x, y);
 });
 
+ipcMain.handle(IPC.paneContentMenu, (event, paneId: unknown, x: unknown, y: unknown) => {
+    if (typeof paneId !== 'string' || typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showPaneContentMenu(paneId, x, y);
+});
+
 ipcMain.handle(IPC.tabNew, event => windowFor(event.sender)?.newTab());
 
 ipcMain.handle(IPC.tabClose, (event, tabId: unknown) => {

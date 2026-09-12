@@ -298,6 +298,15 @@ export function Reload(): ReactNode {
     );
 }
 
+/** The pane header's dropdown. A solid wedge, since the menu it opens is the system's and a hairline glyph would not read at 32px of stone. */
+export function Caret(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path d="M4.5 7h9L9 12z" fill="currentColor" />
+        </svg>
+    );
+}
+
 /** Open this link outside the kit. An arrow leaving a frame — the browser's own sign for it, drawn in the stone's stroke. */
 export function OpenExternal(): ReactNode {
     return (

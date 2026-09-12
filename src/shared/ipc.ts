@@ -19,6 +19,7 @@ export const IPC = {
     paneEvenOut: 'zanaris:pane-even-out',
     paneGo: 'zanaris:pane-go',
     paneContextMenu: 'zanaris:pane-context-menu',
+    paneContentMenu: 'zanaris:pane-content-menu',
     tabNew: 'zanaris:tab-new',
     tabClose: 'zanaris:tab-close',
     tabSelect: 'zanaris:tab-select',
@@ -184,6 +185,14 @@ export interface ZanarisApi {
          * which is what the shell's own are.
          */
         contextMenu(paneId: string, x: number, y: number): Promise<void>;
+        /**
+         * Raises a pane header's dropdown: everything that pane could become,
+         * built in main from the same list the launcher shows. Native for the
+         * same reason the gesture menu is — a header sits directly over a
+         * native view in a game or page pane, and a list the shell drew would
+         * open behind it.
+         */
+        contentMenu(paneId: string, x: number, y: number): Promise<void>;
         /** A new workspace tab, holding one empty pane. */
         newTab(): Promise<void>;
         /** Closes a tab and everything in it. Closing the last one closes the window. */
