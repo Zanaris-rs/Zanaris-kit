@@ -156,3 +156,11 @@ test('a seam moved in pixels lands there, and is clamped the same way a fraction
     assert.equal(seamPixels(setSeam(tree, 's1', 0, 300, 1000), 's1', 0, 1000)!.size, 300);
     assert.equal(seamPixels(setSeam(tree, 's1', 0, 10, 1000), 's1', 0, 1000)!.size, 120, 'clamped at the floor, not obeyed');
 });
+
+test('the layout reports each split the pixels it divides, seams already taken off', () => {
+    const inner = split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('c', { kind: 'empty' })], [0.5, 0.5]);
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), inner], [0.5, 0.5]);
+    const { splits } = layoutTree(tree, { x: 0, y: 0, width: 1004, height: 604 });
+    assert.equal(splits.get('s1'), 1000, 'the outer split divides the width less its one seam');
+    assert.equal(splits.get('s2'), 600, 'the inner one divides the full height less its own seam');
+});

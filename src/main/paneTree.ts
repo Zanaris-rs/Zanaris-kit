@@ -44,14 +44,18 @@ export function split(splitId: string, axis: 'x' | 'y', children: PaneNode[], fr
     return { kind: 'split', splitId, axis, children, fractions };
 }
 
-export function layoutTree(node: PaneNode, rect: Rect): { panes: Map<string, Rect>; seams: Seam[] } {
+export function layoutTree(node: PaneNode, rect: Rect): { panes: Map<string, Rect>; seams: Seam[]; splits: Map<string, number> } {
     const panes = new Map<string, Rect>();
     const seams: Seam[] = [];
-    walk(node, rect, panes, seams);
-    return { panes, seams };
+    // Per split, the px it actually had to divide — what a seam drag converts
+    // against. It is known only here, on the way down, since it depends on the
+    // rect the split was handed rather than on anything in the tree.
+    const splits = new Map<string, number>();
+    walk(node, rect, panes, seams, splits);
+    return { panes, seams, splits };
 }
 
-function walk(node: PaneNode, rect: Rect, panes: Map<string, Rect>, seams: Seam[]): void {
+function walk(node: PaneNode, rect: Rect, panes: Map<string, Rect>, seams: Seam[], splits: Map<string, number>): void {
     if (node.kind === 'leaf') {
         panes.set(node.paneId, rect);
         return;
@@ -60,12 +64,13 @@ function walk(node: PaneNode, rect: Rect, panes: Map<string, Rect>, seams: Seam[
     const across = node.axis === 'x';
     const n = node.children.length;
     const gross = (across ? rect.width : rect.height) - SEAM * (n - 1);
+    splits.set(node.splitId, gross);
     const sizes = allocate(node.fractions, gross, node.children.map(child => minimumOf(child, node.axis)));
 
     let offset = across ? rect.x : rect.y;
     node.children.forEach((child, i) => {
         const size = sizes[i]!;
-        walk(child, across ? { x: offset, y: rect.y, width: size, height: rect.height } : { x: rect.x, y: offset, width: rect.width, height: size }, panes, seams);
+        walk(child, across ? { x: offset, y: rect.y, width: size, height: rect.height } : { x: rect.x, y: offset, width: rect.width, height: size }, panes, seams, splits);
         offset += size;
         if (i === n - 1) return;
         seams.push({
