@@ -440,12 +440,17 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     /** The whole list is probed only while a Worlds pane is open somewhere in this window. */
     function syncPanelProbe(): void {
-        const wanted = openTools().includes('worlds') && worldSwitch !== null && deps.worlds !== null;
-        if (wanted && !panelProbe) {
+        const worlds = deps.worlds;
+        const wanted = openTools().includes('worlds') && worldSwitch !== null && worlds !== null;
+        if (wanted && worlds && !panelProbe) {
             const probeAll = (): void => {
-                void deps.worlds?.probeAll(worldSwitch!.detail);
+                void worlds.probeAll(worldSwitch!.detail);
             };
-            probeAll();
+            // The list first, then latencies over it. `probeAll` has nothing to
+            // probe until the worlds are known, so an open that only probed
+            // left the pane reading "idle" until someone pressed Refresh —
+            // which is exactly what dropping this line did.
+            void worlds.list().then(probeAll);
             panelProbe = setInterval(probeAll, PROBE_EVERY_MS);
         } else if (!wanted && panelProbe) {
             clearInterval(panelProbe);

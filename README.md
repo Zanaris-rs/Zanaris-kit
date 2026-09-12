@@ -467,11 +467,6 @@ One capture run with every catalog server open at once:
 | Lost City, seam dragged | 190px wide | asked for 190px of 761 and got 190; the game pane's header keeps its name and drops "rev 274", which is the half worth losing |
 | Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, restored into the same arrangement the first window was left in — so its shell frame is byte-identical to that window's, which is the one duplicate in the run and a real one |
 
-The world list came back empty in that run and no hop happened: the Worlds pane
-has no fetch of its own on open, so it shows "No worlds listed. Try again"
-until refresh is pressed. That is a gap of its own rather than anything the
-panes changed.
-
 424 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, a version 1, 2 or 3 file each migrating into version 4, and a
 built-in's hiscores block re-adopted from the defaults), slots, tabs, the
@@ -488,12 +483,6 @@ one tab and into another — and what a pane is called and may be turned into.
 
 ## Known
 
-- **The Worlds pane does not fetch on open.** Nothing calls the world service's
-  `list()` except the pane's own refresh button, so a freshly opened Worlds
-  pane reads "No worlds listed. Try again" until it is pressed. Two capture
-  runs on this branch both logged `worlds: idle`. It predates the pane tree —
-  the same code is in the commit before it — and is the next thing to fix in
-  that tool.
 - **Latency measures the front door, not the game.** The probe is a TCP connect
   to the world's web host, so for a server behind a CDN it times the nearest
   edge rather than the game server. Lost City's Singapore world reads 45 ms
