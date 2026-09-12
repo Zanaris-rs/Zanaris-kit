@@ -1,4 +1,4 @@
-import { contentOf, leaf, paneIds, type PaneContent, type PaneNode } from './paneTree.ts';
+import { clearGame, contentOf, leaf, paneIds, setContent, type PaneContent, type PaneNode } from './paneTree.ts';
 import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
 
 /**
@@ -61,6 +61,34 @@ export function closeTab(set: TabSet, tabId: string): TabSet | null {
     // One of the two always exists, because the list is not empty.
     const next = tabs[at] ?? tabs[at - 1]!;
     return { tabs, activeId: next.id };
+}
+
+/**
+ * Puts the game in a pane, taking it from wherever in the window it was.
+ *
+ * A move rather than a placement, and it works across every tab rather than
+ * within one, because the window has exactly one game view: two game leaves are
+ * unrepresentable, and the old answer — refuse the second and grey the
+ * launcher's row — left the row looking live in any tab the game was not in,
+ * since the launcher could only see the tab it was drawn in.
+ *
+ * It costs nothing to move. The view is repositioned, never reloaded, so the
+ * login survives a move exactly as it survives a seam drag; `loadURL` is the
+ * only thing that costs a login and nothing here calls it.
+ *
+ * Returns the set it was handed when the pane already holds the game or when no
+ * tab has that pane, so a caller can tell by identity whether anything moved.
+ */
+export function moveGame(set: TabSet, paneId: string): TabSet {
+    const holder = set.tabs.find(tab => paneIds(tab.tree).includes(paneId));
+    if (!holder || contentOf(holder.tree, paneId)?.kind === 'game') return set;
+    return {
+        ...set,
+        tabs: set.tabs.map(tab => {
+            const tree = tab === holder ? setContent(clearGame(tab.tree), paneId, { kind: 'game' }) : clearGame(tab.tree);
+            return tree === tab.tree ? tab : { ...tab, tree };
+        })
+    };
 }
 
 /**

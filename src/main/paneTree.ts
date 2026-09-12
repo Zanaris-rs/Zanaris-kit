@@ -259,6 +259,24 @@ export function setContent(node: PaneNode, paneId: string, content: PaneContent)
     return { ...node, children: node.children.map(child => setContent(child, paneId, content)) };
 }
 
+/**
+ * The game leaf, wherever it is in this tree, emptied.
+ *
+ * Half of moving the game: there is one game view per window, so putting it
+ * somewhere means taking it from where it was. The pane it leaves stays — it
+ * becomes empty and shows the launcher — because the game moving out of a pane
+ * is not the pane closing, and a split that silently healed under the user
+ * would rearrange panes they never asked to lose.
+ *
+ * Returns the tree it was handed when there is no game in it, so a caller can
+ * tell by identity whether anything moved.
+ */
+export function clearGame(node: PaneNode): PaneNode {
+    if (node.kind === 'leaf') return node.content.kind === 'game' ? leaf(node.paneId, { kind: 'empty' }) : node;
+    const children = node.children.map(clearGame);
+    return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node;
+}
+
 /** Every pane in the tree, left to right and top to bottom. */
 export function paneIds(node: PaneNode): string[] {
     return node.kind === 'leaf' ? [node.paneId] : node.children.flatMap(paneIds);

@@ -85,14 +85,7 @@ function unreadChat(state: ShellState): number {
 function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
     switch (pane.content.kind) {
         case 'empty':
-            return (
-                <Launcher
-                    paneId={pane.paneId}
-                    links={state.server.bookmarks}
-                    tools={state.tools}
-                    gameAvailable={!state.panes.some(p => p.content.kind === 'game')}
-                />
-            );
+            return <Launcher paneId={pane.paneId} links={state.server.bookmarks} contents={pane.contents ?? []} />;
         case 'game':
             return null;
         case 'page':

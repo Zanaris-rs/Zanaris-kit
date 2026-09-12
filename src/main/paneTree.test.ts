@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { closePane, contentOf, evenOut, layoutTree, leaf, paneIds, parentSplitOf, seamPixels, setContent, setSeam, setFraction, split, splitPane } from './paneTree.ts';
+import { clearGame, closePane, contentOf, evenOut, layoutTree, leaf, paneIds, parentSplitOf, seamPixels, setContent, setSeam, setFraction, split, splitPane } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -193,4 +193,27 @@ test('a seam reports the size its pane was drawn at, not the size its fraction a
     const { panes, splits } = layoutTree(tree, rect);
     assert.equal(panes.get('a')!.width, 120, 'drawn at the floor, not at the 50 its fraction asks for');
     assert.equal(seamPixels(tree, 's1', 0, splits.get('s1')!)!.size, panes.get('a')!.width, 'and the seam reports the floor, not the fraction');
+});
+
+test('clearing the game empties the leaf that held it and leaves the rest alone', () => {
+    const tree = split('s1', 'x', [leaf('g', { kind: 'game' }), leaf('c', { kind: 'tool', tool: 'chat' })], [0.7, 0.3]);
+    const cleared = clearGame(tree);
+    assert.deepEqual(contentOf(cleared, 'g'), { kind: 'empty' }, 'the pane survives the game leaving it');
+    assert.deepEqual(contentOf(cleared, 'c'), { kind: 'tool', tool: 'chat' });
+    assert.deepEqual(
+        paneIds(cleared),
+        ['g', 'c'],
+        'and no pane is removed — the game moving out is not the pane closing'
+    );
+});
+
+test('clearing the game reaches a nested pane', () => {
+    const inner = split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('g', { kind: 'game' })], [0.5, 0.5]);
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), inner], [0.5, 0.5]);
+    assert.deepEqual(contentOf(clearGame(tree), 'g'), { kind: 'empty' });
+});
+
+test('clearing a tree with no game in it changes nothing, by identity', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    assert.equal(clearGame(tree), tree, 'the same object, so a caller can tell nothing moved');
 });

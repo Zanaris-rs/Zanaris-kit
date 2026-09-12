@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { leaf, split } from './paneTree.ts';
-import { closeTab, labelOfTab, newTab, nextIds, openTabs, readTabSet, selectTab } from './tabs.ts';
+import { contentOf, leaf, paneIds, split } from './paneTree.ts';
+import { closeTab, labelOfTab, moveGame, newTab, nextIds, openTabs, readTabSet, selectTab } from './tabs.ts';
 
 test('a window opens on whatever it was given — the game, not a launcher', () => {
     const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
@@ -96,4 +96,42 @@ test('a second game anywhere in the layout is refused — there is one view', ()
 test('the next ids carry on past whatever was restored', () => {
     const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-7', 'pane-4');
     assert.deepEqual(nextIds(set), { pane: 5, tab: 8, split: 1 });
+});
+
+test('the game moves out of the tab it was in and into the pane asked for', () => {
+    const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
+    const moved = moveGame(set, 'pane-2');
+    assert.deepEqual(contentOf(moved.tabs[0]!.tree, 'pane-1'), { kind: 'empty' }, 'the pane it left shows the launcher');
+    assert.deepEqual(contentOf(moved.tabs[1]!.tree, 'pane-2'), { kind: 'game' });
+    assert.equal(moved.activeId, set.activeId, 'moving the game is not a tab switch');
+});
+
+test('the game moves between two panes of one tab', () => {
+    const tree = split('s1', 'x', [leaf('g', { kind: 'game' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    const set = { tabs: [{ id: 'tab-1', tree, focusedPaneId: 'g' }], activeId: 'tab-1' };
+    const moved = moveGame(set, 'b');
+    assert.deepEqual(contentOf(moved.tabs[0]!.tree, 'g'), { kind: 'empty' });
+    assert.deepEqual(contentOf(moved.tabs[0]!.tree, 'b'), { kind: 'game' });
+});
+
+test('a window with no game anywhere simply gets one where it was asked for', () => {
+    const set = openTabs('tab-1', 'pane-1', { kind: 'empty' });
+    assert.deepEqual(contentOf(moveGame(set, 'pane-1').tabs[0]!.tree, 'pane-1'), { kind: 'game' });
+});
+
+test('moving the game onto the pane that already holds it changes nothing', () => {
+    const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
+    assert.equal(moveGame(set, 'pane-1'), set, 'the same object, so nothing repaints and no view is touched');
+});
+
+test('moving the game to a pane no tab has leaves the game where it is', () => {
+    const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
+    assert.equal(moveGame(set, 'gone'), set);
+});
+
+test('the game leaves only one pane, however many tabs are open', () => {
+    const set = newTab(newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2'), 'tab-3', 'pane-3');
+    const moved = moveGame(set, 'pane-3');
+    const games = moved.tabs.flatMap(tab => paneIds(tab.tree).filter(id => contentOf(tab.tree, id)?.kind === 'game'));
+    assert.deepEqual(games, ['pane-3'], 'one game leaf in the whole window, which is all there is a view for');
 });

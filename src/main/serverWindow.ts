@@ -310,6 +310,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         window: win,
         gameView: () => gameView,
         bookmarks: () => server.bookmarks,
+        tools: () => tools,
         hosts: () => server.hosts,
         log: line => deps.log(`${tag} ${line}`),
         remembered: deps.rememberedLayout,
@@ -469,14 +470,21 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
-     * Puts something in a pane, with the two refusals main owes the shell.
+     * Puts something in a pane, with the one refusal main owes the shell and
+     * the one thing it does instead of refusing.
      *
      * A page may only be one of this server's own links: there is no address
      * box, so the shell has no legitimate reason to name anything else, and a
-     * page view lives in a session shared with every other window's. A second
-     * game is refused outright — the window is bound to one server and has one
-     * game view, so two game leaves are unrepresentable rather than merely
-     * unwanted.
+     * page view lives in a session shared with every other window's.
+     *
+     * The game is not refused; it *moves*. Two game leaves stay
+     * unrepresentable — the window is bound to one server and has one game
+     * view — but asking for the game in a second pane now empties the pane it
+     * was in, in whichever tab that was, rather than being ignored. It costs
+     * nothing: the view is repositioned by the next layout and never reloaded,
+     * so the login survives a move exactly as it survives a seam drag. Only a
+     * window with no game at all pays a login, and that is a fresh one being
+     * opened rather than one being moved.
      */
     function setPaneContent(paneId: string, content: PaneContent): void {
         if (content.kind === 'page' && !server.bookmarks.some(b => b.url === content.bookmark)) {
@@ -484,16 +492,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             return;
         }
         if (content.kind === 'game') {
-            if (host.hasGame()) {
-                deps.log(`${tag} refused a second game pane`);
-                return;
-            }
             if (!gameView) {
                 gameView = makeGameView();
                 void loadGame(expected);
             }
+            host.moveGame(paneId);
+        } else {
+            host.setContent(paneId, content);
         }
-        host.setContent(paneId, content);
         syncPanelProbe();
     }
 

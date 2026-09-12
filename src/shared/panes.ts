@@ -1,7 +1,8 @@
 /** What a tab's panes look like to the shell, which draws the chrome around them. */
 import type { PaneContent, Rect } from '../main/paneTree.ts';
+import type { PaneContentItem } from '../main/paneMenu.ts';
 
-export type { PaneContent, Rect };
+export type { PaneContent, PaneContentItem, Rect };
 
 /** A page pane's own navigation state, as its toolbar reads it. One per page leaf, not one per window. */
 export interface PageState {
@@ -17,9 +18,18 @@ export interface PaneView {
     /** Where main put it, relative to the window's content area. The shell draws tool and empty panes here and leaves game and page rects alone. */
     rect: Rect;
     content: PaneContent;
+    /** What the pane's header calls it. Main's, not the shell's: resolving a page's bookmark to its curated name is a rule. */
+    name: string;
     focused: boolean;
     /** Null unless `content.kind === 'page'`. */
     page: PageState | null;
+    /**
+     * What this pane could become, for the launcher an empty one shows. Null
+     * for every other kind, which reaches the same list through the header's
+     * dropdown — that one is a native menu main builds on the spot, because a
+     * list drawn by the shell would be hidden by the view below the header.
+     */
+    contents: PaneContentItem[] | null;
 }
 
 export interface SeamView {

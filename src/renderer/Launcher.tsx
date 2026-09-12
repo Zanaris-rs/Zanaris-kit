@@ -1,7 +1,6 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import type { Bookmark } from '../shared/worlds';
-import type { ToolId } from '../shared/ipc';
-import type { PaneContent } from '../shared/panes';
+import type { PaneContentItem } from '../shared/panes';
 import { linkIcon, OpenExternal } from './icons';
 
 /**
@@ -14,9 +13,11 @@ import { linkIcon, OpenExternal } from './icons';
  * about to fill is a shorter path than a panel that opens somewhere else and
  * puts the page somewhere else again.
  *
- * Which links a window has is the catalog's, not this component's: a server
- * with no bookmarks simply shows none, which is the whole of why Lost City has
- * forums and prices here and Zanaris does not.
+ * The list itself is main's, built by `paneMenu.ts` and sent with the pane, so
+ * the launcher and the dropdown in every pane's header cannot come to offer
+ * different things. Which links a window has is the catalog's: a server with no
+ * bookmarks simply shows none, which is the whole of why Lost City has forums
+ * and prices here and Zanaris does not.
  */
 
 function Row({ link, open, onOpen }: { link: Bookmark; open: boolean; onOpen: () => void }): ReactNode {
@@ -50,49 +51,57 @@ function Row({ link, open, onOpen }: { link: Bookmark; open: boolean; onOpen: ()
     );
 }
 
-const TOOL_LABELS: Record<ToolId, string> = { chat: 'Chat', worlds: 'Worlds', hiscores: 'Hiscores', singleplayer: 'Single player' };
+/** Keyed by what the row *does*, not by its label: two links could be named the same and still be two rows. */
+function keyOf(item: PaneContentItem): string {
+    const { content } = item;
+    if (content.kind === 'page') return `page:${content.bookmark}`;
+    if (content.kind === 'tool') return `tool:${content.tool}`;
+    return content.kind;
+}
 
 export default function Launcher({
     paneId,
     links,
-    tools,
-    gameAvailable
+    contents
 }: {
     paneId: string;
+    /** The catalog's own entries, for the icons a bare menu item has no room to carry. */
     links: Bookmark[];
-    tools: ToolId[];
-    /** False while another pane already holds the game: there is one per window, so a second is unrepresentable rather than merely unwanted. */
-    gameAvailable: boolean;
+    /** Everything this pane could become, already named and ordered by main. */
+    contents: PaneContentItem[];
 }): ReactNode {
-    const fill = (content: PaneContent): void => void window.zanaris.panes.setContent(paneId, content);
+    const fill = (item: PaneContentItem): void => void window.zanaris.panes.setContent(paneId, item.content);
+    const bookmarks = new Map(links.map(link => [link.url, link]));
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {/* The client centres a panel's title over its contents, so this one is centred too. */}
-            <h2 className="title">Open here</h2>
-
             <ul className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto">
-                {tools.map(tool => (
-                    <li key={tool} className="flex items-stretch">
-                        <button type="button" onClick={() => fill({ kind: 'tool', tool })} className="min-w-0 flex-1 px-2 py-[6px] text-left hover:bg-stone-lit/40">
-                            {TOOL_LABELS[tool]}
-                        </button>
-                    </li>
-                ))}
-                <li className="flex items-stretch">
-                    <button
-                        type="button"
-                        disabled={!gameAvailable}
-                        title={gameAvailable ? undefined : 'The game is already open in another pane'}
-                        onClick={() => fill({ kind: 'game' })}
-                        className="min-w-0 flex-1 px-2 py-[6px] text-left hover:bg-stone-lit/40 disabled:text-faint disabled:hover:bg-transparent"
-                    >
-                        Game
-                    </button>
-                </li>
-                {links.length > 0 && <li aria-hidden="true" className="sep my-1" />}
-                {links.map(link => (
-                    <Row key={link.url} link={link} open={false} onOpen={() => fill({ kind: 'page', bookmark: link.url })} />
-                ))}
+                {contents.map((item, i) => {
+                    const link = item.content.kind === 'page' ? bookmarks.get(item.content.bookmark) : undefined;
+                    // The one line the stone draws rather than main: this
+                    // server's links are a different kind of destination from
+                    // the window's own things, and the group each item arrives
+                    // in is what says where that line falls.
+                    const rule = i > 0 && item.group === 'link' && contents[i - 1]!.group !== 'link';
+                    return (
+                        <Fragment key={keyOf(item)}>
+                            {rule && <li aria-hidden="true" className="sep my-1" />}
+                            {link ? (
+                                <Row link={link} open={item.current} onOpen={() => fill(item)} />
+                            ) : (
+                                <li className="flex items-stretch">
+                                    <button
+                                        type="button"
+                                        aria-current={item.current ? 'true' : undefined}
+                                        onClick={() => fill(item)}
+                                        className={`min-w-0 flex-1 px-2 py-[6px] text-left ${item.current ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}
+                                    >
+                                        {item.label}
+                                    </button>
+                                </li>
+                            )}
+                        </Fragment>
+                    );
+                })}
             </ul>
 
             <p className="px-2.5 pt-2 pb-1.5 text-[12px] text-dim">

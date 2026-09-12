@@ -16,7 +16,9 @@ import {
     type Rect
 } from './paneTree.ts';
 import { PAGE_TOOLBAR_HEIGHT } from '../shared/layout.ts';
-import { closeTab, labelOfTab, newTab, nextIds, openTabs, selectTab, type TabSet } from './tabs.ts';
+import { paneContentItems, paneName } from './paneMenu.ts';
+import { closeTab, labelOfTab, moveGame, newTab, nextIds, openTabs, selectTab, type TabSet } from './tabs.ts';
+import type { ToolId } from '../shared/ipc.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
 
 /**
@@ -49,6 +51,8 @@ export interface PaneHostDeps {
     gameView: () => WebContentsView | null;
     /** This server's own links. A page pane may hold nothing else. */
     bookmarks: () => readonly { url: string; name: string }[];
+    /** The tools this window offers, in rail order — the first half of what a pane's header offers to become. */
+    tools: () => readonly ToolId[];
     hosts: () => readonly string[];
     log: (line: string) => void;
     /** The layout this server's windows were last left in, or null to open fresh on the game. */
@@ -91,19 +95,6 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     const pageStates = new Map<string, PageState>();
     let rects = new Map<string, Rect>();
     let seams: SeamView[] = [];
-
-    function label(content: PaneContent): string {
-        switch (content.kind) {
-            case 'empty':
-                return 'Empty';
-            case 'game':
-                return 'Game';
-            case 'tool':
-                return content.tool;
-            case 'page':
-                return deps.bookmarks().find(b => b.url === content.bookmark)?.name ?? content.bookmark;
-        }
-    }
 
     /**
      * Bounds and visibility for every native view.
@@ -179,7 +170,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         view.setVisible(false);
         deps.window.contentView.addChildView(view);
         pageViews.set(paneId, view);
-        pageStates.set(paneId, { url, title: label({ kind: 'page', bookmark: url }), canGoBack: false, canGoForward: false, loading: true });
+        pageStates.set(paneId, { url, title: paneName({ kind: 'page', bookmark: url }, deps.bookmarks()), canGoBack: false, canGoForward: false, loading: true });
 
         const wc = view.webContents;
         // The toolbar's whole state, read from main rather than reported by a
@@ -268,8 +259,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
     return {
         tree: active,
+        trees: () => set.tabs.map(tab => tab.tree),
         focusedPaneId: focused,
-        hasGame: () => set.tabs.some(tab => paneIds(tab.tree).some(id => contentOf(tab.tree, id)?.kind === 'game')),
 
         layout(rect: Rect): void {
             const solved = layoutTree(active(), rect);
@@ -284,13 +275,22 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         panes(): PaneView[] {
             const tree = active();
-            return paneIds(tree).map(paneId => ({
-                paneId,
-                rect: rects.get(paneId) ?? { x: 0, y: 0, width: 0, height: 0 },
-                content: contentOf(tree, paneId) ?? { kind: 'empty' },
-                focused: paneId === focused(),
-                page: pageStates.get(paneId) ?? null
-            }));
+            const trees = set.tabs.map(tab => tab.tree);
+            return paneIds(tree).map(paneId => {
+                const content = contentOf(tree, paneId) ?? ({ kind: 'empty' } as PaneContent);
+                return {
+                    paneId,
+                    rect: rects.get(paneId) ?? { x: 0, y: 0, width: 0, height: 0 },
+                    content,
+                    name: paneName(content, deps.bookmarks()),
+                    focused: paneId === focused(),
+                    page: pageStates.get(paneId) ?? null,
+                    // Only the launcher draws a list; every other pane reaches
+                    // the same one through its header, which main pops as a
+                    // native menu and builds on the spot.
+                    contents: content.kind === 'empty' ? paneContentItems({ trees, paneId, tools: deps.tools(), links: deps.bookmarks() }) : null
+                };
+            });
         },
 
         tabs(): TabView[] {
@@ -350,6 +350,25 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             adopt(setContent(active(), paneId, content));
         },
 
+        /**
+         * The game, into this pane, out of wherever it was.
+         *
+         * Not `adopt`, which replaces the active tab's tree only: the game may
+         * be in another tab, and the pane it leaves there has to be emptied in
+         * the same breath or the window would claim two games and have one
+         * view. Nothing here touches the view itself — `place` finds it under
+         * its new pane on the next layout, so the move is a `setBounds` and the
+         * login survives it.
+         */
+        moveGame(paneId: string): void {
+            const next = moveGame(set, paneId);
+            if (next === set) return;
+            set = next;
+            syncViews();
+            deps.remember(set);
+            deps.changed();
+        },
+
         evenOut(splitId: string): void {
             adopt(evenOut(active(), splitId));
         },
@@ -402,8 +421,9 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
 export interface PaneHost {
     tree: () => PaneNode;
+    /** Every tab's tree. What a pane may become depends on all of them, since the game can be moved out of any. */
+    trees: () => PaneNode[];
     focusedPaneId: () => string;
-    hasGame: () => boolean;
     layout: (rect: Rect) => void;
     panes: () => PaneView[];
     tabs: () => TabView[];
@@ -418,6 +438,8 @@ export interface PaneHost {
     split: (paneId: string, axis: 'x' | 'y') => void;
     close: (paneId: string) => void;
     setContent: (paneId: string, content: PaneContent) => void;
+    /** Moves the game into a pane, emptying the one it was in, in whichever tab that was. */
+    moveGame: (paneId: string) => void;
     evenOut: (splitId: string) => void;
     dragSeam: (splitId: string, index: number, px: number) => number;
     pageWebContents: () => WebContentsView | null;
