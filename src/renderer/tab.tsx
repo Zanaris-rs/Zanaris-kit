@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { CloseRoom } from './icons';
 
 /**
@@ -28,7 +28,8 @@ export default function Tab({
     onSelect,
     after,
     onClose,
-    closeLabel
+    closeLabel,
+    onContextMenu
 }: {
     label: string;
     /** The full name, for a label that had to be shortened to fit. */
@@ -61,6 +62,8 @@ export default function Tab({
     onClose?: () => void;
     /** What the close is announced as. Names the tab rather than the act, since "Close" alone says nothing about which one. */
     closeLabel?: string;
+    /** A right-click anywhere on the tab, close included. The window strip's tabs raise their layout menu with it; the dock's rooms have none. */
+    onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 }): ReactNode {
     /*
      * One pair of faces for both states, the rail's own: resting is a tab cut
@@ -105,7 +108,7 @@ export default function Tab({
          */
         const close = closeLabel ?? `Close ${label}`;
         return (
-            <div title={title} style={BOX} className={`flex min-w-0 items-center gap-[7px] pl-2.5 ${face}`}>
+            <div title={title} style={BOX} onContextMenu={onContextMenu} className={`flex min-w-0 items-center gap-[7px] pl-2.5 ${face}`}>
                 <button type="button" {...announce} onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-[7px] self-stretch">
                     {body}
                 </button>
@@ -118,11 +121,11 @@ export default function Tab({
     }
 
     return onSelect ? (
-        <button type="button" {...announce} title={title} onClick={onSelect} style={BOX} className={skin}>
+        <button type="button" {...announce} title={title} onClick={onSelect} onContextMenu={onContextMenu} style={BOX} className={skin}>
             {body}
         </button>
     ) : (
-        <div {...announce} title={title} style={BOX} className={skin}>
+        <div {...announce} title={title} onContextMenu={onContextMenu} style={BOX} className={skin}>
             {body}
         </div>
     );

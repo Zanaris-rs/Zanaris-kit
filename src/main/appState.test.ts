@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openTabs } from './tabs.ts';
 import { AppState } from './appState.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
 
@@ -397,32 +396,4 @@ test('a junk always-on-top costs only itself, not the rest of the file', () => {
     again.load();
     assert.equal(again.alwaysOnTop(), false);
     assert.equal(again.warnOnSwitch(), false, 'the rest of the file still read');
-});
-
-test('a pane layout saves per server, and a fresh instance reads it back', () => {
-    const file = tempFile();
-    const a = new AppState(file);
-    a.load();
-    const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
-    a.stageLayout('lostcity', set);
-    a.save();
-    const b = new AppState(file);
-    b.load();
-    assert.deepEqual(b.layout('lostcity'), set);
-    assert.equal(b.layout('zanaris'), null, 'a server with no stored layout has none');
-});
-
-test('a layout edited into nonsense costs that server its arrangement, not every server theirs', () => {
-    const file = tempFile();
-    const a = new AppState(file);
-    a.load();
-    a.stageLayout('lostcity', openTabs('tab-1', 'pane-1', { kind: 'game' }));
-    a.save();
-    const written = JSON.parse(readFileSync(file, 'utf8'));
-    written.layouts.zanaris = { tabs: 'not a list' };
-    writeFileSync(file, JSON.stringify(written));
-    const b = new AppState(file);
-    b.load();
-    assert.equal(b.layout('zanaris'), null, 'the broken one is dropped');
-    assert.ok(b.layout('lostcity'), 'and the good one survives');
 });

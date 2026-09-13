@@ -229,7 +229,10 @@ export default function Shell(): ReactNode {
                      * A tab and its close are one object: the close sits inside
                      * the tab it shuts, so it reads as part of that workspace
                      * rather than as another piece of the bar's furniture. Main
-                     * asks first when the tab holds the game.
+                     * asks first when the tab holds the game. A right-click
+                     * raises the tab's own menu — save its panes as a layout,
+                     * load one, open the folder — which main builds, as it does
+                     * every pane menu.
                      */}
                     {state.tabs.map(tab => (
                         <Tab
@@ -240,6 +243,10 @@ export default function Shell(): ReactNode {
                             open={tab.active}
                             onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
                             onClose={() => void window.zanaris.panes.closeTab(tab.id)}
+                            onContextMenu={event => {
+                                event.preventDefault();
+                                void window.zanaris.panes.tabMenu(tab.id, event.clientX, event.clientY);
+                            }}
                         />
                     ))}
                     <button

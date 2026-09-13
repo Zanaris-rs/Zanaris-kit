@@ -25,6 +25,7 @@ export const IPC = {
     tabNew: 'zanaris:tab-new',
     tabClose: 'zanaris:tab-close',
     tabSelect: 'zanaris:tab-select',
+    tabContextMenu: 'zanaris:tab-context-menu',
     paneOpenExternal: 'zanaris:pane-open-external',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
@@ -213,6 +214,12 @@ export interface ZanarisApi {
         /** Closes a tab and everything in it, asking first when the game is in it. Closing the last one closes the window. */
         closeTab(tabId: string): Promise<void>;
         selectTab(tabId: string): Promise<void>;
+        /**
+         * Raises a tab's menu, for a right-click on it: save its panes as a
+         * layout, load one into it, open the layouts folder. Native and built in
+         * main like the pane menus. Coordinates are the window's.
+         */
+        tabMenu(tabId: string, x: number, y: number): Promise<void>;
         /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */
         openExternal(url: string): Promise<void>;
     };

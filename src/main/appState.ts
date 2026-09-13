@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path';
 import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
-import { readTabSet, type TabSet } from './tabs.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
 import { isChannel } from './chat/protocol.ts';
 
@@ -13,8 +12,6 @@ interface StateFile {
     chat: ChatSettings;
     singlePlayer: { cheats: boolean };
     hiscores: Record<string, string>;
-    /** The pane layout each server's windows were left in. Keyed like `worlds`, and for the same reason: the next window for that server opens where you left it. */
-    layouts: Record<string, TabSet>;
     alwaysOnTop: boolean;
 }
 
@@ -117,7 +114,6 @@ export class AppState {
     private cheats = false;
     // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
     private hiscoresNames = new Map<string, string>();
-    private layoutsByServer = new Map<string, TabSet>();
     // Off until asked for: a window that floats over everything else is not
     // something to hand someone who never asked for it.
     private onTop = false;
@@ -132,7 +128,6 @@ export class AppState {
         this.chatSettings = defaultChat();
         this.cheats = false;
         this.hiscoresNames = new Map();
-        this.layoutsByServer = new Map();
         this.onTop = false;
         if (!existsSync(this.file)) return;
         try {
@@ -148,18 +143,6 @@ export class AppState {
             const sp = parsed?.singlePlayer;
             if (typeof sp === 'object' && sp !== null && typeof (sp as { cheats?: unknown }).cheats === 'boolean') this.cheats = (sp as { cheats: boolean }).cheats;
             this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
-            // Per server, each validated on its own: one server's layout edited
-            // into nonsense should cost that server its arrangement, not every
-            // other server theirs. `readTabSet` answers null for anything it
-            // does not fully understand, and a null here simply means that
-            // server's next window opens fresh.
-            const layouts = parsed?.layouts;
-            if (typeof layouts === 'object' && layouts !== null) {
-                for (const [id, value] of Object.entries(layouts)) {
-                    const set = readTabSet(value);
-                    if (set) this.layoutsByServer.set(id, set);
-                }
-            }
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
         } catch {
@@ -202,11 +185,11 @@ export class AppState {
     }
 
     /**
-     * The in-memory half of setChat, for a field that moves far faster than a
-     * file should be rewritten: the dock's height arrives once an animation
-     * frame for as long as a drag lasts, and save() below rewrites the whole
-     * profile synchronously. Whoever stages a value owns writing it — index.ts
-     * debounces one save() per drag rather than sixty a second.
+     * The in-memory half of setChat. It was split out for the chat dock's
+     * height, which arrived once an animation frame during a drag and had its
+     * save() debounced in index.ts; the dock and that debounce are both gone,
+     * so setChat is the only caller left and every staged value is written at
+     * once.
      */
     stageChat(patch: Partial<ChatSettings>): void {
         this.chatSettings = { ...this.chatSettings, ...patch };
@@ -260,20 +243,6 @@ export class AppState {
         this.save();
     }
 
-    /** The layout this server's windows were last left in, or null when it has none yet. */
-    layout(serverId: string): TabSet | null {
-        return this.layoutsByServer.get(serverId) ?? null;
-    }
-
-    /**
-     * Staged rather than written, for the reason `stageChat` is: a seam drag
-     * lands one of these per animation frame, and `save` rewrites the whole
-     * file. The caller debounces the write.
-     */
-    stageLayout(serverId: string, set: TabSet): void {
-        this.layoutsByServer.set(serverId, set);
-    }
-
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
         const data: StateFile = {
@@ -283,7 +252,6 @@ export class AppState {
             chat: this.chatSettings,
             singlePlayer: { cheats: this.cheats },
             hiscores: Object.fromEntries(this.hiscoresNames),
-            layouts: Object.fromEntries(this.layoutsByServer),
             alwaysOnTop: this.onTop
         };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);

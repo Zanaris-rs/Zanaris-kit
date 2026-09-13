@@ -1,5 +1,6 @@
-import { BrowserWindow, Menu, WebContentsView, screen, shell, type MenuItemConstructorOptions, type NativeImage } from 'electron';
-import { join } from 'node:path';
+import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage } from 'electron';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
@@ -10,7 +11,8 @@ import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { paneContentItems, paneMenuItems, paneSplitItems, type PaneMenuItem } from './paneMenu';
 import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
-import type { TabSet } from './tabs';
+import { holdsGame, openTabs } from './tabs';
+import { layoutEntries, layoutFileName, readLayout, writeLayout } from './layoutFile';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
 import { WorldSwitch } from './worlds/switch';
@@ -105,15 +107,18 @@ export interface ServerWindowDeps {
      */
     alwaysOnTop: () => boolean;
     /**
-     * Asks before the game is closed — its pane, or a tab holding it — since
-     * either destroys the view and disconnects the player. False keeps it. Main
+     * Asks before the game is closed — its pane, a tab holding it, or a layout
+     * loaded over the tab holding it — since each destroys the view and
+     * disconnects the player. False keeps it. Main
      * returns true without asking when the user has turned the warning off.
      */
-    confirmCloseGame: (via: 'pane' | 'tab') => Promise<boolean>;
-    /** The pane layout this server's windows were last left in, or null to open fresh on the game. */
-    rememberedLayout: TabSet | null;
-    /** Remembers an arrangement. Staged, not written: a seam drag lands one of these per animation frame. */
-    rememberLayout: (set: TabSet) => void;
+    confirmCloseGame: (via: 'pane' | 'tab' | 'layout') => Promise<boolean>;
+    /**
+     * This server's saved layouts: the folder Save Layout writes into, Load
+     * Layout lists and Open Layouts Folder opens. Created when first needed,
+     * not before — a player who never saves a layout gets no empty folder.
+     */
+    layoutsDir: string;
     /** What this server remembered from last time, if anything. */
     remembered: RememberedWorld | null;
     /** Called whenever this window's world or detail changes. */
@@ -164,6 +169,16 @@ export interface ServerWindow extends ServerWindowHandle {
      */
     closeTab(tabId: string): Promise<void>;
     selectTab(tabId: string): void;
+    /** Raises a tab's menu — save its panes as a layout, load one into it, open the folder — at a point in the window. */
+    showTabMenu(tabId: string, x: number, y: number): void;
+    /** Writes a tab's panes to a layout file. Throws when the file cannot be written; the menu reports that, capture mode fails on it. */
+    saveLayoutTo(tabId: string, path: string): void;
+    /**
+     * Loads a layout file into a tab, asking first when that closes the game.
+     * `unreadable` is a file that could not be read or is not a layout, and
+     * leaves the tab as it was.
+     */
+    loadLayoutFrom(tabId: string, path: string): Promise<'loaded' | 'unreadable' | 'cancelled' | 'missing'>;
     /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
     relayout(): void;
     state(): ShellState;
@@ -329,9 +344,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         tools: () => tools,
         hosts: () => server.hosts,
         log: line => deps.log(`${tag} ${line}`),
-        remembered: deps.rememberedLayout,
+        initial: openTabs('tab-1', 'pane-1', { kind: 'game' }),
         changed: () => applyLayout(),
-        remember: set => deps.rememberLayout(set),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState()
     });
@@ -667,13 +681,174 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /** Destroys the game view — never hides it — for a close the user has confirmed. */
-    function destroyGame(via: 'pane' | 'tab'): void {
+    function destroyGame(via: 'pane' | 'tab' | 'layout'): void {
         if (gameView) {
             win.contentView.removeChildView(gameView);
             if (!gameView.webContents.isDestroyed()) gameView.webContents.close();
             gameView = null;
         }
-        deps.log(`${tag} closed the game ${via} and disconnected`);
+        deps.log(`${tag} closed the game ${via === 'layout' ? 'to load a layout' : via} and disconnected`);
+    }
+
+    // ── saved layouts ────────────────────────────────────────────────────
+
+    /**
+     * The menu a right-click on a tab raises: save that tab's panes as a
+     * layout, load one into it, or open the folder the layouts live in so they
+     * can be copied and handed to someone else.
+     *
+     * On the tab rather than in the View menu because a layout *is* a tab's
+     * panes — saving one captures exactly what that tab shows, and loading one
+     * replaces exactly that — and the tab is the thing being pointed at. It is
+     * brought to the front first, for the reason a right-clicked pane is
+     * focused first: what the menu acts on should be what is on screen.
+     *
+     * Nothing here is saved unless the player asks. The window used to write
+     * its arrangement after every split and seam drag, and that made the last
+     * accident the thing a new window opened with.
+     */
+    function showTabMenu(tabId: string, x: number, y: number): void {
+        if (win.isDestroyed() || !host.treeOf(tabId)) return;
+        host.selectTab(tabId);
+        const saved = savedLayouts();
+        const template: MenuItemConstructorOptions[] = [
+            { label: 'Save Layout…', click: () => void saveLayoutAs(tabId) },
+            {
+                label: 'Load Layout',
+                submenu: [
+                    ...(saved.length === 0
+                        ? [{ label: 'No Saved Layouts', enabled: false }]
+                        : saved.map(entry => ({ label: entry.name, click: () => void loadLayoutChosen(tabId, join(deps.layoutsDir, entry.file)) }))),
+                    { type: 'separator' },
+                    // A layout somebody sent, wherever it was saved to. Loading
+                    // it does not copy it into the folder: that is still the
+                    // player's to decide, by saving it again.
+                    { label: 'From File…', click: () => void loadLayoutFromFile(tabId) }
+                ]
+            },
+            { label: 'Open Layouts Folder', click: () => void openLayoutsFolder() },
+            { type: 'separator' },
+            { label: 'Close Tab', click: () => void closeTab(tabId) }
+        ];
+        Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
+    }
+
+    /** The folder's layouts, or none when there is no folder yet. */
+    function savedLayouts(): { name: string; file: string }[] {
+        try {
+            return layoutEntries(readdirSync(deps.layoutsDir));
+        } catch {
+            return [];
+        }
+    }
+
+    async function saveLayoutAs(tabId: string): Promise<void> {
+        const label = host.tabs().find(tab => tab.id === tabId)?.label;
+        if (label === undefined) return;
+        try {
+            mkdirSync(deps.layoutsDir, { recursive: true });
+            const { canceled, filePath } = await dialog.showSaveDialog(win, {
+                title: 'Save Layout',
+                defaultPath: join(deps.layoutsDir, layoutFileName(label)),
+                filters: [{ name: 'Zanaris Kit layout', extensions: ['json'] }]
+            });
+            if (canceled || !filePath || win.isDestroyed()) return;
+            saveLayoutTo(tabId, filePath);
+        } catch (err) {
+            deps.log(`${tag} could not save a layout: ${(err as Error).message}`);
+            if (!win.isDestroyed()) await dialog.showMessageBox(win, { type: 'warning', message: 'The layout could not be saved.', detail: (err as Error).message });
+        }
+    }
+
+    /** Reads the tab when the file is written rather than when the menu opened: the dialog was up in between. */
+    function saveLayoutTo(tabId: string, path: string): void {
+        const tree = host.treeOf(tabId);
+        if (!tree) throw new Error('that tab has closed');
+        writeFileSync(path, writeLayout(tree, server.id));
+        deps.log(`${tag} saved layout ${basename(path)}`);
+    }
+
+    async function loadLayoutFromFile(tabId: string): Promise<void> {
+        try {
+            mkdirSync(deps.layoutsDir, { recursive: true });
+        } catch {
+            // The folder is only where the dialog starts; a file anywhere else still loads.
+        }
+        const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+            title: 'Load Layout',
+            defaultPath: deps.layoutsDir,
+            properties: ['openFile'],
+            filters: [{ name: 'Zanaris Kit layout', extensions: ['json'] }]
+        });
+        const path = filePaths[0];
+        if (canceled || !path || win.isDestroyed()) return;
+        await loadLayoutChosen(tabId, path);
+    }
+
+    /** Loading from the menu: the same load, and a sheet rather than silence when the file was not a layout. */
+    async function loadLayoutChosen(tabId: string, path: string): Promise<void> {
+        if ((await loadLayoutFrom(tabId, path)) !== 'unreadable' || win.isDestroyed()) return;
+        await dialog.showMessageBox(win, {
+            type: 'warning',
+            message: "That file isn't a Zanaris Kit layout.",
+            detail: `${basename(path)} could not be read as a layout, so the tab was left as it was.`
+        });
+    }
+
+    /**
+     * A layout file, into a tab.
+     *
+     * What it costs is `tabs.loadingLayout`'s answer, which is pure and tested;
+     * this asks the question it raises and acts. When the layout would take the
+     * game's leaf away, that is closing the game, so it asks first and destroys
+     * the view — the layout invariant in `CLAUDE.md`, and the same order
+     * `closeTab` keeps, including asking the tabs again once the sheet is down,
+     * since the game may have moved while it was up. When the layout wants a
+     * game and the window has none left, one is made and loaded, as choosing
+     * the game in an empty pane does.
+     */
+    async function loadLayoutFrom(tabId: string, path: string): Promise<'loaded' | 'unreadable' | 'cancelled' | 'missing'> {
+        let text: string;
+        try {
+            text = readFileSync(path, 'utf8');
+        } catch (err) {
+            deps.log(`${tag} could not read ${path}: ${(err as Error).message}`);
+            return 'unreadable';
+        }
+        const stored = readLayout(text);
+        if (!stored) {
+            deps.log(`${tag} refused ${basename(path)}: not a Zanaris Kit layout`);
+            return 'unreadable';
+        }
+        const tree = host.instantiate(stored);
+        const loading = host.loading(tabId, tree);
+        if (!loading) return 'missing';
+        if (loading.dropsGame) {
+            if (!(await deps.confirmCloseGame('layout'))) return 'cancelled';
+            if (win.isDestroyed()) return 'missing';
+            const now = host.loading(tabId, tree);
+            if (!now) return 'missing';
+            if (now.dropsGame) destroyGame('layout');
+        }
+        if (holdsGame(tree) && !gameView) {
+            gameView = makeGameView();
+            void loadGame(expected);
+        }
+        if (!host.replaceTab(tabId, tree)) return 'missing';
+        syncPanelProbe();
+        deps.log(`${tag} loaded layout ${basename(path)}`);
+        return 'loaded';
+    }
+
+    async function openLayoutsFolder(): Promise<void> {
+        try {
+            mkdirSync(deps.layoutsDir, { recursive: true });
+        } catch (err) {
+            deps.log(`${tag} could not make ${deps.layoutsDir}: ${(err as Error).message}`);
+            return;
+        }
+        const failed = await shell.openPath(deps.layoutsDir);
+        if (failed) deps.log(`${tag} could not open ${deps.layoutsDir}: ${failed}`);
     }
 
     // ── the game view ────────────────────────────────────────────────────
@@ -983,6 +1158,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         newTab: () => host.newTab(),
         closeTab,
         selectTab: tabId => host.selectTab(tabId),
+        showTabMenu,
+        saveLayoutTo,
+        loadLayoutFrom,
         relayout: applyLayout,
         state,
         pushState,
