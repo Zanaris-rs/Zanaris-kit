@@ -4,15 +4,15 @@ An Electron client that opens several 04scape servers at once, one window per
 server, where every window knows which server it is running and can hop
 between that server's worlds.
 
-**Status: the reference pane — LostHQ beside the game — on top of single
-player and milestone two of the server-windows design.** Server windows with
-the strip, the rail and panel, the widen / shift / push layout engine, the
-Worlds tool (a world list with players and latency, a low / high detail
-switch, and the last world remembered per server), and the Guides list: this
-server's reference links, opening as tabs in a pane beside the game that stay
-exactly as you left them. Timers, screenshots and the other tools follow. The design is in
-`docs/superpowers/specs/2026-09-05-server-windows-design.md`, which also maps
-LostHQ's LostKit 2 onto it; the plans are under `docs/superpowers/plans/`.
+**Status: split panes — any pane, any axis, dragged and closed like iTerm —
+on top of the reference pane and single player.** The window is a tree of
+panes now rather than four fixed regions: the game, a reference page and any
+tool can sit anywhere in it, split left/right or up/down, and every seam
+drags. A fresh pane shows a launcher of this server's links and this window's
+tools. Workspace tabs, background images and shareable layout presets follow.
+The design is in `docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`,
+which supersedes the layout halves of the server-windows and chat-dock specs
+beside it; the plans are under `docs/superpowers/plans/`.
 
 ## Download
 
@@ -51,12 +51,17 @@ startup the app opens the first server in the catalog, Lost City. On macOS the
 app keeps running with no windows and the dock menu opens one; elsewhere
 closing the last window quits, since the menu lives in the window.
 
-A **server window** is bound to one catalog entry for its whole life. Its
-strip starts with a badge reading "Lost City · W5 · low · 43 ms": the server,
-the world, the detail level and the latency to that world's host, measured
-every ten seconds. The game is never behind anything, so that is a read-out
-rather than a tab — what follows it are the reference pages this window has
-open. A rail runs down the right edge; its first tool is **Worlds**. The panel it opens (or Cmd/Ctrl+\) shows Low / High
+A **server window** is bound to one catalog entry for its whole life. The game
+pane's own header reads "Lost City · W5 · low · 43 ms": the server, the world,
+the detail level and the latency to that world's host, measured every ten
+seconds. It is the window's fact rather than the pane's — one server, one game —
+and it sat at the left of the tab bar for exactly that reason, until it became
+clear that a read-out nobody can place is a read-out nobody reads. Beside the
+game it describes, it is obviously about the thing under it, and the bar is left
+to tabs. A rail runs down the right edge; its first tool is **Worlds**. Clicking
+it puts the tool in the pane you are standing in — or splits that pane, when it
+holds the game, so a click on the rail never costs you your view of it. What it
+shows is Low / High
 detail, then every world with region, players online, members or free, and
 latency, the current world marked. Choosing a world loads it in the same
 window; flipping detail reloads the current world. The world and detail you
@@ -103,26 +108,38 @@ the pane shows the server's own curated links and refuses anything else, so the
 label says where the link goes rather than leaving a new window to explain
 itself.
 
-**Guides** is the way into the reference pane. Its panel lists this server's
-links, in order — for Lost City: Forums, Coordinates, Clue Help, Puzzle
-Solver, World Map, Markets, Quest Guides, Skill Guides, Skills Calculator,
-Bestiary and Item Database; for Zanaris the nine of those that are not Lost
-City's own forums and prices; for Lost City Labs and single player nothing, so
-the tool never appears on their rails. Clicking one opens it as a tab in a pane beside the game, and
-leaves the list up so the next one is another click. The pane is a column of
-its own rather than something laid over the game, and opening it widens the
-window rather than taking the width out of the game — until the display runs
-out of room, where the give-way order under **Layout** below takes over.
+**The launcher** is the way into the reference pages, and it is what an empty
+pane shows. It lists this server's links, in order — for Lost City: Forums,
+Coordinates, Clue Help, Puzzle Solver, World Map, Markets, Quest Guides, Skill
+Guides, Skills Calculator, Bestiary and Item Database; for Zanaris the nine of
+those that are not Lost City's own forums and prices; for Lost City Labs and
+single player nothing — alongside the tools this window offers and the game.
+Clicking one fills the pane you are looking at. Split first and you fill the new
+half instead, which is how two pages end up side by side.
+
+There is one game per window and there always will be: two of them side by side
+would read as an endorsement of multi-boxing, and the window has one storage
+partition and one login. So the launcher's game entry **moves** the game rather
+than offering a second — it says "Move game here" when the game is somewhere
+else, in this tab or another, and the pane it leaves shows the launcher. That
+costs nothing: the view is repositioned, never reloaded, so a move keeps you
+logged in exactly as dragging a seam does. Only a window whose game pane has
+been closed pays a fresh login, and that is the close doing it rather than the
+move.
+
+There is no Guides tool any more. A chooser inside the pane it is about to fill
+is a shorter path than a panel that opens somewhere else and puts the page
+somewhere else again.
 
 Each tab keeps its own live view for as long as it is open, so switching
 between them is instant and nothing reloads — a half-filled coordinate
 lookup, a map panned to where you are standing and a drop table scrolled to
-the right row are all still there when you come back to them. The pane has
-back, forward and reload and no address box: it browses freely within the
-hosts that server allows, and a link off them opens in your system browser
-instead. The seam between the game and the pane can be dragged, and where you
-leave it is where the next pane opens. Closing the last tab closes the pane;
-the control in the strip hides it without closing anything.
+the right row are all still there when you come back to them. A page pane's
+header carries back, forward and reload and no address box: it browses freely
+within the hosts that server allows, and a link off them opens in your system
+browser instead. Every seam drags, on both axes, and the pane before a seam —
+the one to its left, or above it — is the one that grows as you push the seam
+away from it.
 
 **Single player** needs no server at all: the kit carries the Lost City engine
 and the game's files, and File > New Window For > Single player starts a world
@@ -160,23 +177,17 @@ channel for either on SwiftIRC, and guessing one would risk dropping a player
 into a stranger's channel on a large public network. A local or self-added
 server gets no room either, since it would be a room of one.
 
-Chat lives along the bottom of the window by default — a dock, wide and
-short — rather than in the side panel with Worlds and Single player. It opens
-and closes from the rail's Chat tab exactly as the panel does, except that it
-does not have to fight anything for the column: the dock and the panel are
-independent regions, so Worlds can be open on the side while the dock sits
-underneath it. Its top edge is a drag handle, clamped between a floor and
-half the screen, and the height you leave it at is remembered next to the
-nick. The `→|` control in its header sends it to the side column instead,
-evicting whatever tool was parked there, and the matching control in the
-panel sends it back to the bottom.
+Chat is a pane like anything else: put it wherever you want it, drag its seams,
+close it. It comes off the rail's Chat tab, which fills the pane you are
+standing in.
 
-The bottom is the default because of proportion, not preference. `Chat.tsx`
-was drawn for 320px wide by full height, and a conversation is a column of
-short lines — a shape that wraps almost every one of them at that width.
-Along the bottom at around 735px wide the same log runs wide and short
-instead, so six rows there hold roughly what eleven hold in the panel, and
-either way the game keeps the middle of the screen.
+It draws itself two ways, and picks between them by reading its own width
+rather than remembering a preference. A conversation is a column of short lines,
+and at 320px almost every one of them wraps; past about 560px the same log runs
+wide and short instead, so six rows hold roughly what eleven hold in a narrow
+column. That is the whole argument the old bottom dock was built on — what has
+changed is only that a pane knows its own shape, so nothing has to be stored or
+moved. Dragging the seam is what "move chat to the bottom" used to mean.
 
 The first time you open chat it asks for a nick, because there is nothing
 sensible to default to and a name others see should be chosen rather than
@@ -310,78 +321,103 @@ and the state starts empty.
 ## Layout
 
 Main owns all geometry. Each server window is one full-window **shell** view
-(React, the only view with a preload) with the **game** view placed on top of
-it inside the content rect. The shell draws the strip, rail, panel and dock
-exactly where main says they are, and leaves the content rect empty.
+(React, the only view with a preload) with the game and page views placed on
+top of it, inside the rects main worked out.
 
-A new window opens with a content rect of 813×571: a game view of 765×535,
-the bare canvas plus the client page's own controls strip below it
-(`PAGE_CONTROLS_HEIGHT`, `src/shared/layout.ts`). The floor a window can still
-be dragged to stays the bare 765×503 canvas — `MIN_CONTENT_WIDTH`/
-`MIN_CONTENT_HEIGHT` are unchanged, so the default is just tight rather than
-loose, not a new minimum. Below that default, the client page is not ours:
-every server serves the same template, and its own `overflow: auto` around a
-`100vh` centring column can put up a vertical and a horizontal scrollbar that
-induce each other once the game view is shorter than the page's natural
-height — the bare-canvas floor, and the dock pushing the content rect below
-it while maximised, both land there. Main injects a small stylesheet into the
+A window is a bar across the top, a rail down the right, and a **tree of panes**
+in everything left over. A pane holds exactly one thing — the game, a reference
+page, or one of the tools — and any pane can be split left/right or up/down,
+dragged at its seams, or closed. Splitting a pane halves that pane's own share
+and leaves its neighbours where they are; splitting along the grain of an
+existing row appends to it rather than nesting, which is what keeps a seam drag
+moving exactly the two panes either side of it. Repeated splitting halves each
+time, as it does in iTerm and tmux, and **Even Out** in the View menu is what
+answers "make these the same size".
+
+Panes are rearranged by dragging one header onto another: the two trade what
+they hold, and nothing else moves — the tree's shape, every pane's size and
+every seam stay exactly where they were. The header is the handle because it is
+the only part of a game or a page pane the shell can see; those are native
+views stacked above it and they take every pointer event that lands on them.
+For the length of the drag the views are hidden and each pane says its own
+name, for the same reason: a drop target painted under a game view would be
+invisible. Nothing reloads — it is the same hiding a tab switch does.
+
+Right-clicking a pane offers Split Right, Split Down, Even Out and Close, and
+focuses that pane first so the menu acts on what was clicked. A split that
+could not be drawn — either half under the 120x80 floor — is offered greyed
+rather than offered and then refused. The same four are in the View menu with
+Cmd/Ctrl+D, Cmd/Ctrl+Shift+D, Cmd/Ctrl+W and Cmd/Ctrl+Alt+=; tabs are
+Cmd/Ctrl+T, Cmd/Ctrl+Shift+W and Cmd/Ctrl+1 to 9. **Cmd/Ctrl+W closes a pane,
+not the window** — the window goes when its last tab does.
+
+A fresh pane is empty and shows a launcher: this server's links, the tools this
+window offers, and the game. That list is why there is no longer a Guides tool —
+a chooser in the pane it is about to fill is a shorter path than a panel that
+opens somewhere else and puts the page somewhere else again.
+
+**Every pane has a header**, 32px of stone across its top, and the native views
+are inset below it so it costs that pane's height rather than the window's. It
+carries three things and refuses a fourth. The pane's **name** comes first — a
+link's curated name from the catalog rather than the page's own `<title>`, which
+changes as you click through a wiki and would make the pane's identity move
+under it; then the tool's name, or "Game", or "Empty". Then **that pane's own
+controls**, which only a page has: back, forward, reload. Then a **dropdown**
+that changes what the pane holds, offering the same list the launcher does.
+Nothing else gets controls: Hiscores' name box, Worlds' detail switch and chat's
+Send stay in the pane body, because they are the pane's *work* rather than its
+identity, and a header that collected them would become a second body.
+
+The dropdown is a native menu main pops rather than a panel the shell draws.
+In a game or page pane the header sits directly above a `WebContentsView`, so
+anything drawn below it by the shell would open behind that view — and building
+it in main is what lets one menu serve all four kinds of pane, the same way the
+right-click menu does. Which items it offers, what they are called and which one
+is already showing are decided in `main/paneMenu.ts`, which is pure and tested,
+for the reason the right-click menu is: an item offered and then refused is
+worse than one never offered, and the launcher would otherwise be a second
+opinion about the same question. It was a second opinion, and it was wrong.
+
+The window never resizes itself any more. Opening the old panel or dock grew the
+window rather than shrinking the game, through a `widen → shift → push` ladder,
+because reloading or rescaling the game view was believed to cost the player
+their login. That turned out not to be true of resizing — `setBounds` does not
+reload a `WebContentsView`; only `loadURL` does, which is why a world switch
+warns and a drag does not — and with the game an ordinary pane there is no
+chrome opening beside it to make room for. Splits divide space that is already
+allocated, so the ladder, the per-axis mode notes and the protected content
+extent all went with the columns that motivated them.
+
+What a small game pane costs is the bottom of the canvas. The served page does
+not rescale to follow unless the player picked **Auto Sizing** from the controls
+under the game, so the canvas clips rather than shrinking — still reachable by
+scrolling, though with no bar to hint at it, since the injected stylesheet hides
+them. 765x503 plus the client page's controls strip plus the pane header — 765
+by 567 — is what a game pane *asks for* when it is first placed, and what the
+window opens at, not a floor anything protects.
+
+Below that the client page is not ours: every server serves the same template,
+and its own `overflow: auto` around a `100vh` centring column can put up a
+vertical and a horizontal scrollbar that induce each other once the game view is
+shorter than the page's natural height. Main injects a small stylesheet into the
 game view's `dom-ready` (the kit's own offline and starting pages are left
-alone) that hides the scrollbar — a hidden bar reserves no gutter, which is
-what actually stops the two axes inducing each other — and separately swaps
-that `100vh` for a percentage of the view's own height, which keeps the
-canvas centred in an oversized window now that `vh` is gone rather than
-fixing anything itself. When the page does overflow anyway, it clips its
-controls strip at the bottom rather than the canvas at the top for an
-unrelated reason: `overflow: auto` rests scrolled to zero by default, so the
-visible window onto the content starts at its top edge. The stylesheet also
-centres `safe`, a no-op on the stock markup today — `center` only ever
-carries `min-height`, so it can never end up shorter than its own content —
-kept as a guard against a future change to the served page.
+alone) that hides the scrollbar — a hidden bar reserves no gutter, which is what
+actually stops the two axes inducing each other — and separately swaps that
+`100vh` for a percentage of the view's own height, which keeps the canvas centred
+in an oversized pane now that `vh` is gone rather than fixing anything itself.
 
-Opening the panel or the dock is supposed to grow the window rather than
-shrink the game underneath it, and now that both exist that has to be true on
-two axes at once: the panel costs width, the dock costs height. Rather than
-grow the old single-axis engine into two similar-but-not-identical blocks of
-arithmetic, the fallback ladder was pulled out into one 1-D solver and called
-once per axis, so `mode` is a pair, `{ x, y }` — a user who is both up against
-the edge of their screen and dragging the dock tall sees both things happen,
-to two different edges, and both get said.
+The arrangement is remembered per server, the way the world and detail already
+are: the next window for that server opens with the tabs, splits and seam
+positions you left it with. A stored layout is validated whole and refused
+whole — one server's entry edited into nonsense costs that server its
+arrangement and nothing else, and a window with no stored layout opens on the
+game.
 
-| mode | when | what happens |
-|---|---|---|
-| widen | there is room to grow, on that axis | the window grows |
-| shift | growing would run the window off the screen | the window grows and slides back onto it |
-| push | maximised, fullscreen, or no room on the display | the content rect gives way instead of the window: on x only as far as the canvas width, on y far enough that part of the canvas can end up out of view — the page does not rescale to follow |
-
-Nothing in the served page scales the canvas down to match: its `setSize` fits
-the canvas to the window only for someone who has picked **Auto Sizing** from
-the controls under the game, and the default is a fixed 765×503 at 1x. So a
-`push` that eats into the 503 leaves the bottom of the canvas out of view —
-still reachable by scrolling, but with no bar to hint that there is anything
-to scroll to, since the stylesheet above hides them. The notes under the panel
-and the dock say that, rather than claiming a rescale that did not happen.
-
-The active mode is stated per axis rather than silently substituted — "the
-window moved left" and "the height came out of the game area" are
-different sentences, and hitting both at once deserves both.
-
-The two axes disagree, on purpose, about who gives way first. On x the game
-gives up whatever it has above its canvas, and then the chrome is spent in the
-order of how little the user asked for it: the panel first, all the way to
-nothing, because it is one of several tools sharing a 320px column and closing
-it is one click on the rail; then the reference pane, down to the 480px below
-which a page stops being readable; and only past both does the content rect go
-under 765 wide. That last step is new — a 1440px display cannot hold 765 of
-game, 720 of pane, 320 of panel and the rail at once — and collapsing the pane
-is the click that undoes it. On y the
-dock holds the conversation the user just asked to see, and a chat window
-that silently becomes nothing is worse than a game canvas a few pixels
-shorter — so the dock is the one thing here that never gets silently
-dropped: it shrinks first, down to its own floor, and only once it is
-already at that floor does the content rect give up height too. A short
-window with the dock open can therefore now push the content below 503 tall,
-which used to be impossible; that is deliberate, and it is the opposite
-choice from the one x makes for exactly the reason above.
+The floor on a pane is 120x80: the point at which it stops being able to show
+that it exists, not the point at which its content is comfortable. A pane that
+lands under it is held there and its siblings pay; when even the minimums do not
+fit, every pane is cut by the same proportion, because clipping everything a
+little beats clipping one pane to nothing.
 
 ## Running it
 
@@ -428,25 +464,19 @@ One capture run with every catalog server open at once:
 
 | window | game | shell |
 |---|---|---|
-| Lost City | login screen at World 5 | "Lost City · W5 · low · 239 ms", the globe on the rail |
-| Zanaris | login screen | "Zanaris · W1 · low · N ms" |
-| Lost City Labs | login screen | "Lost City Labs · W1 · N ms", no detail since Labs has no switch |
-| Lost City, Worlds open | untouched | five worlds with region, players and latency, W5 marked in gold, the red Low detail slab pressed; mode **widen** |
-| Lost City, after choosing W1 | login screen at World 1 | "Lost City · W1 · low · 294 ms", W1 marked; title "Lost City — World 1" |
-| Lost City, Hiscores open | untouched | "Showing granny_grunt", Overall picked out in gold at rank 18, level 1,724, 143,195,458 xp, then Attack down to Crafting in view, 20 rows in all. Every xp is a whole number — Attack reads 13,073,159, the floor of the raw `value` 130731598 |
-| Zanaris, Hiscores open | untouched | the header row and nothing else, with "No hiscores entry for that name." in warn: `zezima` is nobody on Zanaris, and the panel says so rather than showing an empty table |
+| Lost City | the whole login screen, canvas and controls strip, nothing clipped at the window's own opening size of 815x605 | one pane headed "Game · Lost City · W5 · low · 210 ms · rev 274"; tabs and the `+` alone in the bar above it |
+| Zanaris | login screen | "Game · Zanaris · W1 · low · 268 ms" |
+| Lost City Labs | login screen | "Game · Lost City Labs · W1 · N ms", no detail since Labs has no switch |
+| Lost City, split right | untouched at 765→381px wide | the new pane headed "Empty", its launcher offering Chat, Worlds, Hiscores, **Move game here**, then the eleven links under a rule |
+| Lost City, Worlds open | untouched | the pane headed "Worlds" with no heading of its own inside it, the red Low detail slab pressed |
+| Lost City, Hiscores and Chat open beside the game | untouched | three headers — "Game" with its read-out, "Chat", "Hiscores" — and "Showing granny_grunt", Overall in gold at rank 18, level 1,724, 143,195,458 xp. Every xp is a whole number: Attack reads 13,073,159, the floor of the raw `value` 130731598 |
+| Zanaris, Hiscores open | untouched | the header row and nothing else, with "No hiscores entry for that name." in warn: `zezima` is nobody on Zanaris, and the pane says so rather than showing an empty table |
 | Lost City Labs, Hiscores open | untouched | "Showing knight", Overall in gold at rank 1, level 1,176, 18,174,678 xp; 22 rows in all, Labs' later revision sending the Slayer and Farming lines 274 never does |
-| Lost City (2), opened after the hop | login screen at World 1, the remembered world | slot 2, `persist:server:lostcity:2` |
+| Zanaris, two pages stacked | untouched | both page panes headed with their catalog names — "Coord…", "Clue H…" — before their back, forward and reload, the name truncating rather than vanishing at 189px |
+| Lost City, seam dragged | 190px wide | asked for 190px of 761 and got 190; the game pane's header keeps its name and drops "rev 274", which is the half worth losing |
+| Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, restored into the same arrangement the first window was left in — so its shell frame is byte-identical to that window's, which is the one duplicate in the run and a real one |
 
-The Zanaris and Labs frames caught the panel before its pixel font landed, so
-the title and the Look up label are blank in those two — everything drawn in
-the sans face, the table and its message included, is there. They evidence the
-lookup, not the chrome around it.
-
-The version 1 `servers.json` on disk migrated in place during that run, with
-no recovery prompt, and the state file recorded the hop.
-
-371 tests cover the pure modules: layout, catalog (validation, defaults, file
+424 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, a version 1, 2 or 3 file each migrating into version 4, and a
 built-in's hiscores block re-adopted from the defaults), slots, tabs, the
 window registry, the world sources against the real API payloads (including a
@@ -456,7 +486,9 @@ hiscores sources against each server's own payload (the xp floor, Lost City's
 empty 200, and the 404s that are and are not a missing player), the hiscores
 service (supersession by sequence number, the last table kept through a
 failure, the rate-limit message), the per-window switch state, the app state
-store, the navigation guard, and the latency probe against a local listener.
+store, the navigation guard, the latency probe against a local listener, the
+pane tree and its solver, the workspace tabs — including moving the game out of
+one tab and into another — and what a pane is called and may be turned into.
 
 ## Known
 
@@ -501,16 +533,18 @@ from `event.sender`, never from a value the renderer supplies.
 
 ```
 src/shared/layout.ts        geometry constants shared by main and the shell
+src/shared/panes.ts         PaneView, SeamView, PageState — what the shell draws
 src/shared/catalog.ts       ServerDef and the add-form input
 src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorld
 src/shared/ipc.ts           channel names, ShellState, the tool ids
-src/main/layout.ts          pure: window and view rects; widen / shift / push        (tested)
+src/main/paneTree.ts        pure: the split tree, its solver, splits and drags      (tested)
+src/main/tabs.ts            pure: workspace tabs, moving the game, stored layouts   (tested)
+src/main/paneMenu.ts        pure: a pane's name, its gestures, what it may become    (tested)
+src/main/paneHost.ts        the views inside a tab's panes; holds no rules
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
-src/main/pagePane.ts        pure: the reference pane's tabs, collapse and width      (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
-src/main/chatDock.ts        pure: where chat lives, and what the side column shows  (tested)
 src/main/appState.ts        the state.json store                                    (tested)
 src/main/worlds/sources.ts  pure: LostHQ, Zanaris and static parsers, url templates (tested)
 src/main/worlds/service.ts  per-server world list and latency over injected IO      (tested)
@@ -519,13 +553,16 @@ src/main/worlds/probe.ts    TCP connect latency, node-only                      
 src/main/worlds/warning.ts  pure: what the switch confirmation says                 (tested)
 src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
-src/main/menu.ts            application menu: new windows, the server list, the panel,
-                            the switch warning
+src/main/menu.ts            application menu: new windows, the server list, the pane
+                            gestures, the switch warning
 src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.zanaris bridge
-src/renderer/Shell.tsx      strip, rail, panel, dock
-src/renderer/tab.tsx        the shared tab button, worn by the strip and the dock header
+src/renderer/Shell.tsx      the bar, the rail, and every pane where main put it
+src/renderer/paneHeader.tsx a pane's name, its own controls, and what it may become
+src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
+src/renderer/grip.tsx       one draggable seam, and its keyboard path
+src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
 src/renderer/tools/Worlds.tsx
 static/offline.html         shown when a server can't be reached
 ```
@@ -540,8 +577,8 @@ the reload button) is parked in `git stash`.
 ## Next
 
 3. **The reference pane, beyond the links.** An address row and wiki search,
-   per-tab zoom, tearing a page off into its own window, and reopening the
-   pages that were open at quit.
+   per-pane zoom, and tearing a pane off into its own window. (Reopening what
+   was open at quit landed with the pane tree.)
 4. **Shared tools.** Screenshot cropped to the canvas, timers with an AFK
    reset, notes, settings.
 5. **Chat.** IRC on SwiftIRC, joining `#LostHQ` and `#LostCity`.

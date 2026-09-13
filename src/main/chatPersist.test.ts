@@ -130,7 +130,7 @@ test('a view of no connection never erases the stored rooms', () => {
 // than a file: AppState is proven elsewhere, and what is under test here is
 // how many times it would be asked to write.
 
-const SETTINGS: ChatSettings = { nick: null, server: 'irc.example', port: 6697, dock: 'bottom', dockHeight: 200, rooms: [] };
+const SETTINGS: ChatSettings = { nick: null, server: 'irc.example', port: 6697, rooms: [] };
 
 interface Driven {
     service: ChatService;

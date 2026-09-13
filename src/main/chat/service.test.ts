@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ChatService, handJoinedChannels, initialChannels, offlineChat, splitLines, wantedChannels, type ChatIo, type ChatSocket, type SocketHandlers } from './service.ts';
 import { LOBBY, type ChatSettings } from '../../shared/chat.ts';
 
-const SETTINGS: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, dock: 'bottom', dockHeight: 200, rooms: [] };
+const SETTINGS: ChatSettings = { nick: null, server: 'irc.swiftirc.net', port: 6697, rooms: [] };
 
 // ── the stream ────────────────────────────────────────────────────────────
 //

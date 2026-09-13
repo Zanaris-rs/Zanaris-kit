@@ -116,9 +116,6 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {/* The client centres a panel's title over its contents, so this one is centred too. */}
-            <h2 className="title">Hiscores</h2>
-
             <form onSubmit={submit} className="flex items-center gap-1.5 px-2.5 pb-[7px]">
                 <input
                     value={draft}

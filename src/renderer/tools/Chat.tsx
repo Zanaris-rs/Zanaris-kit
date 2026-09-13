@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react';
-import { SERVER_LOG, type ChatHome, type ChatLine, type ChatStatus, type ChatView, type ViewChannel } from '../../shared/chat';
-import { CloseRoom, MoveChat } from '../icons';
+import { SERVER_LOG, type ChatLine, type ChatStatus, type ChatView, type ViewChannel } from '../../shared/chat';
+import { CloseRoom } from '../icons';
 import Tab from '../tab';
 
 /*
@@ -234,28 +234,6 @@ function Channels({ view }: { view: ChatView }): ReactNode {
 }
 
 /**
- * Sends chat to the edge it is not on. The label names the destination rather
- * than the direction: "move chat to the side" is a thing somebody can want,
- * where "move right" is a thing they have to work out first. The home is
- * app-wide, so main tells every other window where chat went.
- */
-function MoveControl({ home, className = '' }: { home: ChatHome; className?: string }): ReactNode {
-    const to: ChatHome = home === 'bottom' ? 'side' : 'bottom';
-    const label = to === 'side' ? 'Move chat to the side' : 'Move chat to the bottom';
-    return (
-        <button
-            type="button"
-            title={label}
-            aria-label={label}
-            onClick={() => void window.zanaris.chat.setHome(to)}
-            className={`tile flex h-[26px] w-[28px] shrink-0 items-center justify-center ${className}`}
-        >
-            <MoveChat down={to === 'bottom'} />
-        </button>
-    );
-}
-
-/**
  * The dock's one row of furniture: the rooms as tabs and the move control. The
  * side panel gives the same rooms a wrapping row of chips instead, which 600px
  * of height can afford and 200px cannot, so the dock buys that room back with
@@ -305,7 +283,6 @@ function DockHeader({ view }: { view: ChatView }): ReactNode {
                 })}
             </div>
             {/* No title left to share the row with, so the control claims the right edge on its own. */}
-            <MoveControl home="bottom" className="ml-auto" />
         </div>
     );
 }
@@ -351,7 +328,7 @@ const STICK_SLACK = 24;
  * composer are the same object at 320px wide and at 735px, so they are written
  * once; a second log would be a second set of scroll rules to keep in step.
  */
-function Conversation({ view, home }: { view: ChatView; home: ChatHome }): ReactNode {
+function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactNode {
     const [draft, setDraft] = useState('');
     const [behind, setBehind] = useState(false);
     const log = useRef<HTMLDivElement | null>(null);
@@ -408,17 +385,13 @@ function Conversation({ view, home }: { view: ChatView; home: ChatHome }): React
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {home === 'bottom' ? (
+            {wide ? (
                 <>
                     <DockHeader view={view} />
                     <Status view={view} />
                 </>
             ) : (
                 <>
-                    {/* No title left to centre, so the control is an ordinary right-aligned element in its own row rather than layered over one. */}
-                    <div className="flex justify-end px-2.5 pt-2 pb-1">
-                        <MoveControl home="side" />
-                    </div>
                     <Status view={view} />
                     {view.channels.length > 1 && <Channels view={view} />}
                 </>
@@ -531,6 +504,19 @@ function NickPrompt({ view }: { view: ChatView }): ReactNode {
  * `NickPrompt` is the same in both — at 735px its two paragraphs land in three
  * or four lines instead of a column, which is the only difference.
  */
-export default function Chat({ view, home }: { view: ChatView; home: ChatHome }): ReactNode {
-    return view.needsNick ? <NickPrompt view={view} /> : <Conversation view={view} home={home} />;
+/**
+ * The width at which the wide layout starts paying for itself.
+ *
+ * A conversation is a column of short lines, and a narrow pane wraps almost
+ * every one of them — which is the whole argument the bottom dock was built on
+ * (`2026-09-07-chat-dock-design.md`). What has changed is only where the answer
+ * comes from: the dock was a place chat could be *moved* to, and the shape had
+ * to be remembered app-wide because nothing else could tell you it. A pane
+ * knows its own width, so it is read rather than stored, and dragging the seam
+ * is what "move chat" used to mean.
+ */
+const WIDE_ENOUGH = 560;
+
+export default function Chat({ view, width }: { view: ChatView; width: number }): ReactNode {
+    return view.needsNick ? <NickPrompt view={view} /> : <Conversation view={view} wide={width >= WIDE_ENOUGH} />;
 }

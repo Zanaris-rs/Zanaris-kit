@@ -4,18 +4,21 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, typ
  * A draggable edge between two regions, and — for anyone without a pointer — a
  * separator that answers arrow keys.
  *
- * It lives here rather than in the shell because there are two of them: the
- * dock's top edge and the reference pane's seam. They differ in an axis, a
- * label and which number they move, and in nothing else — every line below
- * about frames, echoes and the exact ceiling was written once for the dock and
- * paid for twice over in the getting-right. A second copy would be a second
- * copy to keep in step, and the half that drifted would be the half nobody was
- * dragging that week.
+ * It lives here rather than in the shell because there is one per seam, and a
+ * window has as many seams as the user has made splits. They differ in an axis,
+ * a label and which number they move, and in nothing else — every line below
+ * about frames, echoes and the exact ceiling was written once and paid for
+ * twice over in the getting-right. A second copy would be a second copy to keep
+ * in step, and the half that drifted would be the half nobody was dragging that
+ * week.
  *
- * Both axes are inverted in the same direction, which is why one sign serves
- * both: the dock grows upward from its top edge, and the pane grows leftward
- * from its seam, so in each case the region gets bigger as the pointer moves
- * back along the axis.
+ * `value` is the size of the pane *before* the seam — the one to its left on an
+ * 'x' split, the one above it on a 'y' split — so the pointer and the number
+ * run the same way on both axes: moving the seam forward along its axis, right
+ * or down, gives that pane more room, and moving it back takes room away. The
+ * arrow keys follow the seam rather than the number, so Right and Down grow the
+ * pane before it too, which is also what a separator's arrows are expected to
+ * do: they move the divider in the direction they point.
  *
  * Neither path clamps. Main owns the range, and restating it here would be a
  * second copy of that to keep in step too.
@@ -25,7 +28,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, typ
  * number being asked for, then — once `apply` resolves — sets it again to
  * whatever main actually applied. That second write is not optional. Main
  * skips its own layout work when a request lands exactly where the region
- * already is, which happens at both ends of the range: one more ArrowDown at
+ * already is, which happens at both ends of the range: one more ArrowUp at
  * the floor, an End already at the ceiling. Without a reply to correct it,
  * `requested` would be left holding the out-of-range number it optimistically
  * guessed, and every later key press would build the next request on that
@@ -153,8 +156,9 @@ export default function Grip({
     const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
         const d = drag.current;
         if (!d || event.pointerId !== d.pointerId) return;
-        // Back along the axis is bigger: the region grows away from the edge being dragged.
-        requested.current = d.startValue + (d.start - along(event));
+        // Forward along the axis is bigger: the seam reports the pane before it,
+        // so pushing the seam away from that pane is what gives it more room.
+        requested.current = d.startValue + (along(event) - d.start);
         if (frame.current === null) {
             frame.current = requestAnimationFrame(() => {
                 frame.current = null;
@@ -178,8 +182,10 @@ export default function Grip({
 
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
         const step = event.shiftKey ? STEP_COARSE : STEP;
-        const grow = axis === 'y' ? 'ArrowUp' : 'ArrowLeft';
-        const shrink = axis === 'y' ? 'ArrowDown' : 'ArrowRight';
+        // The same way round as the pointer: the arrow that moves the seam
+        // forward is the one that grows the pane before it.
+        const grow = axis === 'y' ? 'ArrowDown' : 'ArrowRight';
+        const shrink = axis === 'y' ? 'ArrowUp' : 'ArrowLeft';
         switch (event.key) {
             case grow:
                 send(requested.current + step);

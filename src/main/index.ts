@@ -5,10 +5,10 @@ import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
-import { DOCK_HEIGHT_MIN } from '../shared/layout';
+import type { PaneContent } from './paneTree';
 import { Catalog } from './catalog';
 import { AppState } from './appState';
-import { ServerWindows } from './windows';
+import { ServerWindows, type WindowSpec } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
 import { installMenu, type MenuActions, type MenuWindowState } from './menu';
 import { WorldsService } from './worlds/service';
@@ -39,6 +39,22 @@ const log = (msg: string): void => console.log(msg);
 // an instance that is on its way out, moving the profile's files and touching
 // the world directory before it goes. exit(0) leaves immediately, which is
 // what an instance owning nothing should do.
+/*
+ * A capture run gets a profile of its own, before either the lock below or the
+ * userData move underneath it can read the default one.
+ *
+ * Two reasons, and the second is the one that made it necessary. A capture is
+ * meant to photograph the app as a new user finds it, and running it against a
+ * real profile shows whatever that user happens to have — their servers.json,
+ * their remembered worlds, their nick. And an ordinary instance already holding
+ * the single-instance lock makes every capture launch exit(0) immediately,
+ * writing no frames and — because electron-vite does not forward the child's
+ * stdout — saying nothing about why. That is a silent no-op with a green exit
+ * code, which is exactly the failure the capture hazard in README.md warns
+ * about wearing a different face.
+ */
+if (process.env.ZANARIS_CAPTURE) app.setPath('userData', join(app.getPath('appData'), 'zanaris-kit-capture'));
+
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
 // ── the userData move, from the old name to this one ──────────────────────
@@ -90,7 +106,12 @@ const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
 let quitting = false;
 const catalog = new Catalog(join(userData, 'servers.json'));
 /** Capture mode keeps its state beside its screenshots, so a test switch never changes what the next real launch opens. */
-const appState = new AppState(join(CAPTURE_DIR ?? userData, 'state.json'));
+// Not `CAPTURE_DIR` any more. Capture mode used to redirect this one file into
+// the screenshots folder so a run could not touch the real profile; it now
+// takes a whole profile of its own, above, which covers servers.json, the
+// single-instance lock and Chromium's own data as well. Keeping both split a
+// capture's state across two places for no remaining reason.
+const appState = new AppState(join(userData, 'state.json'));
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
 /** One hiscores lookup per server, shared the same way, so a name looked up in one window is on the table in the others. */
@@ -119,11 +140,11 @@ let singlePlayer: SinglePlayerService | null = null;
  */
 function menuWindowState(): MenuWindowState {
     const focused = focusedServerWindow();
-    return { panelAvailable: focused?.state().panelAvailable ?? false, alwaysOnTop: focused?.alwaysOnTop() ?? false };
+    return { alwaysOnTop: focused?.alwaysOnTop() ?? false };
 }
 
 /** What the menu was last built with, so the rebuild below only runs when an item would actually change. */
-let menuWindow: MenuWindowState = { panelAvailable: false, alwaysOnTop: false };
+let menuWindow: MenuWindowState = { alwaysOnTop: false };
 
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
@@ -140,7 +161,7 @@ function installAppMenu(): void {
  */
 function syncMenuWindowItems(): void {
     const now = menuWindowState();
-    if (now.panelAvailable !== menuWindow.panelAvailable || now.alwaysOnTop !== menuWindow.alwaysOnTop) installAppMenu();
+    if (now.alwaysOnTop !== menuWindow.alwaysOnTop) installAppMenu();
 }
 
 /**
@@ -288,12 +309,11 @@ const windows = new ServerWindows((spec, onClosed) => {
             worlds: worldsServiceFor(spec.server),
             hiscores: hiscoresServiceFor(spec.server),
             chat: chatView,
-            chatHome: () => appState.chat().dock,
-            chatDockHeight: () => appState.chat().dockHeight,
-            pageWidth: () => appState.pageWidth(),
             alwaysOnTop: () => appState.alwaysOnTop(),
-            rememberPageWidth: px => {
-                appState.stagePageWidth(px);
+            confirmCloseGame: () => confirmCloseGame(spec),
+            rememberedLayout: appState.layout(spec.server.id),
+            rememberLayout: set => {
+                appState.stageLayout(spec.server.id, set);
                 writeStagedStateWhenItSettles();
             },
             remembered: appState.world(spec.server.id),
@@ -396,9 +416,28 @@ const actions: MenuActions = {
         loadCatalog();
         log(`[main] server list reloaded: ${catalog.list().length} servers`);
     },
-    togglePanel: () => focusedServerWindow()?.togglePanel(),
     setWarnOnSwitch,
     setAlwaysOnTop,
+    splitPane: axis => {
+        const sw = focusedServerWindow();
+        if (sw) sw.splitPane(sw.state().panes.find(p => p.focused)?.paneId ?? '', axis);
+    },
+    closePane: () => {
+        const sw = focusedServerWindow();
+        if (sw) void sw.closePane(sw.state().panes.find(p => p.focused)?.paneId ?? '');
+    },
+    evenOut: () => focusedServerWindow()?.evenOutFocused(),
+    newTab: () => focusedServerWindow()?.newTab(),
+    closeTab: () => {
+        const sw = focusedServerWindow();
+        const active = sw?.state().tabs.find(t => t.active);
+        if (sw && active) sw.closeTab(active.id);
+    },
+    selectTabAt: index => {
+        const sw = focusedServerWindow();
+        const tab = sw?.state().tabs[index];
+        if (sw && tab) sw.selectTab(tab.id);
+    },
     // Only https reaches the system browser, as in serverWindow's window-open
     // handler: this opens whatever the menu carries, and the update item's url
     // came off the network.
@@ -415,11 +454,9 @@ const actions: MenuActions = {
 
 ipcMain.handle(IPC.shellGet, (event): ShellState | null => windowFor(event.sender)?.state() ?? null);
 
-ipcMain.handle(IPC.shellTogglePanel, event => windowFor(event.sender)?.togglePanel());
-
 ipcMain.handle(IPC.shellSelectTool, (event, id: unknown) => {
-    if (id !== null && !(TOOL_IDS as readonly string[]).includes(id as string)) return;
-    windowFor(event.sender)?.selectTool(id as ToolId | null);
+    if (!(TOOL_IDS as readonly string[]).includes(id as string)) return;
+    windowFor(event.sender)?.selectTool(id as ToolId);
 });
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
@@ -488,68 +525,112 @@ const HISCORES_NAME_MAX = 30;
 // ── the reference pane ────────────────────────────────────────────────────
 
 /**
- * The Guides list, the strip's tabs and the pane's own toolbar.
+ * Every gesture a pane offers: splitting it, closing it, filling it, dragging
+ * its seams, and both of the menus it raises.
  *
- * Every one of these is a gesture in one window, so each finds its window from
- * the sender and goes no further: unlike the chat dock, a pane belongs to the
- * window it is in, and a drag here has no business resizing a pane over there.
+ * Each belongs to one window, so each finds its window from the sender and goes
+ * no further: a pane belongs to the window it is in, and a drag here has no
+ * business resizing a pane over there.
  *
- * `pagesOpen` carries a url, and `openPage` checks it against that window's own
- * bookmarks. There is no address box anywhere in the shell, so a url that is
- * not one of the server's links can only be a bug or a compromised renderer,
- * and a page view lives in a session shared with every other window's pages.
+ * A `page` carries a url, which the window checks against its own bookmarks.
+ * There is no address box anywhere in the shell, so a url that is not one of
+ * the server's links can only be a bug or a compromised renderer, and a page
+ * view lives in a session shared with every other window's pages.
  */
-ipcMain.handle(IPC.pagesOpen, (event, url: unknown) => {
-    if (typeof url !== 'string') return;
-    windowFor(event.sender)?.openPage(url);
+ipcMain.handle(IPC.paneSplit, (event, paneId: unknown, axis: unknown) => {
+    if (typeof paneId !== 'string' || (axis !== 'x' && axis !== 'y')) return;
+    windowFor(event.sender)?.splitPane(paneId, axis);
 });
 
-ipcMain.handle(IPC.pagesActivate, (event, id: unknown) => {
-    if (typeof id !== 'string') return;
-    windowFor(event.sender)?.activatePage(id);
-});
-
-ipcMain.handle(IPC.pagesClose, (event, id: unknown) => {
-    if (typeof id !== 'string') return;
-    windowFor(event.sender)?.closePage(id);
-});
-
-ipcMain.handle(IPC.pagesSetCollapsed, (event, collapsed: unknown) => {
-    if (typeof collapsed !== 'boolean') return;
-    windowFor(event.sender)?.setPaneCollapsed(collapsed);
+ipcMain.handle(IPC.paneClose, async (event, paneId: unknown) => {
+    if (typeof paneId !== 'string') return;
+    await windowFor(event.sender)?.closePane(paneId);
 });
 
 /**
- * The seam. Clamping is main's, as it is for the dock: the ceiling depends on
- * the display the dragging window is on, and a renderer is not something to
- * take arithmetic on trust from.
+ * What goes in a pane.
  *
- * The applied width comes back on every path, including the ones that change
+ * The window checks a `page` against its own bookmarks, and moves the game
+ * rather than placing a second one; this end only checks the shape, since
+ * anything richer would be the placement rules written a second time in a
+ * second place. What it will not do is trust the shape: `content` arrives from
+ * a renderer, so a value that is not one of the four kinds is dropped rather
+ * than handed on.
+ */
+ipcMain.handle(IPC.paneSetContent, (event, paneId: unknown, content: unknown) => {
+    if (typeof paneId !== 'string' || typeof content !== 'object' || content === null) return;
+    const kind = (content as { kind?: unknown }).kind;
+    if (kind !== 'empty' && kind !== 'game' && kind !== 'page' && kind !== 'tool') return;
+    windowFor(event.sender)?.setPaneContent(paneId, content as PaneContent);
+});
+
+ipcMain.handle(IPC.paneFocus, (event, paneId: unknown) => {
+    if (typeof paneId !== 'string') return;
+    windowFor(event.sender)?.focusPane(paneId);
+});
+
+/**
+ * A seam drag. Clamping is main's, as it was for the pane and the dock before
+ * it: a renderer is not something to take arithmetic on trust from, and the
+ * range depends on a tree the shell deliberately knows nothing about.
+ *
+ * The applied position comes back on every path, including the ones that change
  * nothing. A grip sitting at a boundary already reached has no way to tell its
  * own guess was out of range unless it is told, and without the answer it would
  * keep building the next request on a number main never held.
  */
-ipcMain.handle(IPC.pagesSetWidth, (event, px: unknown): number => {
+ipcMain.handle(IPC.paneSetSeam, (event, splitId: unknown, index: unknown, px: unknown): number => {
     const sw = windowFor(event.sender);
-    if (!sw) return appState.pageWidth();
-    if (typeof px !== 'number' || !Number.isFinite(px)) return sw.state().pages.width;
-    return sw.setPaneWidth(px);
+    if (!sw || typeof splitId !== 'string' || typeof index !== 'number' || !Number.isInteger(index)) return 0;
+    if (typeof px !== 'number' || !Number.isFinite(px)) return 0;
+    return sw.setSeam(splitId, index, px);
 });
 
-ipcMain.handle(IPC.pagesGo, (event, where: unknown) => {
+ipcMain.handle(IPC.paneEvenOut, (event, splitId: unknown) => {
+    if (typeof splitId !== 'string') return;
+    windowFor(event.sender)?.evenOut(splitId);
+});
+
+ipcMain.handle(IPC.paneGo, (event, where: unknown) => {
     if (where !== 'back' && where !== 'forward' && where !== 'reload') return;
     windowFor(event.sender)?.pageGo(where);
 });
 
-/**
- * The little square beside each link: this one outside the kit, please.
- *
- * Checked against the window's own bookmarks exactly as `pagesOpen` is — the
- * two are the same list, and a handler that would hand any url to the system
- * browser is a worse hole than one that would show it in a pane. https only,
- * as everywhere else here: `servers.json` is a file the user edits by hand.
- */
-ipcMain.handle(IPC.pagesOpenExternal, (event, url: unknown) => {
+ipcMain.handle(IPC.paneContextMenu, (event, paneId: unknown, x: unknown, y: unknown) => {
+    if (typeof paneId !== 'string' || typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showPaneMenu(paneId, x, y);
+});
+
+ipcMain.handle(IPC.paneContentMenu, (event, paneId: unknown, x: unknown, y: unknown) => {
+    if (typeof paneId !== 'string' || typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showPaneContentMenu(paneId, x, y);
+});
+
+ipcMain.handle(IPC.paneSwap, (event, a: unknown, b: unknown) => {
+    if (typeof a !== 'string' || typeof b !== 'string') return;
+    windowFor(event.sender)?.swapPanes(a, b);
+});
+
+ipcMain.handle(IPC.paneDragging, (event, on: unknown) => {
+    if (typeof on !== 'boolean') return;
+    windowFor(event.sender)?.setDragging(on);
+});
+
+ipcMain.handle(IPC.tabNew, event => windowFor(event.sender)?.newTab());
+
+ipcMain.handle(IPC.tabClose, (event, tabId: unknown) => {
+    if (typeof tabId !== 'string') return;
+    windowFor(event.sender)?.closeTab(tabId);
+});
+
+ipcMain.handle(IPC.tabSelect, (event, tabId: unknown) => {
+    if (typeof tabId !== 'string') return;
+    windowFor(event.sender)?.selectTab(tabId);
+});
+
+ipcMain.handle(IPC.paneOpenExternal, (event, url: unknown) => {
     if (typeof url !== 'string') return;
     const server = windowFor(event.sender)?.state().server;
     if (!server?.bookmarks.some(b => b.url === url)) {
@@ -708,19 +789,6 @@ ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
  * drawn, and both of these lay the window out again — which pushes the new
  * state itself, so nothing here follows them with a pushState.
  */
-ipcMain.handle(IPC.chatSetHome, (event, home: unknown) => {
-    if (home !== 'bottom' && home !== 'side') return;
-    appState.setChat({ dock: home });
-    const asked = windowFor(event.sender);
-    for (const sw of serverWindows.values()) {
-        if (sw === asked) sw.moveChat(home);
-        else sw.syncChatHome(home);
-    }
-    // A home of 'bottom' takes chat out of the side column, which on a window
-    // with no other tool leaves the panel with nothing it could open onto.
-    syncMenuWindowItems();
-});
-
 /**
  * How long the dock's height must sit still before it is written to the
  * profile. Long enough that a drag — one height per animation frame, so around
@@ -759,38 +827,34 @@ function flushStagedState(): void {
     appState.save();
 }
 
-/**
- * The dock's height, as the user drags its top edge or steps it by keyboard.
- * Clamping is main's job — the preload passes the number through untouched,
- * and a renderer is not something to take arithmetic on trust from. The
- * ceiling is half the work area of the display the dragging window is on,
- * since that is the only screen this request has anything to do with.
- *
- * The clamped height is returned on every path, including the ones that skip
- * the layout work below because nothing changed. A renderer sitting at a
- * boundary already reached — one more ArrowDown at the floor, an End that was
- * already at the ceiling — has no way to tell its own guess was out of range
- * unless it is told; without the answer it would keep building the next
- * request on a number main never actually held. The skip itself stays: a
- * height equal to the one on file has no layout to redo, and relaying out
- * anyway on every one of those would be exactly the wasted work the skip
- * exists to avoid.
- */
-ipcMain.handle(IPC.chatSetDockHeight, (event, px: unknown): number => {
-    const current = appState.chat().dockHeight;
-    if (typeof px !== 'number' || !Number.isFinite(px)) return current;
-    const sw = windowFor(event.sender);
-    if (!sw) return current;
-    const workArea = screen.getDisplayMatching(sw.window.getBounds()).workArea;
-    const height = Math.round(Math.min(Math.max(px, DOCK_HEIGHT_MIN), workArea.height / 2));
-    if (height === current) return height;
-    appState.stageChat({ dockHeight: height });
-    for (const other of serverWindows.values()) other.relayout();
-    writeStagedStateWhenItSettles();
-    return height;
-});
-
 // ── single player ─────────────────────────────────────────────────────────
+
+/**
+ * Ask before closing the game pane, which destroys the view and disconnects the
+ * player.
+ *
+ * The same shape as `confirmSwitch`: a sheet on the window rather than an
+ * app-modal box, so other windows keep running, and the same "don't ask again"
+ * the switch warning uses — it is the same preference, since it answers the same
+ * question about the same cost. Capture mode never arrives here.
+ */
+async function confirmCloseGame(spec: WindowSpec): Promise<boolean> {
+    const sw = serverWindows.get(spec.id);
+    if (!sw || quitting) return true;
+    if (!appState.warnOnSwitch()) return true;
+    const { response, checkboxChecked } = await dialog.showMessageBox(sw.window, {
+        type: 'question',
+        buttons: ['Close', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        message: 'Close the game?',
+        detail: `Zanaris Kit disconnects from ${spec.server.name} straight away, whether or not you are logged in. If you are in game, that logs you out. Opening the game again is a fresh login.`,
+        checkboxLabel: "Don't ask again",
+        checkboxChecked: false
+    });
+    if (checkboxChecked) setWarnOnSwitch(false);
+    return response === 0;
+}
 
 async function confirmCheats(sw: ServerWindow, on: boolean): Promise<boolean> {
     const { response } = await dialog.showMessageBox(sw.window, {
@@ -890,16 +954,13 @@ async function captureAndExit(dir: string): Promise<void> {
         await save(`${name}-game`, () => sw.captureGame());
     };
     /**
-     * Open the panel on a tool the way the rail does — which toggles, so asking
-     * for the tool already on show would close the panel this run came to
-     * photograph. The panel capture below opens the panel on whatever tool can
-     * legally hold the column, which is often this one.
+     * Put a tool in a pane the way the rail does. Idempotent by construction —
+     * `selectTool` focuses a tool already placed rather than opening a second
+     * copy — so this needs none of the toggle-avoidance the panel version did.
      */
-    const showTool = (sw: ServerWindow, tool: ToolId): void => {
-        const state = sw.state();
-        if (state.panelOpen && state.activeTool === tool) return;
-        sw.selectTool(tool);
-    };
+    const showTool = (sw: ServerWindow, tool: ToolId): void => sw.selectTool(tool);
+    /** The focused pane, which is what every split and close below acts on. */
+    const focused = (sw: ServerWindow): string => sw.state().panes.find(p => p.focused)?.paneId ?? '';
     const loaded = (sw: ServerWindow): Promise<'loaded' | 'failed' | 'timeout'> =>
         Promise.race([sw.whenGameLoaded(), wait(loadTimeoutMs).then((): 'timeout' => 'timeout')]);
 
@@ -926,14 +987,32 @@ async function captureAndExit(dir: string): Promise<void> {
         // The layout and slot checks use a window whose game actually loaded, if any did.
         const first = opened[results.indexOf('loaded')] ?? opened[0];
         if (!first) throw new Error('the server list is empty');
-        first.togglePanel();
+        // A split, so at least one capture shows more than one pane. Splitting
+        // the game's pane is the interesting case, since that is the one the
+        // old layout refused to do at all.
+        first.splitPane(focused(first), 'x');
         await wait(500);
-        // The strip's toggle is a no-op on a window whose column has no legal
-        // occupant — chat alone, living at the bottom — so this reports what
-        // the panel actually did rather than assuming it opened.
-        const toggled = first.state();
-        log(`[capture] ${toggled.title}: panel ${toggled.panelOpen ? `open on ${toggled.activeTool}` : 'stayed closed'}, mode x ${toggled.mode.x}, y ${toggled.mode.y}`);
-        await shoot(`${first.state().server.id}-panel`, first);
+        const split = first.state();
+        log(`[capture] ${split.title}: ${split.panes.length} pane(s), ${split.seams.length} seam(s), focus on ${split.panes.find(p => p.focused)?.content.kind}`);
+        await shoot(`${first.state().server.id}-split`, first);
+
+        // And swapped: what dropping a dragged header on another pane does.
+        // Driven on the window rather than through the pointer, as everything
+        // else here is — there is no renderer to drag from. It evidences the
+        // tree operation and the views following it; the gesture that reaches
+        // it is grip-less and cannot be shot.
+        const pair = first.state().panes;
+        const a = pair[0];
+        const b = pair[1];
+        if (a && b) {
+            first.swapPanes(a.paneId, b.paneId);
+            await wait(500);
+            const swapped = first.state().panes;
+            log(
+                `[capture] ${first.state().title}: swapped — ${a.paneId}/${b.paneId} held ${a.content.kind}/${b.content.kind}, now ${swapped.find(p => p.paneId === a.paneId)?.content.kind}/${swapped.find(p => p.paneId === b.paneId)?.content.kind}`
+            );
+            await shoot(`${first.state().server.id}-swapped`, first);
+        }
 
         // The Worlds tool: open it on a loaded window that has worlds, wait for
         // the list, capture it, switch to another world, capture that. The
@@ -953,22 +1032,19 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] ${id} worlds: ${view?.status} ${view?.worlds.map(w => `W${w.id}=${w.players ?? '?'}p/${w.latencyMs ?? '?'}ms`).join(' ')}${view?.error ? ` error: ${view.error}` : ''}`);
             await shoot(`${id}-worlds`, hopper);
 
-            // Dock beneath the still-open Worlds panel: the single most
-            // regression-prone geometry in this feature (the dock painting
-            // over the panel's bottom rows, hiding the worlds list's tail,
-            // was a real bug found and fixed earlier on this branch) and no
-            // other capture shows both regions open at once. selectTool('chat')
-            // toggles dockOpen in place without touching panelOpen or
-            // activeTool while home is 'bottom' — see the 'rail-chat' branch
-            // of reduce — so Worlds stays exactly as the shot above left it.
+            // Chat beside the still-open Worlds pane: two tools and the game
+            // laid out at once, which is the arrangement the whole tree exists
+            // to allow and which the fixed column could not express at all.
+            // `selectTool` splits the focused pane when it holds the game, so
+            // Worlds stays exactly as the shot above left it either way.
             hopper.selectTool('chat');
             await wait(500);
-            // Maximising forces canResize false, which fitAxis turns into
-            // 'push' on both axes unconditionally (see fitAxis's first
-            // branch), so this is the shot that carries both mode notes — and
-            // the only one that shows how they are split when both regions are
-            // open: the panel takes the x note, the dock takes the y one, and
-            // neither sentence appears twice. Waited out rather than assumed:
+            // Maximised, which is now simply a bigger rect for the tree to
+            // divide rather than the state that forced the old ladder into
+            // 'push' on both axes. It is still the shot worth having: every
+            // pane's share is a fraction, so maximising is what proves they
+            // scale together instead of one of them absorbing the difference.
+            // Waited out rather than assumed:
             // macOS's zoom is an animated, OS-driven transition, and
             // proceeding while it is still in flight left a genuinely racy
             // run — one in several — with a stray maximize/resize event
@@ -981,9 +1057,9 @@ async function captureAndExit(dir: string): Promise<void> {
             const maximised = Date.now() + 5_000;
             while (Date.now() < maximised && !hopper.window.isMaximized()) await wait(100);
             await wait(500);
-            const withPanel = hopper.state();
-            log(`[capture] ${withPanel.title}: dock ${withPanel.dockOpen ? 'open' : 'closed'} over the worlds panel, mode x ${withPanel.mode.x}, y ${withPanel.mode.y}`);
-            await shoot(`${id}-dock-with-panel`, hopper);
+            const maximisedState = hopper.state();
+            log(`[capture] ${maximisedState.title}: maximised with ${maximisedState.panes.length} panes — ${maximisedState.panes.map(p => `${p.content.kind} ${p.rect.width}x${p.rect.height}`).join(', ')}`);
+            await shoot(`${id}-maximised`, hopper);
             // Undone immediately, and waited out the same way: the shots
             // below must start from a genuinely restored window, not one
             // mid-animation back down, or the same race runs again on
@@ -1000,27 +1076,25 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] ${id} switched to world ${target.id}: ${result}`);
                 await wait(Math.min(settleMs, 8_000));
                 await shoot(`${id}-w${target.id}`, hopper);
-                log(`[capture] the strip now reads "${hopper.state().gameLabel}", title "${hopper.window.getTitle()}"`);
+                log(`[capture] the game pane's header now reads "${hopper.state().gameLabel}", title "${hopper.window.getTitle()}"`);
                 log(`[capture] state file: ${existsSync(appState.file) ? readFileSync(appState.file, 'utf8').replace(/\s+/g, ' ') : '(none)'}`);
             }
 
-            // Chat on the side: the one state a reader cannot infer from the
-            // other two. Captured here, while Worlds is still genuinely open
-            // on `hopper` from the lines just above, so moveChat('side')
-            // evicting it is a real eviction rather than a no-op — `hopper`
-            // is often the same window as `first` below, and closing that
-            // window's panel first (for a clean dock shot) would leave
-            // nothing here to evict.
+            // A split down rather than across: the one arrangement a reader
+            // cannot infer from the shots above, and the axis the fixed column
+            // layout had no way to express at all. Fronted first, as the Worlds
+            // tool is above: the pixel font is only fetched once the shell
+            // paints, and font-display: block leaves labels blank until it lands.
             hopper.window.moveTop();
             hopper.focus();
             await wait(500);
-            hopper.moveChat('side');
+            hopper.splitPane(focused(hopper), 'y');
             await wait(500);
-            const side = hopper.state();
-            log(`[capture] ${side.title}: chat moved to the side, evicting worlds; mode x ${side.mode.x}, y ${side.mode.y}`);
-            await shoot(`${side.server.id}-chat-side`, hopper);
+            const stacked = hopper.state();
+            log(`[capture] ${stacked.title}: split down — ${stacked.seams.map(seam => `${seam.axis} seam at ${seam.size}px of ${seam.gross}`).join(', ')}`);
+            await shoot(`${stacked.server.id}-split-down`, hopper);
         } else {
-            log('[capture] chat-side skipped: no window had worlds to evict');
+            log('[capture] split-down skipped: no window had worlds open');
         }
 
         // The Hiscores tool: unlike chat below, a lookup needs no nick, only a
@@ -1067,34 +1141,38 @@ async function captureAndExit(dir: string): Promise<void> {
         // moveChat('bottom') rather than the rail's selectTool('chat'): it
         // lands on "dock open, default height, panel closed" unconditionally,
         // whatever `first` currently has open — including home already 'side'
-        // if `first` and `hopper` are the same window and the eviction above
-        // just ran on it. selectTool('chat') only opens the dock when home is
-        // already 'bottom', so it cannot be trusted to recover from that.
-        // Fronted first, as the Worlds tool is above: the pixel font is only
-        // fetched once the shell paints, and font-display: block leaves the
-        // room tabs and the title blank until it lands.
+        // A seam dragged without a pointer: the same clamp `paneSetSeam`
+        // applies, driven directly the way this whole function drives
+        // ServerWindow rather than over IPC — there is no renderer here to send
+        // the request. Proves the drag path end to end: the conversion from
+        // pixels, the clamp against both neighbours' minimums, and the window
+        // laying out around the answer.
+        //
+        // Fronted first, as the Worlds tool is: the pixel font is only fetched
+        // once the shell paints, and font-display: block leaves labels blank
+        // until it lands.
         first.window.moveTop();
         first.focus();
         await wait(500);
-        first.moveChat('bottom');
-        await wait(500);
-        const dock1 = first.state();
-        log(`[capture] ${dock1.title}: dock ${dock1.dockOpen ? 'open' : 'closed'} at ${dock1.dockHeight}px, mode x ${dock1.mode.x}, y ${dock1.mode.y}`);
-        await shoot(`${dock1.server.id}-dock`, first);
+        const seam = first.state().seams[0];
+        if (seam) {
+            const asked = Math.round(seam.gross * 0.25);
+            const applied = first.setSeam(seam.splitId, seam.index, asked);
+            await wait(500);
+            log(`[capture] ${first.state().title}: seam asked for ${asked}px of ${seam.gross}, got ${applied}${applied === asked ? '' : ' (clamped)'}`);
+            await shoot(`${first.state().server.id}-seam-dragged`, first);
 
-        // Resized without a pointer: the same clamp chatSetDockHeight applies
-        // in main, driven directly the way this whole function drives
-        // ServerWindow rather than over IPC — there is no renderer here to
-        // send the request. Proves the resize path end to end: the clamp, the
-        // write to state.json, and every window relaying out around it.
-        const dockWorkArea = screen.getDisplayMatching(first.window.getBounds()).workArea;
-        const tallHeight = Math.round(Math.min(Math.max(500, DOCK_HEIGHT_MIN), dockWorkArea.height / 2));
-        appState.setChat({ dockHeight: tallHeight });
-        for (const sw of serverWindows.values()) sw.relayout();
-        await wait(500);
-        const dock2 = first.state();
-        log(`[capture] ${dock2.title}: dock height set to ${dock2.dockHeight}px, mode x ${dock2.mode.x}, y ${dock2.mode.y}`);
-        await shoot(`${dock2.server.id}-dock-tall`, first);
+            // And closed again: the sibling takes the space back and the split
+            // collapses, which is the half of the tree's behaviour no shot
+            // above evidences.
+            await first.closePane(focused(first));
+            await wait(500);
+            const closed = first.state();
+            log(`[capture] ${closed.title}: after close — ${closed.panes.length} pane(s), ${closed.seams.length} seam(s)`);
+            await shoot(`${closed.server.id}-pane-closed`, first);
+        } else {
+            log('[capture] seam drag skipped: the window had no split to drag');
+        }
 
         // The Single player tool: the world is up by the time the game loaded,
         // so this is the panel as a player finds it — status, port and cheats.
@@ -1123,42 +1201,71 @@ async function captureAndExit(dir: string): Promise<void> {
         // never destroyed, so what it photographs is the page as it was left.
         // The reload claim is the pane's whole reason to exist and nothing
         // else here can evidence it.
-        const reader = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.bookmarks.length > 0);
+        // Deliberately not `first` or `hopper` when another window will do.
+        // Those two have been split several times by the passes above, and a
+        // tree that deep in a 760px window puts every pane on its 120px floor —
+        // which is honest about what the layout does, and useless as a
+        // photograph of a page. A window that has not been split yet shows the
+        // launcher and two pages at a size someone can actually read.
+        const readers = opened.filter((sw, i) => results[i] === 'loaded' && sw.state().server.bookmarks.length > 0);
+        const reader = readers.find(sw => sw !== first && sw !== hopper) ?? readers[0];
         if (reader) {
             const id = reader.state().server.id;
             reader.window.moveTop();
             reader.focus();
             await wait(500);
-            showTool(reader, 'guides');
-            await wait(500);
-            log(`[capture] ${id} guides: ${reader.state().server.bookmarks.map(b => b.name).join(' · ')}`);
-            await shoot(`${id}-guides`, reader);
 
-            // Driven on the window rather than over IPC, as everything else
-            // here is: there is no renderer to send the request from.
-            for (const link of reader.state().server.bookmarks.slice(0, 2)) {
-                reader.openPage(link.url);
+            // The launcher, which is what an empty pane shows and what replaced
+            // the Guides panel: split a pane and photograph what the new half
+            // offers before anything is chosen.
+            reader.splitPane(focused(reader), 'x');
+            await wait(500);
+            // The list the launcher actually draws rather than the catalog it is
+            // built from: what a pane may become is main's answer, and the game
+            // row is the half of it the catalog cannot show — it reads "Move
+            // game here" while the game is in some other pane of this window.
+            const offered = reader.state().panes.find(pane => pane.content.kind === 'empty')?.contents;
+            log(`[capture] ${id} launcher offers: ${offered?.map(item => item.label).join(' · ') ?? 'nothing — no empty pane'}`);
+            await shoot(`${id}-launcher`, reader);
+
+            // Two pages in two panes, side by side — which is the arrangement
+            // the single reference pane could not hold at all. Driven on the
+            // window rather than over IPC, as everything else here is: there is
+            // no renderer to send the request from.
+            const links = reader.state().server.bookmarks.slice(0, 2);
+            const firstLink = links[0];
+            if (firstLink) {
+                reader.setPaneContent(focused(reader), { kind: 'page', bookmark: firstLink.url });
                 await wait(Math.min(settleMs, 8_000));
             }
-            const pane = reader.state().pages;
-            log(
-                `[capture] ${id} pane: ${pane.tabs.map(t => t.label).join(' · ')} — showing "${pane.active?.title ?? 'nothing'}" (${pane.active?.url ?? '—'}) at ${pane.width}px, mode x ${reader.state().mode.x}`
-            );
+            const secondLink = links[1];
+            if (secondLink) {
+                reader.splitPane(focused(reader), 'y');
+                reader.setPaneContent(focused(reader), { kind: 'page', bookmark: secondLink.url });
+                await wait(Math.min(settleMs, 8_000));
+            }
+            const pages = reader.state().panes.filter(p => p.content.kind === 'page');
+            log(`[capture] ${id} pages: ${pages.map(p => `"${p.page?.title ?? 'nothing'}" (${p.page?.url ?? '—'}) at ${p.rect.width}x${p.rect.height}${p.page?.loading ? ', loading' : ''}`).join(' · ')}`);
             await shoot(`${id}-pages`, reader);
-            // The page's own view, which neither half of shoot() reaches: the
-            // shell leaves the pane's rect empty and captureGame is the game.
+            // A page's own view, which neither half of shoot() reaches: the
+            // shell leaves a page pane's rect empty and captureGame is the game.
             // Without this the run could only claim a page loaded, never show one.
             await save(`${id}-page`, shotOfThePage(reader));
 
-            const back = pane.tabs[0];
-            if (back) {
-                reader.activatePage(back.id);
+            // Focus back to the first page and shoot again. Its view was never
+            // destroyed — nothing here creates or destroys one except a change
+            // in which panes hold pages — so what this photographs is the page
+            // exactly as it was left. That no-reload claim is the pane system's
+            // whole reason to exist and nothing else in this run evidences it.
+            const firstPage = pages[0];
+            if (firstPage) {
+                reader.focusPane(firstPage.paneId);
                 // Generous, and not only for the page: capturePage hands back
                 // the last composited frame, and a view that has just been
                 // shown has not composited one yet.
                 await wait(Math.min(settleMs, 8_000));
-                const shown = reader.state().pages.active;
-                log(`[capture] ${id} switched back to ${back.label}: "${shown?.title ?? 'nothing'}" (${shown?.url ?? '—'}), ${shown?.loading ? 'still loading' : 'loaded'}`);
+                const shown = reader.state().panes.find(p => p.paneId === firstPage.paneId)?.page;
+                log(`[capture] ${id} focused back on ${firstPage.paneId}: "${shown?.title ?? 'nothing'}" (${shown?.url ?? '—'}), ${shown?.loading ? 'still loading' : 'loaded'}`);
                 await shoot(`${id}-pages-back`, reader);
                 await save(`${id}-page-back`, shotOfThePage(reader));
             }

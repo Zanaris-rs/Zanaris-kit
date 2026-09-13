@@ -1,27 +1,34 @@
 /** Channel names and payload types, shared by main, preload and the renderer so they can't drift. */
 import type { ServerDef } from './catalog';
-import type { LayoutMode } from './layout';
 import type { Detail, WorldsView } from './worlds';
-import type { ChatHome, ChatView } from './chat';
+import type { ChatView } from './chat';
 import type { HiscoresView } from './hiscores';
-import type { PagesView } from './pages';
+import type { PaneView, SeamView, TabView } from './panes';
+import type { PaneContent } from '../main/paneTree';
 import type { SinglePlayerView } from './singleplayer';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
     shellGet: 'zanaris:shell-get',
-    shellTogglePanel: 'zanaris:shell-toggle-panel',
     shellSelectTool: 'zanaris:shell-select-tool',
+    paneSplit: 'zanaris:pane-split',
+    paneClose: 'zanaris:pane-close',
+    paneSetContent: 'zanaris:pane-set-content',
+    paneFocus: 'zanaris:pane-focus',
+    paneSetSeam: 'zanaris:pane-set-seam',
+    paneEvenOut: 'zanaris:pane-even-out',
+    paneGo: 'zanaris:pane-go',
+    paneContextMenu: 'zanaris:pane-context-menu',
+    paneSwap: 'zanaris:pane-swap',
+    paneDragging: 'zanaris:pane-dragging',
+    paneContentMenu: 'zanaris:pane-content-menu',
+    tabNew: 'zanaris:tab-new',
+    tabClose: 'zanaris:tab-close',
+    tabSelect: 'zanaris:tab-select',
+    paneOpenExternal: 'zanaris:pane-open-external',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
     worldsSetDetail: 'zanaris:worlds-set-detail',
-    pagesOpen: 'zanaris:pages-open',
-    pagesActivate: 'zanaris:pages-activate',
-    pagesClose: 'zanaris:pages-close',
-    pagesSetCollapsed: 'zanaris:pages-set-collapsed',
-    pagesSetWidth: 'zanaris:pages-set-width',
-    pagesGo: 'zanaris:pages-go',
-    pagesOpenExternal: 'zanaris:pages-open-external',
     hiscoresLookup: 'zanaris:hiscores-lookup',
     hiscoresOpenSite: 'zanaris:hiscores-open-site',
     chatState: 'zanaris:chat-state',
@@ -30,8 +37,6 @@ export const IPC = {
     chatSelect: 'zanaris:chat-select',
     chatCloseRoom: 'zanaris:chat-close-room',
     chatSetNick: 'zanaris:chat-set-nick',
-    chatSetHome: 'zanaris:chat-set-home',
-    chatSetDockHeight: 'zanaris:chat-set-dock-height',
     singlePlayerSetCheats: 'zanaris:singleplayer-set-cheats',
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
@@ -39,7 +44,9 @@ export const IPC = {
 } as const;
 
 /**
- * The tools a window can offer. Five so far; a registry is worth it when the
+ * The tools a window can offer. Four, since `guides` stopped being one: with
+ * an empty pane showing a launcher that lists this server's links beside the
+ * tools, the Guides panel had no separate job left. A registry is worth it when the
  * list grows. This is the set, not the rail order — which tools a given window
  * offers and in what order is `serverWindow`'s to say, and it is deliberately
  * not spelled out again here: that order already lives in three places that
@@ -47,7 +54,7 @@ export const IPC = {
  * them cross-reference is the one that would go stale first and be believed
  * longest.
  */
-export const TOOL_IDS = ['worlds', 'hiscores', 'guides', 'chat', 'singleplayer'] as const;
+export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
@@ -70,49 +77,33 @@ export interface ShellState {
      * to and nothing for a tab to mean.
      */
     gameLabel: string;
-    panelOpen: boolean;
-    /** How each axis accommodated its chrome. The window moving and the game shrinking are different sentences, so both axes are kept rather than collapsed into one. */
-    mode: { x: LayoutMode; y: LayoutMode };
-    /** Where main placed things, relative to the window's content area, so the shell draws exactly there. */
+    /** Where main placed the window's own chrome, relative to its content area, so the shell draws exactly there. */
     rects: {
-        strip: Rect;
-        content: Rect;
-        /** The grabbable strip between the game and the pane. Null while the pane is not showing. */
-        seam: Rect | null;
-        /** Back, forward, reload and the page's title. Null while the pane is not showing. */
-        pageToolbar: Rect | null;
-        /** Where the active reference page's view sits. The shell leaves it empty. */
-        page: Rect | null;
-        panel: Rect | null;
+        tabBar: Rect;
         rail: Rect;
-        /** Only while the dock is open. Null while chat's home is the side column. */
-        dock: Rect | null;
+        /** The region the active tab's panes are laid out in: everything below the bar and left of the rail, inset by the pixel the focus border is drawn in. */
+        tree: Rect;
     };
+    /** This window's workspace tabs. Each is a whole arrangement of the same server's things, not a different server. */
+    tabs: TabView[];
+    /**
+     * Every pane of the active tab, in reading order. The shell draws the tool
+     * and empty ones and leaves the game and page rects alone — those are
+     * native views main has already positioned.
+     */
+    panes: PaneView[];
+    /** The grabbable gaps between them, each already carrying its own pixel range. */
+    seams: SeamView[];
     /** Tools this window offers, in rail order. */
     tools: ToolId[];
-    activeTool: ToolId | null;
-    /**
-     * Whether the side column has a tool that could legally open in it. False
-     * on a window whose only tool is chat while chat lives at the bottom —
-     * main refuses to open the panel onto an empty column — and the strip's
-     * toggle and the View menu's item are disabled to match. Main works it out
-     * from the placement rules so the UI never has to.
-     */
-    panelAvailable: boolean;
+    /** Which of them are placed in a pane somewhere in this tab, so the rail can light them. */
+    openTools: ToolId[];
     /** Null when the server has one page. */
     worlds: WorldsView | null;
     /** Null when the server offers no hiscores — single player above all, where a one-player world has nothing to rank. */
     hiscores: HiscoresView | null;
-    /** The reference pane. Always present; a window with no links simply never opens one. */
-    pages: PagesView;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
-    /** Where chat lives. App-wide: every window agrees. */
-    chatHome: ChatHome;
-    /** Whether the bottom dock is open. Meaningful only while chatHome is 'bottom'. */
-    dockOpen: boolean;
-    /** The remembered dock height in px, whether or not the dock is open. */
-    dockHeight: number;
     /** The world this computer runs; null for every other kind of window. */
     singlePlayer: SinglePlayerView | null;
 }
@@ -121,9 +112,12 @@ export interface ZanarisApi {
     shell: {
         /** Null when the calling view is not a server window's shell. */
         get(): Promise<ShellState | null>;
-        togglePanel(): Promise<void>;
-        /** Opens the panel on a tool, closing it again when that tool is the one already on show. Null only closes. Chat is routed by where it lives: while it is at the bottom, asking for it opens or closes the dock instead. */
-        selectTool(id: ToolId | null): Promise<void>;
+        /**
+         * The rail. Puts a tool in the focused pane, or — when that pane holds
+         * the game — splits it and puts the tool in the new half, so a click on
+         * the rail never costs the player their view of the game.
+         */
+        selectTool(id: ToolId): Promise<void>;
         onState(cb: (state: ShellState) => void): () => void;
     };
     chat: {
@@ -142,16 +136,6 @@ export interface ZanarisApi {
         closeRoom(channel: string): Promise<void>;
         /** Chooses the nick and connects. */
         setNick(nick: string): Promise<void>;
-        /** Moves chat between the bottom dock and the side column. App-wide. */
-        setHome(home: ChatHome): Promise<void>;
-        /**
-         * Sets the dock's height in px. Resolves with the height main actually
-         * applied, after its own clamp — including when the request landed
-         * exactly where the dock already was, so a caller sitting at a boundary
-         * (the floor, the ceiling) always learns the true number rather than
-         * being left trusting whatever it asked for.
-         */
-        setDockHeight(px: number): Promise<number>;
     };
     worlds: {
         refresh(): Promise<void>;
@@ -166,28 +150,70 @@ export interface ZanarisApi {
         /** Opens the server's own hiscores page. */
         openSite(): Promise<void>;
     };
-    pages: {
+    panes: {
+        /** Splits the named pane, putting an empty pane showing the launcher in the new half. */
+        split(paneId: string, axis: 'x' | 'y'): Promise<void>;
         /**
-         * Opens one of this server's links in the pane, or brings it to the
-         * front when it is already open. Main checks the url against the
-         * window's own bookmarks and refuses anything else: there is no
-         * address box, so the shell has no business naming an arbitrary page.
+         * Closes a pane. Closing the tab's last pane empties it rather than
+         * closing the tab: with the game an ordinary pane, a close that
+         * cascaded pane to tab to window would turn one keystroke into a
+         * disconnect.
          */
-        open(url: string): Promise<void>;
-        activate(id: string): Promise<void>;
-        close(id: string): Promise<void>;
-        /** Hides the pane without closing it. The views stay alive, so nothing reloads when it comes back. */
-        setCollapsed(collapsed: boolean): Promise<void>;
+        close(paneId: string): Promise<void>;
         /**
-         * Sets the pane's width in px. Resolves with the width main actually
-         * applied, after its own clamp — including when the request landed
-         * where the pane already was, so a caller sitting at a boundary always
-         * learns the true number rather than trusting its own guess.
+         * Puts something in a pane. Main checks a `page` bookmark against this
+         * window's own catalog links and refuses anything else — there is no
+         * address box, so the shell has no business naming an arbitrary page —
+         * and refuses a second `game`, which is unrepresentable.
          */
-        setWidth(px: number): Promise<number>;
-        /** The pane's toolbar. Acts on the tab in front. */
+        setContent(paneId: string, content: PaneContent): Promise<void>;
+        focus(paneId: string): Promise<void>;
+        /**
+         * Trades what two panes hold. What dropping a dragged header on another
+         * pane does; the tree's shape does not change, so nothing on screen
+         * moves except the contents of those two.
+         */
+        swap(a: string, b: string): Promise<void>;
+        /**
+         * Brackets a header drag. Main hides every native view while it is on,
+         * because the shell cannot draw a drop target over a game or a page —
+         * those views sit above it. Nothing reloads: this is the same hiding a
+         * tab switch does.
+         */
+        setDragging(on: boolean): Promise<void>;
+        /**
+         * Drags a seam to a pixel position. Resolves with the position main
+         * actually applied, after its own clamp — including when the request
+         * landed where the seam already was, so a caller sitting at a boundary
+         * always learns the true number rather than trusting its own guess.
+         */
+        setSeam(splitId: string, index: number, px: number): Promise<number>;
+        /** Gives one split's children equal shares. Repeated splitting halves each time, so this is what answers "make these the same size". */
+        evenOut(splitId: string): Promise<void>;
+        /** The focused page pane's toolbar. */
         go(where: 'back' | 'forward' | 'reload'): Promise<void>;
-        /** Opens one of this server's links in the system browser instead of the pane. Refused, like `open`, for anything that is not one of them. */
+        /**
+         * Raises the pane menu, for a right-click the shell saw. Main builds it
+         * — a right-click on a game or a page never reaches the shell, so the
+         * menu has to exist there anyway, and one menu is the only way all
+         * three kinds of pane offer the same one. Coordinates are the window's,
+         * which is what the shell's own are.
+         */
+        contextMenu(paneId: string, x: number, y: number): Promise<void>;
+        /**
+         * Raises a pane header's dropdown: everything that pane could become,
+         * built in main from the same list the launcher shows. Native for the
+         * same reason the gesture menu is — a header sits directly over a
+         * native view in a game or page pane, and a list the shell drew would
+         * open behind it.
+         */
+        contentMenu(paneId: string, x: number, y: number): Promise<void>;
+        /** A new workspace tab, holding one empty pane. */
+        newTab(): Promise<void>;
+        /** Closes a tab and everything in it. Closing the last one closes the window. */
+        closeTab(tabId: string): Promise<void>;
+        selectTab(tabId: string): Promise<void>;
+        /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */
         openExternal(url: string): Promise<void>;
     };
     singlePlayer: {
