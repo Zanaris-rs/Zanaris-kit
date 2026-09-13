@@ -1,4 +1,5 @@
 import { clearGame, contentOf, leaf, paneIds, setContent, type PaneContent, type PaneNode } from './paneTree.ts';
+import { paneName, type PaneLink } from './paneMenu.ts';
 import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
 
 /**
@@ -63,6 +64,34 @@ export function closeTab(set: TabSet, tabId: string): TabSet | null {
     return { tabs, activeId: next.id };
 }
 
+/** Whether a tab's panes include the game. */
+export function holdsGame(tree: PaneNode): boolean {
+    return paneIds(tree).some(id => contentOf(tree, id)?.kind === 'game');
+}
+
+/**
+ * What closing a tab would take with it, which is what decides whether the
+ * close asks first.
+ *
+ * - `window`: it is the only tab, so closing it is closing the window, whose
+ *   own confirm already says the player will be logged out. A second sheet
+ *   about the same disconnect would be one too many, game or not.
+ * - `game`: the game is in it. Closing it destroys the game view, exactly as
+ *   closing the game's pane does, and asks first for the same reason. The one
+ *   thing it must never do is drop the leaf and keep the view — a game still
+ *   logged in with nowhere in the window to be shown.
+ * - `tab`: nothing in it costs a login, so it just goes.
+ * - `missing`: no such tab, so nothing happens.
+ */
+export type TabClosing = 'missing' | 'window' | 'game' | 'tab';
+
+export function closingTab(set: TabSet, tabId: string): TabClosing {
+    const tab = set.tabs.find(t => t.id === tabId);
+    if (!tab) return 'missing';
+    if (set.tabs.length === 1) return 'window';
+    return holdsGame(tab.tree) ? 'game' : 'tab';
+}
+
 /**
  * Puts the game in a pane, taking it from wherever in the window it was.
  *
@@ -92,26 +121,20 @@ export function moveGame(set: TabSet, paneId: string): TabSet {
 }
 
 /**
- * What a tab button says.
+ * What a tab button says: the name of its first pane, the top-left one, in the
+ * words that pane's own header uses.
  *
- * A tab holding the game is named for it whatever has focus. Naming every tab
- * after its focused pane reads fine until you use one: clicking between the
- * game and the chat beside it renamed the tab on every click, which makes the
- * bar move under the pointer for no reason the user asked for. The game is the
- * one thing in a tab stable enough to name it after, and the dot beside the
- * name is for finding it from another tab rather than for reading this one.
+ * Not the focused pane's. Naming a tab after focus reads fine until you use
+ * one: clicking between the game and the chat beside it renamed the tab on
+ * every click, which makes the bar move under the pointer for no reason the
+ * user asked for. The first pane only changes when its content does, or when
+ * a close or a swap puts something else in that corner — each of which the
+ * user did to that very pane. And not the game's either: a tab is named for
+ * where it starts, so the same arrangement always reads the same, and a page
+ * gets its curated link name rather than a bare "Page".
  */
-export function labelOfTab(tree: PaneNode, focusedPaneId: string): string {
-    if (paneIds(tree).some(id => contentOf(tree, id)?.kind === 'game')) return 'Game';
-    const content = contentOf(tree, focusedPaneId);
-    switch (content?.kind) {
-        case 'tool':
-            return content.tool === 'singleplayer' ? 'Single player' : content.tool[0]!.toUpperCase() + content.tool.slice(1);
-        case 'page':
-            return 'Page';
-        default:
-            return 'Empty';
-    }
+export function labelOfTab(tree: PaneNode, links: readonly PaneLink[] = []): string {
+    return paneName(contentOf(tree, paneIds(tree)[0]!) ?? { kind: 'empty' }, links);
 }
 
 /**

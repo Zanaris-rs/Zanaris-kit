@@ -210,7 +210,7 @@ export interface ZanarisApi {
         contentMenu(paneId: string, x: number, y: number): Promise<void>;
         /** A new workspace tab, holding one empty pane. */
         newTab(): Promise<void>;
-        /** Closes a tab and everything in it. Closing the last one closes the window. */
+        /** Closes a tab and everything in it, asking first when the game is in it. Closing the last one closes the window. */
         closeTab(tabId: string): Promise<void>;
         selectTab(tabId: string): Promise<void>;
         /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */

@@ -223,6 +223,18 @@ input {
     border-left-color: var(--color-red-edge);
 }
 
+/*
+ * The close inside a workspace tab. Its X sits back with the tab it belongs to
+ * (`.tab svg` above) until the pointer is on it, when the close alone darkens
+ * so it reads as a target of its own inside the tab rather than the tab.
+ */
+.tab-close:hover {
+    background: rgba(0, 0, 0, 0.22);
+}
+.tab-close:hover svg {
+    opacity: 1;
+}
+
 /* A tab is already sunk, so a press pushes it deeper rather than flipping it. */
 .tab:active {
     background-color: #332d24;

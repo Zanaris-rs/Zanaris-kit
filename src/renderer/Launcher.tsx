@@ -104,7 +104,7 @@ export default function Launcher({
                 })}
             </ul>
 
-            <p className="px-2.5 pt-2 pb-1.5 text-[12px] text-dim">
+            <p className="px-2.5 pt-2 pb-2 text-[12px] text-dim">
                 Split a pane to open more at once. Links off these sites open in your browser.
             </p>
         </div>

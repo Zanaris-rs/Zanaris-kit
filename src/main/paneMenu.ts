@@ -101,6 +101,22 @@ function halvable(extent: number, floor: number): boolean {
     return extent >= floor * 2 + SEAM;
 }
 
+/**
+ * Whether closing a pane would do anything.
+ *
+ * Every pane can be closed but one: the tab's only pane when it is already
+ * empty. The last pane in a tab empties rather than vanishing — a close that
+ * cascaded pane to tab to window would turn one keystroke into a disconnect —
+ * so closing that one would empty an empty pane, and a control that does
+ * nothing is the same failure as one offered and then refused. The right-click
+ * menu and the header's close both ask this, so the two cannot disagree.
+ */
+export function canClosePane(tree: PaneNode, paneId: string): boolean {
+    const content = contentOf(tree, paneId);
+    if (content === null) return false;
+    return !(tree.kind === 'leaf' && content.kind === 'empty');
+}
+
 export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }): PaneMenuItem[] {
     const isGame = contentOf(tree, paneId)?.kind === 'game';
     return [
@@ -117,10 +133,10 @@ export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: num
             // item that reads the same as the harmless one is a menu item that
             // gets clicked by accident first and read second.
             label: isGame ? 'Close Game' : 'Close Pane',
-            // Always: the last pane in a tab empties rather than vanishing, so
-            // there is no state this can leave the window in that it cannot
-            // draw.
-            enabled: true
+            // The last pane in a tab empties rather than vanishing, so there is
+            // no state this can leave the window in that it cannot draw — the
+            // one pane it is withheld from is the lone one already empty.
+            enabled: canClosePane(tree, paneId)
         }
     ];
 }

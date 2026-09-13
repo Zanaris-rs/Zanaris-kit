@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaf, split } from './paneTree.ts';
-import { paneContentItems, paneMenuItems, paneName } from './paneMenu.ts';
+import { canClosePane, paneContentItems, paneMenuItems, paneName } from './paneMenu.ts';
 
 const roomy = { width: 800, height: 600 };
 const byId = (items: ReturnType<typeof paneMenuItems>, id: string): (typeof items)[number] => items.find(i => i.id === id)!;
@@ -37,6 +37,22 @@ test("the game's close says what it costs, and every other pane's does not", () 
 
 test('the only pane in a tab can still be closed — it empties rather than vanishing', () => {
     assert.equal(byId(paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy), 'close').enabled, true);
+});
+
+test('the only pane in a tab, already empty, has nothing to close', () => {
+    assert.equal(canClosePane(leaf('a', { kind: 'empty' }), 'a'), false, 'closing it would empty an empty pane');
+    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy), 'close').enabled, false, 'the menu and the header agree');
+});
+
+test('an empty pane beside another can be closed, and so can a lone pane holding anything', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    assert.equal(canClosePane(tree, 'a'), true);
+    assert.equal(canClosePane(leaf('a', { kind: 'tool', tool: 'chat' }), 'a'), true);
+    assert.equal(canClosePane(leaf('a', { kind: 'page', bookmark: 'https://2004.losthq.rs/' }), 'a'), true);
+});
+
+test('a pane the tree does not hold cannot be closed', () => {
+    assert.equal(canClosePane(leaf('a', { kind: 'game' }), 'nope'), false);
 });
 
 const LINKS = [

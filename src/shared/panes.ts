@@ -21,6 +21,8 @@ export interface PaneView {
     /** What the pane's header calls it. Main's, not the shell's: resolving a page's bookmark to its curated name is a rule. */
     name: string;
     focused: boolean;
+    /** Whether the header's close would do anything — false only for a tab's lone pane that is already empty. Main's, from `paneMenu.canClosePane`, which the right-click menu asks too. */
+    closable: boolean;
     /** Null unless `content.kind === 'page'`. */
     page: PageState | null;
     /**
@@ -53,9 +55,7 @@ export interface SeamView {
 
 export interface TabView {
     id: string;
-    /** What the tab button says: the focused pane's content, or "Empty". */
+    /** What the tab button says: its first pane's name, as that pane's header says it. */
     label: string;
     active: boolean;
-    /** Whether this tab holds the live game, so the bar can mark where the character is. */
-    hasGame: boolean;
 }
