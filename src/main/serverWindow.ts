@@ -1,4 +1,4 @@
-import { BrowserWindow, Menu, WebContentsView, screen, shell, type NativeImage } from 'electron';
+import { BrowserWindow, Menu, WebContentsView, screen, shell, type MenuItemConstructorOptions, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT } from '../shared/layout';
@@ -8,7 +8,7 @@ import type { SinglePlayerView } from '../shared/singleplayer';
 import type { PaneView, SeamView } from '../shared/panes';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
-import { paneContentItems, paneMenuItems } from './paneMenu';
+import { paneContentItems, paneMenuItems, paneSplitItems, type PaneMenuItem } from './paneMenu';
 import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
 import type { TabSet } from './tabs';
 import { loadShell, preloadPath } from './renderer';
@@ -546,26 +546,34 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // clicked rather than on whatever happened to have focus — every item
         // below names the pane, but Even Out and the accelerators do not.
         host.focus(paneId);
-        const menu = Menu.buildFromTemplate(
-            paneMenuItems(host.tree(), paneId, rect).map(item => ({
-                label: item.label,
-                enabled: item.enabled,
-                click: () => {
-                    if (item.id === 'split-x') host.split(paneId, 'x');
-                    else if (item.id === 'split-y') host.split(paneId, 'y');
-                    else if (item.id === 'close') void closePane(paneId);
-                    else {
-                        const splitId = parentSplitOf(host.tree(), paneId);
-                        if (splitId) host.evenOut(splitId);
-                    }
-                }
-            }))
-        );
+        const menu = Menu.buildFromTemplate(paneMenuItems(host.tree(), paneId, rect).map(item => gestureItem(paneId, item)));
         menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
+    /** One gesture as a native menu item, for both menus that carry gestures. */
+    function gestureItem(paneId: string, item: PaneMenuItem): MenuItemConstructorOptions {
+        return {
+            label: item.label,
+            enabled: item.enabled,
+            accelerator: item.accelerator,
+            registerAccelerator: false,
+            click: () => {
+                if (item.id === 'split-x') host.split(paneId, 'x');
+                else if (item.id === 'split-y') host.split(paneId, 'y');
+                else if (item.id === 'close') void closePane(paneId);
+                else {
+                    const splitId = parentSplitOf(host.tree(), paneId);
+                    if (splitId) host.evenOut(splitId);
+                }
+            }
+        };
+    }
+
     /**
-     * The dropdown in a pane's header: everything that pane could become.
+     * The dropdown in a pane's header: everything that pane could become, and
+     * then, under a rule, the two ways to split it — which `paneSplitItems`
+     * takes from the right-click menu, because nothing on screen says that
+     * menu exists and the arrow is the control a player will actually try.
      *
      * Native, and built here, for the reason the gesture menu above is: the
      * header of a game or a page pane sits directly over a native view, and a
@@ -583,7 +591,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (win.isDestroyed()) return;
         host.focus(paneId);
         const items = paneContentItems({ trees: host.trees(), paneId, tools, links: server.bookmarks });
-        const template = items.flatMap((item, i) => [
+        const template: MenuItemConstructorOptions[] = items.flatMap((item, i): MenuItemConstructorOptions[] => [
             // The links are a different kind of destination from the window's
             // own things, and the group each item arrives in is what says where
             // that line falls — the same rule the launcher draws.
@@ -597,6 +605,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 click: () => setPaneContent(paneId, item.content)
             }
         ]);
+        const rect = host.rectOf(paneId);
+        const splits = rect ? paneSplitItems(host.tree(), paneId, rect) : [];
+        if (splits.length > 0) template.push({ type: 'separator' }, ...splits.map(item => gestureItem(paneId, item)));
         Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
