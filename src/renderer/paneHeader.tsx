@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent, PointerEvent, ReactNode } from 'react';
 import type { PaneView } from '../shared/panes';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
-import { Caret, NavArrow, Reload } from './icons';
+import { Caret, CloseRoom, NavArrow, Reload } from './icons';
 
 /**
  * The strip at the top of every pane: what the pane is, what that one thing can
@@ -24,10 +24,15 @@ import { Caret, NavArrow, Reload } from './icons';
  *   Nothing else gets any. Hiscores' name box, Worlds' detail switch and chat's
  *   Send stay in the pane body, because they are the pane's *work* rather than
  *   its identity, and a header that collected them would become a second body.
+ *   They are the first thing a narrow pane gives up; see `ROOM_FOR_NAV`.
  * - **The dropdown**, which changes what the pane holds. It is a native menu
  *   main pops, not a panel drawn here: in a game or page pane this strip sits
  *   directly above a `WebContentsView`, and anything the shell drew below it
  *   would open behind that view.
+ * - **The close**, the same act as the right-click menu's Close and Cmd/Ctrl+W,
+ *   and through the same IPC, so closing the game asks first here as it does
+ *   there. Greyed on the one pane where it would do nothing — a tab's lone pane
+ *   already empty — which is main's call (`pane.closable`), not this strip's.
  */
 
 /* .tile carries the stone; a control that has to sit at 24x22 says so inline rather than fighting it with a utility of equal specificity. */
@@ -37,16 +42,32 @@ const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', b
 /**
  * A floor under the name, so a squeeze takes the end of it rather than all of
  * it. Everything else in the strip is an icon that cannot truncate, so without
- * this the name is the only thing that *can* give way and a narrow page pane
- * ends up showing three arrows and no idea what it is looking at.
+ * this the name is the only thing that *can* give way and a narrow pane ends up
+ * showing its buttons and no idea what it is looking at.
+ *
+ * 2.5em rather than more because the floor has to fit the narrowest pane there
+ * is: a tool pane at the 120px minimum has 116px inside its bevel, and the
+ * padding, the dropdown, the close and the gaps between them take 75 of it. A
+ * floor past that pushes the close off the pane's edge, and the title attribute
+ * already carries the full name for a pane that narrow.
  */
-const NAME: CSSProperties = { minWidth: '3.5em' };
+const NAME: CSSProperties = { minWidth: '2.5em' };
 /**
  * Below this the strip has room for the name and the controls and nothing else.
  * The shell reading its own pane's width is the same thing chat does to choose
  * between its two shapes; it is presentation, not placement.
  */
 const ROOM_FOR_LOADING = 320;
+/**
+ * Below this a page pane's header cannot hold the name, the three navigation
+ * buttons, the dropdown and the close together — 12px of padding, room for a
+ * few letters of the name at 15px, five 24px buttons and the 5px gaps between
+ * the seven items. The navigation is what goes. None of these can truncate, so
+ * something has to, and the other two are the pane's way out: a dropdown or a
+ * close pushed past the pane's edge is a pane that can no longer be changed
+ * or shut, while a page too narrow to hold its buttons is too narrow to browse.
+ */
+const ROOM_FOR_NAV = 215;
 
 function Step({ label, on, disabled, children }: { label: string; on: () => void; disabled: boolean; children: ReactNode }): ReactNode {
     return (
@@ -101,7 +122,7 @@ export default function PaneHeader({ pane, readout, grab }: { pane: PaneView; re
                 {pane.name}
             </span>
 
-            {pane.page && (
+            {pane.page && pane.rect.width >= ROOM_FOR_NAV && (
                 <>
                     <Step label="Back" disabled={!pane.page.canGoBack} on={() => void go('back')}>
                         <NavArrow />
@@ -135,6 +156,20 @@ export default function PaneHeader({ pane, readout, grab }: { pane: PaneView; re
                 className="tile flex shrink-0 items-center justify-center text-gold"
             >
                 <Caret />
+            </button>
+
+            {/* Named for what it costs, as the menu's item is: the game's close disconnects the player. */}
+            <button
+                type="button"
+                title={pane.content.kind === 'game' ? 'Close game' : 'Close pane'}
+                aria-label={`Close ${pane.name}`}
+                disabled={!pane.closable}
+                onClick={() => void window.zanaris.panes.close(pane.paneId)}
+                style={BUTTON}
+                /* The X's fill is fixed in the sprite, so a spent close is dimmed by opacity rather than by colour. */
+                className="tile flex shrink-0 items-center justify-center disabled:opacity-40"
+            >
+                <CloseRoom />
             </button>
         </div>
     );

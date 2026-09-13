@@ -21,6 +21,8 @@ export interface PaneView {
     /** What the pane's header calls it. Main's, not the shell's: resolving a page's bookmark to its curated name is a rule. */
     name: string;
     focused: boolean;
+    /** Whether the header's close would do anything — false only for a tab's lone pane that is already empty. Main's, from `paneMenu.canClosePane`, which the right-click menu asks too. */
+    closable: boolean;
     /** Null unless `content.kind === 'page'`. */
     page: PageState | null;
     /**

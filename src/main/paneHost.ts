@@ -17,7 +17,7 @@ import {
     type Rect
 } from './paneTree.ts';
 import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
-import { paneContentItems, paneName } from './paneMenu.ts';
+import { canClosePane, paneContentItems, paneName } from './paneMenu.ts';
 import { closeTab, labelOfTab, moveGame, newTab, nextIds, openTabs, selectTab, type TabSet } from './tabs.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
@@ -305,6 +305,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                     content,
                     name: paneName(content, deps.bookmarks()),
                     focused: paneId === focused(),
+                    closable: canClosePane(tree, paneId),
                     page: pageStates.get(paneId) ?? null,
                     // Only the launcher draws a list; every other pane reaches
                     // the same one through its header, which main pops as a
