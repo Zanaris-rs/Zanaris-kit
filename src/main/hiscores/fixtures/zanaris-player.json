@@ -1,0 +1,10 @@
+{
+    "username": "iron_fox",
+    "name": "Iron Fox",
+    "skills": [
+        { "category": 0, "rank": 542, "level": 250, "xp": 1234567 },
+        { "category": 1, "rank": 1203, "level": 40, "xp": 55649 },
+        { "category": 4, "rank": 88, "level": 60, "xp": 273742 },
+        { "category": 15, "rank": 4021, "level": 30, "xp": 13363 }
+    ]
+}

@@ -5,12 +5,14 @@
     { "file": "Rail.dc.html", "x": 0, "y": 796, "w": 620, "h": 430, "title": "Interface tabs" },
     { "file": "Chat.dc.html", "x": 700, "y": 796, "w": 368, "h": 640, "title": "Chat" },
     { "file": "Timers.dc.html", "x": 1148, "y": 796, "w": 368, "h": 640, "title": "Timers" },
-    { "file": "Settings.dc.html", "x": 1596, "y": 796, "w": 368, "h": 640, "title": "Settings" }
+    { "file": "Settings.dc.html", "x": 1596, "y": 796, "w": 368, "h": 640, "title": "Settings" },
+    { "file": "ChatDock.dc.html", "x": 0, "y": 1556, "w": 1168, "h": 260, "title": "Chat — bottom dock" }
   ],
   "annotations": [
     { "id": "palette", "x": 0, "y": -170, "w": 600, "text": "Moved off the website palette onto the client's own.\n\nThe greys are gone: panels are the warm olive stone the 2004 interface is built from, sampled out of your screenshot rather than guessed. Bevels are explicit now, light above-left and shadow below-right, which is what makes stone read as stone.\n\nPanel titles are centred gold and actions sit along the bottom, the way Friends List does." },
     { "id": "tabs", "x": 0, "y": 1266, "w": 600, "text": "The rail is now a strip of interface tabs: stone tiles on the same dark ground the client uses, the open one lit and raised, the rest dimmed to 78%. Icons are flat sprites on a dark outline instead of thin outline strokes." },
-    { "id": "note", "x": 2044, "y": 796, "w": 380, "text": "The game area stays pure black in these mockups. In the running app the client paints there, so nothing of ours is behind it." }
+    { "id": "note", "x": 2044, "y": 796, "w": 380, "text": "The game area stays pure black in these mockups. In the running app the client paints there, so nothing of ours is behind it." },
+    { "id": "dock", "x": 1200, "y": 1556, "w": 460, "text": "Chat's other home. Drawn wide because it is built wide: a conversation is short lines, and short lines wrap in a 320px column and stop wrapping at ~1120px, so six rows here hold what eleven hold in the panel.\n\nRooms became tabs rather than the panel's chip row for the same reason the strip already had one: a text-bearing tab is a solved object, so the dock borrows it instead of drawing a second kind of room control. They still never reorder — a room list you cannot aim at is worse than a wrapping one." }
   ],
   "launch": { "view": "canvas" }
 }

@@ -30,6 +30,16 @@ export interface WorldsDef {
 export interface Bookmark {
     name: string;
     url: string;
+    /**
+     * Which sprite the Guides list draws beside it. A name the renderer knows,
+     * not a path: art belongs to the renderer, and a catalog full of file
+     * references would be a catalog that can point at files.
+     *
+     * Optional because a bookmark added by hand will not have one, and an
+     * unknown or missing id draws the generic page sprite rather than costing
+     * the whole file its validation.
+     */
+    icon?: string;
 }
 
 /** One world as listed. `origin` is what `{url}` expands to; null when the source does not say. */

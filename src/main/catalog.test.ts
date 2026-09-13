@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, statSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -30,13 +30,13 @@ const input = (over: Partial<NewServerInput> = {}): NewServerInput => ({
 });
 
 test('the built-in list is per server, Lost City first, with the settled revisions', () => {
-    assert.deepEqual(DEFAULT_SERVERS.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'local']);
+    assert.deepEqual(DEFAULT_SERVERS.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer']);
     const byId = Object.fromEntries(DEFAULT_SERVERS.map(s => [s.id, s]));
     assert.equal(byId['lostcity']!.revision, 274);
     assert.equal(byId['zanaris']!.revision, 274);
     assert.equal(byId['lostcitylabs']!.revision, null);
     assert.equal(byId['lostcitylabs']!.notes, 'May 2005 per Lost City Labs');
-    assert.equal(byId['local']!.revision, 289);
+    assert.equal(byId['local'], undefined, 'single player superseded the local server');
     assert.equal(byId['lostcity']!.wiki?.home, 'https://2004.losthq.rs/');
     assert.equal(byId['zanaris']!.wiki?.home, 'https://2004.losthq.rs/');
     assert.equal(byId['lostcitylabs']!.wiki, null);
@@ -51,7 +51,7 @@ test('the single-player entry runs on this computer and carries the engine revis
     assert.equal(typeof sp.revision, 'number');
     assert.equal(sp.worlds, null);
     assert.equal(sp.wiki?.home, 'https://2004.losthq.rs/');
-    assert.ok(sp.bookmarks.length >= 5);
+    assert.deepEqual(sp.bookmarks, [], 'the reference links are for the live servers, not a development world');
     assert.deepEqual(sp.hosts, ['127.0.0.1', '2004.losthq.rs', 'tools.losthq.rs']);
     for (const server of DEFAULT_SERVERS) assert.equal(server.kind, server.id === 'singleplayer' ? 'singleplayer' : 'remote');
 });
@@ -61,17 +61,21 @@ test('engineRevision reads engine.lock.json when nothing was stamped at build ti
     assert.equal(engineRevision(), lock.revision);
 });
 
-test('a version 2 file gains kind and the single-player entry, before local when present', () => {
+test('a version 2 file gains kind and the single-player entry, and loses local', () => {
     const v2 = {
         version: 2,
-        servers: DEFAULT_SERVERS.filter(s => s.id !== 'singleplayer').map(s => {
-            const { kind: _kind, ...rest } = s;
-            return rest;
-        })
+        servers: [
+            ...DEFAULT_SERVERS.filter(s => s.id !== 'singleplayer').map(s => {
+                const { kind: _kind, hiscores: _hiscores, ...rest } = s;
+                return { ...rest, hiscores: s.id === 'lostcity' ? V3_LOSTCITY_TEMPLATE : null };
+            }),
+            V3_LOCAL
+        ]
     };
     const migrated = migrateCatalog(v2)!;
-    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'local']);
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer']);
     assert.ok(migrated.every(s => s.kind === (s.id === 'singleplayer' ? 'singleplayer' : 'remote')));
+    assert.equal(migrated[0]!.hiscores?.source.kind, 'lostcity', 'a version 2 file gets the version 3 step too');
 });
 
 test('a version 2 file without local gets the single-player entry appended', () => {
@@ -84,14 +88,14 @@ test('a version 2 file without local gets the single-player entry appended', () 
     assert.equal(migrated[0]!.kind, 'remote');
 });
 
-test('a version 3 file is taken as it is, and one lacking kind is rejected', () => {
-    const v3 = { version: 3, servers: DEFAULT_SERVERS.map(s => structuredClone(s)) };
-    assert.deepEqual(migrateCatalog(v3), v3.servers);
+test('a version 4 file is taken as it is, and one lacking kind is rejected', () => {
+    const v4 = { version: 4, servers: DEFAULT_SERVERS.map(s => structuredClone(s)) };
+    assert.deepEqual(migrateCatalog(v4), v4.servers);
     const { kind: _kind, ...bare } = DEFAULT_SERVERS[0]!;
-    assert.equal(migrateCatalog({ version: 3, servers: [bare] }), null);
+    assert.equal(migrateCatalog({ version: 4, servers: [bare] }), null);
 });
 
-test('the catalog writes version 3 and upgrades a version 2 file on load', () => {
+test('the catalog writes version 4 and upgrades a version 2 file on load', () => {
     const dir = mkdtempSync(join(tmpdir(), 'catalog-'));
     const file = join(dir, 'servers.json');
     writeFileSync(file, JSON.stringify({ version: 2, servers: [] }));
@@ -99,7 +103,7 @@ test('the catalog writes version 3 and upgrades a version 2 file on load', () =>
     catalog.load();
     assert.equal(catalog.recovered, false);
     assert.deepEqual(catalog.list().map(s => s.id), ['singleplayer']);
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 3);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 4);
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -108,16 +112,72 @@ test('the built-ins carry the worlds, bookmarks and hiscores they should', () =>
     assert.equal(byId['lostcity']!.worlds?.source.kind, 'losthq');
     assert.equal(byId['lostcity']!.worlds?.defaultWorld, 5);
     assert.equal(byId['lostcity']!.worlds?.detail, true);
-    assert.ok(byId['lostcity']!.hiscores?.includes('{name}'));
-    assert.ok(byId['lostcity']!.bookmarks.length >= 5);
+    assert.deepEqual(byId['lostcity']!.hiscores, {
+        source: { kind: 'lostcity', url: 'https://2004.lostcity.rs/api/hiscores/player/{name}' },
+        site: 'https://2004.lostcity.rs/hiscores'
+    });
+    assert.deepEqual(byId['zanaris']!.hiscores, {
+        source: { kind: 'zanaris', url: 'https://zanaris.rs/api/hiscores/player/{name}' },
+        site: 'https://zanaris.rs/hiscores'
+    });
+    assert.deepEqual(byId['lostcitylabs']!.hiscores, {
+        source: { kind: 'labs', url: 'https://www.lostcitylabs.com/hiscores/player?name={name}' },
+        site: 'https://www.lostcitylabs.com/hiscores'
+    });
+    assert.equal(byId['singleplayer']!.hiscores, null, 'a one-player world has nobody to rank');
+    // The reference links, and the whole of the per-server gating: Lost City's
+    // own forums and prices mean nothing on another server, so only it gets them.
+    const names = (id: string): string[] => byId[id]!.bookmarks.map(b => b.name);
+    assert.deepEqual(names('lostcity'), [
+        'Forums',
+        'Coordinates',
+        'Clue Help',
+        'Puzzle Solver',
+        'World Map',
+        'Markets',
+        'Quest Guides',
+        'Skill Guides',
+        'Skills Calculator',
+        'Bestiary',
+        'Item Database'
+    ]);
+    assert.deepEqual(
+        names('zanaris'),
+        names('lostcity').filter(n => n !== 'Forums' && n !== 'Markets')
+    );
+    assert.deepEqual(names('lostcitylabs'), [], 'no wiki, no links');
+    assert.deepEqual(names('singleplayer'), []);
+    // Two slugs do not match their names, and getting either wrong is a link
+    // that quietly lands on the wrong page.
+    const urlOf = (name: string): string => byId['lostcity']!.bookmarks.find(b => b.name === name)!.url;
+    assert.equal(urlOf('Bestiary'), 'https://2004.losthq.rs/?p=droptables');
+    assert.equal(urlOf('Skills Calculator'), 'https://2004.losthq.rs/?p=calculators');
     assert.equal(byId['zanaris']!.worlds?.source.kind, 'zanaris');
     assert.equal(byId['zanaris']!.worlds?.defaultWorld, 1);
     assert.equal(byId['lostcitylabs']!.worlds?.source.kind, 'static');
     assert.equal(byId['lostcitylabs']!.worlds?.detail, false);
-    assert.equal(byId['local']!.worlds, null);
+    assert.equal(byId['singleplayer']!.worlds, null);
     for (const server of DEFAULT_SERVERS) {
         if (server.worlds) assert.ok(isWorldsDef(server.worlds), `${server.id} worlds must validate`);
+        if (server.hiscores) assert.ok(server.hiscores.source.url.includes('{name}'), `${server.id} hiscores must take a name`);
         for (const b of server.bookmarks) assert.ok(parseServerUrl(b.url).ok, `${server.id} bookmark ${b.name}`);
+    }
+});
+
+test('every link a server ships is on a host that server allows', () => {
+    // A page tab may only visit `hosts`, so a link whose host is missing from
+    // it does not open in the pane at all — it bounces to the system browser,
+    // silently, and looks like the link is broken.
+    for (const server of DEFAULT_SERVERS) {
+        for (const b of server.bookmarks) {
+            assert.ok(server.hosts.includes(hostOf(b.url)), `${server.id}: ${b.name} needs ${hostOf(b.url)} in hosts`);
+        }
+    }
+});
+
+test('every link names a sprite, so none of them draws the fallback', () => {
+    for (const server of DEFAULT_SERVERS) {
+        for (const b of server.bookmarks) assert.ok(b.icon, `${server.id}: ${b.name} has no icon`);
     }
 });
 
@@ -128,6 +188,16 @@ test('every built-in entry validates and lists its own game host', () => {
         assert.ok(isServerDef(server), `${server.id} must validate`);
         assert.ok(server.hosts.includes(hostOf(server.url)), `${server.id} must allow its own host`);
         if (server.wiki) assert.ok(server.hosts.includes(hostOf(server.wiki.home)), `${server.id} must allow its wiki host`);
+        // `hosts` is the allowlist the reference pane consults, and "Full
+        // hiscores" names a page the pane ought to be able to show, so the
+        // site's host belongs on it — even though that particular link goes out
+        // to the system browser, the pane being for the server's own curated
+        // links rather than for any url. The list has a second reader, which is
+        // why pruning it is never free: `Catalog.refreshHiscores` tests a stored
+        // entry's own url host against this same array before it will adopt a
+        // built-in's lookup, so these arrays are read on every launch and
+        // pruning one is never free.
+        if (server.hiscores?.site) assert.ok(server.hosts.includes(hostOf(server.hiscores.site)), `${server.id} must allow its hiscores host`);
     }
 });
 
@@ -224,10 +294,40 @@ test('isServerDef rejects junk, including bad worlds, bookmarks and hiscores', (
         { ...good, worlds: {} },
         { ...good, bookmarks: 'nope' },
         { ...good, bookmarks: [{ name: 'x', url: 'javascript:1' }] },
-        { ...good, hiscores: 'https://x.example/no-placeholder' }
+        { ...good, hiscores: 'https://2004.lostcity.rs/api/hiscores/player/{name}' }
     ]) {
         assert.equal(isServerDef(bad), false, `${JSON.stringify(bad).slice(0, 60)} must be rejected`);
     }
+});
+
+const withHiscores = (hiscores: unknown): unknown => ({ ...DEFAULT_SERVERS[0]!, hiscores });
+
+test('isServerDef accepts a well-formed hiscores block', () => {
+    assert.equal(isServerDef(withHiscores({ source: { kind: 'labs', url: 'https://x.example/p?name={name}' }, site: null })), true);
+});
+
+test('isServerDef rejects a hiscores block with no source', () => {
+    assert.equal(isServerDef(withHiscores({ site: null })), false);
+});
+
+test('isServerDef rejects a hiscores block whose source is not an object', () => {
+    assert.equal(isServerDef(withHiscores({ source: 'https://x.example/{name}', site: null })), false);
+});
+
+test('isServerDef rejects a hiscores source kind nothing knows how to read', () => {
+    assert.equal(isServerDef(withHiscores({ source: { kind: 'runescape', url: 'https://x.example/{name}' }, site: null })), false);
+});
+
+test('isServerDef rejects a hiscores url that is not a string', () => {
+    assert.equal(isServerDef(withHiscores({ source: { kind: 'lostcity', url: 42 }, site: null })), false);
+});
+
+test('isServerDef rejects a hiscores url with nowhere to put the name', () => {
+    assert.equal(isServerDef(withHiscores({ source: { kind: 'lostcity', url: 'https://x.example/api/hiscores/player/' }, site: null })), false);
+});
+
+test('isServerDef rejects a hiscores site that is neither a page nor null', () => {
+    assert.equal(isServerDef(withHiscores({ source: { kind: 'lostcity', url: 'https://x.example/{name}' }, site: 5 })), false);
 });
 
 // ── migration ─────────────────────────────────────────────────────────────
@@ -242,13 +342,282 @@ const V1_BUILTINS = [
     OLD('local', 'Local server', 'http://127.0.0.1:8888/rs2.cgi?lowmem=1')
 ];
 
+/** The only `hiscores` string a version 3 file could hold. */
+const V3_LOSTCITY_TEMPLATE = 'https://2004.lostcity.rs/api/hiscores/player/{name}';
+
+/** The built-in entry version 4 drops, as a version 3 file stored it. */
+const V3_LOCAL = {
+    id: 'local',
+    kind: 'remote',
+    name: 'Local server',
+    url: 'http://127.0.0.1:8888/rs2.cgi?lowmem=1',
+    revision: 289,
+    wiki: null,
+    map: null,
+    hosts: ['127.0.0.1:8888'],
+    notes: null,
+    worlds: null,
+    bookmarks: [],
+    hiscores: null
+};
+
+/** A version 3 Lost City entry: everything the built-in had, with the bare template. */
+const V3_LOSTCITY = {
+    id: 'lostcity',
+    kind: 'remote',
+    name: 'Lost City',
+    url: 'https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1',
+    revision: 274,
+    wiki: { home: 'https://2004.losthq.rs/', search: null },
+    map: 'https://tools.losthq.rs/map',
+    hosts: ['w5-2004.lostcity.rs', '2004.losthq.rs'],
+    notes: null,
+    worlds: {
+        source: { kind: 'losthq', url: 'https://2004.losthq.rs/pages/api/worlds.php' },
+        template: 'https://w{world}-2004.lostcity.rs/rs2.cgi?plugin=0&world={world}&lowmem={lowmem}',
+        detail: true,
+        defaultWorld: 5
+    },
+    bookmarks: [{ name: 'Quest guides', url: 'https://2004.losthq.rs/?p=questguides' }],
+    hiscores: V3_LOSTCITY_TEMPLATE
+};
+
+/** One the user typed in themselves, with every field filled so the migration has something to lose. */
+const V3_CUSTOM = {
+    id: 'my-server',
+    kind: 'remote',
+    name: 'My Server',
+    url: 'https://play.example.com/rs2.cgi?lowmem=1',
+    revision: 289,
+    wiki: { home: 'https://wiki.example.com/', search: 'https://wiki.example.com/?q={query}' },
+    map: 'https://map.example.com/',
+    hosts: ['play.example.com', 'wiki.example.com'],
+    notes: 'the one I run for friends',
+    worlds: null,
+    bookmarks: [{ name: 'Forum', url: 'https://forum.example.com/' }],
+    hiscores: null
+};
+
+/** Zanaris as version 3 stored it: no `hiscores` at all, though the server has had the API all along. */
+const V3_ZANARIS = {
+    id: 'zanaris',
+    kind: 'remote',
+    name: 'Zanaris',
+    url: 'https://w1.04.zanaris.rs/rs2.cgi?lowmem=1',
+    revision: 274,
+    wiki: { home: 'https://2004.losthq.rs/', search: null },
+    map: 'https://tools.losthq.rs/map',
+    hosts: ['w1.04.zanaris.rs', '2004.losthq.rs'],
+    notes: null,
+    worlds: {
+        source: { kind: 'zanaris', url: 'https://zanaris.rs/worlds.json' },
+        template: '{url}/rs2.cgi?lowmem={lowmem}',
+        detail: true,
+        defaultWorld: 1
+    },
+    bookmarks: [],
+    hiscores: null
+};
+
+/**
+ * A local server the user added themselves, which version 4 makes possible:
+ * with the built-in gone, `slugify('Local')` is free for the add form to take.
+ */
+const V4_USER_LOCAL = {
+    id: 'local',
+    kind: 'remote',
+    name: 'Local',
+    url: 'http://127.0.0.1:8080/rs2.cgi?lowmem=1',
+    revision: 274,
+    wiki: null,
+    map: null,
+    hosts: ['127.0.0.1:8080'],
+    notes: 'the world I run here',
+    worlds: null,
+    bookmarks: [],
+    hiscores: null
+};
+
+const v3File = (): Record<string, unknown> => ({
+    version: 3,
+    servers: structuredClone([V3_LOSTCITY, V3_LOCAL, V3_CUSTOM])
+});
+
+test('a v3 file loses the local entry and keeps the rest, in order', () => {
+    const migrated = migrateCatalog(v3File());
+    assert.ok(migrated);
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'my-server'], 'single player superseded the local server');
+});
+
+test("a v3 file's Lost City template becomes the structured lookup, with the site the panel links to", () => {
+    const migrated = migrateCatalog(v3File())!;
+    assert.deepEqual(migrated[0]!.hiscores, {
+        source: { kind: 'lostcity', url: V3_LOSTCITY_TEMPLATE },
+        site: 'https://2004.lostcity.rs/hiscores'
+    });
+    assert.ok(isServerDef(migrated[0]!), 'and the entry still validates');
+});
+
+test("a v3 file's custom entry survives with every field it had", () => {
+    const migrated = migrateCatalog(v3File())!;
+    const mine = migrated.find(s => s.id === 'my-server')!;
+    assert.equal(mine.kind, 'remote');
+    assert.equal(mine.name, 'My Server');
+    assert.equal(mine.url, 'https://play.example.com/rs2.cgi?lowmem=1');
+    assert.equal(mine.revision, 289);
+    assert.deepEqual(mine.wiki, { home: 'https://wiki.example.com/', search: 'https://wiki.example.com/?q={query}' });
+    assert.equal(mine.map, 'https://map.example.com/');
+    assert.deepEqual(mine.hosts, ['play.example.com', 'wiki.example.com']);
+    assert.equal(mine.notes, 'the one I run for friends');
+    assert.equal(mine.worlds, null);
+    assert.deepEqual(mine.bookmarks, [{ name: 'Forum', url: 'https://forum.example.com/' }]);
+    assert.equal(mine.hiscores, null);
+});
+
+test("a v3 hiscores template that is not Lost City's becomes null rather than a guess", () => {
+    for (const template of ['https://hiscores.example.com/player/{name}', 'http://2004.lostcity.rs/api/hiscores/player/{name}', 'https://2004.lostcity.rs/api/hiscores/player/']) {
+        const file = v3File();
+        (file.servers as Record<string, unknown>[])[2]!.hiscores = template;
+        const migrated = migrateCatalog(file)!;
+        assert.equal(migrated.find(s => s.id === 'my-server')!.hiscores, null, `${template} is not one this kit can read`);
+    }
+});
+
+test('a v3 entry that no longer validates fails the whole file rather than being dropped quietly', () => {
+    const file = v3File();
+    (file.servers as Record<string, unknown>[])[2]!.url = 'javascript:1';
+    assert.equal(migrateCatalog(file), null);
+});
+
+test('Catalog.load rewrites a v3 file as version 4, keeping what the user added', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify(v3File()));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false, 'a migration is not a recovery');
+    assert.deepEqual(catalog.list().map(s => s.id), ['lostcity', 'my-server']);
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { version: number; servers: ServerDef[] };
+    assert.equal(written.version, 4);
+    assert.equal(written.servers.find(s => s.id === 'local'), undefined);
+    assert.equal(written.servers.find(s => s.id === 'my-server')!.notes, 'the one I run for friends');
+    assert.equal(written.servers[0]!.hiscores!.source.url, V3_LOSTCITY_TEMPLATE);
+});
+
+test("a version 4 file keeps a local server the user added themselves", () => {
+    const servers = [...DEFAULT_SERVERS.map(s => structuredClone(s)), structuredClone(V4_USER_LOCAL)];
+    const migrated = migrateCatalog({ version: 4, servers })!;
+    assert.deepEqual(migrated.map(s => s.id), [...DEFAULT_SERVERS.map(s => s.id), 'local']);
+    const theirs = migrated.find(s => s.id === 'local')!;
+    assert.equal(theirs.name, 'Local');
+    assert.equal(theirs.url, 'http://127.0.0.1:8080/rs2.cgi?lowmem=1');
+    assert.equal(theirs.notes, 'the world I run here');
+});
+
+test("version 4 never shipped a local server, so even one at the old address is the user's", () => {
+    const theirs = { ...structuredClone(V4_USER_LOCAL), url: 'http://127.0.0.1:8888/rs2.cgi?lowmem=1', hosts: ['127.0.0.1:8888'] };
+    const migrated = migrateCatalog({ version: 4, servers: [theirs] })!;
+    assert.deepEqual(migrated.map(s => s.id), ['local'], 'the drop belongs to the older versions, not this one');
+});
+
+test('a local server the user added survives the next launch and the next write', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 4, servers: [...DEFAULT_SERVERS.map(s => structuredClone(s)), V4_USER_LOCAL] }));
+    const a = new Catalog(file);
+    a.load();
+    assert.equal(a.recovered, false);
+    assert.equal(a.get('local')!.notes, 'the world I run here');
+    // any later write rewrites the whole file, so a ghost entry would be erased here
+    assert.ok(a.add(input({ name: 'Another' })).ok);
+    const b = new Catalog(file);
+    b.load();
+    assert.equal(b.get('local')!.url, 'http://127.0.0.1:8080/rs2.cgi?lowmem=1');
+});
+
+test('a version 3 entry that only borrowed the local id keeps its place', () => {
+    const theirs = { ...structuredClone(V4_USER_LOCAL), hiscores: null };
+    const migrated = migrateCatalog({ version: 3, servers: [structuredClone(V3_LOSTCITY), theirs] })!;
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'local'], 'only the built-in address is dropped');
+});
+
+// ── the kit's own knowledge about a built-in ──────────────────────────────
+
+test("a version 3 file's Zanaris entry gains the lookup its null was hiding", () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 3, servers: [V3_ZANARIS, V3_CUSTOM] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false);
+    assert.deepEqual(catalog.get('zanaris')!.hiscores, DEFAULT_SERVERS.find(s => s.id === 'zanaris')!.hiscores);
+    assert.equal(catalog.get('my-server')!.hiscores, null, "and a server of the user's own gains nothing");
+    // written back, so the next launch does not have to work it out again
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
+    assert.equal(written.servers.find(s => s.id === 'zanaris')!.hiscores!.source.url, 'https://zanaris.rs/api/hiscores/player/{name}');
+});
+
+test('a stored built-in whose lookup has moved is brought up to date, and the file rewritten', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    servers.find(s => s.id === 'lostcitylabs')!.hiscores = { source: { kind: 'labs', url: 'https://old.lostcitylabs.com/hiscores/player?name={name}' }, site: null };
+    writeFileSync(file, JSON.stringify({ version: 4, servers }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.deepEqual(catalog.get('lostcitylabs')!.hiscores, DEFAULT_SERVERS.find(s => s.id === 'lostcitylabs')!.hiscores);
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
+    assert.equal(written.servers.find(s => s.id === 'lostcitylabs')!.hiscores!.site, 'https://www.lostcitylabs.com/hiscores');
+});
+
+test('a built-in entry whose stored url has no scheme costs the user nothing', () => {
+    const file = tempFile();
+    const zanaris = { ...structuredClone(V3_ZANARIS), url: 'w1.04.zanaris.rs/rs2.cgi?lowmem=1' };
+    writeFileSync(file, JSON.stringify({ version: 4, servers: [zanaris, structuredClone(V3_CUSTOM)] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false, 'a hand-edited address must not cost the user their catalog');
+    assert.deepEqual(catalog.list().map(s => s.id), ['zanaris', 'my-server']);
+    assert.equal(catalog.get('my-server')!.notes, 'the one I run for friends', "and the user's own entry is still there");
+    assert.deepEqual(catalog.get('zanaris')!.hiscores, DEFAULT_SERVERS.find(s => s.id === 'zanaris')!.hiscores, 'read as https, the host matches');
+    assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('servers.json.broken-')), false, 'nothing was renamed aside');
+});
+
+test("an entry that claims a built-in's id and host but is a different kind of server keeps its own", () => {
+    const file = tempFile();
+    const theirs = { ...structuredClone(V3_LOSTCITY), kind: 'singleplayer', hiscores: null };
+    writeFileSync(file, JSON.stringify({ version: 4, servers: [theirs] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.get('lostcity')!.hiscores, null, 'a single-player world is not the remote one it is named after');
+});
+
+test("a server of the user's own that took a built-in id keeps its own hiscores", () => {
+    const file = tempFile();
+    const theirs = { ...structuredClone(V3_CUSTOM), id: 'zanaris', name: 'Zanaris', hiscores: null };
+    writeFileSync(file, JSON.stringify({ version: 4, servers: [theirs] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.get('zanaris')!.hiscores, null, 'the id matches a built-in; the server does not');
+    assert.equal(catalog.get('zanaris')!.url, 'https://play.example.com/rs2.cgi?lowmem=1');
+});
+
+test('a version 4 file round-trips through load untouched', () => {
+    const file = tempFile();
+    const servers = [...DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef), structuredClone(V3_CUSTOM) as ServerDef];
+    const before = `${JSON.stringify({ version: 4, servers }, null, 2)}\n`;
+    writeFileSync(file, before);
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false);
+    assert.deepEqual(catalog.list(), servers);
+    assert.equal(readFileSync(file, 'utf8'), before, 'nothing to upgrade, so nothing rewritten');
+});
+
 test('migrateCatalog turns a v1 file into the new built-ins in default order plus the custom entries', () => {
     const custom = OLD('my-server', 'My Server', 'https://play.example.com/rs2.cgi');
     const migrated = migrateCatalog({ version: 1, servers: [...V1_BUILTINS, custom] });
     assert.ok(migrated);
-    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'local', 'my-server']);
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'my-server']);
     assert.equal(migrated[0]!.worlds?.source.kind, 'losthq');
-    const mine = migrated[5]!;
+    assert.equal(migrated[0]!.hiscores?.source.kind, 'lostcity', 'the built-in brings its own lookup');
+    const mine = migrated[4]!;
     assert.equal(mine.worlds, null);
     assert.deepEqual(mine.bookmarks, []);
     assert.equal(mine.hiscores, null);
@@ -264,20 +633,20 @@ test('migrateCatalog treats a missing version as v1 and passes a v2 file through
 
 test('migrateCatalog returns null for junk, an invalid entry, or a version it does not know', () => {
     assert.equal(migrateCatalog(null), null);
-    assert.equal(migrateCatalog({ version: 4, servers: [] }), null);
+    assert.equal(migrateCatalog({ version: 5, servers: [] }), null);
     assert.equal(migrateCatalog({ version: 1, servers: [{ id: 'x' }] }), null);
     assert.equal(migrateCatalog({ version: 2, servers: [{ ...DEFAULT_SERVERS[0], worlds: 'nope' }] }), null);
 });
 
-test('Catalog.load migrates a v1 file in place and rewrites it as v3', () => {
+test('Catalog.load migrates a v1 file in place and rewrites it as v4', () => {
     const file = tempFile();
     writeFileSync(file, JSON.stringify({ version: 1, servers: V1_BUILTINS }));
     const catalog = new Catalog(file);
     catalog.load();
     assert.equal(catalog.recovered, false, 'a migration is not a recovery');
-    assert.deepEqual(catalog.list().map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer', 'local']);
+    assert.deepEqual(catalog.list().map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer']);
     const written = JSON.parse(readFileSync(file, 'utf8'));
-    assert.equal(written.version, 3);
+    assert.equal(written.version, 4);
     assert.equal(written.servers[0].id, 'lostcity');
 });
 
@@ -287,7 +656,7 @@ test('a stored single-player entry follows the pinned engine, keeping the rest o
     const stored = servers.find(s => s.id === 'singleplayer')!;
     stored.revision = 1;
     stored.bookmarks = [{ name: 'Mine', url: 'https://example.com/' }];
-    writeFileSync(file, JSON.stringify({ version: 3, servers }));
+    writeFileSync(file, JSON.stringify({ version: 4, servers }));
     const catalog = new Catalog(file);
     catalog.load();
     assert.equal(catalog.recovered, false);
@@ -329,7 +698,7 @@ test('load writes the defaults when there is no file', () => {
     assert.equal(catalog.recovered, false);
     assert.deepEqual(catalog.list().map(s => s.id), DEFAULT_SERVERS.map(s => s.id));
     assert.ok(existsSync(file));
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 3);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 4);
 });
 
 test('add persists and a fresh load sees it', () => {
@@ -348,11 +717,11 @@ test('remove persists and reports unknown ids', () => {
     const file = tempFile();
     const a = new Catalog(file);
     a.load();
-    assert.equal(a.remove('local'), true);
-    assert.equal(a.remove('local'), false);
+    assert.equal(a.remove('lostcitylabs'), true);
+    assert.equal(a.remove('lostcitylabs'), false);
     const b = new Catalog(file);
     b.load();
-    assert.equal(b.get('local'), undefined);
+    assert.equal(b.get('lostcitylabs'), undefined);
 });
 
 test('an unreadable file is renamed aside and the defaults restored', () => {
@@ -379,4 +748,105 @@ test('list returns copies', () => {
     catalog.load();
     catalog.list()[0]!.hosts.push('evil.example');
     assert.equal(catalog.list()[0]!.hosts.includes('evil.example'), false);
+});
+
+// ── the link lists, which belong to the kit rather than to the file ────────
+
+test('a stored built-in picks up links the kit has added since, and the hosts they need', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    const stored = servers.find(s => s.id === 'lostcity')!;
+    // The list as an older kit shipped it, on the hosts that kit allowed.
+    stored.bookmarks = [{ name: 'Quest guides', url: 'https://2004.losthq.rs/?p=questguides' }];
+    stored.hosts = ['w5-2004.lostcity.rs', '2004.losthq.rs'];
+    writeFileSync(file, JSON.stringify({ version: 4, servers }));
+    const catalog = new Catalog(file);
+    catalog.load();
+
+    const loaded = catalog.get('lostcity')!;
+    assert.equal(catalog.recovered, false, "adopting the kit's own links is not a recovery");
+    assert.deepEqual(loaded.bookmarks, DEFAULT_SERVERS.find(s => s.id === 'lostcity')!.bookmarks);
+    assert.ok(loaded.hosts.includes('lostcity.rs') && loaded.hosts.includes('razgals.github.io'));
+    assert.ok(loaded.hosts.includes('w5-2004.lostcity.rs'), 'and nothing the file already allowed is taken away');
+    // Rewritten, so the next launch does not do it all again.
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
+    assert.equal(written.servers.find(s => s.id === 'lostcity')!.bookmarks.length, 11);
+});
+
+test('a link added by hand survives the refresh; one the kit has retired does not', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    const stored = servers.find(s => s.id === 'zanaris')!;
+    stored.bookmarks = [
+        { name: 'Markets', url: 'https://markets.lostcity.rs' },
+        { name: 'My notes', url: 'https://example.com/notes' }
+    ];
+    writeFileSync(file, JSON.stringify({ version: 4, servers }));
+    const catalog = new Catalog(file);
+    catalog.load();
+
+    const loaded = catalog.get('zanaris')!;
+    assert.equal(
+        loaded.bookmarks.some(b => b.name === 'Markets'),
+        false,
+        "Markets moved to Lost City alone, and is the kit's to retire"
+    );
+    assert.deepEqual(loaded.bookmarks.at(-1), { name: 'My notes', url: 'https://example.com/notes' }, "the hand-added one is kept, after the kit's");
+    assert.equal(loaded.bookmarks.length, 10);
+});
+
+test('the refresh is idempotent: a file already current is not rewritten', () => {
+    const file = tempFile();
+    const catalog = new Catalog(file);
+    catalog.load();
+    const first = readFileSync(file, 'utf8');
+    const mtime = statSync(file).mtimeMs;
+    const again = new Catalog(file);
+    again.load();
+    assert.equal(readFileSync(file, 'utf8'), first);
+    assert.equal(statSync(file).mtimeMs, mtime, 'nothing changed, so nothing was written');
+});
+
+test('an entry that merely took a built-in id keeps its own links', () => {
+    const file = tempFile();
+    const mine: ServerDef = {
+        id: 'lostcity',
+        kind: 'remote',
+        name: 'Lost City',
+        url: 'https://my-private-world.example/rs2.cgi',
+        revision: 274,
+        wiki: null,
+        map: null,
+        hosts: ['my-private-world.example'],
+        notes: null,
+        worlds: null,
+        bookmarks: [{ name: 'Mine', url: 'https://example.com/' }],
+        hiscores: null
+    };
+    writeFileSync(file, JSON.stringify({ version: 4, servers: [mine] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    const loaded = catalog.get('lostcity')!;
+    assert.deepEqual(loaded.bookmarks, [{ name: 'Mine', url: 'https://example.com/' }], 'it is not on a Lost City host, so it is not Lost City');
+    assert.deepEqual(loaded.hosts, ['my-private-world.example']);
+});
+
+test('a link one built-in ships and another does not is not appended again on every launch', () => {
+    // The refresh keeps a stored bookmark the kit has never shipped *anywhere*.
+    // Tested against Lost City's own Forums on the Zanaris entry, which is
+    // exactly the shape a future server-specific link would have: shipped by
+    // one built-in, absent from another's list, and therefore retired rather
+    // than mistaken for the user's and duplicated.
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    servers.find(s => s.id === 'zanaris')!.bookmarks.push({ name: 'Forums', url: 'https://lostcity.rs', icon: 'forums' });
+    writeFileSync(file, JSON.stringify({ version: 4, servers }));
+
+    for (let launch = 0; launch < 3; launch++) {
+        const catalog = new Catalog(file);
+        catalog.load();
+        const zanaris = catalog.get('zanaris')!;
+        assert.deepEqual(zanaris.bookmarks, DEFAULT_SERVERS.find(s => s.id === 'zanaris')!.bookmarks, `launch ${launch + 1}`);
+        assert.equal(new Set(zanaris.bookmarks.map(b => b.url)).size, zanaris.bookmarks.length, 'and never a duplicate row');
+    }
 });

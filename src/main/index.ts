@@ -1,16 +1,20 @@
-import { app, BrowserWindow, dialog, ipcMain, net, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
+import { normaliseName } from '../shared/hiscores';
 import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
+import type { PaneContent } from './paneTree';
 import { Catalog } from './catalog';
 import { AppState } from './appState';
-import { ServerWindows } from './windows';
+import { ServerWindows, type WindowSpec } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
-import { installMenu, type MenuActions } from './menu';
+import { installMenu, type MenuActions, type MenuWindowState } from './menu';
 import { WorldsService } from './worlds/service';
+import { HiscoresService } from './hiscores/service';
 import { ChatService, offlineChat, tlsConnect } from './chat/service';
+import { chatChanges } from './chatPersist';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
@@ -35,6 +39,22 @@ const log = (msg: string): void => console.log(msg);
 // an instance that is on its way out, moving the profile's files and touching
 // the world directory before it goes. exit(0) leaves immediately, which is
 // what an instance owning nothing should do.
+/*
+ * A capture run gets a profile of its own, before either the lock below or the
+ * userData move underneath it can read the default one.
+ *
+ * Two reasons, and the second is the one that made it necessary. A capture is
+ * meant to photograph the app as a new user finds it, and running it against a
+ * real profile shows whatever that user happens to have — their servers.json,
+ * their remembered worlds, their nick. And an ordinary instance already holding
+ * the single-instance lock makes every capture launch exit(0) immediately,
+ * writing no frames and — because electron-vite does not forward the child's
+ * stdout — saying nothing about why. That is a silent no-op with a green exit
+ * code, which is exactly the failure the capture hazard in README.md warns
+ * about wearing a different face.
+ */
+if (process.env.ZANARIS_CAPTURE) app.setPath('userData', join(app.getPath('appData'), 'zanaris-kit-capture'));
+
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
 // ── the userData move, from the old name to this one ──────────────────────
@@ -86,9 +106,16 @@ const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
 let quitting = false;
 const catalog = new Catalog(join(userData, 'servers.json'));
 /** Capture mode keeps its state beside its screenshots, so a test switch never changes what the next real launch opens. */
-const appState = new AppState(join(CAPTURE_DIR ?? userData, 'state.json'));
+// Not `CAPTURE_DIR` any more. Capture mode used to redirect this one file into
+// the screenshots folder so a run could not touch the real profile; it now
+// takes a whole profile of its own, above, which covers servers.json, the
+// single-instance lock and Chromium's own data as well. Keeping both split a
+// capture's state across two places for no remaining reason.
+const appState = new AppState(join(userData, 'state.json'));
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
+/** One hiscores lookup per server, shared the same way, so a name looked up in one window is on the table in the others. */
+const hiscoresServices = new Map<string, HiscoresService>();
 /** One chat connection for the whole app, built at ready because its nick comes out of the profile. */
 let chat: ChatService | null = null;
 
@@ -98,9 +125,43 @@ let update: LatestRelease | null = null;
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
 let singlePlayer: SinglePlayerService | null = null;
 
+/**
+ * The two menu items that belong to the focused window rather than to the app.
+ *
+ * Whether the panel could open at all is main's decision, from the same rules
+ * that would refuse the open — a window whose only tool is chat, with chat
+ * living in the dock, has no legal occupant for the side column — and both the
+ * strip's toggle and the menu item take their enabled state from it rather than
+ * working it out a second time. Whether the window is pinned is asked of the
+ * window itself, for the reason `alwaysOnTop` gives there.
+ *
+ * Both read false with nothing focused, which is what disables the two items:
+ * each acts on the focused window, and there is then no window to act on.
+ */
+function menuWindowState(): MenuWindowState {
+    const focused = focusedServerWindow();
+    return { alwaysOnTop: focused?.alwaysOnTop() ?? false };
+}
+
+/** What the menu was last built with, so the rebuild below only runs when an item would actually change. */
+let menuWindow: MenuWindowState = { alwaysOnTop: false };
+
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
-    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update);
+    menuWindow = menuWindowState();
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow);
+}
+
+/**
+ * One menu, many windows: Toggle Panel and Always on Top both belong to
+ * whichever window has focus, so they are re-examined when focus moves, when a
+ * window closes out from under them, and when chat's home changes app-wide —
+ * the ways either answer moves without the catalog, the warning or the update
+ * doing anything.
+ */
+function syncMenuWindowItems(): void {
+    const now = menuWindowState();
+    if (now.alwaysOnTop !== menuWindow.alwaysOnTop) installAppMenu();
 }
 
 /**
@@ -139,12 +200,59 @@ async function fetchJson(url: string): Promise<unknown> {
     return response.json();
 }
 
+/**
+ * The same request, with the status kept rather than thrown. `fetchJson` above
+ * treats any non-2xx as a failure, which is right for a world list — there is
+ * no such thing as a useful 404 there — and wrong for a hiscores lookup, where
+ * a 404 *is* the answer: two of the three servers say "no such player" with
+ * one, and only the body tells that apart from a proxy having a bad day. So
+ * both halves come back together and the parser, which knows each server's
+ * quirks, decides what they mean.
+ *
+ * A body that is not JSON resolves as undefined rather than throwing, for the
+ * same reason: an HTML error page from something in front of the server
+ * arrives with its own status, and the service has words for that status. A
+ * throw here would replace them with a parser message no player can act on.
+ * Only a transport failure — no route, no name, no answer inside the same 8s
+ * `fetchJson` allows — rejects.
+ */
+async function fetchStatus(url: string): Promise<{ status: number; json: unknown }> {
+    const response = await net.fetch(url, { signal: AbortSignal.timeout(8_000) });
+    const json = await response.json().catch(() => undefined);
+    return { status: response.status, json };
+}
+
 function worldsServiceFor(server: ServerDef): WorldsService | null {
     if (!server.worlds) return null;
     let service = worldsServices.get(server.id);
     if (!service) {
         service = new WorldsService(server.worlds, { fetchJson, probe: probeLatency, now: Date.now });
         worldsServices.set(server.id, service);
+    }
+    return service;
+}
+
+/**
+ * One lookup per server, built on the first window that server opens and kept
+ * for the app's life, exactly as the world list above is. The subscription
+ * fans out to that server's windows and no others: a name looked up in one
+ * Lost City window fills the table in the second one, while a Zanaris window
+ * beside them is not showing this server's hiscores at all. A lookup moves no
+ * chrome, so this is pushState rather than relayout — nothing to lay out
+ * again, only new rows to draw.
+ */
+function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
+    if (!server.hiscores) return null;
+    let service = hiscoresServices.get(server.id);
+    if (!service) {
+        // Seeded with the name last looked up on this server, so the box opens
+        // on it rather than empty — the service holds the name the panel
+        // prefills from, and this is the only moment it can be handed one.
+        service = new HiscoresService(server.hiscores, { fetch: fetchStatus }, appState.hiscoresName(server.id) ?? '');
+        hiscoresServices.set(server.id, service);
+        service.subscribe(() => {
+            for (const sw of serverWindows.values()) if (sw.state().server.id === server.id) sw.pushState();
+        });
     }
     return service;
 }
@@ -189,13 +297,25 @@ const windows = new ServerWindows((spec, onClosed) => {
             byShell.delete(sw.shellContentsId);
             log(`[main] closed ${spec.title}`);
             onClosed();
+            // Focus lands somewhere else, or nowhere, and the menu's panel item
+            // belongs to whoever has it now. Closing the last window on macOS
+            // fires no focus event at all, so it is done here as well.
+            syncMenuWindowItems();
         },
         {
             log,
             confirmClose,
             position: nextPosition(),
             worlds: worldsServiceFor(spec.server),
+            hiscores: hiscoresServiceFor(spec.server),
             chat: chatView,
+            alwaysOnTop: () => appState.alwaysOnTop(),
+            confirmCloseGame: () => confirmCloseGame(spec),
+            rememberedLayout: appState.layout(spec.server.id),
+            rememberLayout: set => {
+                appState.stageLayout(spec.server.id, set);
+                writeStagedStateWhenItSettles();
+            },
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
@@ -258,6 +378,23 @@ function setWarnOnSwitch(value: boolean): void {
     installAppMenu();
 }
 
+/**
+ * Pins the focused window, and remembers the choice for the windows opened
+ * after it. The doing is per window — four windows all claiming the top is four
+ * windows covering whatever each was pinned above — while what is written down
+ * is simply the last thing asked for anywhere, which is what a new window and
+ * the next launch start with.
+ *
+ * The menu is rebuilt from the window rather than from the number just saved:
+ * a window that refused the pin, or was destroyed between the click and here,
+ * must leave the checkbox unticked rather than claiming a state nothing is in.
+ */
+function setAlwaysOnTop(value: boolean): void {
+    focusedServerWindow()?.setAlwaysOnTop(value);
+    appState.setAlwaysOnTop(value);
+    installAppMenu();
+}
+
 const actions: MenuActions = {
     newWindow: () => {
         const focused = focusedServerWindow();
@@ -279,8 +416,28 @@ const actions: MenuActions = {
         loadCatalog();
         log(`[main] server list reloaded: ${catalog.list().length} servers`);
     },
-    togglePanel: () => focusedServerWindow()?.togglePanel(),
     setWarnOnSwitch,
+    setAlwaysOnTop,
+    splitPane: axis => {
+        const sw = focusedServerWindow();
+        if (sw) sw.splitPane(sw.state().panes.find(p => p.focused)?.paneId ?? '', axis);
+    },
+    closePane: () => {
+        const sw = focusedServerWindow();
+        if (sw) void sw.closePane(sw.state().panes.find(p => p.focused)?.paneId ?? '');
+    },
+    evenOut: () => focusedServerWindow()?.evenOutFocused(),
+    newTab: () => focusedServerWindow()?.newTab(),
+    closeTab: () => {
+        const sw = focusedServerWindow();
+        const active = sw?.state().tabs.find(t => t.active);
+        if (sw && active) sw.closeTab(active.id);
+    },
+    selectTabAt: index => {
+        const sw = focusedServerWindow();
+        const tab = sw?.state().tabs[index];
+        if (sw && tab) sw.selectTab(tab.id);
+    },
     // Only https reaches the system browser, as in serverWindow's window-open
     // handler: this opens whatever the menu carries, and the update item's url
     // came off the network.
@@ -297,11 +454,9 @@ const actions: MenuActions = {
 
 ipcMain.handle(IPC.shellGet, (event): ShellState | null => windowFor(event.sender)?.state() ?? null);
 
-ipcMain.handle(IPC.shellTogglePanel, event => windowFor(event.sender)?.togglePanel());
-
 ipcMain.handle(IPC.shellSelectTool, (event, id: unknown) => {
-    if (id !== null && !(TOOL_IDS as readonly string[]).includes(id as string)) return;
-    windowFor(event.sender)?.selectTool(id as ToolId | null);
+    if (!(TOOL_IDS as readonly string[]).includes(id as string)) return;
+    windowFor(event.sender)?.selectTool(id as ToolId);
 });
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
@@ -349,10 +504,239 @@ ipcMain.handle(IPC.worldsSetDetail, async (event, detail: unknown) => {
     await sw.setDetail(detail);
 });
 
+// ── hiscores ──────────────────────────────────────────────────────────────
+//
+// Per server rather than per app, so each of these starts from the window that
+// asked and works out which server that is. A window whose server offers no
+// hiscores has no service and no tool to send these from, so every one of them
+// is a no-op there rather than an error.
+
+/**
+ * The longest name a lookup will carry, deliberately the same number
+ * `appState` refuses to store a remembered name past. Agreeing is the whole
+ * point: a longer name would be looked up and kept in the box for the rest of
+ * the session, then quietly dropped when the profile is read back on the next
+ * launch, and the prefill would go missing with nothing to explain it. The two
+ * caps answer different questions — what may be stored, and what may be asked
+ * of a server — so each states its own number where it enforces it.
+ */
+const HISCORES_NAME_MAX = 30;
+
+// ── the reference pane ────────────────────────────────────────────────────
+
+/**
+ * Every gesture a pane offers: splitting it, closing it, filling it, dragging
+ * its seams, and both of the menus it raises.
+ *
+ * Each belongs to one window, so each finds its window from the sender and goes
+ * no further: a pane belongs to the window it is in, and a drag here has no
+ * business resizing a pane over there.
+ *
+ * A `page` carries a url, which the window checks against its own bookmarks.
+ * There is no address box anywhere in the shell, so a url that is not one of
+ * the server's links can only be a bug or a compromised renderer, and a page
+ * view lives in a session shared with every other window's pages.
+ */
+ipcMain.handle(IPC.paneSplit, (event, paneId: unknown, axis: unknown) => {
+    if (typeof paneId !== 'string' || (axis !== 'x' && axis !== 'y')) return;
+    windowFor(event.sender)?.splitPane(paneId, axis);
+});
+
+ipcMain.handle(IPC.paneClose, async (event, paneId: unknown) => {
+    if (typeof paneId !== 'string') return;
+    await windowFor(event.sender)?.closePane(paneId);
+});
+
+/**
+ * What goes in a pane.
+ *
+ * The window checks a `page` against its own bookmarks, and moves the game
+ * rather than placing a second one; this end only checks the shape, since
+ * anything richer would be the placement rules written a second time in a
+ * second place. What it will not do is trust the shape: `content` arrives from
+ * a renderer, so a value that is not one of the four kinds is dropped rather
+ * than handed on.
+ */
+ipcMain.handle(IPC.paneSetContent, (event, paneId: unknown, content: unknown) => {
+    if (typeof paneId !== 'string' || typeof content !== 'object' || content === null) return;
+    const kind = (content as { kind?: unknown }).kind;
+    if (kind !== 'empty' && kind !== 'game' && kind !== 'page' && kind !== 'tool') return;
+    windowFor(event.sender)?.setPaneContent(paneId, content as PaneContent);
+});
+
+ipcMain.handle(IPC.paneFocus, (event, paneId: unknown) => {
+    if (typeof paneId !== 'string') return;
+    windowFor(event.sender)?.focusPane(paneId);
+});
+
+/**
+ * A seam drag. Clamping is main's, as it was for the pane and the dock before
+ * it: a renderer is not something to take arithmetic on trust from, and the
+ * range depends on a tree the shell deliberately knows nothing about.
+ *
+ * The applied position comes back on every path, including the ones that change
+ * nothing. A grip sitting at a boundary already reached has no way to tell its
+ * own guess was out of range unless it is told, and without the answer it would
+ * keep building the next request on a number main never held.
+ */
+ipcMain.handle(IPC.paneSetSeam, (event, splitId: unknown, index: unknown, px: unknown): number => {
+    const sw = windowFor(event.sender);
+    if (!sw || typeof splitId !== 'string' || typeof index !== 'number' || !Number.isInteger(index)) return 0;
+    if (typeof px !== 'number' || !Number.isFinite(px)) return 0;
+    return sw.setSeam(splitId, index, px);
+});
+
+ipcMain.handle(IPC.paneEvenOut, (event, splitId: unknown) => {
+    if (typeof splitId !== 'string') return;
+    windowFor(event.sender)?.evenOut(splitId);
+});
+
+ipcMain.handle(IPC.paneGo, (event, where: unknown) => {
+    if (where !== 'back' && where !== 'forward' && where !== 'reload') return;
+    windowFor(event.sender)?.pageGo(where);
+});
+
+ipcMain.handle(IPC.paneContextMenu, (event, paneId: unknown, x: unknown, y: unknown) => {
+    if (typeof paneId !== 'string' || typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showPaneMenu(paneId, x, y);
+});
+
+ipcMain.handle(IPC.paneContentMenu, (event, paneId: unknown, x: unknown, y: unknown) => {
+    if (typeof paneId !== 'string' || typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showPaneContentMenu(paneId, x, y);
+});
+
+ipcMain.handle(IPC.paneSwap, (event, a: unknown, b: unknown) => {
+    if (typeof a !== 'string' || typeof b !== 'string') return;
+    windowFor(event.sender)?.swapPanes(a, b);
+});
+
+ipcMain.handle(IPC.paneDragging, (event, on: unknown) => {
+    if (typeof on !== 'boolean') return;
+    windowFor(event.sender)?.setDragging(on);
+});
+
+ipcMain.handle(IPC.tabNew, event => windowFor(event.sender)?.newTab());
+
+ipcMain.handle(IPC.tabClose, (event, tabId: unknown) => {
+    if (typeof tabId !== 'string') return;
+    windowFor(event.sender)?.closeTab(tabId);
+});
+
+ipcMain.handle(IPC.tabSelect, (event, tabId: unknown) => {
+    if (typeof tabId !== 'string') return;
+    windowFor(event.sender)?.selectTab(tabId);
+});
+
+ipcMain.handle(IPC.paneOpenExternal, (event, url: unknown) => {
+    if (typeof url !== 'string') return;
+    const server = windowFor(event.sender)?.state().server;
+    if (!server?.bookmarks.some(b => b.url === url)) {
+        log(`[main] refused to open ${String(url)}: not one of that server's links`);
+        return;
+    }
+    if (!/^https:\/\//.test(url)) {
+        log(`[main] refused to open ${url}: not https`);
+        return;
+    }
+    void shell.openExternal(url);
+});
+
+/**
+ * Awaited rather than fired and forgotten, though nothing is waiting on it
+ * today. Nothing comes back over the wire — every row the panel draws arrives
+ * by pushState — and the panel does not hold this promise at all: it `void`s
+ * the call and gates the Look up button, and the submit behind it, on
+ * `loading` from the pushed view. What the await buys is that the handler's
+ * own promise means what the channel name says, settling when the lookup is
+ * over rather than the moment the request goes out. It is what the handlers
+ * around it that do real work do — `worldsRefresh` hands back
+ * `refreshWorlds()`'s promise, the switch and single-player handlers await
+ * theirs — and one layer down capture mode leans on that settle directly,
+ * awaiting `service.lookup` because it is the only "the lookup has finished"
+ * this feature has to offer.
+ *
+ * A box with no name in it is not a lookup, and the test for that is
+ * `normaliseName`'s own: it keeps only [a-z0-9_], so `   ` and `!!!` alike come
+ * out empty and would otherwise send a request to a nameless URL — a round trip
+ * spent on nothing against a server that rate-limits after a handful of them,
+ * answered with a parse failure the player cannot act on, and `!!!` written
+ * into the profile as the name to open the box on next time. Asking the same
+ * function the URL is built from is what keeps this guard and that URL from
+ * ever disagreeing about what counts as a name.
+ *
+ * Too long is refused rather than shortened, as `appState` refuses rather than
+ * truncates: a name cut to fit is a different, still-plausible player.
+ */
+ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
+    if (typeof name !== 'string') return;
+    const wanted = name.trim();
+    if (normaliseName(wanted) === '' || wanted.length > HISCORES_NAME_MAX) return;
+    const server = windowFor(event.sender)?.state().server;
+    if (!server) return;
+    const service = hiscoresServiceFor(server);
+    if (!service) return;
+    // Remembered before the request rather than after it, and whatever the
+    // server answers: the box keeps the name that was looked up even when
+    // nobody by that name exists, so the profile keeps the same thing the box
+    // does. Waiting for a reply would only mean a name typed just before the
+    // app quits is the one that goes missing.
+    appState.setHiscoresName(server.id, wanted);
+    await service.lookup(wanted);
+});
+
+/**
+ * "Full hiscores" opens the server's own page in the system browser.
+ *
+ * The reference pane could hold it now, but it deliberately does not: the pane
+ * shows the server's own curated links, and a hiscores page is not one of them
+ * — `openPage` refuses any url that is not in `server.bookmarks`, and widening
+ * that to "anything on an allowed host" would give the shell an address box it
+ * does not have. So the page opens outside the kit, and the panel's own label
+ * says where the link goes rather than letting the browser window be how the
+ * user finds out.
+ *
+ * https only, as in `openExternal` above and serverWindow's window-open
+ * handler: `servers.json` is a file the user edits by hand, so this URL is no
+ * more trusted than the update feed's.
+ */
+ipcMain.handle(IPC.hiscoresOpenSite, event => {
+    const site = windowFor(event.sender)?.state().server.hiscores?.site ?? null;
+    if (!site) return;
+    if (!/^https:\/\//.test(site)) {
+        log(`[main] refused to open ${site}: not https`);
+        return;
+    }
+    void shell.openExternal(site);
+});
+
 // ── chat ──────────────────────────────────────────────────────────────────
 //
 // One conversation for the app, so these take no window: any window's panel
 // drives the same connection, and every window is shown the result.
+
+/**
+ * Writes back the two chat fields that follow the connection rather than a
+ * control: the nick the connection ended up with, and the rooms joined by
+ * hand — the two the owner asked to survive a restart. Both are learnt by
+ * watching the view rather than by hooking each command; `chatPersist.ts`
+ * argues why. This is the whole of it in main: which rooms are the user's own
+ * is the service's to say, and nothing here re-derives it.
+ *
+ * What was last written is read back out of `AppState` rather than kept in a
+ * variable beside it. `AppState` holds what `save()` put in the file — only the
+ * dock height is ever staged without one — so there is no second copy of the
+ * truth for a writer somewhere else to leave stale. `setChat` rather than
+ * `stageChat`: a nick or a room changes by hand, once, where the dock height
+ * arrives once a frame for as long as a drag lasts, which is the volume
+ * `stageChat` exists for.
+ */
+function persistChat(view: ChatView): void {
+    const patch = chatChanges(appState.chat(), view);
+    if (patch !== null) appState.setChat(patch);
+}
 
 ipcMain.handle(IPC.chatGet, (): ChatView => chatView());
 
@@ -366,15 +750,111 @@ ipcMain.handle(IPC.chatSelect, (_event, channel: unknown) => {
     chat?.select(channel);
 });
 
-ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
-    if (typeof nick !== 'string' || nick.trim() === '') return;
-    const chosen = nick.trim();
-    // Remembered, so the next launch connects without asking again.
-    appState.setChat({ nick: chosen });
-    chat?.setNick(chosen);
+/**
+ * Whether this room is the user's to close is not asked here: only the service
+ * has both halves of that derivation, so it makes the judgement and refuses
+ * what is not hand-joined. A copy of the test in this handler would be a
+ * second opinion, and the day the two disagreed the close control would be
+ * the one telling the truth.
+ */
+ipcMain.handle(IPC.chatCloseRoom, (_event, channel: unknown) => {
+    if (typeof channel !== 'string') return;
+    chat?.closeRoom(channel);
 });
 
+/**
+ * Deliberately does not write the nick: `persistChat` above does, from the
+ * view, which is what makes the next launch connect without asking again. The
+ * two are not the same value — a 433 renames us, and the server can rename us
+ * again later — and of the two writers only the observer revisits its answer.
+ * Writing here as well would leave the one that never looks again to win any
+ * launch where the rename came after it.
+ */
+ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
+    if (typeof nick !== 'string' || nick.trim() === '') return;
+    chat?.setNick(nick.trim());
+});
+
+/**
+ * Where chat lives, for the whole app: one conversation cannot be at the bottom
+ * of one window and down the side of another without being two chats in the
+ * user's head. What is app-wide is where chat *goes*, though, not whether it is
+ * open — that was always per-window. So only the window whose →| was clicked
+ * rearranges around the move; the rest are told where chat now goes and keep
+ * whatever they had open, or a user with the world list up in another window
+ * would lose it to a click they made over here.
+ *
+ * The window that asked is the one whose shell sent this, which is the shell
+ * the control is drawn in. Moving it changes geometry rather than only what is
+ * drawn, and both of these lay the window out again — which pushes the new
+ * state itself, so nothing here follows them with a pushState.
+ */
+/**
+ * How long the dock's height must sit still before it is written to the
+ * profile. Long enough that a drag — one height per animation frame, so around
+ * sixty a second — writes once when the user lets go, short enough that
+ * nothing plausible happens between the release and the write.
+ */
+const DRAG_SETTLE_MS = 400;
+let stagedStateWrite: NodeJS.Timeout | null = null;
+
+/**
+ * A dragged number applies to the layout on the frame it arrives; only the
+ * *write* waits for the drag to finish. Both drags share this timer, because
+ * both stage into the same file and one save records whichever of them moved.
+ * AppState.save() is a synchronous
+ * rewrite of the whole of state.json, and one per frame is two costs: on
+ * Windows, where userData sits in a roamed and antivirus-scanned
+ * AppData\Roaming, a multi-millisecond write per frame stutters the very drag
+ * it is recording; and every write is a moment in which a kill truncates the
+ * file, which load() then quarantines, taking the user's remembered worlds and
+ * nick with it. (The write is not atomic, which is what makes that window a
+ * real one — that predates the dock and is left alone here.)
+ */
+function writeStagedStateWhenItSettles(): void {
+    if (stagedStateWrite) clearTimeout(stagedStateWrite);
+    stagedStateWrite = setTimeout(() => {
+        stagedStateWrite = null;
+        appState.save();
+    }, DRAG_SETTLE_MS);
+}
+
+/** Writes staged values now rather than on the timer. For the quit, which would otherwise leave the last drag of a session unremembered. */
+function flushStagedState(): void {
+    if (!stagedStateWrite) return;
+    clearTimeout(stagedStateWrite);
+    stagedStateWrite = null;
+    appState.save();
+}
+
 // ── single player ─────────────────────────────────────────────────────────
+
+/**
+ * Ask before closing the game pane, which destroys the view and disconnects the
+ * player.
+ *
+ * The same shape as `confirmSwitch`: a sheet on the window rather than an
+ * app-modal box, so other windows keep running, and the same "don't ask again"
+ * the switch warning uses — it is the same preference, since it answers the same
+ * question about the same cost. Capture mode never arrives here.
+ */
+async function confirmCloseGame(spec: WindowSpec): Promise<boolean> {
+    const sw = serverWindows.get(spec.id);
+    if (!sw || quitting) return true;
+    if (!appState.warnOnSwitch()) return true;
+    const { response, checkboxChecked } = await dialog.showMessageBox(sw.window, {
+        type: 'question',
+        buttons: ['Close', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        message: 'Close the game?',
+        detail: `Zanaris Kit disconnects from ${spec.server.name} straight away, whether or not you are logged in. If you are in game, that logs you out. Opening the game again is a fresh login.`,
+        checkboxLabel: "Don't ask again",
+        checkboxChecked: false
+    });
+    if (checkboxChecked) setWarnOnSwitch(false);
+    return response === 0;
+}
 
 async function confirmCheats(sw: ServerWindow, on: boolean): Promise<boolean> {
     const { response } = await dialog.showMessageBox(sw.window, {
@@ -420,6 +900,15 @@ ipcMain.handle(IPC.singlePlayerShowLog, async () => {
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
+/** `save` wants a capture that either produces an image or throws; a pane with nothing in it produces neither. */
+const shotOfThePage =
+    (sw: ServerWindow) =>
+    async (): Promise<NativeImage> => {
+        const image = await sw.capturePage();
+        if (!image) throw new Error('the pane is not showing a page');
+        return image;
+    };
+
 /**
  * Open every catalog server, wait for each game to load (or fail over to the
  * offline page), let the clients draw, then write each window's shell and game
@@ -427,7 +916,9 @@ const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(re
  * (the layout engine), and open a second instance of that server (slots and
  * partitions). A window's own webContents holds nothing, so the views are
  * captured one by one, and a view with no frame yet is skipped rather than
- * allowed to abort the run.
+ * allowed to abort the run. Last comes the reference pane: the Guides list,
+ * two pages open beside the game, and the first of them brought back to prove
+ * a tab switch did not reload it.
  */
 async function captureAndExit(dir: string): Promise<void> {
     mkdirSync(dir, { recursive: true });
@@ -462,6 +953,14 @@ async function captureAndExit(dir: string): Promise<void> {
         await save(`${name}-shell`, () => sw.captureShell());
         await save(`${name}-game`, () => sw.captureGame());
     };
+    /**
+     * Put a tool in a pane the way the rail does. Idempotent by construction —
+     * `selectTool` focuses a tool already placed rather than opening a second
+     * copy — so this needs none of the toggle-avoidance the panel version did.
+     */
+    const showTool = (sw: ServerWindow, tool: ToolId): void => sw.selectTool(tool);
+    /** The focused pane, which is what every split and close below acts on. */
+    const focused = (sw: ServerWindow): string => sw.state().panes.find(p => p.focused)?.paneId ?? '';
     const loaded = (sw: ServerWindow): Promise<'loaded' | 'failed' | 'timeout'> =>
         Promise.race([sw.whenGameLoaded(), wait(loadTimeoutMs).then((): 'timeout' => 'timeout')]);
 
@@ -488,10 +987,32 @@ async function captureAndExit(dir: string): Promise<void> {
         // The layout and slot checks use a window whose game actually loaded, if any did.
         const first = opened[results.indexOf('loaded')] ?? opened[0];
         if (!first) throw new Error('the server list is empty');
-        first.togglePanel();
+        // A split, so at least one capture shows more than one pane. Splitting
+        // the game's pane is the interesting case, since that is the one the
+        // old layout refused to do at all.
+        first.splitPane(focused(first), 'x');
         await wait(500);
-        log(`[capture] panel open on ${first.state().title}: mode ${first.state().mode}`);
-        await shoot(`${first.state().server.id}-panel`, first);
+        const split = first.state();
+        log(`[capture] ${split.title}: ${split.panes.length} pane(s), ${split.seams.length} seam(s), focus on ${split.panes.find(p => p.focused)?.content.kind}`);
+        await shoot(`${first.state().server.id}-split`, first);
+
+        // And swapped: what dropping a dragged header on another pane does.
+        // Driven on the window rather than through the pointer, as everything
+        // else here is — there is no renderer to drag from. It evidences the
+        // tree operation and the views following it; the gesture that reaches
+        // it is grip-less and cannot be shot.
+        const pair = first.state().panes;
+        const a = pair[0];
+        const b = pair[1];
+        if (a && b) {
+            first.swapPanes(a.paneId, b.paneId);
+            await wait(500);
+            const swapped = first.state().panes;
+            log(
+                `[capture] ${first.state().title}: swapped — ${a.paneId}/${b.paneId} held ${a.content.kind}/${b.content.kind}, now ${swapped.find(p => p.paneId === a.paneId)?.content.kind}/${swapped.find(p => p.paneId === b.paneId)?.content.kind}`
+            );
+            await shoot(`${first.state().server.id}-swapped`, first);
+        }
 
         // The Worlds tool: open it on a loaded window that has worlds, wait for
         // the list, capture it, switch to another world, capture that. The
@@ -503,22 +1024,154 @@ async function captureAndExit(dir: string): Promise<void> {
             hopper.window.moveTop();
             hopper.focus();
             await wait(500);
-            hopper.selectTool('worlds');
+            showTool(hopper, 'worlds');
             const until = Date.now() + 20_000;
             while (Date.now() < until && hopper.state().worlds?.status === 'loading') await wait(250);
             await wait(4_000);
             const view = hopper.state().worlds;
             log(`[capture] ${id} worlds: ${view?.status} ${view?.worlds.map(w => `W${w.id}=${w.players ?? '?'}p/${w.latencyMs ?? '?'}ms`).join(' ')}${view?.error ? ` error: ${view.error}` : ''}`);
             await shoot(`${id}-worlds`, hopper);
+
+            // Chat beside the still-open Worlds pane: two tools and the game
+            // laid out at once, which is the arrangement the whole tree exists
+            // to allow and which the fixed column could not express at all.
+            // `selectTool` splits the focused pane when it holds the game, so
+            // Worlds stays exactly as the shot above left it either way.
+            hopper.selectTool('chat');
+            await wait(500);
+            // Maximised, which is now simply a bigger rect for the tree to
+            // divide rather than the state that forced the old ladder into
+            // 'push' on both axes. It is still the shot worth having: every
+            // pane's share is a fraction, so maximising is what proves they
+            // scale together instead of one of them absorbing the difference.
+            // Waited out rather than assumed:
+            // macOS's zoom is an animated, OS-driven transition, and
+            // proceeding while it is still in flight left a genuinely racy
+            // run — one in several — with a stray maximize/resize event
+            // landing after `second` opened a few steps below, and this
+            // shot's PNG showed it: a brand new window neither this function
+            // nor `reduce` ever touched came up with its own dock open.
+            // isMaximized() polled to true is what "settled" actually means
+            // here; a fixed wait is a guess at how long that takes.
+            hopper.window.maximize();
+            const maximised = Date.now() + 5_000;
+            while (Date.now() < maximised && !hopper.window.isMaximized()) await wait(100);
+            await wait(500);
+            const maximisedState = hopper.state();
+            log(`[capture] ${maximisedState.title}: maximised with ${maximisedState.panes.length} panes — ${maximisedState.panes.map(p => `${p.content.kind} ${p.rect.width}x${p.rect.height}`).join(', ')}`);
+            await shoot(`${id}-maximised`, hopper);
+            // Undone immediately, and waited out the same way: the shots
+            // below must start from a genuinely restored window, not one
+            // mid-animation back down, or the same race runs again on
+            // whatever opens next.
+            hopper.window.unmaximize();
+            const restored = Date.now() + 5_000;
+            while (Date.now() < restored && hopper.window.isMaximized()) await wait(100);
+            hopper.selectTool('chat');
+            await wait(500);
+
             const target = view?.worlds.find(w => w.id !== view.current);
             if (target) {
                 const result = await Promise.race([hopper.switchWorld(target.id), wait(loadTimeoutMs).then((): 'timeout' => 'timeout')]);
                 log(`[capture] ${id} switched to world ${target.id}: ${result}`);
                 await wait(Math.min(settleMs, 8_000));
                 await shoot(`${id}-w${target.id}`, hopper);
-                log(`[capture] tab now reads "${hopper.state().tabs[0]?.title}", title "${hopper.window.getTitle()}"`);
+                log(`[capture] the game pane's header now reads "${hopper.state().gameLabel}", title "${hopper.window.getTitle()}"`);
                 log(`[capture] state file: ${existsSync(appState.file) ? readFileSync(appState.file, 'utf8').replace(/\s+/g, ' ') : '(none)'}`);
             }
+
+            // A split down rather than across: the one arrangement a reader
+            // cannot infer from the shots above, and the axis the fixed column
+            // layout had no way to express at all. Fronted first, as the Worlds
+            // tool is above: the pixel font is only fetched once the shell
+            // paints, and font-display: block leaves labels blank until it lands.
+            hopper.window.moveTop();
+            hopper.focus();
+            await wait(500);
+            hopper.splitPane(focused(hopper), 'y');
+            await wait(500);
+            const stacked = hopper.state();
+            log(`[capture] ${stacked.title}: split down — ${stacked.seams.map(seam => `${seam.axis} seam at ${seam.size}px of ${seam.gross}`).join(', ')}`);
+            await shoot(`${stacked.server.id}-split-down`, hopper);
+        } else {
+            log('[capture] split-down skipped: no window had worlds open');
+        }
+
+        // The Hiscores tool: unlike chat below, a lookup needs no nick, only a
+        // public GET, so this is the first capture of a working panel on this
+        // branch. One lookup per server and never more — Lost City rate-limits
+        // after a handful of requests inside a minute, and a second round trip
+        // here would spend budget this run has no use for. `granny_grunt` and
+        // `knight` are known to resolve on Lost City and Labs; Zanaris gets a
+        // plausible guess, and if it comes back notFound that panel is
+        // captured and logged exactly as honestly as a hit would be, rather
+        // than swapped for a friendlier name.
+        const HISCORES_LOOKUP: Record<string, string> = { lostcity: 'granny_grunt', zanaris: 'zezima', lostcitylabs: 'knight' };
+        for (const sw of opened) {
+            const server = sw.state().server;
+            if (!server.hiscores) continue;
+            const name = HISCORES_LOOKUP[server.id];
+            const service = name && hiscoresServiceFor(server);
+            if (!name || !service) continue;
+            // Fronted before the tool opens, as the Worlds tool is above: the
+            // panel's pixel font is only fetched once the shell paints, and
+            // until it arrives font-display: block leaves every label blank.
+            sw.window.moveTop();
+            sw.focus();
+            await wait(500);
+            showTool(sw, 'hiscores');
+            // Driven directly on the service, as switchWorld is above, rather
+            // than over IPC — there is no renderer here to send the request.
+            // The promise settles only once the lookup has left 'loading', so
+            // there is nothing here to poll for.
+            const view = await service.lookup(name);
+            await wait(500);
+            log(`[capture] ${server.id} hiscores: ${view.status} "${name}" ${view.skills.length} row(s)${view.error ? ` error: ${view.error}` : ''}`);
+            await shoot(`${server.id}-hiscores`, sw);
+        }
+
+        // The chat dock: this profile has no nick — see the chat block in
+        // app.whenReady, above — so chat never opens a socket here, and every
+        // shot below lands on the nick prompt rather than a conversation.
+        // That is the correct thing to capture, not a bug to paper over: log
+        // it plainly so nobody later mistakes an offline dock for a broken one,
+        // and never fake a connection just to get a prettier screenshot.
+        log('[capture] chat: no nick in this profile, so the dock captures the nick prompt, not a conversation');
+
+        // moveChat('bottom') rather than the rail's selectTool('chat'): it
+        // lands on "dock open, default height, panel closed" unconditionally,
+        // whatever `first` currently has open — including home already 'side'
+        // A seam dragged without a pointer: the same clamp `paneSetSeam`
+        // applies, driven directly the way this whole function drives
+        // ServerWindow rather than over IPC — there is no renderer here to send
+        // the request. Proves the drag path end to end: the conversion from
+        // pixels, the clamp against both neighbours' minimums, and the window
+        // laying out around the answer.
+        //
+        // Fronted first, as the Worlds tool is: the pixel font is only fetched
+        // once the shell paints, and font-display: block leaves labels blank
+        // until it lands.
+        first.window.moveTop();
+        first.focus();
+        await wait(500);
+        const seam = first.state().seams[0];
+        if (seam) {
+            const asked = Math.round(seam.gross * 0.25);
+            const applied = first.setSeam(seam.splitId, seam.index, asked);
+            await wait(500);
+            log(`[capture] ${first.state().title}: seam asked for ${asked}px of ${seam.gross}, got ${applied}${applied === asked ? '' : ' (clamped)'}`);
+            await shoot(`${first.state().server.id}-seam-dragged`, first);
+
+            // And closed again: the sibling takes the space back and the split
+            // collapses, which is the half of the tree's behaviour no shot
+            // above evidences.
+            await first.closePane(focused(first));
+            await wait(500);
+            const closed = first.state();
+            log(`[capture] ${closed.title}: after close — ${closed.panes.length} pane(s), ${closed.seams.length} seam(s)`);
+            await shoot(`${closed.server.id}-pane-closed`, first);
+        } else {
+            log('[capture] seam drag skipped: the window had no split to drag');
         }
 
         // The Single player tool: the world is up by the time the game loaded,
@@ -531,10 +1184,93 @@ async function captureAndExit(dir: string): Promise<void> {
             single.window.moveTop();
             single.focus();
             await wait(500);
-            single.selectTool('singleplayer');
+            showTool(single, 'singleplayer');
             await wait(500);
             await shoot('singleplayer-tool', single);
             log(`[capture] singleplayer: ${single.state().singlePlayer?.status} on port ${single.state().singlePlayer?.port}`);
+        }
+
+        // The reference pane. Last, because it is the one thing here that
+        // changes the window's width as well as its chrome, and every shot
+        // above is of a window whose game rect the pane has not touched.
+        //
+        // Three shots, because three separate claims are being made: the
+        // Guides list is a menu of this server's own links; a page renders
+        // beside the game rather than in front of it; and switching tabs does
+        // not reload — the last shot is the first page again, and its view was
+        // never destroyed, so what it photographs is the page as it was left.
+        // The reload claim is the pane's whole reason to exist and nothing
+        // else here can evidence it.
+        // Deliberately not `first` or `hopper` when another window will do.
+        // Those two have been split several times by the passes above, and a
+        // tree that deep in a 760px window puts every pane on its 120px floor —
+        // which is honest about what the layout does, and useless as a
+        // photograph of a page. A window that has not been split yet shows the
+        // launcher and two pages at a size someone can actually read.
+        const readers = opened.filter((sw, i) => results[i] === 'loaded' && sw.state().server.bookmarks.length > 0);
+        const reader = readers.find(sw => sw !== first && sw !== hopper) ?? readers[0];
+        if (reader) {
+            const id = reader.state().server.id;
+            reader.window.moveTop();
+            reader.focus();
+            await wait(500);
+
+            // The launcher, which is what an empty pane shows and what replaced
+            // the Guides panel: split a pane and photograph what the new half
+            // offers before anything is chosen.
+            reader.splitPane(focused(reader), 'x');
+            await wait(500);
+            // The list the launcher actually draws rather than the catalog it is
+            // built from: what a pane may become is main's answer, and the game
+            // row is the half of it the catalog cannot show — it reads "Move
+            // game here" while the game is in some other pane of this window.
+            const offered = reader.state().panes.find(pane => pane.content.kind === 'empty')?.contents;
+            log(`[capture] ${id} launcher offers: ${offered?.map(item => item.label).join(' · ') ?? 'nothing — no empty pane'}`);
+            await shoot(`${id}-launcher`, reader);
+
+            // Two pages in two panes, side by side — which is the arrangement
+            // the single reference pane could not hold at all. Driven on the
+            // window rather than over IPC, as everything else here is: there is
+            // no renderer to send the request from.
+            const links = reader.state().server.bookmarks.slice(0, 2);
+            const firstLink = links[0];
+            if (firstLink) {
+                reader.setPaneContent(focused(reader), { kind: 'page', bookmark: firstLink.url });
+                await wait(Math.min(settleMs, 8_000));
+            }
+            const secondLink = links[1];
+            if (secondLink) {
+                reader.splitPane(focused(reader), 'y');
+                reader.setPaneContent(focused(reader), { kind: 'page', bookmark: secondLink.url });
+                await wait(Math.min(settleMs, 8_000));
+            }
+            const pages = reader.state().panes.filter(p => p.content.kind === 'page');
+            log(`[capture] ${id} pages: ${pages.map(p => `"${p.page?.title ?? 'nothing'}" (${p.page?.url ?? '—'}) at ${p.rect.width}x${p.rect.height}${p.page?.loading ? ', loading' : ''}`).join(' · ')}`);
+            await shoot(`${id}-pages`, reader);
+            // A page's own view, which neither half of shoot() reaches: the
+            // shell leaves a page pane's rect empty and captureGame is the game.
+            // Without this the run could only claim a page loaded, never show one.
+            await save(`${id}-page`, shotOfThePage(reader));
+
+            // Focus back to the first page and shoot again. Its view was never
+            // destroyed — nothing here creates or destroys one except a change
+            // in which panes hold pages — so what this photographs is the page
+            // exactly as it was left. That no-reload claim is the pane system's
+            // whole reason to exist and nothing else in this run evidences it.
+            const firstPage = pages[0];
+            if (firstPage) {
+                reader.focusPane(firstPage.paneId);
+                // Generous, and not only for the page: capturePage hands back
+                // the last composited frame, and a view that has just been
+                // shown has not composited one yet.
+                await wait(Math.min(settleMs, 8_000));
+                const shown = reader.state().panes.find(p => p.paneId === firstPage.paneId)?.page;
+                log(`[capture] ${id} focused back on ${firstPage.paneId}: "${shown?.title ?? 'nothing'}" (${shown?.url ?? '—'}), ${shown?.loading ? 'still loading' : 'loaded'}`);
+                await shoot(`${id}-pages-back`, reader);
+                await save(`${id}-page-back`, shotOfThePage(reader));
+            }
+        } else {
+            log('[capture] pages skipped: no loaded window offers any links');
         }
 
         const second = openServer(first.state().server);
@@ -554,6 +1290,12 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // The reference pages' shared session. They are somebody else's pages shown
+    // inside the kit, so they get the web and nothing else: no file the user
+    // did not ask for, and none of the permissions a browser would prompt over.
+    const pages = session.fromPartition('persist:pages');
+    pages.on('will-download', event => event.preventDefault());
+    pages.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     // Offline until a nick is set, which is why a capture run — whose profile has
     // none — never opens a socket.
     chat = new ChatService(appState.chat(), {
@@ -564,8 +1306,15 @@ app.whenReady().then(async () => {
             return () => clearTimeout(timer);
         }
     });
-    chat.subscribe(() => {
+    chat.subscribe(view => {
+        // The push first, and not because anything it reads depends on the
+        // write: nothing in a shell state comes from the fields persistChat
+        // touches. It is that this runs inside the socket's data handler, where
+        // a failed save() is an uncaught exception in main rather than a
+        // rejected IPC promise — so the panel is made live before anything can
+        // throw.
         for (const sw of serverWindows.values()) sw.pushState();
+        persistChat(view);
     });
     loadCatalog();
     singlePlayer = new SinglePlayerService(
@@ -615,12 +1364,17 @@ app.on('second-instance', () => {
     window.focus();
 });
 
-app.on('browser-window-focus', () => reloadCatalogIfChanged());
+app.on('browser-window-focus', () => {
+    reloadCatalogIfChanged();
+    syncMenuWindowItems();
+});
 
 /** Set once the world has been stopped for the quit, so the second quit goes through. */
 let worldStoppedForQuit = false;
 app.on('before-quit', event => {
     quitting = true;
+    // A height dragged and immediately quit on is still on the settle timer.
+    flushStagedState();
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
     // The world writes the player's saves as it shuts down, so the quit waits for
