@@ -346,10 +346,18 @@ invisible. Nothing reloads — it is the same hiding a tab switch does.
 Right-clicking a pane offers Split Right, Split Down, Even Out and Close, and
 focuses that pane first so the menu acts on what was clicked. A split that
 could not be drawn — either half under the 120x80 floor — is offered greyed
-rather than offered and then refused. The same four are in the View menu with
+rather than offered and then refused, and so is Close on a tab's only pane when
+it is already empty, since closing it would empty an empty pane. The same four are in the View menu with
 Cmd/Ctrl+D, Cmd/Ctrl+Shift+D, Cmd/Ctrl+W and Cmd/Ctrl+Alt+=; tabs are
 Cmd/Ctrl+T, Cmd/Ctrl+Shift+W and Cmd/Ctrl+1 to 9. **Cmd/Ctrl+W closes a pane,
 not the window** — the window goes when its last tab does.
+
+Each tab carries its close inside it and is named for its **first pane**, the
+top-left one, in the words that pane's header uses — a link's curated name, a
+tool's name, "Game" or "Empty" — so clicking between panes never renames the
+tab under the pointer. Closing a tab that holds the game asks first, as closing
+the game's own pane does: either one destroys the game view and logs the player
+out, rather than leaving a live game in the world with nowhere to show it.
 
 A fresh pane is empty and shows a launcher: this server's links, the tools this
 window offers, and the game. That list is why there is no longer a Guides tool —
@@ -358,13 +366,14 @@ opens somewhere else and puts the page somewhere else again.
 
 **Every pane has a header**, 32px of stone across its top, and the native views
 are inset below it so it costs that pane's height rather than the window's. It
-carries three things and refuses a fourth. The pane's **name** comes first — a
+carries four things and refuses a fifth. The pane's **name** comes first — a
 link's curated name from the catalog rather than the page's own `<title>`, which
 changes as you click through a wiki and would make the pane's identity move
 under it; then the tool's name, or "Game", or "Empty". Then **that pane's own
 controls**, which only a page has: back, forward, reload. Then a **dropdown**
 that changes what the pane holds, offering the same list the launcher does.
-Nothing else gets controls: Hiscores' name box, Worlds' detail switch and chat's
+Last, a **close**, the same act as the right-click menu's, which asks first on
+the game's pane. Nothing else gets controls: Hiscores' name box, Worlds' detail switch and chat's
 Send stay in the pane body, because they are the pane's *work* rather than its
 identity, and a header that collected them would become a second body.
 
