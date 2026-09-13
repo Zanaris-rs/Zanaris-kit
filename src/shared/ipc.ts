@@ -19,6 +19,8 @@ export const IPC = {
     paneEvenOut: 'zanaris:pane-even-out',
     paneGo: 'zanaris:pane-go',
     paneContextMenu: 'zanaris:pane-context-menu',
+    paneSwap: 'zanaris:pane-swap',
+    paneDragging: 'zanaris:pane-dragging',
     paneContentMenu: 'zanaris:pane-content-menu',
     tabNew: 'zanaris:tab-new',
     tabClose: 'zanaris:tab-close',
@@ -166,6 +168,19 @@ export interface ZanarisApi {
          */
         setContent(paneId: string, content: PaneContent): Promise<void>;
         focus(paneId: string): Promise<void>;
+        /**
+         * Trades what two panes hold. What dropping a dragged header on another
+         * pane does; the tree's shape does not change, so nothing on screen
+         * moves except the contents of those two.
+         */
+        swap(a: string, b: string): Promise<void>;
+        /**
+         * Brackets a header drag. Main hides every native view while it is on,
+         * because the shell cannot draw a drop target over a game or a page —
+         * those views sit above it. Nothing reloads: this is the same hiding a
+         * tab switch does.
+         */
+        setDragging(on: boolean): Promise<void>;
         /**
          * Drags a seam to a pixel position. Resolves with the position main
          * actually applied, after its own clamp — including when the request

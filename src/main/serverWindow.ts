@@ -142,6 +142,10 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Puts something in a pane. A page must be one of this server's links; asking for the game moves it out of whatever pane held it. */
     setPaneContent(paneId: string, content: PaneContent): void;
     focusPane(paneId: string): void;
+    /** Trades what two panes hold, for a header dragged onto another pane. */
+    swapPanes(a: string, b: string): void;
+    /** Hides every native view for the length of a drag, so the shell can draw over their rects. */
+    setDragging(on: boolean): void;
     /** Raises the pane menu at a point in the window. */
     showPaneMenu(paneId: string, x: number, y: number): void;
     /** Raises a pane header's dropdown — everything that pane could become — at a point in the window. */
@@ -914,6 +918,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         closePane,
         setPaneContent,
         focusPane: paneId => host.focus(paneId),
+        swapPanes: (a, b) => host.swap(a, b),
+        setDragging: on => host.setDragging(on),
         showPaneMenu,
         showPaneContentMenu,
         setSeam: (splitId, index, px) => host.dragSeam(splitId, index, px),

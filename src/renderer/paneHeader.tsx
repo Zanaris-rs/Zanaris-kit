@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, PointerEvent, ReactNode } from 'react';
 import type { PaneView } from '../shared/panes';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { Caret, NavArrow, Reload } from './icons';
@@ -64,7 +64,18 @@ function Step({ label, on, disabled, children }: { label: string; on: () => void
     );
 }
 
-export default function PaneHeader({ pane, readout }: { pane: PaneView; readout?: ReactNode }): ReactNode {
+/**
+ * The pointer handlers that make this strip a drag handle. Shell's, because
+ * only Shell knows every pane's rect and so where a drop would land.
+ */
+export interface Grab {
+    onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+    onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
+    onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
+    onPointerCancel: (event: PointerEvent<HTMLDivElement>) => void;
+}
+
+export default function PaneHeader({ pane, readout, grab }: { pane: PaneView; readout?: ReactNode; grab?: Grab }): ReactNode {
     const go = window.zanaris.panes.go;
     /*
      * The menu opens under the button that asked for it. `getBoundingClientRect`
@@ -78,7 +89,14 @@ export default function PaneHeader({ pane, readout }: { pane: PaneView; readout?
     };
 
     return (
-        <div style={STRIP} className="tile flex shrink-0 items-center gap-[5px] px-1.5">
+        /*
+         * The whole strip is the handle, not just the name: a browser tab is
+         * grabbed anywhere along itself, and the spacer between the name and
+         * the caret is the easiest part of a narrow header to hit. The handlers
+         * ignore a press that began on a button, so the nav arrows and the
+         * caret still click rather than starting a drag nobody asked for.
+         */
+        <div style={{ ...STRIP, cursor: grab ? 'grab' : undefined }} {...grab} className="tile flex shrink-0 items-center gap-[5px] px-1.5">
             <span title={pane.page?.url ?? pane.name} style={NAME} className="shrink truncate font-pixel text-[15px] text-gold">
                 {pane.name}
             </span>

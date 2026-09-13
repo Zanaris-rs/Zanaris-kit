@@ -366,3 +366,24 @@ export function parentSplitOf(node: PaneNode, paneId: string): string | null {
     }
     return null;
 }
+
+/**
+ * Trades what two panes hold, leaving the tree's shape untouched.
+ *
+ * What a drag between panes does. A swap rather than a lift-and-reinsert
+ * because the panes keep their sizes and their positions and only the contents
+ * move — which is what "drag this into that slot" means, and what makes the
+ * result predictable: nothing else on screen shifts to accommodate it.
+ *
+ * Naming one pane twice, or naming one that is not in this tree, returns the
+ * tree itself rather than a copy. That identity is load-bearing upstream: the
+ * host compares against it to decide whether anything has to be laid out and
+ * pushed at all.
+ */
+export function swapPanes(node: PaneNode, a: string, b: string): PaneNode {
+    if (a === b) return node;
+    const left = contentOf(node, a);
+    const right = contentOf(node, b);
+    if (!left || !right) return node;
+    return setContent(setContent(node, a, right), b, left);
+}

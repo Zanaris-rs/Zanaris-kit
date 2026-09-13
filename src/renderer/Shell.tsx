@@ -1,10 +1,11 @@
-import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState, ToolId } from '../shared/ipc';
 import type { PaneView, SeamView } from '../shared/panes';
+import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { Bars, Chat as ChatIcon, CloseRoom, Globe, Hearth, Plus } from './icons';
 import Grip from './grip';
 import Launcher from './Launcher';
-import PaneHeader from './paneHeader';
+import PaneHeader, { type Grab } from './paneHeader';
 import Tab from './tab';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
@@ -159,8 +160,33 @@ function Seam({ seam }: { seam: SeamView }): ReactNode {
  * The window no longer has four fixed regions to arrange, so this no longer
  * arranges any. It renders a list, and the list is main's.
  */
+/** The pane a point falls in, or null for the seams and the chrome between them. */
+function paneAt(panes: PaneView[], x: number, y: number): string | null {
+    return panes.find(p => x >= p.rect.x && x < p.rect.x + p.rect.width && y >= p.rect.y && y < p.rect.y + p.rect.height)?.paneId ?? null;
+}
+
 export default function Shell(): ReactNode {
     const [state, setState] = useState<ShellState | null>(null);
+    /**
+     * The header drag. `held` is the pointer's, and survives a re-render; `drag`
+     * is what the overlay reads, and causes them.
+     *
+     * Main hides every native view between the two IPC calls below, because the
+     * shell cannot draw over a game or a page — those views sit above it, and a
+     * drop target painted under either would be invisible. So the panes go blank
+     * for the length of the gesture and each says its own name instead, which is
+     * also what makes an empty-looking game pane legible while it is moving.
+     */
+    const held = useRef<{ from: string; pointerId: number } | null>(null);
+    const [drag, setDrag] = useState<{ from: string; over: string | null } | null>(null);
+
+    /* A drag interrupted by an unmount would otherwise leave every view hidden. */
+    useEffect(
+        () => () => {
+            if (held.current) void window.zanaris.panes.setDragging(false);
+        },
+        []
+    );
 
     useEffect(() => {
         let alive = true;
@@ -173,6 +199,35 @@ export default function Shell(): ReactNode {
             unsubscribe();
         };
     }, []);
+
+    const endDrag = (event: PointerEvent<HTMLDivElement>, drop: boolean): void => {
+        const grabbed = held.current;
+        if (!grabbed || event.pointerId !== grabbed.pointerId) return;
+        held.current = null;
+        const over = drop && state ? paneAt(state.panes, event.clientX, event.clientY) : null;
+        setDrag(null);
+        void window.zanaris.panes.setDragging(false);
+        if (over && over !== grabbed.from) void window.zanaris.panes.swap(grabbed.from, over);
+    };
+
+    const grabFor = (paneId: string): Grab => ({
+        onPointerDown: event => {
+            // A press that began on a button is that button's: the nav arrows
+            // and the caret must still click rather than start a drag.
+            if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            held.current = { from: paneId, pointerId: event.pointerId };
+            setDrag({ from: paneId, over: paneId });
+            void window.zanaris.panes.setDragging(true);
+        },
+        onPointerMove: event => {
+            const grabbed = held.current;
+            if (!grabbed || event.pointerId !== grabbed.pointerId || !state) return;
+            setDrag({ from: grabbed.from, over: paneAt(state.panes, event.clientX, event.clientY) });
+        },
+        onPointerUp: event => endDrag(event, true),
+        onPointerCancel: event => endDrag(event, false)
+    });
 
     if (!state) return <div className="h-full bg-ink" />;
 
@@ -264,8 +319,35 @@ export default function Shell(): ReactNode {
                          * game or page pane the shell draws, and the only place
                          * either can say what it is.
                          */}
-                        <PaneHeader pane={pane} readout={pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined} />
+                        <PaneHeader
+                            pane={pane}
+                            readout={pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined}
+                            grab={grabFor(pane.paneId)}
+                        />
                         <PaneBody pane={pane} state={state} />
+                        {/*
+                         * Over the body only, so the header stays readable and
+                         * grabbable under the pointer that is dragging it. The
+                         * pane being carried is dimmed; the one that would take
+                         * it is lit. Everything says its name, because with the
+                         * native views hidden a game or page pane has nothing
+                         * else to identify it by.
+                         */}
+                        {drag && (
+                            <div
+                                aria-hidden="true"
+                                className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center font-pixel text-[15px] ${
+                                    drag.from === pane.paneId
+                                        ? 'text-faint opacity-60'
+                                        : drag.over === pane.paneId
+                                          ? 'border-2 border-gold bg-stone-lit/40 text-gold'
+                                          : 'text-dim'
+                                }`}
+                                style={{ top: PANE_HEADER_HEIGHT }}
+                            >
+                                {pane.name}
+                            </div>
+                        )}
                     </div>
                 </Fragment>
             ))}

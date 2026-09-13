@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clearGame, closePane, contentOf, evenOut, layoutTree, leaf, paneIds, parentSplitOf, seamPixels, setContent, setSeam, setFraction, split, splitPane } from './paneTree.ts';
+import { clearGame, closePane, contentOf, evenOut, layoutTree, leaf, paneIds, parentSplitOf, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -216,4 +216,22 @@ test('clearing the game reaches a nested pane', () => {
 test('clearing a tree with no game in it changes nothing, by identity', () => {
     const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
     assert.equal(clearGame(tree), tree, 'the same object, so a caller can tell nothing moved');
+});
+
+test('two panes swap what they hold, leaving the tree exactly as it was', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('c', { kind: 'page', bookmark: 'u' })], [0.3, 0.7])], [0.4, 0.6]);
+    const next = swapPanes(tree, 'a', 'c');
+    assert.deepEqual(contentOf(next, 'a'), { kind: 'page', bookmark: 'u' });
+    assert.deepEqual(contentOf(next, 'c'), { kind: 'game' });
+    assert.deepEqual(contentOf(next, 'b'), { kind: 'empty' }, 'a bystander is untouched');
+    // The shape is the whole promise of a swap: the panes keep their sizes and
+    // their positions, and only what is inside them moves.
+    assert.deepEqual(paneIds(next), paneIds(tree));
+    assert.deepEqual(next.kind === 'split' && next.fractions, [0.4, 0.6]);
+});
+
+test('a swap that names one pane twice, or a pane that is not there, changes nothing', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    assert.equal(swapPanes(tree, 'a', 'a'), tree, 'the same object, so nothing downstream repaints');
+    assert.equal(swapPanes(tree, 'a', 'gone'), tree);
 });

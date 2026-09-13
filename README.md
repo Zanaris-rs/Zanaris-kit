@@ -334,6 +334,15 @@ moving exactly the two panes either side of it. Repeated splitting halves each
 time, as it does in iTerm and tmux, and **Even Out** in the View menu is what
 answers "make these the same size".
 
+Panes are rearranged by dragging one header onto another: the two trade what
+they hold, and nothing else moves — the tree's shape, every pane's size and
+every seam stay exactly where they were. The header is the handle because it is
+the only part of a game or a page pane the shell can see; those are native
+views stacked above it and they take every pointer event that lands on them.
+For the length of the drag the views are hidden and each pane says its own
+name, for the same reason: a drop target painted under a game view would be
+invisible. Nothing reloads — it is the same hiding a tab switch does.
+
 Right-clicking a pane offers Split Right, Split Down, Even Out and Close, and
 focuses that pane first so the menu acts on what was clicked. A split that
 could not be drawn — either half under the 120x80 floor — is offered greyed

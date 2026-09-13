@@ -608,6 +608,16 @@ ipcMain.handle(IPC.paneContentMenu, (event, paneId: unknown, x: unknown, y: unkn
     windowFor(event.sender)?.showPaneContentMenu(paneId, x, y);
 });
 
+ipcMain.handle(IPC.paneSwap, (event, a: unknown, b: unknown) => {
+    if (typeof a !== 'string' || typeof b !== 'string') return;
+    windowFor(event.sender)?.swapPanes(a, b);
+});
+
+ipcMain.handle(IPC.paneDragging, (event, on: unknown) => {
+    if (typeof on !== 'boolean') return;
+    windowFor(event.sender)?.setDragging(on);
+});
+
 ipcMain.handle(IPC.tabNew, event => windowFor(event.sender)?.newTab());
 
 ipcMain.handle(IPC.tabClose, (event, tabId: unknown) => {
@@ -985,6 +995,24 @@ async function captureAndExit(dir: string): Promise<void> {
         const split = first.state();
         log(`[capture] ${split.title}: ${split.panes.length} pane(s), ${split.seams.length} seam(s), focus on ${split.panes.find(p => p.focused)?.content.kind}`);
         await shoot(`${first.state().server.id}-split`, first);
+
+        // And swapped: what dropping a dragged header on another pane does.
+        // Driven on the window rather than through the pointer, as everything
+        // else here is — there is no renderer to drag from. It evidences the
+        // tree operation and the views following it; the gesture that reaches
+        // it is grip-less and cannot be shot.
+        const pair = first.state().panes;
+        const a = pair[0];
+        const b = pair[1];
+        if (a && b) {
+            first.swapPanes(a.paneId, b.paneId);
+            await wait(500);
+            const swapped = first.state().panes;
+            log(
+                `[capture] ${first.state().title}: swapped — ${a.paneId}/${b.paneId} held ${a.content.kind}/${b.content.kind}, now ${swapped.find(p => p.paneId === a.paneId)?.content.kind}/${swapped.find(p => p.paneId === b.paneId)?.content.kind}`
+            );
+            await shoot(`${first.state().server.id}-swapped`, first);
+        }
 
         // The Worlds tool: open it on a loaded window that has worlds, wait for
         // the list, capture it, switch to another world, capture that. The

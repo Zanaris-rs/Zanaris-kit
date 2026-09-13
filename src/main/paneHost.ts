@@ -11,6 +11,7 @@ import {
     setContent,
     setSeam,
     splitPane,
+    swapPanes,
     type PaneContent,
     type PaneNode,
     type Rect
@@ -95,6 +96,17 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     const pageStates = new Map<string, PageState>();
     let rects = new Map<string, Rect>();
     let seams: SeamView[] = [];
+    /**
+     * True while a pane is being dragged by its header.
+     *
+     * Every native view is hidden for the duration, because the shell cannot
+     * draw over one: a game or page view is stacked above it, so a drop target
+     * painted under either would be invisible, which is the whole of what the
+     * drag has to show. Hiding is the same `setVisible(false)` a tab switch
+     * uses — nothing reloads, the game keeps running — and unlike a close it
+     * lasts exactly as long as a gesture the user is performing and watching.
+     */
+    let dragging = false;
 
     /**
      * Bounds and visibility for every native view.
@@ -116,12 +128,12 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             // test here can prove.
             const rect = gamePane ? rects.get(gamePane) : undefined;
             if (rect) game.setBounds(below(rect));
-            game.setVisible(Boolean(rect));
+            game.setVisible(Boolean(rect) && !dragging);
         }
         for (const [paneId, view] of pageViews) {
             const rect = rects.get(paneId);
             if (rect) view.setBounds(below(rect));
-            view.setVisible(Boolean(rect));
+            view.setVisible(Boolean(rect) && !dragging);
         }
     }
 
@@ -313,6 +325,24 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         seams: () => seams,
         focus,
+
+        setDragging(on: boolean): void {
+            if (dragging === on) return;
+            dragging = on;
+            // Bounds are already right; only visibility moved. Placing rather
+            // than laying out again keeps a drag from re-solving the tree twice
+            // for a change that cannot have moved anything.
+            place();
+        },
+
+        swap(a: string, b: string): void {
+            const next = swapPanes(active(), a, b);
+            if (next === active()) return;
+            adopt(next);
+            // Focus follows the content rather than the pane: you dragged that
+            // thing somewhere, and where it landed is what you are looking at.
+            focus(b);
+        },
         rectOf: (paneId: string) => rects.get(paneId) ?? null,
 
         newTab(): void {
@@ -439,6 +469,10 @@ export interface PaneHost {
     tabs: () => TabView[];
     seams: () => SeamView[];
     focus: (paneId: string) => void;
+    /** Hides every native view for the length of a header drag, so the shell can draw drop targets over their rects. */
+    setDragging: (on: boolean) => void;
+    /** Trades what two panes hold. The tree's shape does not change. */
+    swap: (a: string, b: string) => void;
     /** Where a pane was last drawn, for anything that needs its size — the context menu asks whether it can still be halved. */
     rectOf: (paneId: string) => Rect | null;
     newTab: () => void;
