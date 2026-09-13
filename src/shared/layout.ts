@@ -41,17 +41,10 @@ export const PANE_MIN_HEIGHT = 80;
  * relied on its content to introduce itself, which the game and a reference page
  * cannot do at all — they are native views with nothing of ours drawn in them —
  * and which cost the tools a heading apiece in a window where every pane already
- * has an edge and a focus ring. The game and page views are inset below it by
+ * has an edge. The game and page views are inset below it by
  * this much, so it costs that pane's own height and never the window's.
  */
 export const PANE_HEADER_HEIGHT = 32;
-
-/**
- * The pixel of shell left around the tree so the focused pane's ring has
- * somewhere to land. Between panes the seam provides it; at the container's edge
- * there is nothing else, and a native view cannot be outlined from inside itself.
- */
-export const TREE_INSET = 1;
 
 /**
  * The client page's controls strip below the canvas: `max(2vh, 24px)` tall with

@@ -81,7 +81,7 @@ export interface ShellState {
     rects: {
         tabBar: Rect;
         rail: Rect;
-        /** The region the active tab's panes are laid out in: everything below the bar and left of the rail, inset by the pixel the focus border is drawn in. */
+        /** The region the active tab's panes are laid out in: everything below the bar and left of the rail. */
         tree: Rect;
     };
     /** This window's workspace tabs. Each is a whole arrangement of the same server's things, not a different server. */

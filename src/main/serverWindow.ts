@@ -1,7 +1,7 @@
 import { BrowserWindow, Menu, WebContentsView, screen, shell, type NativeImage } from 'electron';
 import { join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT, TREE_INSET } from '../shared/layout';
+import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
@@ -22,13 +22,12 @@ import type { ServerWindowHandle, WindowSpec } from './windows';
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /**
- * The content area a new window opens with: a game pane at its preferred size,
- * plus the pixel of shell the tree is inset by on each side so the focus ring
- * has somewhere to land. Without the inset the window would open two pixels
- * short of the size the game pane asks for, and clip the bottom of the canvas
- * at the one size nobody chose.
+ * The content area a new window opens with: a game pane at its preferred size.
+ * The tree fills the content area left of the rail and below the bar exactly,
+ * so anything short of this would clip the bottom of the canvas at the one size
+ * nobody chose.
  */
-const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH + TREE_INSET * 2, height: GAME_PREFERRED_HEIGHT + TREE_INSET * 2 };
+const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH, height: GAME_PREFERRED_HEIGHT };
 const PROBE_EVERY_MS = 10_000;
 const PROBE_TIMEOUT_MS = 3_000;
 
@@ -410,10 +409,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * report all went with the chrome that motivated them. What is left is: the
      * bar across the top, the rail down the right, and the tree in the rest.
      *
-     * The tree's rect is inset by a pixel so the focus border has shell to be
-     * drawn on at the container's edge. Between panes it has the seam. A native
-     * view cannot be outlined from inside itself, and `layoutTree` is
-     * deliberately unaware that either of those is what the gap is for.
+     * The tree runs to the window's edges. It used to be inset by a pixel so a
+     * gold ring round the focused pane had shell to land on; focus is a dot in
+     * the pane's header now, and a border of ink round every window was all
+     * that pixel had left to do.
      */
     function applyLayout(): void {
         if (win.isDestroyed()) return;
@@ -423,12 +422,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         rects = {
             tabBar: { x: 0, y: 0, width, height: Math.min(TAB_BAR_HEIGHT, height) },
             rail: { x: width - railW, y: TAB_BAR_HEIGHT, width: railW, height: below },
-            tree: {
-                x: TREE_INSET,
-                y: TAB_BAR_HEIGHT + TREE_INSET,
-                width: Math.max(0, width - railW - TREE_INSET * 2),
-                height: Math.max(0, below - TREE_INSET * 2)
-            }
+            tree: { x: 0, y: TAB_BAR_HEIGHT, width: Math.max(0, width - railW), height: below }
         };
         shellView.setBounds({ x: 0, y: 0, width, height });
         host.layout(rects.tree);

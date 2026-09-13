@@ -33,18 +33,6 @@ const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
 /** Sized inline for the reason `tab.tsx` sizes its own box inline: `.tab` carries the rail's 36x34 square and is unlayered CSS, which beats a utility of equal specificity whatever the order. */
 const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 
-/**
- * The ring drawn around the focused pane.
- *
- * A native view cannot be outlined from inside itself, so this is drawn on the
- * shell *around* the pane's rect — which needs a pixel of shell to land on.
- * Between panes there is the seam; at the window's edge main insets the tree by
- * one. `layoutTree` is deliberately unaware that either gap is for this.
- */
-function focusRing(rect: Rect): CSSProperties {
-    return { position: 'absolute', left: rect.x - 1, top: rect.y - 1, width: rect.width + 2, height: rect.height + 2 };
-}
-
 const TOOLS: { id: ToolId; label: string; group: 'app' | 'server'; icon: ReactNode }[] = [
     { id: 'chat', label: 'Chat', group: 'app', icon: <ChatIcon /> },
     { id: 'worlds', label: 'Worlds', group: 'server', icon: <Globe /> },
@@ -271,7 +259,6 @@ export default function Shell(): ReactNode {
 
             {state.panes.map(pane => (
                 <Fragment key={pane.paneId}>
-                    {pane.focused && <div style={focusRing(pane.rect)} className="pointer-events-none border border-gold" aria-hidden="true" />}
                     <div
                         style={at(pane.rect)}
                         onPointerDownCapture={() => void window.zanaris.panes.focus(pane.paneId)}
@@ -302,10 +289,15 @@ export default function Shell(): ReactNode {
                          * Every pane, including the two whose bodies are holes
                          * for a native view: the header is the only part of a
                          * game or page pane the shell draws, and the only place
-                         * either can say what it is.
+                         * either can say what it is — and so the only place
+                         * any pane can say it is the focused one. The dot is
+                         * shown only when there is a choice: a tab's lone pane
+                         * is focused by definition, and a mark that is always
+                         * there says nothing.
                          */}
                         <PaneHeader
                             pane={pane}
+                            active={pane.focused && state.panes.length > 1}
                             readout={pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined}
                             grab={grabFor(pane.paneId)}
                         />
