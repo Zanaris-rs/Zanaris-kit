@@ -106,11 +106,11 @@ export interface ServerWindowDeps {
      */
     alwaysOnTop: () => boolean;
     /**
-     * Asks before the game pane is closed, since that destroys the view and
-     * disconnects the player. False keeps it. Main returns true without asking
-     * when the user has turned the warning off.
+     * Asks before the game is closed — its pane, or a tab holding it — since
+     * either destroys the view and disconnects the player. False keeps it. Main
+     * returns true without asking when the user has turned the warning off.
      */
-    confirmCloseGame: () => Promise<boolean>;
+    confirmCloseGame: (via: 'pane' | 'tab') => Promise<boolean>;
     /** The pane layout this server's windows were last left in, or null to open fresh on the game. */
     rememberedLayout: TabSet | null;
     /** Remembers an arrangement. Staged, not written: a seam drag lands one of these per animation frame. */
@@ -158,8 +158,12 @@ export interface ServerWindow extends ServerWindowHandle {
     /** The focused page pane's toolbar. */
     pageGo(where: 'back' | 'forward' | 'reload'): void;
     newTab(): void;
-    /** Closes a tab and everything in it. Closing the last one closes the window, as it always has. */
-    closeTab(tabId: string): void;
+    /**
+     * Closes a tab and everything in it. Asks first when the tab holds the
+     * game, since that disconnects the player; closing the last one closes the
+     * window, as it always has, behind the window's own confirm.
+     */
+    closeTab(tabId: string): Promise<void>;
     selectTab(tabId: string): void;
     /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
     relayout(): void;
@@ -240,10 +244,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /**
      * The live game view, or null once it has been closed.
      *
-     * Closing the game pane destroys it rather than hiding it. A view kept
-     * alive behind a closed pane is a character still standing in the world
-     * with nobody watching it, which is a worse failure than the fresh login
-     * that reopening costs — and the confirm in `index.ts` says so first.
+     * Closing the game pane, or the tab it is in, destroys it rather than
+     * hiding it. A view kept alive behind a closed pane is a character still
+     * standing in the world with nobody watching it, which is a worse failure
+     * than the fresh login that reopening costs — and the confirm in
+     * `index.ts` says so first.
      */
     let gameView: WebContentsView | null = null;
     let failedOver = false;
@@ -613,16 +618,57 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     async function closePane(paneId: string): Promise<void> {
         const isGame = contentOf(host.tree(), paneId)?.kind === 'game';
         if (isGame) {
-            if (!(await deps.confirmCloseGame())) return;
-            if (gameView) {
-                win.contentView.removeChildView(gameView);
-                if (!gameView.webContents.isDestroyed()) gameView.webContents.close();
-                gameView = null;
-            }
-            deps.log(`${tag} closed the game pane and disconnected`);
+            if (!(await deps.confirmCloseGame('pane'))) return;
+            destroyGame('pane');
         }
         host.close(paneId);
         syncPanelProbe();
+    }
+
+    /**
+     * Closes a tab, asking first when the game is in it.
+     *
+     * The same cost as closing the game's pane and the same answer: the view is
+     * destroyed rather than left running with no pane to show it in. Before
+     * this asked, closing a game's tab removed the leaf and kept the view — a
+     * character still logged in behind a window that no longer had anywhere to
+     * put it, reachable only by moving the game back, which is exactly the
+     * silently hidden game `CLAUDE.md`'s invariant rules out.
+     *
+     * The last tab is the window, and goes through `win.close()` so the
+     * window's own confirm — which already says the player will be logged out —
+     * is the only one asked; a second sheet about the same disconnect would be
+     * one too many.
+     */
+    async function closeTab(tabId: string): Promise<void> {
+        const closing = host.closing(tabId);
+        if (closing === 'missing') return;
+        if (closing === 'window') {
+            win.close();
+            return;
+        }
+        if (closing === 'game') {
+            if (!(await deps.confirmCloseGame('tab'))) return;
+            if (win.isDestroyed()) return;
+            // The sheet is window-modal but the menu's accelerators are not, so
+            // the game may have moved, or the tab gone, while it was up. Ask
+            // again rather than acting on what the tabs said before it opened.
+            const now = host.closing(tabId);
+            if (now === 'missing') return;
+            if (now === 'game') destroyGame('tab');
+        }
+        if (!host.closeTab(tabId)) win.close();
+        syncPanelProbe();
+    }
+
+    /** Destroys the game view — never hides it — for a close the user has confirmed. */
+    function destroyGame(via: 'pane' | 'tab'): void {
+        if (gameView) {
+            win.contentView.removeChildView(gameView);
+            if (!gameView.webContents.isDestroyed()) gameView.webContents.close();
+            gameView = null;
+        }
+        deps.log(`${tag} closed the game ${via} and disconnected`);
     }
 
     // ── the game view ────────────────────────────────────────────────────
@@ -930,12 +976,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         },
         pageGo: where => host.go(where),
         newTab: () => host.newTab(),
-        closeTab: tabId => {
-            // The last tab closing is the window closing — which is the same
-            // gesture it has always been, and goes through `win.close()` so the
-            // confirm and the teardown are the ones that already exist.
-            if (!host.closeTab(tabId)) win.close();
-        },
+        closeTab,
         selectTab: tabId => host.selectTab(tabId),
         relayout: applyLayout,
         state,

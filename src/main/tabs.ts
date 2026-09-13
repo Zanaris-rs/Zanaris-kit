@@ -64,6 +64,34 @@ export function closeTab(set: TabSet, tabId: string): TabSet | null {
     return { tabs, activeId: next.id };
 }
 
+/** Whether a tab's panes include the game. */
+export function holdsGame(tree: PaneNode): boolean {
+    return paneIds(tree).some(id => contentOf(tree, id)?.kind === 'game');
+}
+
+/**
+ * What closing a tab would take with it, which is what decides whether the
+ * close asks first.
+ *
+ * - `window`: it is the only tab, so closing it is closing the window, whose
+ *   own confirm already says the player will be logged out. A second sheet
+ *   about the same disconnect would be one too many, game or not.
+ * - `game`: the game is in it. Closing it destroys the game view, exactly as
+ *   closing the game's pane does, and asks first for the same reason. The one
+ *   thing it must never do is drop the leaf and keep the view — a game still
+ *   logged in with nowhere in the window to be shown.
+ * - `tab`: nothing in it costs a login, so it just goes.
+ * - `missing`: no such tab, so nothing happens.
+ */
+export type TabClosing = 'missing' | 'window' | 'game' | 'tab';
+
+export function closingTab(set: TabSet, tabId: string): TabClosing {
+    const tab = set.tabs.find(t => t.id === tabId);
+    if (!tab) return 'missing';
+    if (set.tabs.length === 1) return 'window';
+    return holdsGame(tab.tree) ? 'game' : 'tab';
+}
+
 /**
  * Puts the game in a pane, taking it from wherever in the window it was.
  *

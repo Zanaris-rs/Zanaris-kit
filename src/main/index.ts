@@ -310,7 +310,7 @@ const windows = new ServerWindows((spec, onClosed) => {
             hiscores: hiscoresServiceFor(spec.server),
             chat: chatView,
             alwaysOnTop: () => appState.alwaysOnTop(),
-            confirmCloseGame: () => confirmCloseGame(spec),
+            confirmCloseGame: via => confirmCloseGame(spec, via),
             rememberedLayout: appState.layout(spec.server.id),
             rememberLayout: set => {
                 appState.stageLayout(spec.server.id, set);
@@ -431,7 +431,7 @@ const actions: MenuActions = {
     closeTab: () => {
         const sw = focusedServerWindow();
         const active = sw?.state().tabs.find(t => t.active);
-        if (sw && active) sw.closeTab(active.id);
+        if (sw && active) void sw.closeTab(active.id);
     },
     selectTabAt: index => {
         const sw = focusedServerWindow();
@@ -620,9 +620,9 @@ ipcMain.handle(IPC.paneDragging, (event, on: unknown) => {
 
 ipcMain.handle(IPC.tabNew, event => windowFor(event.sender)?.newTab());
 
-ipcMain.handle(IPC.tabClose, (event, tabId: unknown) => {
+ipcMain.handle(IPC.tabClose, async (event, tabId: unknown) => {
     if (typeof tabId !== 'string') return;
-    windowFor(event.sender)?.closeTab(tabId);
+    await windowFor(event.sender)?.closeTab(tabId);
 });
 
 ipcMain.handle(IPC.tabSelect, (event, tabId: unknown) => {
@@ -830,15 +830,15 @@ function flushStagedState(): void {
 // ── single player ─────────────────────────────────────────────────────────
 
 /**
- * Ask before closing the game pane, which destroys the view and disconnects the
- * player.
+ * Ask before closing the game — its pane, or a tab holding it — which destroys
+ * the view and disconnects the player.
  *
  * The same shape as `confirmSwitch`: a sheet on the window rather than an
  * app-modal box, so other windows keep running, and the same "don't ask again"
  * the switch warning uses — it is the same preference, since it answers the same
  * question about the same cost. Capture mode never arrives here.
  */
-async function confirmCloseGame(spec: WindowSpec): Promise<boolean> {
+async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab'): Promise<boolean> {
     const sw = serverWindows.get(spec.id);
     if (!sw || quitting) return true;
     if (!appState.warnOnSwitch()) return true;
@@ -847,7 +847,7 @@ async function confirmCloseGame(spec: WindowSpec): Promise<boolean> {
         buttons: ['Close', 'Cancel'],
         defaultId: 1,
         cancelId: 1,
-        message: 'Close the game?',
+        message: via === 'tab' ? 'Close this tab and the game in it?' : 'Close the game?',
         detail: `Zanaris Kit disconnects from ${spec.server.name} straight away, whether or not you are logged in. If you are in game, that logs you out. Opening the game again is a fresh login.`,
         checkboxLabel: "Don't ask again",
         checkboxChecked: false

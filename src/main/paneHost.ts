@@ -18,7 +18,7 @@ import {
 } from './paneTree.ts';
 import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
 import { canClosePane, paneContentItems, paneName } from './paneMenu.ts';
-import { closeTab, labelOfTab, moveGame, newTab, nextIds, openTabs, selectTab, type TabSet } from './tabs.ts';
+import { closeTab, closingTab, labelOfTab, moveGame, newTab, nextIds, openTabs, selectTab, type TabClosing, type TabSet } from './tabs.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
 
@@ -323,6 +323,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             }));
         },
 
+        closing: (tabId: string) => closingTab(set, tabId),
+
         seams: () => seams,
         focus,
 
@@ -476,6 +478,8 @@ export interface PaneHost {
     /** Where a pane was last drawn, for anything that needs its size — the context menu asks whether it can still be halved. */
     rectOf: (paneId: string) => Rect | null;
     newTab: () => void;
+    /** What closing a tab would take with it — the window, the game, or only itself. The window asks this before it closes anything. */
+    closing: (tabId: string) => TabClosing;
     /** False when that was the last tab, which is the window's cue to close. */
     closeTab: (tabId: string) => boolean;
     selectTab: (tabId: string) => void;

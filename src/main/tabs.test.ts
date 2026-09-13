@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, leaf, paneIds, split } from './paneTree.ts';
-import { closeTab, labelOfTab, moveGame, newTab, nextIds, openTabs, readTabSet, selectTab } from './tabs.ts';
+import { closeTab, closingTab, labelOfTab, moveGame, newTab, nextIds, openTabs, readTabSet, selectTab } from './tabs.ts';
 
 test('a window opens on whatever it was given — the game, not a launcher', () => {
     const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
@@ -43,6 +43,28 @@ test('closing a background tab leaves the active one where it is', () => {
 
 test('closing the only tab closes the window', () => {
     assert.equal(closeTab(openTabs('a', 'p1', { kind: 'empty' }), 'a'), null);
+});
+
+test('closing a tab that holds the game is the case that asks first', () => {
+    const set = newTab(openTabs('a', 'p1', { kind: 'game' }), 'b', 'p2');
+    assert.equal(closingTab(set, 'a'), 'game', 'from another tab as much as from its own');
+    assert.equal(closingTab(selectTab(set, 'a'), 'a'), 'game');
+    assert.equal(closingTab(set, 'b'), 'tab', 'a tab without the game closes without asking');
+});
+
+test('the warning follows the game when it moves between tabs', () => {
+    const set = moveGame(newTab(openTabs('a', 'p1', { kind: 'empty' }), 'b', 'p2'), 'p2');
+    assert.equal(closingTab(set, 'b'), 'game');
+    assert.equal(closingTab(set, 'a'), 'tab', 'the tab the game moved out of holds nothing to warn about');
+});
+
+test("closing the only tab is the window's close, game or not", () => {
+    assert.equal(closingTab(openTabs('a', 'p1', { kind: 'game' }), 'a'), 'window', "the window's own confirm already says the player is logged out");
+    assert.equal(closingTab(openTabs('a', 'p1', { kind: 'empty' }), 'a'), 'window');
+});
+
+test('closing a tab that is not there is nothing', () => {
+    assert.equal(closingTab(three(), 'nope'), 'missing');
 });
 
 test('selecting a tab that is not there changes nothing', () => {

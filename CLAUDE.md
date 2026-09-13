@@ -30,14 +30,20 @@ the old org, the owner's company or its domain into anything pushed.
 **A running game is either visible or obviously suspended, never silently
 hidden by a gesture that reads as final.**
 
-Closing the game pane destroys its view and says so first, through the same
-confirm the world switch uses. Keeping it alive behind a closed pane was
-considered and rejected: it preserves the login, which is the wrong thing to
-protect. A character still standing in the world with nobody watching it dies
+Closing the game pane — or a tab holding it — destroys its view and says so
+first, through the same confirm the world switch uses. Keeping it alive behind
+a closed pane was considered and rejected: it preserves the login, which is the
+wrong thing to protect. A character still standing in the world with nobody watching it dies
 to events its player cannot see, and that is worse than the fresh login that
 reopening costs. Switching tabs is the other case and is fine — it hides the
 game the way another app in front of the window already does, which is what
 `backgroundThrottling: false` exists to support, and it reads as temporary.
+
+The tab close is the easy one to get wrong: removing the tab drops the game's
+leaf, and nothing in `paneHost` destroys the game view, because the window owns
+it. A tab close once did exactly that and left a logged-in game with nowhere to
+be shown. What a tab close takes with it is `tabs.closingTab`, pure and tested;
+`serverWindow.closeTab` acts on its answer, asking and destroying the view first.
 
 Everything else about the layout is `src/main/paneTree.ts`: a tab is a tree of
 leaves and n-ary splits, and one recursive walk turns it into a rect per pane.
