@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaf, split } from './paneTree.ts';
-import { canClosePane, paneContentItems, paneMenuItems, paneName } from './paneMenu.ts';
+import { canClosePane, paneContentItems, paneMenuItems, paneName, paneSplitItems } from './paneMenu.ts';
 
 const roomy = { width: 800, height: 600 };
 const byId = (items: ReturnType<typeof paneMenuItems>, id: string): (typeof items)[number] => items.find(i => i.id === id)!;
@@ -22,6 +22,31 @@ test('a pane too narrow to halve cannot be split across, but can still be split 
 test('a pane too short to halve cannot be split down', () => {
     const items = paneMenuItems(leaf('a', { kind: 'empty' }), 'a', { width: 800, height: 163 });
     assert.equal(byId(items, 'split-y').enabled, false);
+});
+
+test("the header's dropdown offers the right-click menu's two splits, greyed under the same floor", () => {
+    const tree = leaf('a', { kind: 'game' });
+    const narrow = { width: 243, height: 600 };
+    const splits = paneSplitItems(tree, 'a', narrow);
+    assert.deepEqual(
+        splits.map(i => i.id),
+        ['split-x', 'split-y']
+    );
+    assert.deepEqual(splits, paneMenuItems(tree, 'a', narrow).slice(0, 2), 'the same items, not a second opinion about them');
+    assert.equal(byId(splits, 'split-x').enabled, false, 'a pane too narrow to halve is greyed here as well');
+});
+
+test('every gesture shows the View menu shortcut for the same act', () => {
+    const items = paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy);
+    assert.deepEqual(
+        items.map(i => [i.id, i.accelerator]),
+        [
+            ['split-x', 'CmdOrCtrl+D'],
+            ['split-y', 'CmdOrCtrl+Shift+D'],
+            ['even-out', 'CmdOrCtrl+Alt+='],
+            ['close', 'CmdOrCtrl+W']
+        ]
+    );
 });
 
 test('even out is offered only to a pane that has siblings to even out with', () => {

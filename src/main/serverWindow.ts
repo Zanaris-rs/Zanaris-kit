@@ -1,16 +1,18 @@
-import { BrowserWindow, Menu, WebContentsView, screen, shell, type NativeImage } from 'electron';
-import { join } from 'node:path';
+import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage } from 'electron';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT, TREE_INSET } from '../shared/layout';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
 import type { PaneView, SeamView } from '../shared/panes';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
-import { paneContentItems, paneMenuItems } from './paneMenu';
+import { paneContentItems, paneMenuItems, paneSplitItems, type PaneMenuItem } from './paneMenu';
 import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
-import type { TabSet } from './tabs';
+import { holdsGame, openWindowTabs } from './tabs';
+import { layoutEntries, layoutFileName, readLayout, writeLayout } from './layoutFile';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
 import { WorldSwitch } from './worlds/switch';
@@ -22,13 +24,20 @@ import type { ServerWindowHandle, WindowSpec } from './windows';
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /**
- * The content area a new window opens with: a game pane at its preferred size,
- * plus the pixel of shell the tree is inset by on each side so the focus ring
- * has somewhere to land. Without the inset the window would open two pixels
- * short of the size the game pane asks for, and clip the bottom of the canvas
- * at the one size nobody chose.
+ * The content area a new window opens with: the game at its preferred size and
+ * the chat pane below it at its own, with the seam between them
+ * (`tabs.openWindowTabs`). The tree fills the content area left of the rail and
+ * below the bar exactly, so anything short of this would clip the bottom of the
+ * canvas at the one size nobody chose.
  */
-const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH + TREE_INSET * 2, height: GAME_PREFERRED_HEIGHT + TREE_INSET * 2 };
+const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH, height: GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT };
+/**
+ * Room left on the display for the window's own frame, which a content size
+ * does not include: a title bar on macOS, a caption and borders on Windows.
+ * Generous rather than measured, since the frame cannot be asked for before the
+ * window exists and an opening size a few pixels short costs nothing.
+ */
+const FRAME_ALLOWANCE = 40;
 const PROBE_EVERY_MS = 10_000;
 const PROBE_TIMEOUT_MS = 3_000;
 
@@ -106,15 +115,18 @@ export interface ServerWindowDeps {
      */
     alwaysOnTop: () => boolean;
     /**
-     * Asks before the game is closed — its pane, or a tab holding it — since
-     * either destroys the view and disconnects the player. False keeps it. Main
+     * Asks before the game is closed — its pane, a tab holding it, or a layout
+     * loaded over the tab holding it — since each destroys the view and
+     * disconnects the player. False keeps it. Main
      * returns true without asking when the user has turned the warning off.
      */
-    confirmCloseGame: (via: 'pane' | 'tab') => Promise<boolean>;
-    /** The pane layout this server's windows were last left in, or null to open fresh on the game. */
-    rememberedLayout: TabSet | null;
-    /** Remembers an arrangement. Staged, not written: a seam drag lands one of these per animation frame. */
-    rememberLayout: (set: TabSet) => void;
+    confirmCloseGame: (via: 'pane' | 'tab' | 'layout') => Promise<boolean>;
+    /**
+     * This server's saved layouts: the folder Save Layout writes into, Load
+     * Layout lists and Open Layouts Folder opens. Created when first needed,
+     * not before — a player who never saves a layout gets no empty folder.
+     */
+    layoutsDir: string;
     /** What this server remembered from last time, if anything. */
     remembered: RememberedWorld | null;
     /** Called whenever this window's world or detail changes. */
@@ -165,6 +177,16 @@ export interface ServerWindow extends ServerWindowHandle {
      */
     closeTab(tabId: string): Promise<void>;
     selectTab(tabId: string): void;
+    /** Raises a tab's menu — save its panes as a layout, load one into it, open the folder — at a point in the window. */
+    showTabMenu(tabId: string, x: number, y: number): void;
+    /** Writes a tab's panes to a layout file. Throws when the file cannot be written; the menu reports that, capture mode fails on it. */
+    saveLayoutTo(tabId: string, path: string): void;
+    /**
+     * Loads a layout file into a tab, asking first when that closes the game.
+     * `unreadable` is a file that could not be read or is not a layout, and
+     * leaves the tab as it was.
+     */
+    loadLayoutFrom(tabId: string, path: string): Promise<'loaded' | 'unreadable' | 'cancelled' | 'missing'>;
     /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
     relayout(): void;
     state(): ShellState;
@@ -257,9 +279,18 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /** True between a loadGame and its result, so a kit page can tell it is superseding one. */
     let gameLoadPending = false;
 
+    /*
+     * The game and chat together are taller than some laptop displays can show,
+     * and a window opened past the bottom of the screen hides the very pane it
+     * opened to show. So the height is held to the display it will open on, and
+     * the split's shares are worked out from the height the window actually got
+     * (see `openWindowTabs`).
+     */
+    const display = screen.getDisplayNearestPoint(deps.position ?? screen.getCursorScreenPoint());
+    const openHeight = Math.max(TAB_BAR_HEIGHT + PANE_MIN_HEIGHT, Math.min(TAB_BAR_HEIGHT + DEFAULT_CONTENT.height, display.workArea.height - FRAME_ALLOWANCE));
     const win = new BrowserWindow({
         width: DEFAULT_CONTENT.width + RAIL_WIDTH,
-        height: TAB_BAR_HEIGHT + DEFAULT_CONTENT.height,
+        height: openHeight,
         // One pane's floor plus the chrome that never gives way. A constant
         // now: the old minimum moved as the dock opened and closed, because it
         // was protecting a region the layout was also protecting. Nothing is
@@ -330,9 +361,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         tools: () => tools,
         hosts: () => server.hosts,
         log: line => deps.log(`${tag} ${line}`),
-        remembered: deps.rememberedLayout,
+        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT),
         changed: () => applyLayout(),
-        remember: set => deps.rememberLayout(set),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState()
     });
@@ -410,10 +440,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * report all went with the chrome that motivated them. What is left is: the
      * bar across the top, the rail down the right, and the tree in the rest.
      *
-     * The tree's rect is inset by a pixel so the focus border has shell to be
-     * drawn on at the container's edge. Between panes it has the seam. A native
-     * view cannot be outlined from inside itself, and `layoutTree` is
-     * deliberately unaware that either of those is what the gap is for.
+     * The tree runs to the window's edges. It used to be inset by a pixel so a
+     * gold ring round the focused pane had shell to land on; focus is a dot in
+     * the pane's header now, and a border of ink round every window was all
+     * that pixel had left to do.
      */
     function applyLayout(): void {
         if (win.isDestroyed()) return;
@@ -423,12 +453,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         rects = {
             tabBar: { x: 0, y: 0, width, height: Math.min(TAB_BAR_HEIGHT, height) },
             rail: { x: width - railW, y: TAB_BAR_HEIGHT, width: railW, height: below },
-            tree: {
-                x: TREE_INSET,
-                y: TAB_BAR_HEIGHT + TREE_INSET,
-                width: Math.max(0, width - railW - TREE_INSET * 2),
-                height: Math.max(0, below - TREE_INSET * 2)
-            }
+            tree: { x: 0, y: TAB_BAR_HEIGHT, width: Math.max(0, width - railW), height: below }
         };
         shellView.setBounds({ x: 0, y: 0, width, height });
         host.layout(rects.tree);
@@ -552,26 +577,34 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // clicked rather than on whatever happened to have focus — every item
         // below names the pane, but Even Out and the accelerators do not.
         host.focus(paneId);
-        const menu = Menu.buildFromTemplate(
-            paneMenuItems(host.tree(), paneId, rect).map(item => ({
-                label: item.label,
-                enabled: item.enabled,
-                click: () => {
-                    if (item.id === 'split-x') host.split(paneId, 'x');
-                    else if (item.id === 'split-y') host.split(paneId, 'y');
-                    else if (item.id === 'close') void closePane(paneId);
-                    else {
-                        const splitId = parentSplitOf(host.tree(), paneId);
-                        if (splitId) host.evenOut(splitId);
-                    }
-                }
-            }))
-        );
+        const menu = Menu.buildFromTemplate(paneMenuItems(host.tree(), paneId, rect).map(item => gestureItem(paneId, item)));
         menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
+    /** One gesture as a native menu item, for both menus that carry gestures. */
+    function gestureItem(paneId: string, item: PaneMenuItem): MenuItemConstructorOptions {
+        return {
+            label: item.label,
+            enabled: item.enabled,
+            accelerator: item.accelerator,
+            registerAccelerator: false,
+            click: () => {
+                if (item.id === 'split-x') host.split(paneId, 'x');
+                else if (item.id === 'split-y') host.split(paneId, 'y');
+                else if (item.id === 'close') void closePane(paneId);
+                else {
+                    const splitId = parentSplitOf(host.tree(), paneId);
+                    if (splitId) host.evenOut(splitId);
+                }
+            }
+        };
+    }
+
     /**
-     * The dropdown in a pane's header: everything that pane could become.
+     * The dropdown in a pane's header: everything that pane could become, and
+     * then, under a rule, the two ways to split it — which `paneSplitItems`
+     * takes from the right-click menu, because nothing on screen says that
+     * menu exists and the arrow is the control a player will actually try.
      *
      * Native, and built here, for the reason the gesture menu above is: the
      * header of a game or a page pane sits directly over a native view, and a
@@ -589,7 +622,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (win.isDestroyed()) return;
         host.focus(paneId);
         const items = paneContentItems({ trees: host.trees(), paneId, tools, links: server.bookmarks });
-        const template = items.flatMap((item, i) => [
+        const template: MenuItemConstructorOptions[] = items.flatMap((item, i): MenuItemConstructorOptions[] => [
             // The links are a different kind of destination from the window's
             // own things, and the group each item arrives in is what says where
             // that line falls — the same rule the launcher draws.
@@ -603,6 +636,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 click: () => setPaneContent(paneId, item.content)
             }
         ]);
+        const rect = host.rectOf(paneId);
+        const splits = rect ? paneSplitItems(host.tree(), paneId, rect) : [];
+        if (splits.length > 0) template.push({ type: 'separator' }, ...splits.map(item => gestureItem(paneId, item)));
         Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
@@ -662,13 +698,174 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /** Destroys the game view — never hides it — for a close the user has confirmed. */
-    function destroyGame(via: 'pane' | 'tab'): void {
+    function destroyGame(via: 'pane' | 'tab' | 'layout'): void {
         if (gameView) {
             win.contentView.removeChildView(gameView);
             if (!gameView.webContents.isDestroyed()) gameView.webContents.close();
             gameView = null;
         }
-        deps.log(`${tag} closed the game ${via} and disconnected`);
+        deps.log(`${tag} closed the game ${via === 'layout' ? 'to load a layout' : via} and disconnected`);
+    }
+
+    // ── saved layouts ────────────────────────────────────────────────────
+
+    /**
+     * The menu a right-click on a tab raises: save that tab's panes as a
+     * layout, load one into it, or open the folder the layouts live in so they
+     * can be copied and handed to someone else.
+     *
+     * On the tab rather than in the View menu because a layout *is* a tab's
+     * panes — saving one captures exactly what that tab shows, and loading one
+     * replaces exactly that — and the tab is the thing being pointed at. It is
+     * brought to the front first, for the reason a right-clicked pane is
+     * focused first: what the menu acts on should be what is on screen.
+     *
+     * Nothing here is saved unless the player asks. The window used to write
+     * its arrangement after every split and seam drag, and that made the last
+     * accident the thing a new window opened with.
+     */
+    function showTabMenu(tabId: string, x: number, y: number): void {
+        if (win.isDestroyed() || !host.treeOf(tabId)) return;
+        host.selectTab(tabId);
+        const saved = savedLayouts();
+        const template: MenuItemConstructorOptions[] = [
+            { label: 'Save Layout…', click: () => void saveLayoutAs(tabId) },
+            {
+                label: 'Load Layout',
+                submenu: [
+                    ...(saved.length === 0
+                        ? [{ label: 'No Saved Layouts', enabled: false }]
+                        : saved.map(entry => ({ label: entry.name, click: () => void loadLayoutChosen(tabId, join(deps.layoutsDir, entry.file)) }))),
+                    { type: 'separator' },
+                    // A layout somebody sent, wherever it was saved to. Loading
+                    // it does not copy it into the folder: that is still the
+                    // player's to decide, by saving it again.
+                    { label: 'From File…', click: () => void loadLayoutFromFile(tabId) }
+                ]
+            },
+            { label: 'Open Layouts Folder', click: () => void openLayoutsFolder() },
+            { type: 'separator' },
+            { label: 'Close Tab', click: () => void closeTab(tabId) }
+        ];
+        Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
+    }
+
+    /** The folder's layouts, or none when there is no folder yet. */
+    function savedLayouts(): { name: string; file: string }[] {
+        try {
+            return layoutEntries(readdirSync(deps.layoutsDir));
+        } catch {
+            return [];
+        }
+    }
+
+    async function saveLayoutAs(tabId: string): Promise<void> {
+        const label = host.tabs().find(tab => tab.id === tabId)?.label;
+        if (label === undefined) return;
+        try {
+            mkdirSync(deps.layoutsDir, { recursive: true });
+            const { canceled, filePath } = await dialog.showSaveDialog(win, {
+                title: 'Save Layout',
+                defaultPath: join(deps.layoutsDir, layoutFileName(label)),
+                filters: [{ name: 'Zanaris Kit layout', extensions: ['json'] }]
+            });
+            if (canceled || !filePath || win.isDestroyed()) return;
+            saveLayoutTo(tabId, filePath);
+        } catch (err) {
+            deps.log(`${tag} could not save a layout: ${(err as Error).message}`);
+            if (!win.isDestroyed()) await dialog.showMessageBox(win, { type: 'warning', message: 'The layout could not be saved.', detail: (err as Error).message });
+        }
+    }
+
+    /** Reads the tab when the file is written rather than when the menu opened: the dialog was up in between. */
+    function saveLayoutTo(tabId: string, path: string): void {
+        const tree = host.treeOf(tabId);
+        if (!tree) throw new Error('that tab has closed');
+        writeFileSync(path, writeLayout(tree, server.id));
+        deps.log(`${tag} saved layout ${basename(path)}`);
+    }
+
+    async function loadLayoutFromFile(tabId: string): Promise<void> {
+        try {
+            mkdirSync(deps.layoutsDir, { recursive: true });
+        } catch {
+            // The folder is only where the dialog starts; a file anywhere else still loads.
+        }
+        const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+            title: 'Load Layout',
+            defaultPath: deps.layoutsDir,
+            properties: ['openFile'],
+            filters: [{ name: 'Zanaris Kit layout', extensions: ['json'] }]
+        });
+        const path = filePaths[0];
+        if (canceled || !path || win.isDestroyed()) return;
+        await loadLayoutChosen(tabId, path);
+    }
+
+    /** Loading from the menu: the same load, and a sheet rather than silence when the file was not a layout. */
+    async function loadLayoutChosen(tabId: string, path: string): Promise<void> {
+        if ((await loadLayoutFrom(tabId, path)) !== 'unreadable' || win.isDestroyed()) return;
+        await dialog.showMessageBox(win, {
+            type: 'warning',
+            message: "That file isn't a Zanaris Kit layout.",
+            detail: `${basename(path)} could not be read as a layout, so the tab was left as it was.`
+        });
+    }
+
+    /**
+     * A layout file, into a tab.
+     *
+     * What it costs is `tabs.loadingLayout`'s answer, which is pure and tested;
+     * this asks the question it raises and acts. When the layout would take the
+     * game's leaf away, that is closing the game, so it asks first and destroys
+     * the view — the layout invariant in `CLAUDE.md`, and the same order
+     * `closeTab` keeps, including asking the tabs again once the sheet is down,
+     * since the game may have moved while it was up. When the layout wants a
+     * game and the window has none left, one is made and loaded, as choosing
+     * the game in an empty pane does.
+     */
+    async function loadLayoutFrom(tabId: string, path: string): Promise<'loaded' | 'unreadable' | 'cancelled' | 'missing'> {
+        let text: string;
+        try {
+            text = readFileSync(path, 'utf8');
+        } catch (err) {
+            deps.log(`${tag} could not read ${path}: ${(err as Error).message}`);
+            return 'unreadable';
+        }
+        const stored = readLayout(text);
+        if (!stored) {
+            deps.log(`${tag} refused ${basename(path)}: not a Zanaris Kit layout`);
+            return 'unreadable';
+        }
+        const tree = host.instantiate(stored);
+        const loading = host.loading(tabId, tree);
+        if (!loading) return 'missing';
+        if (loading.dropsGame) {
+            if (!(await deps.confirmCloseGame('layout'))) return 'cancelled';
+            if (win.isDestroyed()) return 'missing';
+            const now = host.loading(tabId, tree);
+            if (!now) return 'missing';
+            if (now.dropsGame) destroyGame('layout');
+        }
+        if (holdsGame(tree) && !gameView) {
+            gameView = makeGameView();
+            void loadGame(expected);
+        }
+        if (!host.replaceTab(tabId, tree)) return 'missing';
+        syncPanelProbe();
+        deps.log(`${tag} loaded layout ${basename(path)}`);
+        return 'loaded';
+    }
+
+    async function openLayoutsFolder(): Promise<void> {
+        try {
+            mkdirSync(deps.layoutsDir, { recursive: true });
+        } catch (err) {
+            deps.log(`${tag} could not make ${deps.layoutsDir}: ${(err as Error).message}`);
+            return;
+        }
+        const failed = await shell.openPath(deps.layoutsDir);
+        if (failed) deps.log(`${tag} could not open ${deps.layoutsDir}: ${failed}`);
     }
 
     // ── the game view ────────────────────────────────────────────────────
@@ -978,6 +1175,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         newTab: () => host.newTab(),
         closeTab,
         selectTab: tabId => host.selectTab(tabId),
+        showTabMenu,
+        saveLayoutTo,
+        loadLayoutFrom,
         relayout: applyLayout,
         state,
         pushState,

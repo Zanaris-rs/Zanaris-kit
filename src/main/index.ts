@@ -1,12 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, net, screen, session, shell, type NativeImage, type WebContents } from 'electron';
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
 import type { PaneContent } from './paneTree';
-import { Catalog } from './catalog';
+import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
@@ -311,11 +311,7 @@ const windows = new ServerWindows((spec, onClosed) => {
             chat: chatView,
             alwaysOnTop: () => appState.alwaysOnTop(),
             confirmCloseGame: via => confirmCloseGame(spec, via),
-            rememberedLayout: appState.layout(spec.server.id),
-            rememberLayout: set => {
-                appState.stageLayout(spec.server.id, set);
-                writeStagedStateWhenItSettles();
-            },
+            layoutsDir: join(userData, 'layouts', slugify(spec.server.id)),
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
@@ -620,6 +616,12 @@ ipcMain.handle(IPC.paneDragging, (event, on: unknown) => {
 
 ipcMain.handle(IPC.tabNew, event => windowFor(event.sender)?.newTab());
 
+ipcMain.handle(IPC.tabContextMenu, (event, tabId: unknown, x: unknown, y: unknown) => {
+    if (typeof tabId !== 'string' || typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showTabMenu(tabId, x, y);
+});
+
 ipcMain.handle(IPC.tabClose, async (event, tabId: unknown) => {
     if (typeof tabId !== 'string') return;
     await windowFor(event.sender)?.closeTab(tabId);
@@ -726,12 +728,8 @@ ipcMain.handle(IPC.hiscoresOpenSite, event => {
  * is the service's to say, and nothing here re-derives it.
  *
  * What was last written is read back out of `AppState` rather than kept in a
- * variable beside it. `AppState` holds what `save()` put in the file — only the
- * dock height is ever staged without one — so there is no second copy of the
- * truth for a writer somewhere else to leave stale. `setChat` rather than
- * `stageChat`: a nick or a room changes by hand, once, where the dock height
- * arrives once a frame for as long as a drag lasts, which is the volume
- * `stageChat` exists for.
+ * variable beside it. `AppState` holds what `save()` put in the file, so there
+ * is no second copy of the truth for a writer somewhere else to leave stale.
  */
 function persistChat(view: ChatView): void {
     const patch = chatChanges(appState.chat(), view);
@@ -775,58 +773,6 @@ ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
     chat?.setNick(nick.trim());
 });
 
-/**
- * Where chat lives, for the whole app: one conversation cannot be at the bottom
- * of one window and down the side of another without being two chats in the
- * user's head. What is app-wide is where chat *goes*, though, not whether it is
- * open — that was always per-window. So only the window whose →| was clicked
- * rearranges around the move; the rest are told where chat now goes and keep
- * whatever they had open, or a user with the world list up in another window
- * would lose it to a click they made over here.
- *
- * The window that asked is the one whose shell sent this, which is the shell
- * the control is drawn in. Moving it changes geometry rather than only what is
- * drawn, and both of these lay the window out again — which pushes the new
- * state itself, so nothing here follows them with a pushState.
- */
-/**
- * How long the dock's height must sit still before it is written to the
- * profile. Long enough that a drag — one height per animation frame, so around
- * sixty a second — writes once when the user lets go, short enough that
- * nothing plausible happens between the release and the write.
- */
-const DRAG_SETTLE_MS = 400;
-let stagedStateWrite: NodeJS.Timeout | null = null;
-
-/**
- * A dragged number applies to the layout on the frame it arrives; only the
- * *write* waits for the drag to finish. Both drags share this timer, because
- * both stage into the same file and one save records whichever of them moved.
- * AppState.save() is a synchronous
- * rewrite of the whole of state.json, and one per frame is two costs: on
- * Windows, where userData sits in a roamed and antivirus-scanned
- * AppData\Roaming, a multi-millisecond write per frame stutters the very drag
- * it is recording; and every write is a moment in which a kill truncates the
- * file, which load() then quarantines, taking the user's remembered worlds and
- * nick with it. (The write is not atomic, which is what makes that window a
- * real one — that predates the dock and is left alone here.)
- */
-function writeStagedStateWhenItSettles(): void {
-    if (stagedStateWrite) clearTimeout(stagedStateWrite);
-    stagedStateWrite = setTimeout(() => {
-        stagedStateWrite = null;
-        appState.save();
-    }, DRAG_SETTLE_MS);
-}
-
-/** Writes staged values now rather than on the timer. For the quit, which would otherwise leave the last drag of a session unremembered. */
-function flushStagedState(): void {
-    if (!stagedStateWrite) return;
-    clearTimeout(stagedStateWrite);
-    stagedStateWrite = null;
-    appState.save();
-}
-
 // ── single player ─────────────────────────────────────────────────────────
 
 /**
@@ -838,7 +784,7 @@ function flushStagedState(): void {
  * the switch warning uses — it is the same preference, since it answers the same
  * question about the same cost. Capture mode never arrives here.
  */
-async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab'): Promise<boolean> {
+async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'layout'): Promise<boolean> {
     const sw = serverWindows.get(spec.id);
     if (!sw || quitting) return true;
     if (!appState.warnOnSwitch()) return true;
@@ -847,7 +793,7 @@ async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab'): Promise<
         buttons: ['Close', 'Cancel'],
         defaultId: 1,
         cancelId: 1,
-        message: via === 'tab' ? 'Close this tab and the game in it?' : 'Close the game?',
+        message: via === 'tab' ? 'Close this tab and the game in it?' : via === 'layout' ? 'Load this layout and close the game?' : 'Close the game?',
         detail: `Zanaris Kit disconnects from ${spec.server.name} straight away, whether or not you are logged in. If you are in game, that logs you out. Opening the game again is a fresh login.`,
         checkboxLabel: "Don't ask again",
         checkboxChecked: false
@@ -987,9 +933,12 @@ async function captureAndExit(dir: string): Promise<void> {
         // The layout and slot checks use a window whose game actually loaded, if any did.
         const first = opened[results.indexOf('loaded')] ?? opened[0];
         if (!first) throw new Error('the server list is empty');
-        // A split, so at least one capture shows more than one pane. Splitting
-        // the game's pane is the interesting case, since that is the one the
-        // old layout refused to do at all.
+        // A split across the game's pane, which a window opens focused on — so
+        // the shot has three panes, the game and an empty one side by side over
+        // the chat every window opens with, and the new pane's header is the
+        // one carrying the focus dot. Splitting the game's pane is the
+        // interesting case, since that is the one the old layout refused to do
+        // at all.
         first.splitPane(focused(first), 'x');
         await wait(500);
         const split = first.state();
@@ -1032,11 +981,12 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] ${id} worlds: ${view?.status} ${view?.worlds.map(w => `W${w.id}=${w.players ?? '?'}p/${w.latencyMs ?? '?'}ms`).join(' ')}${view?.error ? ` error: ${view.error}` : ''}`);
             await shoot(`${id}-worlds`, hopper);
 
-            // Chat beside the still-open Worlds pane: two tools and the game
-            // laid out at once, which is the arrangement the whole tree exists
-            // to allow and which the fixed column could not express at all.
-            // `selectTool` splits the focused pane when it holds the game, so
-            // Worlds stays exactly as the shot above left it either way.
+            // Chat below the still-open Worlds pane: two tools and the game laid
+            // out at once, which is the arrangement the whole tree exists to
+            // allow and which the fixed column could not express at all. Every
+            // window opens with chat already there, so this only focuses it —
+            // `selectTool` never opens a second copy — and Worlds stays exactly
+            // as the shot above left it.
             hopper.selectTool('chat');
             await wait(500);
             // Maximised, which is now simply a bigger rect for the tree to
@@ -1138,9 +1088,6 @@ async function captureAndExit(dir: string): Promise<void> {
         // and never fake a connection just to get a prettier screenshot.
         log('[capture] chat: no nick in this profile, so the dock captures the nick prompt, not a conversation');
 
-        // moveChat('bottom') rather than the rail's selectTool('chat'): it
-        // lands on "dock open, default height, panel closed" unconditionally,
-        // whatever `first` currently has open — including home already 'side'
         // A seam dragged without a pointer: the same clamp `paneSetSeam`
         // applies, driven directly the way this whole function drives
         // ServerWindow rather than over IPC — there is no renderer here to send
@@ -1277,6 +1224,30 @@ async function captureAndExit(dir: string): Promise<void> {
         log(`[capture] ${second.state().title}: ${await loaded(second)}`);
         await wait(Math.min(settleMs, 8_000));
         await shoot(`${first.state().server.id}-2`, second);
+
+        // A layout saved and loaded, driven on the window rather than through
+        // the tab menu — the save and open dialogs are native sheets nothing
+        // here can click. The fresh window's game-and-chat tab is written to a
+        // file, a new empty tab is opened, and the file loaded into it: the
+        // game should move into the new tab's game pane without a reload, and
+        // the first tab's game pane should be left empty. Written to the temp
+        // directory and removed, so a run leaves nothing in the layouts folder.
+        const activeTab = (sw: ServerWindow): string => sw.state().tabs.find(tab => tab.active)?.id ?? '';
+        const panesOf = (sw: ServerWindow): string => sw.state().panes.map(p => (p.content.kind === 'tool' ? p.content.tool : p.content.kind)).join(' over ');
+        const layoutPath = join(app.getPath('temp'), `zanaris-kit-capture-${Date.now()}.json`);
+        try {
+            const saved = panesOf(second);
+            second.saveLayoutTo(activeTab(second), layoutPath);
+            second.newTab();
+            await wait(300);
+            const result = await second.loadLayoutFrom(activeTab(second), layoutPath);
+            await wait(500);
+            const tabs = second.state().tabs.map(tab => tab.label).join(', ');
+            log(`[capture] ${second.state().title}: saved "${saved}", loaded into a new tab: ${result} — now "${panesOf(second)}", tabs ${tabs}`);
+            await shoot(`${first.state().server.id}-layout-loaded`, second);
+        } finally {
+            rmSync(layoutPath, { force: true });
+        }
     } catch (err) {
         log(`[capture] aborted: ${(err as Error).stack ?? String(err)}`);
     } finally {
@@ -1373,8 +1344,6 @@ app.on('browser-window-focus', () => {
 let worldStoppedForQuit = false;
 app.on('before-quit', event => {
     quitting = true;
-    // A height dragged and immediately quit on is still on the settle timer.
-    flushStagedState();
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
     // The world writes the player's saves as it shuts down, so the quit waits for

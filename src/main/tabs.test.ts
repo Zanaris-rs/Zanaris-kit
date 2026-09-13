@@ -1,11 +1,55 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contentOf, leaf, paneIds, split } from './paneTree.ts';
-import { closeTab, closingTab, labelOfTab, moveGame, newTab, nextIds, openTabs, readTabSet, selectTab } from './tabs.ts';
+import { contentOf, layoutTree, leaf, paneIds, split } from './paneTree.ts';
+import { closeTab, closingTab, labelOfTab, loadingLayout, moveGame, newTab, nextIds, openTabs, openWindowTabs, selectTab } from './tabs.ts';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 
-test('a window opens on whatever it was given — the game, not a launcher', () => {
+test('a one-pane set holds whatever it was given', () => {
     const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
     assert.deepEqual(set.tabs[0]!.tree, leaf('pane-1', { kind: 'game' }));
+});
+
+/** The game's and chat's heights as the solver draws them in a tree of this height. */
+function heights(treeHeight: number): { game: number; chat: number } {
+    const tree = openWindowTabs(treeHeight).tabs[0]!.tree;
+    const rects = layoutTree(tree, { x: 0, y: 0, width: 765, height: treeHeight }).panes;
+    return { game: rects.get('pane-1')!.height, chat: rects.get('pane-2')!.height };
+}
+
+test('a new window opens on the game with chat below it, the game focused', () => {
+    const set = openWindowTabs(GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT);
+    const tree = set.tabs[0]!.tree;
+    assert.equal(tree.kind === 'split' && tree.axis, 'y', 'stacked, not side by side');
+    assert.deepEqual(
+        paneIds(tree).map(id => contentOf(tree, id)),
+        [{ kind: 'game' }, { kind: 'tool', tool: 'chat' }]
+    );
+    assert.equal(set.tabs[0]!.focusedPaneId, 'pane-1', 'so the rail splits the game rather than replacing chat');
+});
+
+test('at the size a window opens at, the game and chat each get exactly what they ask for', () => {
+    assert.deepEqual(heights(GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT), { game: GAME_PREFERRED_HEIGHT, chat: CHAT_PREFERRED_HEIGHT });
+});
+
+test('on a short display chat gives way first, down to its floor, and the game keeps its height', () => {
+    assert.deepEqual(heights(GAME_PREFERRED_HEIGHT + SEAM + 120), { game: GAME_PREFERRED_HEIGHT, chat: 120 });
+    assert.deepEqual(heights(GAME_PREFERRED_HEIGHT + SEAM + PANE_MIN_HEIGHT), { game: GAME_PREFERRED_HEIGHT, chat: PANE_MIN_HEIGHT });
+});
+
+test('shorter still, the game gives way and chat holds its floor', () => {
+    assert.deepEqual(heights(500), { game: 500 - SEAM - PANE_MIN_HEIGHT, chat: PANE_MIN_HEIGHT });
+});
+
+test('below two floors the two are shared in proportion, and nothing is negative', () => {
+    const tiny = heights(120);
+    assert.equal(tiny.game + tiny.chat, 120 - SEAM);
+    assert.ok(tiny.game > 0 && tiny.chat > 0);
+    const { game, chat } = heights(0);
+    assert.ok(game >= 0 && chat >= 0);
+});
+
+test("a split made inside the window's opening arrangement gets an id of its own", () => {
+    assert.deepEqual(nextIds(openWindowTabs(800)), { pane: 3, tab: 2, split: 2 });
 });
 
 test('a new tab holds one empty pane and comes to the front', () => {
@@ -94,40 +138,63 @@ test("a tab led by a page is named for the catalog's link", () => {
     assert.equal(labelOfTab(tree, links), 'Skill Guides');
 });
 
-test('a stored layout round-trips', () => {
-    const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
-    assert.deepEqual(readTabSet(JSON.parse(JSON.stringify(set))), set);
-});
-
-test('a layout that is not a layout is refused rather than half-loaded', () => {
-    for (const junk of [null, 42, 'tabs', {}, { tabs: [], activeId: 'a' }, { tabs: [{ id: 'a' }], activeId: 'a' }]) {
-        assert.equal(readTabSet(junk), null, `expected ${JSON.stringify(junk)} to be refused`);
-    }
-});
-
-test('a layout whose active tab is not in it is refused', () => {
-    const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
-    assert.equal(readTabSet({ ...set, activeId: 'gone' }), null);
-});
-
-test('a split whose fractions do not match its children is refused', () => {
-    const bad = { tabs: [{ id: 't', focusedPaneId: 'a', tree: { kind: 'split', splitId: 's', axis: 'x', children: [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], fractions: [1] } }], activeId: 't' };
-    assert.equal(readTabSet(bad), null);
-});
-
-test('two panes sharing an id are refused — a view is keyed by it', () => {
-    const bad = { tabs: [{ id: 't', focusedPaneId: 'a', tree: split('s', 'x', [leaf('a', { kind: 'empty' }), leaf('a', { kind: 'empty' })], [0.5, 0.5]) }], activeId: 't' };
-    assert.equal(readTabSet(bad), null);
-});
-
-test('a second game anywhere in the layout is refused — there is one view', () => {
-    const bad = { tabs: [{ id: 't', focusedPaneId: 'a', tree: split('s', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'game' })], [0.5, 0.5]) }], activeId: 't' };
-    assert.equal(readTabSet(bad), null);
-});
-
-test('the next ids carry on past whatever was restored', () => {
+test('the next ids carry on past whatever the window opened with', () => {
     const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-7', 'pane-4');
     assert.deepEqual(nextIds(set), { pane: 5, tab: 8, split: 1 });
+});
+
+test('split ids carry on too, so a split made inside the opening one cannot share its id', () => {
+    const tree = split('split-3', 'y', [leaf('pane-1', { kind: 'game' }), split('split-1', 'x', [leaf('pane-2', { kind: 'empty' }), leaf('pane-5', { kind: 'empty' })], [0.5, 0.5])], [0.5, 0.5]);
+    assert.deepEqual(nextIds({ tabs: [{ id: 'tab-1', tree, focusedPaneId: 'pane-1' }], activeId: 'tab-1' }), { pane: 6, tab: 2, split: 4 });
+});
+
+const games = (set: { tabs: { tree: Parameters<typeof paneIds>[0] }[] }): string[] =>
+    set.tabs.flatMap(tab => paneIds(tab.tree).filter(id => contentOf(tab.tree, id)?.kind === 'game'));
+
+test("loading a layout replaces that tab's panes, brings it to the front and leaves the other tabs alone", () => {
+    const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'tool', tool: 'chat' }), 'tab-2', 'pane-2');
+    const layout = split('split-9', 'x', [leaf('pane-8', { kind: 'tool', tool: 'worlds' }), leaf('pane-9', { kind: 'empty' })], [0.5, 0.5]);
+    const loaded = loadingLayout({ ...set, activeId: 'tab-2' }, 'tab-1', layout)!;
+    assert.equal(loaded.set.activeId, 'tab-1');
+    assert.equal(loaded.set.tabs[0]!.tree, layout);
+    assert.equal(loaded.set.tabs[0]!.focusedPaneId, 'pane-8', 'focus on the first pane when there is no game to look at');
+    assert.equal(loaded.set.tabs[1], set.tabs[1], 'the other tab is the same object');
+    assert.equal(loaded.dropsGame, false);
+});
+
+test('a layout with a game pane takes the game from whichever tab had it, and focuses it', () => {
+    const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
+    const layout = split('split-9', 'y', [leaf('pane-8', { kind: 'tool', tool: 'chat' }), leaf('pane-9', { kind: 'game' })], [0.5, 0.5]);
+    const loaded = loadingLayout(set, 'tab-2', layout)!;
+    assert.deepEqual(games(loaded.set), ['pane-9'], 'one game leaf in the whole window, and it is the loaded one');
+    assert.deepEqual(contentOf(loaded.set.tabs[0]!.tree, 'pane-1'), { kind: 'empty' }, 'the pane it left shows the launcher');
+    assert.equal(loaded.set.tabs[1]!.focusedPaneId, 'pane-9');
+    assert.equal(loaded.dropsGame, false, 'a move, not a close — nothing to ask');
+});
+
+test('a layout with a game pane loaded over the tab holding the game keeps the game', () => {
+    const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
+    const loaded = loadingLayout(set, 'tab-1', leaf('pane-8', { kind: 'game' }))!;
+    assert.equal(loaded.dropsGame, false);
+    assert.deepEqual(games(loaded.set), ['pane-8']);
+});
+
+test('a layout with no game, loaded over the tab holding it, is closing the game and says so', () => {
+    const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
+    const loaded = loadingLayout(set, 'tab-1', leaf('pane-8', { kind: 'tool', tool: 'chat' }))!;
+    assert.equal(loaded.dropsGame, true, 'the window must ask and destroy the view, never keep it with nowhere to show it');
+    assert.deepEqual(games(loaded.set), []);
+});
+
+test('a layout with no game, loaded over some other tab, leaves the game where it is', () => {
+    const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
+    const loaded = loadingLayout(set, 'tab-2', leaf('pane-8', { kind: 'tool', tool: 'chat' }))!;
+    assert.equal(loaded.dropsGame, false);
+    assert.equal(loaded.set.tabs[0], set.tabs[0]);
+});
+
+test('loading into a tab that is not there does nothing', () => {
+    assert.equal(loadingLayout(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'gone', leaf('pane-8', { kind: 'empty' })), null);
 });
 
 test('the game moves out of the tab it was in and into the pane asked for', () => {

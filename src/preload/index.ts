@@ -50,6 +50,7 @@ const api: ZanarisApi = {
         newTab: () => ipcRenderer.invoke(IPC.tabNew),
         closeTab: tabId => ipcRenderer.invoke(IPC.tabClose, tabId),
         selectTab: tabId => ipcRenderer.invoke(IPC.tabSelect, tabId),
+        tabMenu: (tabId, x, y) => ipcRenderer.invoke(IPC.tabContextMenu, tabId, x, y),
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
     },
     singlePlayer: {

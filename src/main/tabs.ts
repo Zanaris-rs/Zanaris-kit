@@ -1,6 +1,6 @@
-import { clearGame, contentOf, leaf, paneIds, setContent, type PaneContent, type PaneNode } from './paneTree.ts';
+import { clearGame, contentOf, leaf, paneIds, setContent, split, type PaneContent, type PaneNode } from './paneTree.ts';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 import { paneName, type PaneLink } from './paneMenu.ts';
-import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
 
 /**
  * A window's workspace tabs.
@@ -27,17 +27,46 @@ export interface TabSet {
 }
 
 /**
- * The set a new window starts with: one tab holding one pane.
- *
- * The content is handed in rather than assumed empty, because a window opens on
- * the game. There is no launcher window in this kit and never has been — the
- * File menu makes windows, and every one of them is a game window — so a new
- * window that came up showing a chooser would be a new kind of thing to
- * explain. A *tab* is the opposite case and does start empty: the arrangement
- * is the point of making one.
+ * One tab holding one pane: the smallest arrangement there is, and the one a
+ * window opened on before it opened on the game and chat together.
  */
 export function openTabs(tabId: string, paneId: string, content: PaneContent): TabSet {
     return { tabs: [{ id: tabId, tree: leaf(paneId, content), focusedPaneId: paneId }], activeId: tabId };
+}
+
+/**
+ * The arrangement a new window opens with: the game, and chat below it.
+ *
+ * On the game because there is no launcher window in this kit and never has
+ * been — the File menu makes windows, and every one of them is a game window.
+ * With chat under it because chat is the kit's own reason to be open instead of
+ * a browser tab, and a pane nobody knows is there is a pane nobody opens. Below
+ * rather than beside, where the 2004 client keeps its own chat box, so the
+ * conversation gets the game's full width.
+ *
+ * The game keeps its preferred height whenever the window has room for that
+ * and a chat pane above the floor: a canvas cut off at the bottom is the one
+ * cost here a player cannot scroll or read past. On a display too short for
+ * that, chat gives way down to the floor first and the game takes the rest;
+ * only below two floors are they shared in proportion, and there the solver's
+ * own minimums decide. Nothing remembers these numbers — they are the shares
+ * the split starts with, and the fractions carry them from there.
+ *
+ * Focus is on the game, so a tool chosen from the rail splits the game's pane
+ * rather than replacing the chat below it.
+ */
+export function openWindowTabs(treeHeight: number): TabSet {
+    const gross = Math.max(0, treeHeight - SEAM);
+    const game = Math.min(GAME_PREFERRED_HEIGHT, gross - PANE_MIN_HEIGHT);
+    const shares = game >= PANE_MIN_HEIGHT ? [game, gross - game] : [GAME_PREFERRED_HEIGHT, CHAT_PREFERRED_HEIGHT];
+    const total = shares[0]! + shares[1]!;
+    const tree = split(
+        'split-1',
+        'y',
+        [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: 'chat' })],
+        shares.map(share => share / total)
+    );
+    return { tabs: [{ id: 'tab-1', tree, focusedPaneId: 'pane-1' }], activeId: 'tab-1' };
 }
 
 export function newTab(set: TabSet, tabId: string, paneId: string): TabSet {
@@ -138,97 +167,56 @@ export function labelOfTab(tree: PaneNode, links: readonly PaneLink[] = []): str
 }
 
 /**
- * A stored layout, or null when anything at all about it is wrong.
+ * Loading a saved layout into one tab, and what that costs.
  *
- * Null rather than a repair, and one null for the whole file rather than per
- * tab: this runs before the first window paints, so a half-understood layout is
- * a window that opens wrong with nothing to say about why. A fresh game window
- * is a fine thing to fall back to and an obvious one to notice. `state.json` is
- * also a file the user is invited to edit by hand, so it is untrusted input in
- * the ordinary sense as well.
+ * The tab's panes are replaced by the layout's, and the tab is brought to the
+ * front, since that is where the player asked for it. The game is the one thing
+ * that needs care, because the window has one game view and the tab being
+ * replaced may hold it, or the layout may want it, or both:
  *
- * The refusals that are not merely shape: a pane id must be unique, because a
- * view is keyed by it and two panes claiming one would share a view; and one
- * game at most, because the window has exactly one game view and a second leaf
- * would point at nothing.
+ * - **The layout has a game pane.** The game moves into it from wherever it
+ *   was — this tab or another — the same move `moveGame` makes, so it costs no
+ *   reload and no login. Any other tab's game leaf is emptied in the same
+ *   breath, or the window would claim two games and have one view.
+ * - **This tab held the game and the layout has none.** The game's leaf goes
+ *   with the old panes, which is closing the game: `dropsGame` says so, and the
+ *   window asks first and destroys the view, exactly as a tab close does. It
+ *   must never drop the leaf and keep the view.
+ * - **Neither.** The game stays wherever it is, untouched.
+ *
+ * Focus lands on the game when the layout brought it — that is what the player
+ * is about to look at — and otherwise on the layout's first pane.
+ *
+ * Null when there is no such tab.
  */
-export function readTabSet(x: unknown): TabSet | null {
-    if (typeof x !== 'object' || x === null) return null;
-    const { tabs, activeId } = x as { tabs?: unknown; activeId?: unknown };
-    if (!Array.isArray(tabs) || tabs.length === 0 || typeof activeId !== 'string') return null;
-
-    const seen = new Set<string>();
-    let games = 0;
-    const read: Tab[] = [];
-    for (const raw of tabs) {
-        if (typeof raw !== 'object' || raw === null) return null;
-        const { id, tree, focusedPaneId } = raw as { id?: unknown; tree?: unknown; focusedPaneId?: unknown };
-        if (typeof id !== 'string' || id === '' || typeof focusedPaneId !== 'string') return null;
-        const node = readNode(tree, seen, () => games++);
-        if (!node || !paneIds(node).includes(focusedPaneId)) return null;
-        read.push({ id, tree: node, focusedPaneId });
-    }
-    if (games > 1) return null;
-    if (!read.some(tab => tab.id === activeId)) return null;
-    // Two tabs answering to one id would make `selectTab` ambiguous.
-    if (new Set(read.map(tab => tab.id)).size !== read.length) return null;
-    return { tabs: read, activeId };
-}
-
-function readNode(x: unknown, seen: Set<string>, countGame: () => void): PaneNode | null {
-    if (typeof x !== 'object' || x === null) return null;
-    const node = x as Record<string, unknown>;
-
-    if (node.kind === 'leaf') {
-        const { paneId, content } = node as { paneId?: unknown; content?: unknown };
-        if (typeof paneId !== 'string' || paneId === '' || seen.has(paneId)) return null;
-        seen.add(paneId);
-        const read = readContent(content);
-        if (!read) return null;
-        if (read.kind === 'game') countGame();
-        return leaf(paneId, read);
-    }
-
-    if (node.kind !== 'split') return null;
-    const { splitId, axis, children, fractions } = node as { splitId?: unknown; axis?: unknown; children?: unknown; fractions?: unknown };
-    if (typeof splitId !== 'string' || splitId === '' || (axis !== 'x' && axis !== 'y')) return null;
-    // Two children at least: a split of one is the thing `collapse` exists to
-    // prevent, so one arriving off disk is a file that has been edited into a
-    // state the app cannot reach on its own.
-    if (!Array.isArray(children) || children.length < 2) return null;
-    if (!Array.isArray(fractions) || fractions.length !== children.length) return null;
-    if (!fractions.every(f => typeof f === 'number' && Number.isFinite(f) && f > 0)) return null;
-    const read: PaneNode[] = [];
-    for (const child of children) {
-        const node = readNode(child, seen, countGame);
-        if (!node) return null;
-        read.push(node);
-    }
-    // Renormalised rather than required to sum to 1: floats that went through
-    // JSON need not come back summing to exactly 1, and the solver wants a
-    // proportion rather than a total.
-    const total = fractions.reduce((sum: number, f: number) => sum + f, 0);
-    return { kind: 'split', splitId, axis, children: read, fractions: fractions.map((f: number) => f / total) };
-}
-
-function readContent(x: unknown): PaneContent | null {
-    if (typeof x !== 'object' || x === null) return null;
-    const content = x as Record<string, unknown>;
-    if (content.kind === 'empty' || content.kind === 'game') return { kind: content.kind };
-    if (content.kind === 'page') return typeof content.bookmark === 'string' && content.bookmark !== '' ? { kind: 'page', bookmark: content.bookmark } : null;
-    if (content.kind !== 'tool') return null;
-    return (TOOL_IDS as readonly string[]).includes(content.tool as string) ? { kind: 'tool', tool: content.tool as ToolId } : null;
+export function loadingLayout(set: TabSet, tabId: string, tree: PaneNode): { set: TabSet; dropsGame: boolean } | null {
+    const target = set.tabs.find(tab => tab.id === tabId);
+    if (!target) return null;
+    const bringsGame = holdsGame(tree);
+    const gamePane = paneIds(tree).find(id => contentOf(tree, id)?.kind === 'game');
+    return {
+        dropsGame: holdsGame(target.tree) && !bringsGame,
+        set: {
+            activeId: tabId,
+            tabs: set.tabs.map(tab => {
+                if (tab === target) return { id: tab.id, tree, focusedPaneId: gamePane ?? paneIds(tree)[0]! };
+                if (!bringsGame) return tab;
+                const cleared = clearGame(tab.tree);
+                return cleared === tab.tree ? tab : { ...tab, tree: cleared };
+            })
+        }
+    };
 }
 
 /**
- * Where the id counters have to resume so a restored layout cannot be handed an
- * id something in it already answers to.
+ * Where the id counters have to resume so a window's first arrangement cannot
+ * be handed an id something in it already answers to.
  *
- * Splits start from 1 regardless: `splitId` is only ever matched against the
- * tree the shell was just sent, so a collision with a restored one would need a
- * seam drag to arrive naming a split that had been replaced between the push
- * and the click. Panes and tabs are different — a view is keyed by a pane id for
- * as long as it lives.
+ * Splits included, now that a window can open on one. Two splits answering to
+ * one id in the same tree would make a seam drag ambiguous — the game-and-chat
+ * split a window opens with would share `split-1` with the first split the
+ * player made inside it. Panes matter for a longer-lived reason: a view is keyed
+ * by a pane id for as long as it lives.
  */
 export function nextIds(set: TabSet): { pane: number; tab: number; split: number } {
     const after = (values: string[], prefix: string): number =>
@@ -239,6 +227,10 @@ export function nextIds(set: TabSet): { pane: number; tab: number; split: number
     return {
         pane: after(set.tabs.flatMap(tab => paneIds(tab.tree)), 'pane-'),
         tab: after(set.tabs.map(tab => tab.id), 'tab-'),
-        split: 1
+        split: after(set.tabs.flatMap(tab => splitIds(tab.tree)), 'split-')
     };
+}
+
+function splitIds(node: PaneNode): string[] {
+    return node.kind === 'leaf' ? [] : [node.splitId, ...node.children.flatMap(splitIds)];
 }

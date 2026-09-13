@@ -41,17 +41,10 @@ export const PANE_MIN_HEIGHT = 80;
  * relied on its content to introduce itself, which the game and a reference page
  * cannot do at all — they are native views with nothing of ours drawn in them —
  * and which cost the tools a heading apiece in a window where every pane already
- * has an edge and a focus ring. The game and page views are inset below it by
+ * has an edge. The game and page views are inset below it by
  * this much, so it costs that pane's own height and never the window's.
  */
 export const PANE_HEADER_HEIGHT = 32;
-
-/**
- * The pixel of shell left around the tree so the focused pane's ring has
- * somewhere to land. Between panes the seam provides it; at the container's edge
- * there is nothing else, and a native view cannot be outlined from inside itself.
- */
-export const TREE_INSET = 1;
 
 /**
  * The client page's controls strip below the canvas: `max(2vh, 24px)` tall with
@@ -81,3 +74,11 @@ export const PAGE_CONTROLS_HEIGHT = 32;
  */
 export const GAME_PREFERRED_WIDTH = 765;
 export const GAME_PREFERRED_HEIGHT = 503 + PAGE_CONTROLS_HEIGHT + PANE_HEADER_HEIGHT;
+
+/**
+ * What the chat pane below the game asks for in the arrangement a new window
+ * opens with: the old chat dock's default height of 200, plus the header every
+ * pane now has. A new window opens tall enough for both, so neither pays for the
+ * other at the size nobody chose.
+ */
+export const CHAT_PREFERRED_HEIGHT = 200 + PANE_HEADER_HEIGHT;

@@ -9,7 +9,8 @@ on top of the reference pane and single player.** The window is a tree of
 panes now rather than four fixed regions: the game, a reference page and any
 tool can sit anywhere in it, split left/right or up/down, and every seam
 drags. A fresh pane shows a launcher of this server's links and this window's
-tools. Workspace tabs, background images and shareable layout presets follow.
+tools. Workspace tabs are in, and so are layouts saved as files you can hand to
+someone else; background images follow.
 The design is in `docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`,
 which supersedes the layout halves of the server-windows and chat-dock specs
 beside it; the plans are under `docs/superpowers/plans/`.
@@ -178,8 +179,10 @@ into a stranger's channel on a large public network. A local or self-added
 server gets no room either, since it would be a room of one.
 
 Chat is a pane like anything else: put it wherever you want it, drag its seams,
-close it. It comes off the rail's Chat tab, which fills the pane you are
-standing in.
+close it. A new window opens with it already there, in a pane below the game —
+chat is the kit's own reason to be open instead of a browser tab, and a pane
+nobody knows is there is a pane nobody opens. Closed, it comes back off the
+rail's Chat tab, which fills the pane you are standing in.
 
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short lines,
@@ -316,7 +319,8 @@ open.
 `<userData>/state.json` remembers the last world and detail per server, and
 whether the switch confirmation still shows. It is
 not configuration and never interrupts a launch: a broken file is kept aside
-and the state starts empty.
+and the state starts empty. It does not remember pane layouts: those are saved
+only when you ask, as files of their own (see Layout below).
 
 ## Layout
 
@@ -343,8 +347,15 @@ For the length of the drag the views are hidden and each pane says its own
 name, for the same reason: a drop target painted under a game view would be
 invisible. Nothing reloads — it is the same hiding a tab switch does.
 
-Right-clicking a pane offers Split Right, Split Down, Even Out and Close, and
-focuses that pane first so the menu acts on what was clicked. A split that
+The pane you are standing in — the one the rail fills and Cmd/Ctrl+D and
+Cmd/Ctrl+W act on — has a small gold dot before its name in its header, shown
+only when the tab has more than one pane. It used to be a gold ring drawn round
+the whole pane, which was the loudest line in the window for the least
+interesting fact in it.
+
+Right-clicking a pane offers Split Right, Split Down, Even Out and Close, each
+with its shortcut beside it, and focuses that pane first so the menu acts on
+what was clicked. A split that
 could not be drawn — either half under the 120x80 floor — is offered greyed
 rather than offered and then refused, and so is Close on a tab's only pane when
 it is already empty, since closing it would empty an empty pane. The same four are in the View menu with
@@ -371,7 +382,9 @@ link's curated name from the catalog rather than the page's own `<title>`, which
 changes as you click through a wiki and would make the pane's identity move
 under it; then the tool's name, or "Game", or "Empty". Then **that pane's own
 controls**, which only a page has: back, forward, reload. Then a **dropdown**
-that changes what the pane holds, offering the same list the launcher does.
+that changes what the pane holds, offering the same list the launcher does and,
+under a rule, Split Right and Split Down — because nothing on screen says a
+right-click exists, and the arrow is the control a new player will actually try.
 Last, a **close**, the same act as the right-click menu's, which asks first on
 the game's pane. Nothing else gets controls: Hiscores' name box, Worlds' detail switch and chat's
 Send stay in the pane body, because they are the pane's *work* rather than its
@@ -415,12 +428,38 @@ actually stops the two axes inducing each other — and separately swaps that
 `100vh` for a percentage of the view's own height, which keeps the canvas centred
 in an oversized pane now that `vh` is gone rather than fixing anything itself.
 
-The arrangement is remembered per server, the way the world and detail already
-are: the next window for that server opens with the tabs, splits and seam
-positions you left it with. A stored layout is validated whole and refused
-whole — one server's entry edited into nonsense costs that server its
-arrangement and nothing else, and a window with no stored layout opens on the
-game.
+Nothing about the arrangement is saved on its own. A new window always opens
+the same way — the game at its full 765x567, a 232px chat pane below it, and
+the game's pane focused so the rail splits it rather than replacing chat. The
+window opens tall enough for both and no taller than the display it opens on;
+on a display too short for that, chat gives way to its 80px floor before the
+game loses any height.
+
+A layout is saved on purpose, from the menu a **right-click on a tab** raises:
+
+- **Save Layout…** writes that tab's panes — the splits, the seam positions and
+  what each pane shows — to a `.json` file named for the tab, in that server's
+  own folder, `<userData>/layouts/<server>/`. The save dialog lets you rename it.
+- **Load Layout** lists that folder's layouts by name and replaces the tab's
+  panes with the one you pick. **From File…** loads one from anywhere, such as a
+  file somebody sent you.
+- **Open Layouts Folder** opens the folder in Finder or Explorer, which is how a
+  layout is shared: copy the file out, or drop somebody else's in.
+- **Close Tab**, the same close as the one inside the tab.
+
+The window used to save its arrangement after every split and seam drag, which
+made the last accident the thing the next window opened with, and left nothing
+to hand anyone.
+
+A layout file holds no pane or split ids — the window hands out its own on load
+— and is validated whole and refused whole, with a sheet saying the file is not
+a layout and the tab left as it was. A layout made on another server still
+loads: a tool this window's rail does not carry, or a page that is not one of
+this server's links, comes up as an empty pane showing the launcher rather than
+failing the rest. Loading keeps the one-game rule. A layout with a game pane
+moves the game into it from wherever it was, with no reload; a layout with no
+game, loaded over the tab that holds the game, is closing the game, so it asks
+first and ends the game view exactly as closing that tab would.
 
 The floor on a pane is 120x80: the point at which it stops being able to show
 that it exists, not the point at which its content is comfortable. A pane that
@@ -473,7 +512,7 @@ One capture run with every catalog server open at once:
 
 | window | game | shell |
 |---|---|---|
-| Lost City | the whole login screen, canvas and controls strip, nothing clipped at the window's own opening size of 815x605 | one pane headed "Game · Lost City · W5 · low · 210 ms · rev 274"; tabs and the `+` alone in the bar above it |
+| Lost City | the whole login screen, canvas and controls strip, nothing clipped at 765x535 inside the window's own opening size of 813x839 | the game's pane headed "Game · Lost City · W2 · low · 283 ms · rev 274" with the focus dot before its name, over a 232px chat pane showing the nick prompt; no ring round either |
 | Zanaris | login screen | "Game · Zanaris · W1 · low · 268 ms" |
 | Lost City Labs | login screen | "Game · Lost City Labs · W1 · N ms", no detail since Labs has no switch |
 | Lost City, split right | untouched at 765→381px wide | the new pane headed "Empty", its launcher offering Chat, Worlds, Hiscores, **Move game here**, then the eleven links under a rule |
@@ -483,9 +522,11 @@ One capture run with every catalog server open at once:
 | Lost City Labs, Hiscores open | untouched | "Showing knight", Overall in gold at rank 1, level 1,176, 18,174,678 xp; 22 rows in all, Labs' later revision sending the Slayer and Farming lines 274 never does |
 | Zanaris, two pages stacked | untouched | both page panes headed with their catalog names — "Coord…", "Clue H…" — before their back, forward and reload, the name truncating rather than vanishing at 189px |
 | Lost City, seam dragged | 190px wide | asked for 190px of 761 and got 190; the game pane's header keeps its name and drops "rev 274", which is the half worth losing |
-| Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, restored into the same arrangement the first window was left in — so its shell frame is byte-identical to that window's, which is the one duplicate in the run and a real one |
+| Lost City, split right then swapped | untouched | "Empty" beside "Game" over "Chat", the dot on the game's header only — the split shot itself came back a stale frame of the window before it (the capture hazard; so did the Single player tool's), and the swapped shot straight after it shows the three panes |
+| Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, opening on the game over chat like every new window rather than on the first window's arrangement, which nothing saves any more |
+| Lost City (2), a layout saved and loaded into a new tab | not reloaded — no second load in the log | tabs "Empty" and "Game": the file saved "game over chat", the new tab loaded it, and the game moved into it, leaving the first tab's game pane empty. `state.json` holds no layouts |
 
-424 tests cover the pure modules: layout, catalog (validation, defaults, file
+453 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, a version 1, 2 or 3 file each migrating into version 4, and a
 built-in's hiscores block re-adopted from the defaults), slots, tabs, the
 window registry, the world sources against the real API payloads (including a
@@ -497,7 +538,12 @@ service (supersession by sequence number, the last table kept through a
 failure, the rate-limit message), the per-window switch state, the app state
 store, the navigation guard, the latency probe against a local listener, the
 pane tree and its solver, the workspace tabs — including moving the game out of
-one tab and into another — and what a pane is called and may be turned into.
+one tab and into another, the game-and-chat arrangement a window opens with at
+full, short and tiny heights, and what loading a layout over a tab costs the
+game — the layout file (refusing anything that could not have been saved,
+fresh ids, and whatever this window cannot show coming up empty), and what a
+pane is called and may be turned into, the header's dropdown sharing the
+right-click menu's splits.
 
 ## Known
 
@@ -547,7 +593,9 @@ src/shared/catalog.ts       ServerDef and the add-form input
 src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorld
 src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/main/paneTree.ts        pure: the split tree, its solver, splits and drags      (tested)
-src/main/tabs.ts            pure: workspace tabs, moving the game, stored layouts   (tested)
+src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
+                            arrangement, loading a layout into a tab                (tested)
+src/main/layoutFile.ts      pure: a layout file — writing, validating, fresh ids    (tested)
 src/main/paneMenu.ts        pure: a pane's name, its gestures, what it may become    (tested)
 src/main/paneHost.ts        the views inside a tab's panes; holds no rules
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)

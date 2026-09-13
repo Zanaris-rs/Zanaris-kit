@@ -18,7 +18,8 @@ import {
 } from './paneTree.ts';
 import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
 import { canClosePane, paneContentItems, paneName } from './paneMenu.ts';
-import { closeTab, closingTab, labelOfTab, moveGame, newTab, nextIds, openTabs, selectTab, type TabClosing, type TabSet } from './tabs.ts';
+import { closeTab, closingTab, labelOfTab, loadingLayout, moveGame, newTab, nextIds, selectTab, type TabClosing, type TabSet } from './tabs.ts';
+import { instantiateLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
 
@@ -56,12 +57,14 @@ export interface PaneHostDeps {
     tools: () => readonly ToolId[];
     hosts: () => readonly string[];
     log: (line: string) => void;
-    /** The layout this server's windows were last left in, or null to open fresh on the game. */
-    remembered: TabSet | null;
+    /**
+     * The arrangement the window opens with. Nothing is carried over from last
+     * time on its own — a layout is a file the player saves and loads from a
+     * tab's menu — so this is the window's own default.
+     */
+    initial: TabSet;
     /** The tree's shape changed: lay the window out again and push state. */
     changed: () => void;
-    /** The arrangement moved. Staged, not written: a seam drag lands one of these per animation frame. */
-    remember: (set: TabSet) => void;
     /** Nothing geometric moved — a title, a back button. Push state only. */
     touched: () => void;
     /** A right-click landed on a pane, in window coordinates. */
@@ -69,7 +72,7 @@ export interface PaneHostDeps {
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
-    let set: TabSet = deps.remembered ?? openTabs('tab-1', 'pane-1', { kind: 'game' });
+    let set: TabSet = deps.initial;
     const resume = nextIds(set);
     let nextPane = resume.pane;
     let nextSplit = resume.split;
@@ -274,13 +277,13 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         const survives = paneIds(next).includes(focused());
         set = withActive(next, survives ? undefined : paneIds(next)[0]);
         syncViews();
-        deps.remember(set);
         deps.changed();
     }
 
     return {
         tree: active,
         trees: () => set.tabs.map(tab => tab.tree),
+        treeOf: (tabId: string) => set.tabs.find(tab => tab.id === tabId)?.tree ?? null,
         focusedPaneId: focused,
 
         layout(rect: Rect): void {
@@ -349,8 +352,33 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         newTab(): void {
             set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`);
-            deps.remember(set);
             deps.changed();
+        },
+
+        /** A saved layout's tree made real in this window: fresh ids from this window's counters, and anything it cannot show left empty. */
+        instantiate(stored: StoredNode): PaneNode {
+            return instantiateLayout(stored, {
+                tools: deps.tools(),
+                links: deps.bookmarks(),
+                nextPane: () => `pane-${nextPane++}`,
+                nextSplit: () => `split-${nextSplit++}`
+            });
+        },
+
+        loading: (tabId: string, tree: PaneNode) => loadingLayout(set, tabId, tree),
+
+        /**
+         * Replaces a tab's panes with a loaded layout's. The window has already
+         * asked about and destroyed the game when this drops it, which is why it
+         * is a separate step from `loading`: the question comes between them.
+         */
+        replaceTab(tabId: string, tree: PaneNode): boolean {
+            const loaded = loadingLayout(set, tabId, tree);
+            if (!loaded) return false;
+            set = loaded.set;
+            syncViews();
+            deps.changed();
+            return true;
         },
 
         /** Returns false when that was the last tab — the window's cue to close. */
@@ -359,7 +387,6 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             if (next === null) return false;
             if (next === set) return true;
             set = next;
-            deps.remember(set);
             // The tab's panes went with it, so its page views have nothing left
             // pointing at them. Reconciled rather than tracked: `syncViews`
             // follows the tabs, and a view whose pane is gone from every tab is
@@ -373,7 +400,6 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             const next = selectTab(set, tabId);
             if (next === set) return;
             set = next;
-            deps.remember(set);
             deps.changed();
         },
 
@@ -407,7 +433,6 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             if (next === set) return;
             set = next;
             syncViews();
-            deps.remember(set);
             deps.changed();
         },
 
@@ -423,7 +448,6 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             // panes exist, only how big they are.
             if (next !== active()) {
                 set = withActive(next);
-                deps.remember(set);
                 deps.changed();
             }
             // The size the seam was *drawn* at, not the one it asked for. The
@@ -465,6 +489,8 @@ export interface PaneHost {
     tree: () => PaneNode;
     /** Every tab's tree. What a pane may become depends on all of them, since the game can be moved out of any. */
     trees: () => PaneNode[];
+    /** One tab's tree, for saving it as a layout. Null when there is no such tab. */
+    treeOf: (tabId: string) => PaneNode | null;
     focusedPaneId: () => string;
     layout: (rect: Rect) => void;
     panes: () => PaneView[];
@@ -478,6 +504,11 @@ export interface PaneHost {
     /** Where a pane was last drawn, for anything that needs its size — the context menu asks whether it can still be halved. */
     rectOf: (paneId: string) => Rect | null;
     newTab: () => void;
+    instantiate: (stored: StoredNode) => PaneNode;
+    /** What loading a layout into a tab would do, the game above all — null when there is no such tab. Nothing changes until `replaceTab`. */
+    loading: (tabId: string, tree: PaneNode) => { set: TabSet; dropsGame: boolean } | null;
+    /** False when there is no such tab. */
+    replaceTab: (tabId: string, tree: PaneNode) => boolean;
     /** What closing a tab would take with it — the window, the game, or only itself. The window asks this before it closes anything. */
     closing: (tabId: string) => TabClosing;
     /** False when that was the last tab, which is the window's cue to close. */

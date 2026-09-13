@@ -4,7 +4,8 @@ import { contentOf, paneIds, parentSplitOf, type PaneContent, type PaneNode } fr
 
 /**
  * What a pane is called, and what its two menus offer: the gestures a
- * right-click gives it, and the contents its header's dropdown can put in it.
+ * right-click gives it, and the contents its header's dropdown can put in it —
+ * followed there by the gesture menu's two splits.
  *
  * Pure and tested for the usual reason, and for one specific to a menu: an item
  * that is offered and then refused is worse than one that was never offered,
@@ -20,6 +21,12 @@ export interface PaneMenuItem {
     id: 'split-x' | 'split-y' | 'even-out' | 'close';
     label: string;
     enabled: boolean;
+    /**
+     * The View menu's shortcut for the same act, shown beside the item so a
+     * menu teaches it. Shown, not registered: the application menu already
+     * owns these shortcuts, and a popup menu is not where they should live.
+     */
+    accelerator: string;
 }
 
 /** One of this server's curated links, as much of it as naming a pane needs. */
@@ -120,12 +127,12 @@ export function canClosePane(tree: PaneNode, paneId: string): boolean {
 export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }): PaneMenuItem[] {
     const isGame = contentOf(tree, paneId)?.kind === 'game';
     return [
-        { id: 'split-x', label: 'Split Right', enabled: halvable(rect.width, PANE_MIN_WIDTH) },
-        { id: 'split-y', label: 'Split Down', enabled: halvable(rect.height, PANE_MIN_HEIGHT) },
+        { id: 'split-x', label: 'Split Right', enabled: halvable(rect.width, PANE_MIN_WIDTH), accelerator: 'CmdOrCtrl+D' },
+        { id: 'split-y', label: 'Split Down', enabled: halvable(rect.height, PANE_MIN_HEIGHT), accelerator: 'CmdOrCtrl+Shift+D' },
         // Nothing to even out when the pane is the whole tab: there are no
         // siblings to share with, and the item would be a no-op wearing the
         // same face as the working one.
-        { id: 'even-out', label: 'Even Out', enabled: parentSplitOf(tree, paneId) !== null },
+        { id: 'even-out', label: 'Even Out', enabled: parentSplitOf(tree, paneId) !== null, accelerator: 'CmdOrCtrl+Alt+=' },
         {
             id: 'close',
             // Named for what it costs. Closing the game destroys its view and
@@ -136,7 +143,24 @@ export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: num
             // The last pane in a tab empties rather than vanishing, so there is
             // no state this can leave the window in that it cannot draw — the
             // one pane it is withheld from is the lone one already empty.
-            enabled: canClosePane(tree, paneId)
+            enabled: canClosePane(tree, paneId),
+            accelerator: 'CmdOrCtrl+W'
         }
     ];
+}
+
+/**
+ * The two ways to make a new pane, for the header's dropdown.
+ *
+ * The same items the right-click menu opens with, taken from it rather than
+ * restated, so the dropdown greys a split under exactly the floor the gesture
+ * menu does. They are repeated there because a right-click is invisible: the
+ * arrow on the header is the one control a player can see, and a menu reached
+ * from it that could change a pane but not add one left splitting as something
+ * only the people who already knew about it would ever do. Even Out and Close
+ * stay off it — the close sits beside the arrow already, and evening out is
+ * about the panes around this one rather than this one.
+ */
+export function paneSplitItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }): PaneMenuItem[] {
+    return paneMenuItems(tree, paneId, rect).filter(item => item.id === 'split-x' || item.id === 'split-y');
 }
