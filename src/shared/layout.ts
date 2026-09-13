@@ -74,3 +74,11 @@ export const PAGE_CONTROLS_HEIGHT = 32;
  */
 export const GAME_PREFERRED_WIDTH = 765;
 export const GAME_PREFERRED_HEIGHT = 503 + PAGE_CONTROLS_HEIGHT + PANE_HEADER_HEIGHT;
+
+/**
+ * What the chat pane below the game asks for in the arrangement a new window
+ * opens with: the old chat dock's default height of 200, plus the header every
+ * pane now has. A new window opens tall enough for both, so neither pays for the
+ * other at the size nobody chose.
+ */
+export const CHAT_PREFERRED_HEIGHT = 200 + PANE_HEADER_HEIGHT;

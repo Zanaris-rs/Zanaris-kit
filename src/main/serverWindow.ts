@@ -2,7 +2,7 @@ import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuI
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, TAB_BAR_HEIGHT } from '../shared/layout';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
@@ -11,7 +11,7 @@ import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { paneContentItems, paneMenuItems, paneSplitItems, type PaneMenuItem } from './paneMenu';
 import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
-import { holdsGame, openTabs } from './tabs';
+import { holdsGame, openWindowTabs } from './tabs';
 import { layoutEntries, layoutFileName, readLayout, writeLayout } from './layoutFile';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
@@ -24,12 +24,20 @@ import type { ServerWindowHandle, WindowSpec } from './windows';
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /**
- * The content area a new window opens with: a game pane at its preferred size.
- * The tree fills the content area left of the rail and below the bar exactly,
- * so anything short of this would clip the bottom of the canvas at the one size
- * nobody chose.
+ * The content area a new window opens with: the game at its preferred size and
+ * the chat pane below it at its own, with the seam between them
+ * (`tabs.openWindowTabs`). The tree fills the content area left of the rail and
+ * below the bar exactly, so anything short of this would clip the bottom of the
+ * canvas at the one size nobody chose.
  */
-const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH, height: GAME_PREFERRED_HEIGHT };
+const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH, height: GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT };
+/**
+ * Room left on the display for the window's own frame, which a content size
+ * does not include: a title bar on macOS, a caption and borders on Windows.
+ * Generous rather than measured, since the frame cannot be asked for before the
+ * window exists and an opening size a few pixels short costs nothing.
+ */
+const FRAME_ALLOWANCE = 40;
 const PROBE_EVERY_MS = 10_000;
 const PROBE_TIMEOUT_MS = 3_000;
 
@@ -271,9 +279,18 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /** True between a loadGame and its result, so a kit page can tell it is superseding one. */
     let gameLoadPending = false;
 
+    /*
+     * The game and chat together are taller than some laptop displays can show,
+     * and a window opened past the bottom of the screen hides the very pane it
+     * opened to show. So the height is held to the display it will open on, and
+     * the split's shares are worked out from the height the window actually got
+     * (see `openWindowTabs`).
+     */
+    const display = screen.getDisplayNearestPoint(deps.position ?? screen.getCursorScreenPoint());
+    const openHeight = Math.max(TAB_BAR_HEIGHT + PANE_MIN_HEIGHT, Math.min(TAB_BAR_HEIGHT + DEFAULT_CONTENT.height, display.workArea.height - FRAME_ALLOWANCE));
     const win = new BrowserWindow({
         width: DEFAULT_CONTENT.width + RAIL_WIDTH,
-        height: TAB_BAR_HEIGHT + DEFAULT_CONTENT.height,
+        height: openHeight,
         // One pane's floor plus the chrome that never gives way. A constant
         // now: the old minimum moved as the dock opened and closed, because it
         // was protecting a region the layout was also protecting. Nothing is
@@ -344,7 +361,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         tools: () => tools,
         hosts: () => server.hosts,
         log: line => deps.log(`${tag} ${line}`),
-        initial: openTabs('tab-1', 'pane-1', { kind: 'game' }),
+        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT),
         changed: () => applyLayout(),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState()

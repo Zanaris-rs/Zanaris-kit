@@ -1,4 +1,5 @@
-import { clearGame, contentOf, leaf, paneIds, setContent, type PaneContent, type PaneNode } from './paneTree.ts';
+import { clearGame, contentOf, leaf, paneIds, setContent, split, type PaneContent, type PaneNode } from './paneTree.ts';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 import { paneName, type PaneLink } from './paneMenu.ts';
 
 /**
@@ -26,17 +27,46 @@ export interface TabSet {
 }
 
 /**
- * The set a new window starts with: one tab holding one pane.
- *
- * The content is handed in rather than assumed empty, because a window opens on
- * the game. There is no launcher window in this kit and never has been — the
- * File menu makes windows, and every one of them is a game window — so a new
- * window that came up showing a chooser would be a new kind of thing to
- * explain. A *tab* is the opposite case and does start empty: the arrangement
- * is the point of making one.
+ * One tab holding one pane: the smallest arrangement there is, and the one a
+ * window opened on before it opened on the game and chat together.
  */
 export function openTabs(tabId: string, paneId: string, content: PaneContent): TabSet {
     return { tabs: [{ id: tabId, tree: leaf(paneId, content), focusedPaneId: paneId }], activeId: tabId };
+}
+
+/**
+ * The arrangement a new window opens with: the game, and chat below it.
+ *
+ * On the game because there is no launcher window in this kit and never has
+ * been — the File menu makes windows, and every one of them is a game window.
+ * With chat under it because chat is the kit's own reason to be open instead of
+ * a browser tab, and a pane nobody knows is there is a pane nobody opens. Below
+ * rather than beside, where the 2004 client keeps its own chat box, so the
+ * conversation gets the game's full width.
+ *
+ * The game keeps its preferred height whenever the window has room for that
+ * and a chat pane above the floor: a canvas cut off at the bottom is the one
+ * cost here a player cannot scroll or read past. On a display too short for
+ * that, chat gives way down to the floor first and the game takes the rest;
+ * only below two floors are they shared in proportion, and there the solver's
+ * own minimums decide. Nothing remembers these numbers — they are the shares
+ * the split starts with, and the fractions carry them from there.
+ *
+ * Focus is on the game, so a tool chosen from the rail splits the game's pane
+ * rather than replacing the chat below it.
+ */
+export function openWindowTabs(treeHeight: number): TabSet {
+    const gross = Math.max(0, treeHeight - SEAM);
+    const game = Math.min(GAME_PREFERRED_HEIGHT, gross - PANE_MIN_HEIGHT);
+    const shares = game >= PANE_MIN_HEIGHT ? [game, gross - game] : [GAME_PREFERRED_HEIGHT, CHAT_PREFERRED_HEIGHT];
+    const total = shares[0]! + shares[1]!;
+    const tree = split(
+        'split-1',
+        'y',
+        [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: 'chat' })],
+        shares.map(share => share / total)
+    );
+    return { tabs: [{ id: 'tab-1', tree, focusedPaneId: 'pane-1' }], activeId: 'tab-1' };
 }
 
 export function newTab(set: TabSet, tabId: string, paneId: string): TabSet {

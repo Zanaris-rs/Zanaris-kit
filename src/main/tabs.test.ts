@@ -1,11 +1,55 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contentOf, leaf, paneIds, split } from './paneTree.ts';
-import { closeTab, closingTab, labelOfTab, loadingLayout, moveGame, newTab, nextIds, openTabs, selectTab } from './tabs.ts';
+import { contentOf, layoutTree, leaf, paneIds, split } from './paneTree.ts';
+import { closeTab, closingTab, labelOfTab, loadingLayout, moveGame, newTab, nextIds, openTabs, openWindowTabs, selectTab } from './tabs.ts';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 
-test('a window opens on whatever it was given — the game, not a launcher', () => {
+test('a one-pane set holds whatever it was given', () => {
     const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
     assert.deepEqual(set.tabs[0]!.tree, leaf('pane-1', { kind: 'game' }));
+});
+
+/** The game's and chat's heights as the solver draws them in a tree of this height. */
+function heights(treeHeight: number): { game: number; chat: number } {
+    const tree = openWindowTabs(treeHeight).tabs[0]!.tree;
+    const rects = layoutTree(tree, { x: 0, y: 0, width: 765, height: treeHeight }).panes;
+    return { game: rects.get('pane-1')!.height, chat: rects.get('pane-2')!.height };
+}
+
+test('a new window opens on the game with chat below it, the game focused', () => {
+    const set = openWindowTabs(GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT);
+    const tree = set.tabs[0]!.tree;
+    assert.equal(tree.kind === 'split' && tree.axis, 'y', 'stacked, not side by side');
+    assert.deepEqual(
+        paneIds(tree).map(id => contentOf(tree, id)),
+        [{ kind: 'game' }, { kind: 'tool', tool: 'chat' }]
+    );
+    assert.equal(set.tabs[0]!.focusedPaneId, 'pane-1', 'so the rail splits the game rather than replacing chat');
+});
+
+test('at the size a window opens at, the game and chat each get exactly what they ask for', () => {
+    assert.deepEqual(heights(GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT), { game: GAME_PREFERRED_HEIGHT, chat: CHAT_PREFERRED_HEIGHT });
+});
+
+test('on a short display chat gives way first, down to its floor, and the game keeps its height', () => {
+    assert.deepEqual(heights(GAME_PREFERRED_HEIGHT + SEAM + 120), { game: GAME_PREFERRED_HEIGHT, chat: 120 });
+    assert.deepEqual(heights(GAME_PREFERRED_HEIGHT + SEAM + PANE_MIN_HEIGHT), { game: GAME_PREFERRED_HEIGHT, chat: PANE_MIN_HEIGHT });
+});
+
+test('shorter still, the game gives way and chat holds its floor', () => {
+    assert.deepEqual(heights(500), { game: 500 - SEAM - PANE_MIN_HEIGHT, chat: PANE_MIN_HEIGHT });
+});
+
+test('below two floors the two are shared in proportion, and nothing is negative', () => {
+    const tiny = heights(120);
+    assert.equal(tiny.game + tiny.chat, 120 - SEAM);
+    assert.ok(tiny.game > 0 && tiny.chat > 0);
+    const { game, chat } = heights(0);
+    assert.ok(game >= 0 && chat >= 0);
+});
+
+test("a split made inside the window's opening arrangement gets an id of its own", () => {
+    assert.deepEqual(nextIds(openWindowTabs(800)), { pane: 3, tab: 2, split: 2 });
 });
 
 test('a new tab holds one empty pane and comes to the front', () => {

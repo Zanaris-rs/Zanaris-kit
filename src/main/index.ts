@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net, screen, session, shell, type NativeImage, type WebContents } from 'electron';
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
@@ -933,9 +933,12 @@ async function captureAndExit(dir: string): Promise<void> {
         // The layout and slot checks use a window whose game actually loaded, if any did.
         const first = opened[results.indexOf('loaded')] ?? opened[0];
         if (!first) throw new Error('the server list is empty');
-        // A split, so at least one capture shows more than one pane. Splitting
-        // the game's pane is the interesting case, since that is the one the
-        // old layout refused to do at all.
+        // A split across the game's pane, which a window opens focused on — so
+        // the shot has three panes, the game and an empty one side by side over
+        // the chat every window opens with, and the new pane's header is the
+        // one carrying the focus dot. Splitting the game's pane is the
+        // interesting case, since that is the one the old layout refused to do
+        // at all.
         first.splitPane(focused(first), 'x');
         await wait(500);
         const split = first.state();
@@ -978,11 +981,12 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] ${id} worlds: ${view?.status} ${view?.worlds.map(w => `W${w.id}=${w.players ?? '?'}p/${w.latencyMs ?? '?'}ms`).join(' ')}${view?.error ? ` error: ${view.error}` : ''}`);
             await shoot(`${id}-worlds`, hopper);
 
-            // Chat beside the still-open Worlds pane: two tools and the game
-            // laid out at once, which is the arrangement the whole tree exists
-            // to allow and which the fixed column could not express at all.
-            // `selectTool` splits the focused pane when it holds the game, so
-            // Worlds stays exactly as the shot above left it either way.
+            // Chat below the still-open Worlds pane: two tools and the game laid
+            // out at once, which is the arrangement the whole tree exists to
+            // allow and which the fixed column could not express at all. Every
+            // window opens with chat already there, so this only focuses it —
+            // `selectTool` never opens a second copy — and Worlds stays exactly
+            // as the shot above left it.
             hopper.selectTool('chat');
             await wait(500);
             // Maximised, which is now simply a bigger rect for the tree to
@@ -1084,9 +1088,6 @@ async function captureAndExit(dir: string): Promise<void> {
         // and never fake a connection just to get a prettier screenshot.
         log('[capture] chat: no nick in this profile, so the dock captures the nick prompt, not a conversation');
 
-        // moveChat('bottom') rather than the rail's selectTool('chat'): it
-        // lands on "dock open, default height, panel closed" unconditionally,
-        // whatever `first` currently has open — including home already 'side'
         // A seam dragged without a pointer: the same clamp `paneSetSeam`
         // applies, driven directly the way this whole function drives
         // ServerWindow rather than over IPC — there is no renderer here to send
@@ -1223,6 +1224,30 @@ async function captureAndExit(dir: string): Promise<void> {
         log(`[capture] ${second.state().title}: ${await loaded(second)}`);
         await wait(Math.min(settleMs, 8_000));
         await shoot(`${first.state().server.id}-2`, second);
+
+        // A layout saved and loaded, driven on the window rather than through
+        // the tab menu — the save and open dialogs are native sheets nothing
+        // here can click. The fresh window's game-and-chat tab is written to a
+        // file, a new empty tab is opened, and the file loaded into it: the
+        // game should move into the new tab's game pane without a reload, and
+        // the first tab's game pane should be left empty. Written to the temp
+        // directory and removed, so a run leaves nothing in the layouts folder.
+        const activeTab = (sw: ServerWindow): string => sw.state().tabs.find(tab => tab.active)?.id ?? '';
+        const panesOf = (sw: ServerWindow): string => sw.state().panes.map(p => (p.content.kind === 'tool' ? p.content.tool : p.content.kind)).join(' over ');
+        const layoutPath = join(app.getPath('temp'), `zanaris-kit-capture-${Date.now()}.json`);
+        try {
+            const saved = panesOf(second);
+            second.saveLayoutTo(activeTab(second), layoutPath);
+            second.newTab();
+            await wait(300);
+            const result = await second.loadLayoutFrom(activeTab(second), layoutPath);
+            await wait(500);
+            const tabs = second.state().tabs.map(tab => tab.label).join(', ');
+            log(`[capture] ${second.state().title}: saved "${saved}", loaded into a new tab: ${result} — now "${panesOf(second)}", tabs ${tabs}`);
+            await shoot(`${first.state().server.id}-layout-loaded`, second);
+        } finally {
+            rmSync(layoutPath, { force: true });
+        }
     } catch (err) {
         log(`[capture] aborted: ${(err as Error).stack ?? String(err)}`);
     } finally {
