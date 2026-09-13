@@ -53,9 +53,7 @@ export interface SeamView {
 
 export interface TabView {
     id: string;
-    /** What the tab button says: the focused pane's content, or "Empty". */
+    /** What the tab button says: its first pane's name, as that pane's header says it. */
     label: string;
     active: boolean;
-    /** Whether this tab holds the live game, so the bar can mark where the character is. */
-    hasGame: boolean;
 }

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type CSSProperties, type Pointer
 import type { Rect, ShellState, ToolId } from '../shared/ipc';
 import type { PaneView, SeamView } from '../shared/panes';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
-import { Bars, Chat as ChatIcon, CloseRoom, Globe, Hearth, Plus } from './icons';
+import { Bars, Chat as ChatIcon, Globe, Hearth, Plus } from './icons';
 import Grip from './grip';
 import Launcher from './Launcher';
 import PaneHeader, { type Grab } from './paneHeader';
@@ -30,16 +30,6 @@ const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', border
    carry the stone's text shadow, and a gold digit on a lit sprite needs one of its
    own to stay a digit. */
 const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
-/**
- * A tab and its close are one item of the bar, the way a room and its close are
- * one item of chat's row: the close reads as part of the workspace it shuts
- * rather than as another piece of the bar's furniture.
- *
- * `min-w-0` because these do run out of room — a window can hold as many tabs
- * as the user makes, and a bar that could not shrink them would push the new-tab
- * control off its own right edge instead.
- */
-const TAB_SLOT = 'flex min-w-0 items-center gap-[2px]';
 /** Sized inline for the reason `tab.tsx` sizes its own box inline: `.tab` carries the rail's 36x34 square and is unlayered CSS, which beats a utility of equal specificity whatever the order. */
 const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 
@@ -247,35 +237,22 @@ export default function Shell(): ReactNode {
                  * the game pane's own header now.
                  */}
                 <header role="tablist" style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
+                    {/*
+                     * A tab and its close are one object: the close sits inside
+                     * the tab it shuts, so it reads as part of that workspace
+                     * rather than as another piece of the bar's furniture. Main
+                     * asks first when the tab holds the game.
+                     */}
                     {state.tabs.map(tab => (
-                        <div key={tab.id} className={TAB_SLOT}>
-                            <Tab
-                                role="tab"
-                                label={tab.label}
-                                title={tab.hasGame ? `${tab.label} — the game is in this tab` : tab.label}
-                                open={tab.active}
-                                onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
-                                /*
-                                 * The character is in here. A running game in a
-                                 * background tab is still in the world, so the
-                                 * bar says which tab to come back to rather than
-                                 * leaving it to be remembered.
-                                 */
-                                after={tab.hasGame ? <span className="ml-1 text-gold">&bull;</span> : undefined}
-                            />
-                            {/* Beside the tab, never in its `after`, which renders inside the
-                                tab's own button — a button within a button is invalid HTML that
-                                no two browsers agree on. */}
-                            <button
-                                type="button"
-                                title={`Close ${tab.label}`}
-                                aria-label={`Close ${tab.label}`}
-                                onClick={() => void window.zanaris.panes.closeTab(tab.id)}
-                                className="tile flex w-[24px] shrink-0 items-center justify-center self-stretch text-faint hover:text-cream"
-                            >
-                                <CloseRoom />
-                            </button>
-                        </div>
+                        <Tab
+                            key={tab.id}
+                            role="tab"
+                            label={tab.label}
+                            title={tab.label}
+                            open={tab.active}
+                            onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
+                            onClose={() => void window.zanaris.panes.closeTab(tab.id)}
+                        />
                     ))}
                     <button
                         type="button"

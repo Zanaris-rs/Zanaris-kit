@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
+import { CloseRoom } from './icons';
 
 /**
  * The text-bearing interface tab, worn by the window strip and by the chat
@@ -25,7 +26,9 @@ export default function Tab({
     open,
     role,
     onSelect,
-    after
+    after,
+    onClose,
+    closeLabel
 }: {
     label: string;
     /** The full name, for a label that had to be shortened to fit. */
@@ -50,6 +53,14 @@ export default function Tab({
     onSelect?: () => void;
     /** The detail some tabs carry to the right of the label: a revision, an unread count. */
     after?: ReactNode;
+    /**
+     * Puts a close inside the tab, at its right edge. The window strip's tabs
+     * carry one; the dock's rooms do not, and keep their close beside the tab
+     * for the open room only — see `CloseControl` in `tools/Chat.tsx`.
+     */
+    onClose?: () => void;
+    /** What the close is announced as. Names the tab rather than the act, since "Close" alone says nothing about which one. */
+    closeLabel?: string;
 }): ReactNode {
     /*
      * One pair of faces for both states, the rail's own: resting is a tab cut
@@ -64,7 +75,8 @@ export default function Tab({
      * done. It also settles a wobble: `.tile` is a 2px border and `.tab` a 1px
      * one, so a tab used to change size by two pixels on being opened.
      */
-    const skin = `flex items-center gap-[7px] px-2.5 ${open ? 'tab tab-on' : 'tab text-dim'}`;
+    const face = open ? 'tab tab-on' : 'tab text-dim';
+    const skin = `flex items-center gap-[7px] px-2.5 ${face}`;
     /* A real button already has the role it needs, so only the strip's read-out names one. */
     const announce: { role?: 'tab'; 'aria-selected'?: boolean; 'aria-current'?: true } =
         role === 'tab' ? { role: 'tab', 'aria-selected': open } : { 'aria-current': open || undefined };
@@ -74,6 +86,36 @@ export default function Tab({
             {after}
         </>
     );
+
+    if (onSelect && onClose) {
+        /*
+         * The skin moves out to a box holding two sibling buttons, because a
+         * close inside the select button would be a button within a button —
+         * invalid HTML that no two browsers agree on. The label's button takes
+         * the tab's role and every pixel up to the close, so the whole tab
+         * still selects wherever it is pressed except on the close itself.
+         * No right padding on the box: the close's own 24px is the margin, and
+         * its X sits centred in it. `min-w-0` on both, since these do run out
+         * of room — a window holds as many tabs as the user makes — and the
+         * label is what gives way, never the close.
+         *
+         * The close's X is dimmed on a resting tab and full on the open one by
+         * `.tab svg` and `.tab-on svg`, which already do that for the rail's
+         * icons, so it sits back exactly as far as the tab it belongs to.
+         */
+        const close = closeLabel ?? `Close ${label}`;
+        return (
+            <div title={title} style={BOX} className={`flex min-w-0 items-center gap-[7px] pl-2.5 ${face}`}>
+                <button type="button" {...announce} onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-[7px] self-stretch">
+                    {body}
+                </button>
+                {/* 24px wide for the WCAG 2.5.8 floor the dock's close keeps; the tab's own 24px inside its border is the height. */}
+                <button type="button" title={close} aria-label={close} onClick={onClose} className="tab-close flex w-[24px] shrink-0 items-center justify-center self-stretch">
+                    <CloseRoom />
+                </button>
+            </div>
+        );
+    }
 
     return onSelect ? (
         <button type="button" {...announce} title={title} onClick={onSelect} style={BOX} className={skin}>

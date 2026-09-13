@@ -317,9 +317,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         tabs(): TabView[] {
             return set.tabs.map(tab => ({
                 id: tab.id,
-                label: labelOfTab(tab.tree, tab.focusedPaneId),
-                active: tab.id === set.activeId,
-                hasGame: paneIds(tab.tree).some(id => contentOf(tab.tree, id)?.kind === 'game')
+                label: labelOfTab(tab.tree, deps.bookmarks()),
+                active: tab.id === set.activeId
             }));
         },
 

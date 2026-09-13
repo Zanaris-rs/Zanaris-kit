@@ -1,4 +1,5 @@
 import { clearGame, contentOf, leaf, paneIds, setContent, type PaneContent, type PaneNode } from './paneTree.ts';
+import { paneName, type PaneLink } from './paneMenu.ts';
 import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
 
 /**
@@ -92,26 +93,20 @@ export function moveGame(set: TabSet, paneId: string): TabSet {
 }
 
 /**
- * What a tab button says.
+ * What a tab button says: the name of its first pane, the top-left one, in the
+ * words that pane's own header uses.
  *
- * A tab holding the game is named for it whatever has focus. Naming every tab
- * after its focused pane reads fine until you use one: clicking between the
- * game and the chat beside it renamed the tab on every click, which makes the
- * bar move under the pointer for no reason the user asked for. The game is the
- * one thing in a tab stable enough to name it after, and the dot beside the
- * name is for finding it from another tab rather than for reading this one.
+ * Not the focused pane's. Naming a tab after focus reads fine until you use
+ * one: clicking between the game and the chat beside it renamed the tab on
+ * every click, which makes the bar move under the pointer for no reason the
+ * user asked for. The first pane only changes when its content does, or when
+ * a close or a swap puts something else in that corner — each of which the
+ * user did to that very pane. And not the game's either: a tab is named for
+ * where it starts, so the same arrangement always reads the same, and a page
+ * gets its curated link name rather than a bare "Page".
  */
-export function labelOfTab(tree: PaneNode, focusedPaneId: string): string {
-    if (paneIds(tree).some(id => contentOf(tree, id)?.kind === 'game')) return 'Game';
-    const content = contentOf(tree, focusedPaneId);
-    switch (content?.kind) {
-        case 'tool':
-            return content.tool === 'singleplayer' ? 'Single player' : content.tool[0]!.toUpperCase() + content.tool.slice(1);
-        case 'page':
-            return 'Page';
-        default:
-            return 'Empty';
-    }
+export function labelOfTab(tree: PaneNode, links: readonly PaneLink[] = []): string {
+    return paneName(contentOf(tree, paneIds(tree)[0]!) ?? { kind: 'empty' }, links);
 }
 
 /**
