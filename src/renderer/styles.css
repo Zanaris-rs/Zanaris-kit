@@ -45,6 +45,8 @@
     --color-warn: #ff981f;
     --color-red: #a70700;
     --color-red-edge: #570700;
+    /* A clock past its threshold. --color-red is a button's ground, too dark to read as text on stone. */
+    --color-alarm: #ff5a48;
 
     /*
      * Two roles. The pixel face is the period voice and carries headings and

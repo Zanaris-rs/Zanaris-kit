@@ -3,6 +3,7 @@ import type { Rect, ShellState } from '../shared/ipc';
 import type { PaneView, SeamView } from '../shared/panes';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { Caret, Plus } from './icons';
+import { playAlert } from './alertSound';
 import Grip from './grip';
 import Launcher from './Launcher';
 import PaneHeader, { type Grab } from './paneHeader';
@@ -10,6 +11,7 @@ import Tab from './tab';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
 import SinglePlayer from './tools/SinglePlayer';
+import Timers from './tools/Timers';
 import Worlds from './tools/Worlds';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
@@ -57,6 +59,8 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
                     return state.hiscores ? <Hiscores view={state.hiscores} /> : null;
                 case 'singleplayer':
                     return state.singlePlayer ? <SinglePlayer view={state.singlePlayer} /> : null;
+                case 'timers':
+                    return <Timers view={state.timers} />;
             }
     }
 }
@@ -163,6 +167,13 @@ export default function Shell(): ReactNode {
             unsubscribe();
         };
     }, []);
+
+    /*
+     * A timer's alert plays here, not in the Timers pane: the pane may be
+     * closed, in another tab, or never opened, and the alert is for the player
+     * all the same.
+     */
+    useEffect(() => window.zanaris.timers.onAlert(alert => void playAlert(alert.volume)), []);
 
     const endDrag = (event: PointerEvent<HTMLDivElement>, drop: boolean): void => {
         const grabbed = held.current;
