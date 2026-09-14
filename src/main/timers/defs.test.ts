@@ -48,9 +48,23 @@ test('an edit field that would break the clock is skipped, and the rest still ap
     // The kit shortens a built-in under a threshold the player had raised.
     const shorter: TimerDef = { ...AFK, durationMs: 10_000, thresholdMs: 5_000 };
     assert.deepEqual(applyEdit(shorter, { thresholdMs: 15_000, volume: 0.2 }), { ...shorter, volume: 0.2 });
-    // A duration and a threshold raised together both apply, in that order.
+    // A duration and a threshold raised together both apply.
     assert.deepEqual(applyEdit(AFK, { durationMs: 600_000, thresholdMs: 120_000 }), { ...AFK, durationMs: 600_000, thresholdMs: 120_000 });
     assert.deepEqual(applyEdit(AFK, undefined), AFK);
+});
+
+test('a duration and a threshold lowered together both apply', () => {
+    // Field by field, the lower duration alone would sit under the built-in's threshold.
+    assert.deepEqual(applyEdit(THIEVING, { durationMs: 20_000, thresholdMs: 10_000 }), { ...THIEVING, durationMs: 20_000, thresholdMs: 10_000 });
+    assert.deepEqual(applyEdit(AFK, { durationMs: 10_000, thresholdMs: 5_000 }), { ...AFK, durationMs: 10_000, thresholdMs: 5_000 });
+});
+
+test('a built-in saved with a lower duration and threshold is listed with both', () => {
+    const saved = saveTimer(state(), SERVER, input(THIEVING, { durationMs: 20_000, thresholdMs: 10_000 }), counter());
+    assert.ok(saved.ok);
+    const def = timersFor(SERVER, saved.state)[1]!.def;
+    assert.equal(def.durationMs, 20_000);
+    assert.equal(def.thresholdMs, 10_000);
 });
 
 test('saving a built-in stores only the fields that differ from this server\'s', () => {

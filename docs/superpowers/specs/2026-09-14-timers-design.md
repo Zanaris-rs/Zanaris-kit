@@ -131,9 +131,11 @@ and an edit never freezes a value the kit might later change.
 ### What a window lists
 
 `timersFor(serverTimers, state)` returns the server's built-ins in catalog order
-with their edits applied, then every custom definition. An edit is applied field
-by field in the order `name`, `volume`, `afk`, `durationMs`, `thresholdMs`, and a
-field that would make the definition invalid is skipped. That matters when the
+with their edits applied, then every custom definition. The whole edit is applied
+at once when the result is a valid definition, so a duration and a threshold
+lowered together both apply. Only when it is not is the edit applied field by
+field, in the order `name`, `volume`, `afk`, `durationMs`, `thresholdMs`, skipping
+any field that would make the definition invalid — which is what happens when the
 kit changes a built-in's duration under an edited threshold: the threshold edit
 stops applying rather than breaking the clock. Edits for an id this server does
 not have are kept on disk and ignored.
@@ -418,8 +420,10 @@ connect them, as `CLAUDE.md` requires.
   `formatClock` around 59:59 / 1:00:00; `parseDuration` accepting `90`, `1:30`,
   `1:00:00` and refusing `1:60`, `-5`, empty, words.
 - **`defs.ts`**: `timersFor` orders built-ins then customs; an edit applies to
-  every server's copy of that built-in; a field that would invalidate the
-  definition is skipped and the rest still applies; restore clears the edit;
+  every server's copy of that built-in; a duration and a threshold lowered
+  together both apply, directly and through a save; when the whole edit is
+  invalid, a field that would invalidate the definition is skipped and the rest
+  still applies; restore clears the edit;
   delete refuses a built-in; save refuses a 21st custom and an invalid definition;
   saving a built-in stores only the fields that differ, and saving it unchanged
   removes its edit;

@@ -78,18 +78,32 @@ export function readTimers(x: unknown): TimersState {
     return state;
 }
 
-/** The order an edit is applied in. Duration before threshold, so raising both together works. */
+/**
+ * The fields an edit carries, in the order a field-by-field apply takes them.
+ * Duration before threshold, so raising both together still works when some
+ * other field of the edit is refused.
+ */
 const EDIT_ORDER = ['name', 'volume', 'afk', 'durationMs', 'thresholdMs'] as const;
 
 /**
- * A built-in with the player's changes on top. A field that would leave the
- * definition invalid is skipped rather than breaking the clock: that is what
- * happens when the kit shortens a built-in under a threshold the player had
- * raised, and the player keeps a working clock and every other change.
+ * A built-in with the player's changes on top, in two steps. First the whole
+ * edit at once: when that is a valid definition, it is the answer, which is
+ * how a duration and a threshold lowered together both apply. Only when it is
+ * not is the edit applied field by field, in `EDIT_ORDER`, skipping any field
+ * that would leave the definition invalid rather than breaking the clock: that
+ * is what happens when the kit shortens a built-in under a threshold the
+ * player had raised, and the player keeps a working clock and every other
+ * change.
  */
 export function applyEdit(builtIn: TimerDef, edit: TimerEdit | undefined): TimerDef {
     let def = copyDef(builtIn);
     if (!edit) return def;
+    let whole = copyDef(builtIn);
+    for (const field of EDIT_ORDER) {
+        const value = edit[field];
+        if (value !== undefined) whole = { ...whole, [field]: value } as TimerDef;
+    }
+    if (timerProblem(whole) === null) return whole;
     for (const field of EDIT_ORDER) {
         const value = edit[field];
         if (value === undefined) continue;
