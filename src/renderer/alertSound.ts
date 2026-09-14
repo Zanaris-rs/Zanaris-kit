@@ -1,15 +1,15 @@
 /**
- * Plays a timer's alert at that clock's volume. The bytes come from main once
- * and are decoded once. A sound Chromium will not decode is swapped, once, for
- * the kit's own chime; if even that fails, alerts stay silent and the banner
- * and the red digits are what is left.
+ * Plays a timer's alert at that clock's volume. The bytes come from main and
+ * are decoded once; a fetch or decode that fails is forgotten, so the next
+ * alert tries again, and until one succeeds the banner and the red digits are
+ * what is left.
  */
 
 let context: AudioContext | null = null;
 let decoded: Promise<AudioBuffer | null> | null = null;
 
-async function decode(fallback: boolean): Promise<AudioBuffer | null> {
-    const bytes = await window.zanaris.timers.sound(fallback);
+async function decode(): Promise<AudioBuffer | null> {
+    const bytes = await window.zanaris.timers.sound();
     if (!bytes) return null;
     context ??= new AudioContext();
     // decodeAudioData takes its buffer away from the caller, so it is given a copy of its own.
@@ -19,9 +19,16 @@ async function decode(fallback: boolean): Promise<AudioBuffer | null> {
 }
 
 function sound(): Promise<AudioBuffer | null> {
-    decoded ??= decode(false)
-        .catch(() => decode(true))
-        .catch(() => null);
+    decoded ??= decode().then(
+        buffer => {
+            if (!buffer) decoded = null;
+            return buffer;
+        },
+        () => {
+            decoded = null;
+            return null;
+        }
+    );
     return decoded;
 }
 

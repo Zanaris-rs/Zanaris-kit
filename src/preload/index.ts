@@ -67,7 +67,7 @@ const api: ZanarisApi = {
         save: input => ipcRenderer.invoke(IPC.timersSave, input),
         delete: id => ipcRenderer.invoke(IPC.timersDelete, id),
         restore: id => ipcRenderer.invoke(IPC.timersRestore, id),
-        sound: fallback => ipcRenderer.invoke(IPC.timersSound, fallback),
+        sound: () => ipcRenderer.invoke(IPC.timersSound),
         onAlert: cb => {
             const handler = (_event: unknown, alert: TimerAlert): void => cb(alert);
             ipcRenderer.on(IPC.timersAlert, handler);

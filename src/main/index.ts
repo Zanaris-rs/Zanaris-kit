@@ -24,7 +24,7 @@ import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
 import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
-import { chimeSound, resolveAlertSound, type AlertSound } from './timers/electron';
+import { readAlertSound } from './timers/electron';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -128,9 +128,6 @@ let update: LatestRelease | null = null;
 
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
 let singlePlayer: SinglePlayerService | null = null;
-
-/** The alert sound, resolved once at ready. A promise, so a window that asks before it is read waits rather than going without. */
-let alertSound: Promise<AlertSound> | null = null;
 
 /**
  * The two menu items that belong to the focused window rather than to the app.
@@ -898,10 +895,9 @@ ipcMain.handle(IPC.timersRestore, (event, id: unknown): string | null => {
     if (typeof id !== 'string' || !windowFor(event.sender)) return null;
     return applyTimers(restoreTimer(appState.timers(), id));
 });
-ipcMain.handle(IPC.timersSound, async (event, fallback: unknown): Promise<Uint8Array | null> => {
+ipcMain.handle(IPC.timersSound, async (event): Promise<Uint8Array | null> => {
     if (!windowFor(event.sender)) return null;
-    if (fallback === true || !alertSound) return (await chimeSound()).bytes;
-    return (await alertSound).bytes;
+    return readAlertSound();
 });
 
 // ── dev capture ───────────────────────────────────────────────────────────
@@ -1349,8 +1345,6 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
-    // Resolved in the background: nothing waits for it but the first alert.
-    alertSound = resolveAlertSound(log);
     // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
     powerMonitor.on('resume', () => {
         for (const sw of serverWindows.values()) sw.settleTimers();

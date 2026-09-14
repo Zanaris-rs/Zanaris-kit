@@ -251,8 +251,8 @@ export interface ZanarisApi {
         delete(id: string): Promise<string | null>;
         /** Built-ins only: clears the player's changes. Resolves like `save`. */
         restore(id: string): Promise<string | null>;
-        /** The alert sound's bytes. `fallback` asks for the kit's own chime, for when the system's would not decode. Null when the caller is not a server window's shell. */
-        sound(fallback: boolean): Promise<Uint8Array | null>;
+        /** The alert sound's bytes: the one bundled sound every alert plays. Null when the caller is not a server window's shell. */
+        sound(): Promise<Uint8Array | null>;
         /** Main asking this window to play the alert. Returns an unsubscribe. */
         onAlert(cb: (alert: TimerAlert) => void): () => void;
     };
