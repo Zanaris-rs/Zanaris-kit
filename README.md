@@ -439,8 +439,10 @@ actually stops the two axes inducing each other — and separately swaps that
 in an oversized pane now that `vh` is gone rather than fixing anything itself.
 
 Nothing about the arrangement is saved on its own. A new window always opens
-the same way — the game at its full 765x567, a 232px chat pane below it, and
-the game's pane focused, so a split starts from the game rather than from chat. The
+the same way — the game at its full 765x567 (765x573 on Lost City, whose client
+page has a taller controls strip and drew scrollbars at the stock size), a 232px
+chat pane below it, and the game's pane focused, so a split starts from the game
+rather than from chat. The
 window opens tall enough for both and no taller than the display it opens on;
 on a display too short for that, chat gives way to its 80px floor before the
 game loses any height.

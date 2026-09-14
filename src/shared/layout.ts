@@ -86,6 +86,18 @@ export const GAME_PREFERRED_WIDTH = 765;
 export const GAME_PREFERRED_HEIGHT = 503 + PAGE_CONTROLS_HEIGHT + PANE_HEADER_HEIGHT;
 
 /**
+ * Lost City's own game height, which its client page needs more of than the
+ * stock one: its controls strip is 32px of icons with half a vh of margin
+ * either side, so at 535px of view the page overflowed and drew scrollbars.
+ *
+ * 541 is measured, not derived: the smallest view height at which the page
+ * has no overflow with or without `GAME_PAGE_CSS` applied — 539 is enough once
+ * that CSS lands, but the page is laid out before it does. The width stays at
+ * 765; one pixel less overflows.
+ */
+export const LOSTCITY_GAME_PREFERRED_HEIGHT = 541 + PANE_HEADER_HEIGHT;
+
+/**
  * What the chat pane below the game asks for in the arrangement a new window
  * opens with: the old chat dock's default height of 200, plus the header every
  * pane now has. A new window opens tall enough for both, so neither pays for the

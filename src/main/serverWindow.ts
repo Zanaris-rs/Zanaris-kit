@@ -2,7 +2,7 @@ import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuI
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
@@ -28,9 +28,13 @@ const STARTING_PAGE = join(__dirname, '../../static/starting.html');
  * the chat pane below it at its own, with the seam between them
  * (`tabs.openWindowTabs`). The tree fills the content area below the bar
  * exactly, so anything short of this would clip the bottom of the
- * canvas at the one size nobody chose.
+ * canvas at the one size nobody chose. Lost City's page is taller than the
+ * stock client's, so its windows open on its own game height.
  */
-const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH, height: GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT };
+function defaultContent(serverId: string): { width: number; height: number; game: number } {
+    const game = serverId === 'lostcity' ? LOSTCITY_GAME_PREFERRED_HEIGHT : GAME_PREFERRED_HEIGHT;
+    return { width: GAME_PREFERRED_WIDTH, height: game + SEAM + CHAT_PREFERRED_HEIGHT, game };
+}
 /**
  * Room left on the display for the window's own frame, which a content size
  * does not include: a title bar on macOS, a caption and borders on Windows.
@@ -288,9 +292,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * (see `openWindowTabs`).
      */
     const display = screen.getDisplayNearestPoint(deps.position ?? screen.getCursorScreenPoint());
-    const openHeight = Math.max(TAB_BAR_HEIGHT + PANE_MIN_HEIGHT, Math.min(TAB_BAR_HEIGHT + DEFAULT_CONTENT.height, display.workArea.height - FRAME_ALLOWANCE));
+    const content = defaultContent(server.id);
+    const openHeight = Math.max(TAB_BAR_HEIGHT + PANE_MIN_HEIGHT, Math.min(TAB_BAR_HEIGHT + content.height, display.workArea.height - FRAME_ALLOWANCE));
     const win = new BrowserWindow({
-        width: DEFAULT_CONTENT.width,
+        width: content.width,
         height: openHeight,
         // One pane's floor plus the chrome that never gives way. A constant
         // now: the old minimum moved as the dock opened and closed, because it
@@ -362,7 +367,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         tools: () => tools,
         hosts: () => server.hosts,
         log: line => deps.log(`${tag} ${line}`),
-        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT),
+        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT, content.game),
         changed: () => applyLayout(),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState()
