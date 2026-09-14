@@ -347,3 +347,38 @@ test('dispose cancels the pending timer and makes every later call a no-op', () 
     assert.equal(h.live().length, 0);
     assert.equal(h.pushes(), pushes);
 });
+
+test('a dispose from inside an alert leaves nothing scheduled', () => {
+    let now = 1_000_000;
+    const pending: Pending[] = [];
+    const alerts: string[] = [];
+    let pushes = 0;
+    const live = (): Pending[] => pending.filter(p => !p.cancelled);
+    const io: TimersIo = {
+        now: () => now,
+        setTimer: (fn, ms) => {
+            const entry: Pending = { due: now + ms, fn, cancelled: false };
+            pending.push(entry);
+            return () => {
+                entry.cancelled = true;
+            };
+        },
+        alert: (def, at) => {
+            alerts.push(`${def.id}:${at}`);
+            if (at === 'threshold' && def.id === 'thieving') {
+                runner.dispose();
+            }
+        },
+        changed: () => {
+            pushes++;
+        }
+    };
+    const runner = new TimersRunner([listed(THIEVING)], io);
+    runner.start('thieving');
+    now = 1_300_000;
+    const fn = live()[0]!.fn;
+    live()[0]!.cancelled = true;
+    fn();
+    assert.equal(live().length, 0, 'no timer left scheduled after dispose in alert');
+    assert.equal(pushes, 1, 'no changed() call after dispose in alert');
+});

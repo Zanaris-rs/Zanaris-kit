@@ -144,7 +144,7 @@ export class TimersRunner {
         }
         if (!restarted && !due) return;
         this.schedule(now);
-        if (due || notable || now - this.lastInputPush >= INPUT_PUSH_EVERY_MS) {
+        if (!this.disposed && (due || notable || now - this.lastInputPush >= INPUT_PUSH_EVERY_MS)) {
             this.lastInputPush = now;
             this.io.changed();
         }
@@ -197,7 +197,7 @@ export class TimersRunner {
         const due = this.process(now);
         const changed = change(now);
         this.schedule(now);
-        if (due || changed) this.io.changed();
+        if (!this.disposed && (due || changed)) this.io.changed();
     }
 
     /** Alerts and expires whatever is due at `now`. Answers whether anything did. */
@@ -235,6 +235,7 @@ export class TimersRunner {
     }
 
     private schedule(now: number): void {
+        if (this.disposed) return;
         this.cancel?.();
         this.cancel = null;
         let next = Number.POSITIVE_INFINITY;
@@ -259,6 +260,6 @@ export class TimersRunner {
         const now = this.io.now();
         const changed = this.process(now);
         this.schedule(now);
-        if (changed) this.io.changed();
+        if (!this.disposed && changed) this.io.changed();
     }
 }
