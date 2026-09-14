@@ -11,7 +11,6 @@ import { IPC, type ShellState, type ZanarisApi } from '../shared/ipc';
 const api: ZanarisApi = {
     shell: {
         get: () => ipcRenderer.invoke(IPC.shellGet),
-        selectTool: id => ipcRenderer.invoke(IPC.shellSelectTool, id),
         onState: cb => {
             const handler = (_event: unknown, state: ShellState): void => cb(state);
             ipcRenderer.on(IPC.shellState, handler);
@@ -51,6 +50,7 @@ const api: ZanarisApi = {
         closeTab: tabId => ipcRenderer.invoke(IPC.tabClose, tabId),
         selectTab: tabId => ipcRenderer.invoke(IPC.tabSelect, tabId),
         tabMenu: (tabId, x, y) => ipcRenderer.invoke(IPC.tabContextMenu, tabId, x, y),
+        addPaneMenu: (x, y) => ipcRenderer.invoke(IPC.tabAddPaneMenu, x, y),
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
     },
     singlePlayer: {

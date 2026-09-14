@@ -59,11 +59,9 @@ seconds. It is the window's fact rather than the pane's — one server, one game
 and it sat at the left of the tab bar for exactly that reason, until it became
 clear that a read-out nobody can place is a read-out nobody reads. Beside the
 game it describes, it is obviously about the thing under it, and the bar is left
-to tabs. A rail runs down the right edge; its first tool is **Worlds**. Clicking
-it puts the tool in the pane you are standing in — or splits that pane, when it
-holds the game, so a click on the rail never costs you your view of it. What it
-shows is Low / High
-detail, then every world with region, players online, members or free, and
+to tabs. The first of the server's tools is **Worlds**, opened from **Add pane**
+at the right end of the tab bar like everything else a pane can hold. What it
+shows is Low / High detail, then every world with region, players online, members or free, and
 latency, the current world marked. Choosing a world loads it in the same
 window; flipping detail reloads the current world. The world and detail you
 chose are remembered per server; the next window for that server opens there.
@@ -88,7 +86,7 @@ follows focus, so it reads the window in front of you and is greyed out when
 none is. What is remembered is simply the last thing you asked for: windows
 opened after it, and the next launch, start pinned or unpinned to match.
 
-**Hiscores** is the rail's other server tool, offered for the three remote
+**Hiscores** is the other server tool, offered for the three remote
 servers only — a one-player world has nobody to rank, so single player never
 gets it. A name box and a Look up button sit above a Skill · Rank · Lvl · XP
 table; the lookup fires on submit, never on a keystroke, since Lost City
@@ -148,7 +146,7 @@ on this computer. There is no account and nothing to sign up for — any name
 typed at the login screen becomes a character, and its saves live in the app's
 own data folder: `Application Support/zanaris-kit/singleplayer/data/players/main`
 on macOS, `%APPDATA%\zanaris-kit\singleplayer\...` on Windows,
-`~/.config/zanaris-kit/singleplayer/...` on Linux. The rail's Single player
+`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player
 tool says what the world is doing, and opens that saves folder or the world's
 log. Its Cheats switch turns the engine's developer commands, `::tele` and
 `::give`, on for the whole world; that takes a restart of the world, so it
@@ -181,8 +179,8 @@ server gets no room either, since it would be a room of one.
 Chat is a pane like anything else: put it wherever you want it, drag its seams,
 close it. A new window opens with it already there, in a pane below the game —
 chat is the kit's own reason to be open instead of a browser tab, and a pane
-nobody knows is there is a pane nobody opens. Closed, it comes back off the
-rail's Chat tab, which fills the pane you are standing in.
+nobody knows is there is a pane nobody opens. Closed, it comes back from **Add
+pane** in the tab bar, as a column down the tab's right edge.
 
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short lines,
@@ -232,10 +230,10 @@ decorative:
 - **Every glyph has a hard black shadow.** The client does this, and without it
   text fights the grain and loses.
 
-The rail is not a row of buttons on a dark strip: its tabs are cut *into* the
-stone, resting ones sunk with an inner shadow and the open one raised and lit.
-That is how the client draws its inventory and friends tabs, and it is what
-makes the open tool obvious.
+Tabs are not a row of buttons on a dark strip: they are cut *into* the stone,
+resting ones sunk with an inner shadow and the open one raised and lit. That is
+how the client draws its inventory and friends tabs, and it is what makes the
+open tab obvious.
 
 Type has two roles. Headings and buttons are set in Pixelify Sans, bundled at
 `src/renderer/fonts/` under the SIL Open Font License and loaded from disk so
@@ -281,7 +279,7 @@ Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 `bookmarks` — the reference links the Guides list offers, which is also the
 whole of which servers offer it: Lost City has eleven including its own forums
 and prices, Zanaris the nine that are not Lost City's, and Labs and single
-player none, so the tool never reaches their rails — the `hosts` those pages
+player none, so their menus list no links — the `hosts` those pages
 may visit, and a wiki URL that never claims which revision it describes, since
 losthq moves on its own schedule. The three remote entries also carry a
 `hiscores` block: a `source` — a `kind` naming which of the three lookup APIs
@@ -328,8 +326,8 @@ Main owns all geometry. Each server window is one full-window **shell** view
 (React, the only view with a preload) with the game and page views placed on
 top of it, inside the rects main worked out.
 
-A window is a bar across the top, a rail down the right, and a **tree of panes**
-in everything left over. A pane holds exactly one thing — the game, a reference
+A window is a bar across the top and a **tree of panes** in everything below
+it. A pane holds exactly one thing — the game, a reference
 page, or one of the tools — and any pane can be split left/right or up/down,
 dragged at its seams, or closed. Splitting a pane halves that pane's own share
 and leaves its neighbours where they are; splitting along the grain of an
@@ -337,6 +335,19 @@ existing row appends to it rather than nesting, which is what keeps a seam drag
 moving exactly the two panes either side of it. Repeated splitting halves each
 time, as it does in iTerm and tmux, and **Even Out** in the View menu is what
 answers "make these the same size".
+
+**Add pane**, at the right end of the tab bar, adds a pane without splitting one
+by hand. It lists what a pane's own dropdown does — the tools, the game, this
+server's links — and whatever you pick opens as a new column down the tab's
+right edge: 320px wide, or an even share of the row on a narrow window, with the
+columns already there giving up the room in proportion. It adds rather than
+replaces — a pane's dropdown changes that pane, Add pane adds one. Something
+already in the tab is ticked, and choosing it goes to that pane rather than
+opening a second copy; the game, when it is in another tab, is moved here. With
+no room for another column above the 120px floor, everything not already open is
+greyed. It replaced a rail of tool icons down the window's right edge, which
+reached only the tools, put them in whichever pane had focus, and gave no sign
+that a second pane was possible.
 
 Panes are rearranged by dragging one header onto another: the two trade what
 they hold, and nothing else moves — the tree's shape, every pane's size and
@@ -347,8 +358,7 @@ For the length of the drag the views are hidden and each pane says its own
 name, for the same reason: a drop target painted under a game view would be
 invisible. Nothing reloads — it is the same hiding a tab switch does.
 
-The pane you are standing in — the one the rail fills and Cmd/Ctrl+D and
-Cmd/Ctrl+W act on — has a small gold dot before its name in its header, shown
+The pane you are standing in — the one Cmd/Ctrl+D and Cmd/Ctrl+W act on — has a small gold dot before its name in its header, shown
 only when the tab has more than one pane. It used to be a gold ring drawn round
 the whole pane, which was the loudest line in the window for the least
 interesting fact in it.
@@ -429,8 +439,10 @@ actually stops the two axes inducing each other — and separately swaps that
 in an oversized pane now that `vh` is gone rather than fixing anything itself.
 
 Nothing about the arrangement is saved on its own. A new window always opens
-the same way — the game at its full 765x567, a 232px chat pane below it, and
-the game's pane focused so the rail splits it rather than replacing chat. The
+the same way — the game at its full 765x567 (765x573 on Lost City, whose client
+page has a taller controls strip and drew scrollbars at the stock size), a 232px
+chat pane below it, and the game's pane focused, so a split starts from the game
+rather than from chat. The
 window opens tall enough for both and no taller than the display it opens on;
 on a display too short for that, chat gives way to its 80px floor before the
 game loses any height.
@@ -454,7 +466,7 @@ to hand anyone.
 A layout file holds no pane or split ids — the window hands out its own on load
 — and is validated whole and refused whole, with a sheet saying the file is not
 a layout and the tab left as it was. A layout made on another server still
-loads: a tool this window's rail does not carry, or a page that is not one of
+loads: a tool this window does not offer, or a page that is not one of
 this server's links, comes up as an empty pane showing the launcher rather than
 failing the rest. Loading keeps the one-game rule. A layout with a game pane
 moves the game into it from wherever it was, with no reload; a layout with no
@@ -615,7 +627,7 @@ src/main/menu.ts            application menu: new windows, the server list, the 
 src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.zanaris bridge
-src/renderer/Shell.tsx      the bar, the rail, and every pane where main put it
+src/renderer/Shell.tsx      the tab bar, Add pane, and every pane where main put it
 src/renderer/paneHeader.tsx a pane's name, its own controls, and what it may become
 src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
 src/renderer/grip.tsx       one draggable seam, and its keyboard path

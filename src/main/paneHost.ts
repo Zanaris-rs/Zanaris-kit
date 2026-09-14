@@ -1,6 +1,7 @@
 import { WebContentsView, shell, type BrowserWindow } from 'electron';
 import { decidePageNavigation } from './guard.ts';
 import {
+    appendColumn,
     closePane,
     contentOf,
     evenOut,
@@ -53,7 +54,7 @@ export interface PaneHostDeps {
     gameView: () => WebContentsView | null;
     /** This server's own links. A page pane may hold nothing else. */
     bookmarks: () => readonly { url: string; name: string }[];
-    /** The tools this window offers, in rail order — the first half of what a pane's header offers to become. */
+    /** The tools this window offers, in its own order — the first half of what a pane's header offers to become. */
     tools: () => readonly ToolId[];
     hosts: () => readonly string[];
     log: (line: string) => void;
@@ -409,6 +410,13 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             focus(born);
         },
 
+        appendColumn(content: PaneContent, width: number): string {
+            const born = `pane-${nextPane++}`;
+            adopt(appendColumn(active(), content, width, { paneId: born, splitId: `split-${nextSplit++}` }));
+            focus(born);
+            return born;
+        },
+
         close(paneId: string): void {
             adopt(closePane(active(), paneId));
         },
@@ -515,6 +523,8 @@ export interface PaneHost {
     closeTab: (tabId: string) => boolean;
     selectTab: (tabId: string) => void;
     split: (paneId: string, axis: 'x' | 'y') => void;
+    /** Adds a pane holding `content` down the active tab's right edge, `width` being the px the tab is laid out in, and focuses it. Returns the new pane's id. */
+    appendColumn: (content: PaneContent, width: number) => string;
     close: (paneId: string) => void;
     setContent: (paneId: string, content: PaneContent) => void;
     /** Moves the game into a pane, emptying the one it was in, in whichever tab that was. */

@@ -1,4 +1,4 @@
-import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM } from '../shared/layout.ts';
+import { COLUMN_PREFERRED_WIDTH, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
 /**
@@ -182,6 +182,37 @@ export function splitPane(node: PaneNode, paneId: string, axis: 'x' | 'y', ids: 
 }
 
 /**
+ * Adds a pane holding `content` as a new column down the tab's right edge —
+ * what the tab bar's Add pane does.
+ *
+ * The whole tab's edge rather than beside the focused pane, because the control
+ * that asks for it sits in the tab bar and belongs to no pane: a new pane landing
+ * wherever focus happened to be is a guess the player cannot see coming. A tab
+ * that is already a row gains a child, as a split along the grain does, so the
+ * tree stays flat; any other tab is wrapped in a new row beside it.
+ *
+ * The column asks for `COLUMN_PREFERRED_WIDTH` of `width`, the px the tab is
+ * laid out in, capped at an even share of the row. Whatever it takes comes out
+ * of the columns already there in proportion, so their seams keep their
+ * relative places. Whether it fits at all is `canAppendColumn`'s to say.
+ */
+export function appendColumn(node: PaneNode, content: PaneContent, width: number, ids: { paneId: string; splitId: string }): PaneNode {
+    const row = node.kind === 'split' && node.axis === 'x' ? node : null;
+    const columns = row ? row.children.length : 1;
+    const gross = width - SEAM * columns;
+    const even = 1 / (columns + 1);
+    const share = gross > 0 ? Math.min(COLUMN_PREFERRED_WIDTH / gross, even) : even;
+    const added = leaf(ids.paneId, content);
+    if (row) return { ...row, children: [...row.children, added], fractions: [...row.fractions.map(f => f * (1 - share)), share] };
+    return split(ids.splitId, 'x', [node, added], [1 - share, share]);
+}
+
+/** Whether a new column fits in `width` px with every column, the new one included, above its floor. */
+export function canAppendColumn(node: PaneNode, width: number): boolean {
+    return minimumOf(node, 'x') + SEAM + PANE_MIN_WIDTH <= width;
+}
+
+/**
  * Removes the named pane, and gives its share to whoever is left.
  *
  * Closing never empties a tab: the last pane standing becomes an empty one,
@@ -253,7 +284,7 @@ export function setFraction(node: PaneNode, splitId: string, index: number, frac
     return { ...node, fractions };
 }
 
-/** Puts something in a pane. What the launcher and the rail both do. */
+/** Puts something in a pane. What the launcher and a header's dropdown both do. */
 export function setContent(node: PaneNode, paneId: string, content: PaneContent): PaneNode {
     if (node.kind === 'leaf') return node.paneId === paneId ? leaf(paneId, content) : node;
     return { ...node, children: node.children.map(child => setContent(child, paneId, content)) };

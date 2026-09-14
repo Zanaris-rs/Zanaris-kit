@@ -87,7 +87,7 @@ test("whatever this window cannot show comes up empty, and the rest of the layou
         )
     );
     const tree = instantiateLayout(stored, { tools: TOOLS, links: LINKS, ...counters() });
-    assert.deepEqual(contentOf(tree, 'pane-1'), { kind: 'empty' }, 'a tool this rail does not carry');
+    assert.deepEqual(contentOf(tree, 'pane-1'), { kind: 'empty' }, 'a tool this window does not offer');
     assert.deepEqual(contentOf(tree, 'pane-2'), { kind: 'empty' }, "a page that is not one of this server's links");
     assert.deepEqual(contentOf(tree, 'pane-3'), { kind: 'tool', tool: 'hiscores' }, 'and what it can show, it shows');
 });

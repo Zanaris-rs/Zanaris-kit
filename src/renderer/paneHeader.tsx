@@ -17,8 +17,7 @@ import { Caret, CloseRoom, NavArrow, Reload } from './icons';
  * What it carries, left to right:
  *
  * - **The dot**, on the focused pane when its tab has more than one. Focus is
- *   where the rail puts a tool and what Cmd/Ctrl+D and Cmd/Ctrl+W act on, so it
- *   has to be visible — but it used to be a gold ring drawn round the whole
+ *   what Cmd/Ctrl+D and Cmd/Ctrl+W act on, so it has to be visible — but it used to be a gold ring drawn round the whole
  *   pane, which was the loudest line in the window for the least interesting
  *   fact in it. A mark beside the name says the same thing where the eye
  *   already goes to find out what a pane is.

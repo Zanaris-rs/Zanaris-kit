@@ -77,8 +77,9 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
      * Seeded from the view once, then the box is the user's. `view.name` moves
      * only when some window on this server looks a name up, and following it
      * afterwards would rewrite a half-typed name under the cursor because
-     * another window went first. The panel is unmounted whenever the rail
-     * points elsewhere, so reopening it does pick the remembered name back up.
+     * another window went first. The panel is unmounted whenever its pane
+     * closes or is given something else, so reopening it does pick the
+     * remembered name back up.
      */
     const [draft, setDraft] = useState(view.name);
 

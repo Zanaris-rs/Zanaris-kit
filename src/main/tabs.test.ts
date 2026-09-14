@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, layoutTree, leaf, paneIds, split } from './paneTree.ts';
 import { closeTab, closingTab, labelOfTab, loadingLayout, moveGame, newTab, nextIds, openTabs, openWindowTabs, selectTab } from './tabs.ts';
-import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 
 test('a one-pane set holds whatever it was given', () => {
     const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
@@ -24,11 +24,18 @@ test('a new window opens on the game with chat below it, the game focused', () =
         paneIds(tree).map(id => contentOf(tree, id)),
         [{ kind: 'game' }, { kind: 'tool', tool: 'chat' }]
     );
-    assert.equal(set.tabs[0]!.focusedPaneId, 'pane-1', 'so the rail splits the game rather than replacing chat');
+    assert.equal(set.tabs[0]!.focusedPaneId, 'pane-1', 'so a split starts from the game rather than from chat');
 });
 
 test('at the size a window opens at, the game and chat each get exactly what they ask for', () => {
     assert.deepEqual(heights(GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT), { game: GAME_PREFERRED_HEIGHT, chat: CHAT_PREFERRED_HEIGHT });
+});
+
+test("a server whose client page is taller gets its own game height, and chat still gets what it asks for", () => {
+    const tree = openWindowTabs(LOSTCITY_GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT, LOSTCITY_GAME_PREFERRED_HEIGHT).tabs[0]!.tree;
+    const rects = layoutTree(tree, { x: 0, y: 0, width: 765, height: LOSTCITY_GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT }).panes;
+    assert.equal(rects.get('pane-1')!.height, LOSTCITY_GAME_PREFERRED_HEIGHT);
+    assert.equal(rects.get('pane-2')!.height, CHAT_PREFERRED_HEIGHT);
 });
 
 test('on a short display chat gives way first, down to its floor, and the game keeps its height', () => {

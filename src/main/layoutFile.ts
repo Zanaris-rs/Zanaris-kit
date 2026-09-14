@@ -121,7 +121,7 @@ function readContent(x: unknown): PaneContent | null {
  * cannot show turned into an empty pane.
  *
  * Empty rather than refused, because the rest of the layout is still worth
- * having. A tool this window's rail does not carry — Hiscores on a server with
+ * having. A tool this window does not offer — Hiscores on a server with
  * no lookup, Single player anywhere but its own window — and a page that is not
  * one of this server's links both come up as the launcher, which is honest
  * about the gap and one click from filling it. The page rule is not a nicety:

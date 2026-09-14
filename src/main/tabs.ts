@@ -44,6 +44,9 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  * rather than beside, where the 2004 client keeps its own chat box, so the
  * conversation gets the game's full width.
  *
+ * `gameHeight` is the game pane's preferred height, which is the stock one
+ * unless the server's client page needs more (`LOSTCITY_GAME_PREFERRED_HEIGHT`).
+ *
  * The game keeps its preferred height whenever the window has room for that
  * and a chat pane above the floor: a canvas cut off at the bottom is the one
  * cost here a player cannot scroll or read past. On a display too short for
@@ -52,13 +55,13 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  * own minimums decide. Nothing remembers these numbers — they are the shares
  * the split starts with, and the fractions carry them from there.
  *
- * Focus is on the game, so a tool chosen from the rail splits the game's pane
- * rather than replacing the chat below it.
+ * Focus is on the game, so Cmd/Ctrl+D and a right-click's splits start from the
+ * pane the player is looking at rather than from the chat below it.
  */
-export function openWindowTabs(treeHeight: number): TabSet {
+export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PREFERRED_HEIGHT): TabSet {
     const gross = Math.max(0, treeHeight - SEAM);
-    const game = Math.min(GAME_PREFERRED_HEIGHT, gross - PANE_MIN_HEIGHT);
-    const shares = game >= PANE_MIN_HEIGHT ? [game, gross - game] : [GAME_PREFERRED_HEIGHT, CHAT_PREFERRED_HEIGHT];
+    const game = Math.min(gameHeight, gross - PANE_MIN_HEIGHT);
+    const shares = game >= PANE_MIN_HEIGHT ? [game, gross - game] : [gameHeight, CHAT_PREFERRED_HEIGHT];
     const total = shares[0]! + shares[1]!;
     const tree = split(
         'split-1',

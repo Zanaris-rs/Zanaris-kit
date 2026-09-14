@@ -1,9 +1,7 @@
 /** Geometry shared by main, which positions views, and the shell, which draws the chrome around them. */
 
-/** The bar of workspace tabs across the top, and the read-out that sits at its left. */
+/** The bar of workspace tabs across the top, and the Add pane control at its right. */
 export const TAB_BAR_HEIGHT = 36;
-/** The tool rail down the right edge. Window chrome rather than a pane: it is the way a tool gets into one. */
-export const RAIL_WIDTH = 48;
 
 /**
  * The draggable gap between two panes.
@@ -32,6 +30,18 @@ export const SEAM = 4;
  */
 export const PANE_MIN_WIDTH = 120;
 export const PANE_MIN_HEIGHT = 80;
+
+/**
+ * What a pane added from the tab bar asks for: a new column down the tab's
+ * right edge, 320px wide — the width the tools were drawn for when they lived
+ * in a fixed side panel.
+ *
+ * A preference, like the game's. The column never takes more than an even
+ * share of the row it joins, so on a narrow window it is the columns' equal
+ * rather than most of the window, and once placed it is an ordinary pane
+ * whose seam the player drags.
+ */
+export const COLUMN_PREFERRED_WIDTH = 320;
 
 /**
  * Every pane's own header: what the pane is called, whatever controls belong to
@@ -74,6 +84,18 @@ export const PAGE_CONTROLS_HEIGHT = 32;
  */
 export const GAME_PREFERRED_WIDTH = 765;
 export const GAME_PREFERRED_HEIGHT = 503 + PAGE_CONTROLS_HEIGHT + PANE_HEADER_HEIGHT;
+
+/**
+ * Lost City's own game height, which its client page needs more of than the
+ * stock one: its controls strip is 32px of icons with half a vh of margin
+ * either side, so at 535px of view the page overflowed and drew scrollbars.
+ *
+ * 541 is measured, not derived: the smallest view height at which the page
+ * has no overflow with or without `GAME_PAGE_CSS` applied — 539 is enough once
+ * that CSS lands, but the page is laid out before it does. The width stays at
+ * 765; one pixel less overflows.
+ */
+export const LOSTCITY_GAME_PREFERRED_HEIGHT = 541 + PANE_HEADER_HEIGHT;
 
 /**
  * What the chat pane below the game asks for in the arrangement a new window

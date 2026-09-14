@@ -10,7 +10,6 @@ import type { SinglePlayerView } from './singleplayer';
 export const IPC = {
     shellState: 'zanaris:shell-state',
     shellGet: 'zanaris:shell-get',
-    shellSelectTool: 'zanaris:shell-select-tool',
     paneSplit: 'zanaris:pane-split',
     paneClose: 'zanaris:pane-close',
     paneSetContent: 'zanaris:pane-set-content',
@@ -26,6 +25,7 @@ export const IPC = {
     tabClose: 'zanaris:tab-close',
     tabSelect: 'zanaris:tab-select',
     tabContextMenu: 'zanaris:tab-context-menu',
+    tabAddPaneMenu: 'zanaris:tab-add-pane-menu',
     paneOpenExternal: 'zanaris:pane-open-external',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
@@ -48,7 +48,7 @@ export const IPC = {
  * The tools a window can offer. Four, since `guides` stopped being one: with
  * an empty pane showing a launcher that lists this server's links beside the
  * tools, the Guides panel had no separate job left. A registry is worth it when the
- * list grows. This is the set, not the rail order — which tools a given window
+ * list grows. This is the set, not the menu order — which tools a given window
  * offers and in what order is `serverWindow`'s to say, and it is deliberately
  * not spelled out again here: that order already lives in three places that
  * have to be edited together, and a fourth copy sitting in a docstring none of
@@ -81,8 +81,7 @@ export interface ShellState {
     /** Where main placed the window's own chrome, relative to its content area, so the shell draws exactly there. */
     rects: {
         tabBar: Rect;
-        rail: Rect;
-        /** The region the active tab's panes are laid out in: everything below the bar and left of the rail. */
+        /** The region the active tab's panes are laid out in: everything below the bar. */
         tree: Rect;
     };
     /** This window's workspace tabs. Each is a whole arrangement of the same server's things, not a different server. */
@@ -95,10 +94,8 @@ export interface ShellState {
     panes: PaneView[];
     /** The grabbable gaps between them, each already carrying its own pixel range. */
     seams: SeamView[];
-    /** Tools this window offers, in rail order. */
+    /** Tools this window offers, in the order its menus list them. */
     tools: ToolId[];
-    /** Which of them are placed in a pane somewhere in this tab, so the rail can light them. */
-    openTools: ToolId[];
     /** Null when the server has one page. */
     worlds: WorldsView | null;
     /** Null when the server offers no hiscores — single player above all, where a one-player world has nothing to rank. */
@@ -113,12 +110,6 @@ export interface ZanarisApi {
     shell: {
         /** Null when the calling view is not a server window's shell. */
         get(): Promise<ShellState | null>;
-        /**
-         * The rail. Puts a tool in the focused pane, or — when that pane holds
-         * the game — splits it and puts the tool in the new half, so a click on
-         * the rail never costs the player their view of the game.
-         */
-        selectTool(id: ToolId): Promise<void>;
         onState(cb: (state: ShellState) => void): () => void;
     };
     chat: {
@@ -220,6 +211,14 @@ export interface ZanarisApi {
          * main like the pane menus. Coordinates are the window's.
          */
         tabMenu(tabId: string, x: number, y: number): Promise<void>;
+        /**
+         * Raises the tab bar's Add pane menu: everything a new pane could hold.
+         * Choosing one adds a column down the active tab's right edge, or goes
+         * to the pane in this tab already holding it. Native and built in main
+         * like the pane menus, since it drops down over native views.
+         * Coordinates are the window's.
+         */
+        addPaneMenu(x: number, y: number): Promise<void>;
         /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */
         openExternal(url: string): Promise<void>;
     };
