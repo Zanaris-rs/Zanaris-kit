@@ -375,7 +375,7 @@ test('a dispose from inside an alert leaves nothing scheduled', () => {
     };
     const runner = new TimersRunner([listed(THIEVING)], io);
     runner.start('thieving');
-    now = 1_300_000;
+    now += 270_000;
     const fn = live()[0]!.fn;
     live()[0]!.cancelled = true;
     fn();
