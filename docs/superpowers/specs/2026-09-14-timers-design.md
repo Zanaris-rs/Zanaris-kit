@@ -252,7 +252,7 @@ Resolved **once at launch** in main, by `sound.ts` deciding and
 
 | Platform | Candidates, in order |
 |---|---|
-| macOS | the path in `defaults read -g com.apple.sound.beep.sound`; when that key is unset, the macOS default alert tone (see **Build order**, step 1) |
+| macOS | the path in `defaults read -g com.apple.sound.beep.sound`, then `/System/Library/Sounds/Tink.aiff` — CoreAudio's own fallback when that key is unset (see **Build order**, step 1) |
 | Windows | the default value of `HKCU\AppEvents\Schemes\Apps\.Default\.Default\.Current`, with `%SystemRoot%`-style variables expanded |
 | Linux | `/usr/share/sounds/freedesktop/stereo/bell.oga`, then `…/complete.oga` |
 | every platform, last | `static/sounds/chime.wav`, bundled |
@@ -263,8 +263,9 @@ sniffs the header:
 - WAV (`RIFF…WAVE`), Ogg (`OggS`), FLAC (`fLaC`), MP3 (`ID3` or a frame sync) and
   MPEG-4 (`ftyp`) pass through unchanged — Chromium decodes them;
 - AIFF (`FORM…AIFF`) and uncompressed AIFF-C (`FORM…AIFC` with compression `NONE`
-  or `sowt`) at 8, 16 or 24 bits are rewritten as little-endian PCM WAV. macOS's
-  `/System/Library/Sounds/*.aiff` are this, and Chromium cannot decode AIFF;
+  or `sowt`) at 8, 16, 24 or 32 bits are rewritten as 16-bit little-endian PCM WAV
+  at the same rate and channel count. macOS's `/System/Library/Sounds/*.aiff` are
+  this (24-bit stereo, 48 kHz), and Chromium cannot decode AIFF;
 - anything else returns null, and the next candidate is tried.
 
 The first playable candidate is the sound. `chime.wav` is always playable, so
@@ -433,8 +434,8 @@ connect them, as `CLAUDE.md` requires.
   - `setDefs` keeps unchanged clocks, idles changed ones, drops removed ones;
   - `dispose()` clears the pending timer.
 - **`sound.ts`**: candidate order per platform from injected facts; `toPlayable`
-  passes WAV/Ogg/FLAC/MP3/MPEG-4 through, converts an 8-, 16- and 24-bit AIFF
-  fixture and a `sowt` AIFF-C fixture to WAV whose samples match, and refuses a
+  passes WAV/Ogg/FLAC/MP3/MPEG-4 through, converts 8-, 16- and 24-bit AIFF and a
+  `sowt` AIFF-C, built in the test, to 16-bit WAV whose samples match, and refuses a
   compressed AIFF-C, a CAF and garbage.
 - **`catalog.ts`**: all four built-ins carry AFK and Thieving with the values in
   **Goal**; a version 4 file migrates to 5 with timers filled, not renamed aside;
@@ -461,12 +462,13 @@ previous frame.
 
 ## Build order
 
-1. **Spike, throwaway.** Confirm which file macOS 14 plays for the alert sound when
-   `com.apple.sound.beep.sound` is unset, and that `toPlayable` can make it
-   playable. If it is not reachable or not decodable, the unset case uses the
-   chime, and this spec is corrected to say so. In the same spike, confirm Electron
-   44 emits `input-event` for `mouseDown` and `rawKeyDown` on a `WebContentsView`
-   whose page has no preload.
+1. **Spike, throwaway — done 2026-09-14.** With `com.apple.sound.beep.sound` unset,
+   CoreAudio's `AudioServices` falls back to `/System/Library/Sounds/Tink.aiff`
+   (the string sits beside the key in the dyld shared cache on macOS 14.7.1); the
+   file is uncompressed 24-bit stereo 48 kHz AIFF. A throwaway Electron 44 script
+   with a preload-less `WebContentsView` saw `input-event` report `mouseMove`,
+   `mouseDown`, `mouseUp`, `rawKeyDown`, `char` and `keyUp` for events sent with
+   `sendInputEvent`, and `Notification.isSupported()` was true.
 2. `shared/timers.ts` and `main/timers/defs.ts`, with tests.
 3. `main/timers/runner.ts`, with tests.
 4. `main/timers/sound.ts`, fixtures, `make-chime.mjs` and `chime.wav`, with tests.
