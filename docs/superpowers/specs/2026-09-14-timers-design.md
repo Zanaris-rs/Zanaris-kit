@@ -1,6 +1,6 @@
 # Zanaris Kit: countdowns and timers
 
-**Status:** proposed, 2026-09-14. Supersedes the **Timers** paragraph of
+**Status:** implemented, 2026-09-14. Supersedes the **Timers** paragraph of
 `2026-09-05-server-windows-design.md` (absolute end times persisted to
 `timers.json`, a rail badge). The rail is gone and nothing here survives a
 restart; the reasons are under **Rejected**. `design/Timers.dc.html` is the

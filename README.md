@@ -107,6 +107,26 @@ the pane shows the server's own curated links and refuses anything else, so the
 label says where the link goes rather than leaving a new window to explain
 itself.
 
+**Timers** is in every window. It holds countdowns, which run down to 0:00, and
+timers, which count up. Every clock has a threshold, a volume and AFK mode. A
+countdown alerts when it has that much left and then holds at 0:00; a timer
+alerts once when that much has passed and keeps counting. An alert is a silent
+system banner — shown only when the window is not the one in front — and your
+system's own alert sound, played by the kit at the clock's volume, since a
+banner's sound cannot have its volume set. When the system's sound cannot be
+found or decoded, the kit plays a chime of its own.
+
+Every server comes with two countdowns. **AFK** is 90 seconds with a 15-second
+threshold and AFK mode on: any click or key in the game starts it again, the
+way the client's own idle timer is reset, and a world switch sets it back to
+waiting for the next input. The client also counts mouse movement, which this
+does not, so it can only warn early. **Thieving** is five minutes with a
+30-second threshold, for an npc that despawns when it has not moved for that
+long; press Reset when it moves. Both can be edited and restored to their
+defaults. Clocks you add are yours everywhere, in every server's windows; the
+clocks themselves run per window, since each window is its own login, and they
+keep running with the pane closed.
+
 **The launcher** is the way into the reference pages, and it is what an empty
 pane shows. It lists this server's links, in order — for Lost City: Forums,
 Coordinates, Clue Help, Puzzle Solver, World Map, Markets, Quest Guides, Skill
@@ -264,7 +284,7 @@ a second, which would stall any game you were not looking at.
 ## The catalog
 
 `<userData>/servers.json` (on macOS, `~/Library/Application Support/zanaris-kit/`),
-seeded on first run, one entry per server, now at file version 4:
+seeded on first run, one entry per server, now at file version 5:
 
 
 | id | revision | worlds from | detail switch | wiki |
@@ -279,15 +299,17 @@ Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 `bookmarks` — the reference links the Guides list offers, which is also the
 whole of which servers offer it: Lost City has eleven including its own forums
 and prices, Zanaris the nine that are not Lost City's, and Labs and single
-player none, so their menus list no links — the `hosts` those pages
-may visit, and a wiki URL that never claims which revision it describes, since
-losthq moves on its own schedule. The three remote entries also carry a
-`hiscores` block: a `source` — a `kind` naming which of the three lookup APIs
-it is, plus the URL for it — and a `site` the panel's "Full hiscores" link
-opens. Version 3 kept only Lost City's as a bare URL template; version 4 is
-what turned it into this shape, and what gave Zanaris and Labs one of their
-own for the first time. Single player carries no `hiscores`, since a
-one-player world has nobody to rank.
+player none, so their menus list no links — the `hosts` those pages may visit,
+and a wiki URL that never claims which revision it describes, since losthq
+moves on its own schedule. The three remote entries also carry a `hiscores`
+block: a `source` — a `kind` naming which of the three lookup APIs it is, plus
+the URL for it — and a `site` the panel's "Full hiscores" link opens. Version 3
+kept only Lost City's as a bare URL template; version 4 is what turned it into
+this shape, and what gave Zanaris and Labs one of their own for the first time.
+Single player carries no `hiscores`, since a one-player world has nobody to
+rank. Every entry also carries `timers`, the server's built-in clocks,
+re-adopted on every launch the same way `hiscores` is; version 5 is what added
+it.
 
 A built-in server's `hiscores` is read back from the defaults above on every
 launch rather than frozen from the file on disk — the same trade single
@@ -604,6 +626,7 @@ src/shared/panes.ts         PaneView, SeamView, PageState — what the shell dra
 src/shared/catalog.ts       ServerDef and the add-form input
 src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorld
 src/shared/ipc.ts           channel names, ShellState, the tool ids
+src/shared/timers.ts        pure: clocks, their limits, digits and the edit form    (tested)
 src/main/paneTree.ts        pure: the split tree, its solver, splits and drags      (tested)
 src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
                             arrangement, loading a layout into a tab                (tested)
@@ -620,6 +643,10 @@ src/main/worlds/service.ts  per-server world list and latency over injected IO  
 src/main/worlds/switch.ts   pure: one window's world, detail, url and labels        (tested)
 src/main/worlds/probe.ts    TCP connect latency, node-only                          (tested)
 src/main/worlds/warning.ts  pure: what the switch confirmation says                 (tested)
+src/main/timers/defs.ts     pure: built-ins, the player's clocks and edits          (tested)
+src/main/timers/runner.ts   one window's clocks over an injected clock              (tested)
+src/main/timers/sound.ts    pure: which alert sound, and AIFF made playable         (tested)
+src/main/timers/electron.ts the alert sound's files and commands; the banner
 src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
 src/main/menu.ts            application menu: new windows, the server list, the pane
@@ -633,6 +660,7 @@ src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
 src/renderer/grip.tsx       one draggable seam, and its keyboard path
 src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
 src/renderer/tools/Worlds.tsx
+src/renderer/alertSound.ts  plays an alert at a clock's volume
 static/offline.html         shown when a server can't be reached
 ```
 
@@ -648,7 +676,6 @@ the reload button) is parked in `git stash`.
 3. **The reference pane, beyond the links.** An address row and wiki search,
    per-pane zoom, and tearing a pane off into its own window. (Reopening what
    was open at quit landed with the pane tree.)
-4. **Shared tools.** Screenshot cropped to the canvas, timers with an AFK
-   reset, notes, settings.
+4. **Shared tools.** Screenshot cropped to the canvas, notes, settings.
 5. **Chat.** IRC on SwiftIRC, joining `#LostHQ` and `#LostCity`.
 6. **Server tools.** Clue lookup and calculators, with the data pack loader.

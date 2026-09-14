@@ -1143,6 +1143,31 @@ async function captureAndExit(dir: string): Promise<void> {
             await shoot(`${server.id}-hiscores`, sw);
         }
 
+        // The Timers tool as a player finds it after a minute of play: AFK
+        // running, Thieving idle, and one clock of the capture's own past its
+        // threshold so the red can be seen. That clock is saved through the
+        // same `saveTimer` the IPC handler uses — into this capture profile's
+        // state.json, never the owner's — at volume 0 so the run makes no
+        // sound, and deleted again after the shot.
+        {
+            const sw = first;
+            sw.window.moveTop();
+            sw.focus();
+            await wait(500);
+            showTool(sw, 'timers');
+            const refused = applyTimers(
+                saveTimer(appState.timers(), sw.state().server.timers, { id: null, name: 'Capture', kind: 'countdown', durationMs: 5_000, thresholdMs: 4_000, volume: 0, afk: false }, () => 'custom-capture')
+            );
+            if (refused) log(`[capture] timers: could not add the capture clock: ${refused}`);
+            sw.startTimer('afk');
+            sw.startTimer('custom-capture');
+            await wait(1_500);
+            const clocks = sw.state().timers.clocks.map(c => `${c.def.id}=${c.phase}${c.alerted ? '!' : ''}`).join(' ');
+            log(`[capture] ${sw.state().server.id} timers: ${clocks}`);
+            await shoot(`${sw.state().server.id}-timers`, sw);
+            applyTimers(deleteTimer(appState.timers(), 'custom-capture'));
+        }
+
         // The chat dock: this profile has no nick — see the chat block in
         // app.whenReady, above — so chat never opens a socket here, and every
         // shot below lands on the nick prompt rather than a conversation.
