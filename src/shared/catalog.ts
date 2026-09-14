@@ -1,4 +1,5 @@
 import type { HiscoresDef } from './hiscores';
+import type { TimerDef } from './timers';
 import type { Bookmark, WorldsDef } from './worlds';
 
 /** A wiki the server's page tabs may browse. */
@@ -31,6 +32,12 @@ export interface ServerDef {
     bookmarks: Bookmark[];
     /** How to look a player up, and where the server's own hiscores page is; null when it offers neither. */
     hiscores: HiscoresDef | null;
+    /**
+     * This server's built-in countdowns and timers. The kit's, like `hiscores`:
+     * re-adopted from the defaults on every launch, while the player's changes
+     * to them live in state.json as edits on top.
+     */
+    timers: TimerDef[];
 }
 
 /** What the launcher's add form collects. */

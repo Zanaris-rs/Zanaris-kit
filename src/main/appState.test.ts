@@ -397,3 +397,42 @@ test('a junk always-on-top costs only itself, not the rest of the file', () => {
     assert.equal(again.alwaysOnTop(), false);
     assert.equal(again.warnOnSwitch(), false, 'the rest of the file still read');
 });
+
+// ── timers ────────────────────────────────────────────────────────────────
+
+const MINE = { id: 'custom-0badf00d', name: 'Herb run', kind: 'countdown' as const, durationMs: 4_800_000, thresholdMs: 60_000, volume: 1, afk: false };
+
+test('timers start empty, and survive a round trip', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    assert.deepEqual(a.timers(), { custom: [], edits: {} });
+    a.setTimers({ custom: [MINE], edits: { afk: { thresholdMs: 20_000 } } });
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.timers(), { custom: [MINE], edits: { afk: { thresholdMs: 20_000 } } });
+});
+
+test('timers() hands out a copy, so a caller cannot change the stored state', () => {
+    const state = new AppState(tempFile());
+    state.load();
+    state.setTimers({ custom: [MINE], edits: {} });
+    state.timers().custom[0]!.name = 'mutated';
+    assert.equal(state.timers().custom[0]!.name, 'Herb run');
+});
+
+test('one bad custom clock costs only itself, and a file without timers keeps its worlds', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, timers: { custom: [MINE, { id: 'custom-x' }], edits: { afk: 'loud' } } }));
+    const a = new AppState(file);
+    a.load();
+    assert.deepEqual(a.timers(), { custom: [MINE], edits: {} });
+    assert.deepEqual(a.world('lostcity'), REMEMBERED);
+
+    const older = tempFile();
+    writeFileSync(older, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED } }));
+    const b = new AppState(older);
+    b.load();
+    assert.deepEqual(b.timers(), { custom: [], edits: {} });
+    assert.deepEqual(b.world('lostcity'), REMEMBERED);
+});

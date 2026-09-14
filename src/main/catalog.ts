@@ -2,8 +2,10 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path';
 import type { NewServerInput, ServerDef, WikiDef } from '../shared/catalog.ts';
 import type { HiscoresDef } from '../shared/hiscores.ts';
+import { CUSTOM_ID_PREFIX, isTimerDef, type TimerDef } from '../shared/timers.ts';
 import type { Bookmark } from '../shared/worlds.ts';
 import { isWorldsDef } from './worlds/sources.ts';
+import { newServerTimers } from './timers/defs.ts';
 
 /** LostHQ has no discoverable search endpoint (its index.php?search= returns the homepage). */
 const LOSTHQ: WikiDef = { home: 'https://2004.losthq.rs/', search: null };
@@ -88,7 +90,15 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
             defaultWorld: 5
         },
         bookmarks: LOSTCITY_LINKS.map(copyBookmark),
-        hiscores: LOSTCITY_HISCORES
+        hiscores: LOSTCITY_HISCORES,
+        // Written out in each entry rather than shared: the two clocks are the
+        // same on every server today, and listing them per server is what lets
+        // one server's change without the others'. AFK matches the client,
+        // which sends its idle packet after 90 seconds without input.
+        timers: [
+            { id: 'afk', name: 'AFK', kind: 'countdown', durationMs: 90_000, thresholdMs: 15_000, volume: 0.8, afk: true },
+            { id: 'thieving', name: 'Thieving', kind: 'countdown', durationMs: 300_000, thresholdMs: 30_000, volume: 0.8, afk: false }
+        ]
     },
     {
         id: 'zanaris',
@@ -111,7 +121,11 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         hiscores: {
             source: { kind: 'zanaris', url: 'https://zanaris.rs/api/hiscores/player/{name}' },
             site: 'https://zanaris.rs/hiscores'
-        }
+        },
+        timers: [
+            { id: 'afk', name: 'AFK', kind: 'countdown', durationMs: 90_000, thresholdMs: 15_000, volume: 0.8, afk: true },
+            { id: 'thieving', name: 'Thieving', kind: 'countdown', durationMs: 300_000, thresholdMs: 30_000, volume: 0.8, afk: false }
+        ]
     },
     {
         id: 'lostcitylabs',
@@ -133,7 +147,11 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         hiscores: {
             source: { kind: 'labs', url: 'https://www.lostcitylabs.com/hiscores/player?name={name}' },
             site: 'https://www.lostcitylabs.com/hiscores'
-        }
+        },
+        timers: [
+            { id: 'afk', name: 'AFK', kind: 'countdown', durationMs: 90_000, thresholdMs: 15_000, volume: 0.8, afk: true },
+            { id: 'thieving', name: 'Thieving', kind: 'countdown', durationMs: 300_000, thresholdMs: 30_000, volume: 0.8, afk: false }
+        ]
     },
     {
         id: 'singleplayer',
@@ -152,7 +170,11 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         // window with no bookmarks lists no links in its menus or launcher.
         bookmarks: [],
         // A one-player world has nobody to rank, so single player offers no lookup.
-        hiscores: null
+        hiscores: null,
+        timers: [
+            { id: 'afk', name: 'AFK', kind: 'countdown', durationMs: 90_000, thresholdMs: 15_000, volume: 0.8, afk: true },
+            { id: 'thieving', name: 'Thieving', kind: 'countdown', durationMs: 300_000, thresholdMs: 30_000, volume: 0.8, afk: false }
+        ]
     }
 ];
 
@@ -238,7 +260,7 @@ export function createServer(input: NewServerInput, existing: readonly ServerDef
 
     return {
         ok: true,
-        server: { id, kind: 'remote', name, url: url.url, revision: input.revision, wiki, map: null, hosts, notes, worlds: null, bookmarks: [], hiscores: null }
+        server: { id, kind: 'remote', name, url: url.url, revision: input.revision, wiki, map: null, hosts, notes, worlds: null, bookmarks: [], hiscores: null, timers: newServerTimers() }
     };
 }
 
@@ -262,6 +284,7 @@ export function isServerDef(x: unknown): x is ServerDef {
     if (s.worlds !== null && !isWorldsDef(s.worlds)) return false;
     if (!Array.isArray(s.bookmarks) || !s.bookmarks.every(isBookmark)) return false;
     if (s.hiscores !== null && !isHiscoresDef(s.hiscores)) return false;
+    if (!Array.isArray(s.timers) || !s.timers.every(isBuiltInTimer) || new Set(s.timers.map(t => (t as TimerDef).id)).size !== s.timers.length) return false;
     return true;
 }
 
@@ -289,8 +312,13 @@ function isBookmark(x: unknown): x is Bookmark {
     return isString(b.name) && b.name.trim() !== '' && isString(b.url) && parseServerUrl(b.url).ok;
 }
 
+/** A catalog entry's clocks are all the kit's, so none may carry a custom id. */
+function isBuiltInTimer(x: unknown): x is TimerDef {
+    return isTimerDef(x) && !x.id.startsWith(CUSTOM_ID_PREFIX);
+}
+
 interface CatalogFile {
-    version: 4;
+    version: 5;
     servers: ServerDef[];
 }
 
@@ -326,10 +354,12 @@ function isBuiltInLocal(entry: unknown): boolean {
  * Turns whatever was on disk into a usable list, or null when it cannot be
  * used. A version 1 file (per-world entries, no worlds block) has its
  * built-in entries replaced by the current built-ins, in default order, and
- * keeps any custom entries with the new fields empty. A missing version is 1.
- * An older file's entries are remote unless they say otherwise, and gain the
- * built-in single-player entry. A version 3 file's `hiscores` template becomes
- * the block the Hiscores tool reads.
+ * keeps any custom entries with the new fields empty, timers excepted: those
+ * start with the pair every new server gets. A missing version is 1. An older
+ * file's entries are remote unless they say otherwise, and gain the built-in
+ * single-player entry. A version 3 file's `hiscores` template becomes the
+ * block the Hiscores tool reads. A version 4 file's entries gain timers: a
+ * built-in's own, or the pair every new server gets.
  */
 export function migrateCatalog(parsed: unknown): ServerDef[] | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
@@ -337,8 +367,12 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
     const version = file.version === undefined ? 1 : file.version;
     if (!Array.isArray(file.servers)) return null;
 
-    if (version === 4) {
+    if (version === 5) {
         return file.servers.every(isServerDef) && uniqueIds(file.servers) ? file.servers.map(copy) : null;
+    }
+    if (version === 4) {
+        const upgraded = file.servers.map(entry => (typeof entry === 'object' && entry !== null ? { ...(entry as object), timers: upgradeTimers(entry as Record<string, unknown>) } : entry));
+        return upgraded.every(isServerDef) && uniqueIds(upgraded) ? upgraded.map(copy) : null;
     }
 
     // Single player superseded the built-in local server, so version 4 has no
@@ -373,7 +407,7 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
             builtIn.add(replacement);
             continue;
         }
-        const upgraded = { kind: 'remote', ...e, worlds: null, bookmarks: [], hiscores: null };
+        const upgraded = { kind: 'remote', ...e, worlds: null, bookmarks: [], hiscores: null, timers: newServerTimers() };
         if (!isServerDef(upgraded)) return null;
         custom.push(copy(upgraded));
     }
@@ -395,11 +429,17 @@ function fromV3(servers: readonly unknown[]): ServerDef[] | null {
         if (typeof entry !== 'object' || entry === null) return null;
         const e = entry as Record<string, unknown>;
         const hiscores = e.hiscores === LOSTCITY_HISCORES.source.url ? structuredClone(LOSTCITY_HISCORES) : null;
-        const withHiscores = { ...e, hiscores };
+        const withHiscores = { ...e, hiscores, timers: upgradeTimers(e) };
         if (!isServerDef(withHiscores)) return null;
         upgraded.push(copy(withHiscores));
     }
     return uniqueIds(upgraded) ? upgraded : null;
+}
+
+/** The clocks an older entry gains on its way to version 5: its built-in's when it is one, or the pair every new server gets. */
+function upgradeTimers(entry: Record<string, unknown>): TimerDef[] {
+    const builtIn = DEFAULT_SERVERS.find(s => s.id === entry.id && s.kind === (entry.kind ?? 'remote'));
+    return builtIn ? structuredClone(builtIn.timers) : newServerTimers();
 }
 
 /** Adds the built-in single-player entry to a list that lacks it, after the last built-in, where the menu has always shown it. */
@@ -445,8 +485,9 @@ export class Catalog {
             const refreshed = this.refreshSinglePlayer();
             const adopted = this.refreshHiscores();
             const relinked = this.refreshBookmarks();
+            const retimed = this.refreshTimers();
             // An older file is rewritten in the current shape; that is an upgrade, not a recovery.
-            if (refreshed || adopted || relinked || (parsed as { version?: unknown }).version !== 4) this.save();
+            if (refreshed || adopted || relinked || retimed || (parsed as { version?: unknown }).version !== 5) this.save();
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
             this.servers = DEFAULT_SERVERS.map(copy);
@@ -553,6 +594,27 @@ export class Catalog {
     }
 
     /**
+     * A built-in server's clocks are the kit's knowledge, like its hiscores:
+     * the add form has never offered them, and the player's changes live in
+     * state.json as edits on top, so re-adopting the list here loses nothing
+     * the player chose. The guard is `refreshHiscores`'s, for the same reason —
+     * an entry that only borrowed a built-in's id keeps what it has.
+     */
+    private refreshTimers(): boolean {
+        let changed = false;
+        for (const stored of this.servers) {
+            const builtIn = DEFAULT_SERVERS.find(s => s.id === stored.id && s.kind === stored.kind);
+            if (!builtIn) continue;
+            const url = parseServerUrl(stored.url);
+            if (!url.ok || !builtIn.hosts.includes(hostOf(url.url))) continue;
+            if (sameTimers(stored.timers, builtIn.timers)) continue;
+            stored.timers = structuredClone(builtIn.timers);
+            changed = true;
+        }
+        return changed;
+    }
+
+    /**
      * The world this computer runs is whatever engine ships with the kit, so the
      * stored entry must not freeze the revision the file was written under: the
      * File menu, the window strip and the tab would keep naming the old one while
@@ -605,7 +667,7 @@ export class Catalog {
 
     private save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: CatalogFile = { version: 4, servers: this.servers };
+        const data: CatalogFile = { version: 5, servers: this.servers };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }
@@ -628,4 +690,10 @@ function sameBookmarks(a: readonly Bookmark[], b: readonly Bookmark[]): boolean 
 function sameHiscores(a: HiscoresDef | null, b: HiscoresDef | null): boolean {
     if (a === null || b === null) return a === b;
     return a.source.kind === b.source.kind && a.source.url === b.source.url && a.site === b.site;
+}
+
+/** Whether two clock lists say the same thing, in the same order, so a refresh only rewrites the file when it must. */
+function sameTimers(a: readonly TimerDef[], b: readonly TimerDef[]): boolean {
+    const fields = ['id', 'name', 'kind', 'durationMs', 'thresholdMs', 'volume', 'afk'] as const;
+    return a.length === b.length && a.every((x, i) => fields.every(field => x[field] === b[i]![field]));
 }
