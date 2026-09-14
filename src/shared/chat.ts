@@ -24,7 +24,7 @@ export interface ChatLine {
     nick: string | null;
     text: string;
     at: number;
-    /** The line names you. Drives the unread count that badges the rail. */
+    /** The line names you, which the chat pane picks out with a gold edge. */
     highlight: boolean;
 }
 

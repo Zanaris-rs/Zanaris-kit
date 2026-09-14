@@ -6,77 +6,20 @@ import type { ReactNode } from 'react';
  * The client's interface tabs are sprites: flat filled shapes sharing one dark
  * outline. Stroked outlines of even weight are the giveaway of a modern icon
  * set, and beside pixel type they read as borrowed from somewhere else. So the
- * tools are painted, not outlined, and only the chrome glyphs stay strokes.
+ * sprites are painted, not outlined, and only the chrome glyphs stay strokes.
  */
 
 /** The outline every sprite shares, as sprite art does. */
 const OUTLINE = '#3a3428';
 
 /**
- * Chat. A cream speech bubble with its two lines cut out of the fill rather
- * than laid over it, so the glyph stays one flat shape on the shared outline —
- * the same trick the client's own sprites use to read at 18px.
- */
-export function Chat(): ReactNode {
-    return (
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
-            <path d="M2 3h14v9H9l-4 3v-3H2z" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
-            <path d="M5 6.5h8M5 9.5h5" stroke={OUTLINE} strokeWidth="1.3" />
-        </svg>
-    );
-}
-
-/** Worlds. A lit sea with pale meridians, so it stays legible at 78% opacity when the tab is shut. */
-export function Globe(): ReactNode {
-    return (
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
-            <circle cx="9" cy="9" r="7" fill="#4a7fa8" stroke={OUTLINE} strokeWidth="1.3" />
-            <path d="M2 9h14" stroke="#cfe3ef" strokeWidth="1.2" />
-            <path
-                d="M9 2c2.6 2.6 2.6 11.4 0 14M9 2c-2.6 2.6-2.6 11.4 0 14"
-                stroke="#cfe3ef"
-                strokeWidth="1.2"
-                fill="none"
-            />
-        </svg>
-    );
-}
-
-/**
- * Hiscores. Three bars climbing to the right, sharing one baseline, with the
- * tallest in gold — a table read at a glance rather than a trophy or a crown,
- * neither of which the client has a sprite for. Flat fills on the shared
- * outline, like the rest of the tools.
- */
-export function Bars(): ReactNode {
-    return (
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
-            <rect x="2.5" y="10" width="3.6" height="5.5" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
-            <rect x="7.2" y="7" width="3.6" height="8.5" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
-            <rect x="11.9" y="4" width="3.6" height="11.5" fill="#ffe139" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
-        </svg>
-    );
-}
-
-/** Single player. A lit hearth on the stone: a warm flame over a dark grate, one flat sprite on the shared outline. */
-export function Hearth(): ReactNode {
-    return (
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
-            <rect x="3" y="12" width="12" height="3.5" fill="#5a4a38" stroke={OUTLINE} strokeWidth="1.3" />
-            <path d="M9 2.5c1.2 2 3.6 3.4 3.6 6.2A3.6 3.6 0 0 1 9 12.2a3.6 3.6 0 0 1-3.6-3.5c0-1.4.6-2.2 1.3-3 .1 1.1.6 1.7 1.3 1.9C7.7 5.4 8.2 3.8 9 2.5z" fill="#ffe139" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
-            <path d="M9 7.4c.6 1 1.4 1.6 1.4 2.6A1.4 1.4 0 0 1 9 11.3a1.4 1.4 0 0 1-1.4-1.3c0-.9.8-1.6 1.4-2.6z" fill="#a70700" />
-        </svg>
-    );
-}
-
-/**
  * Close a room. A filled diagonal cross on the shared outline, a sprite like
- * the tools rather than a stroked chrome glyph, because it sits among the
+ * the links' rather than a stroked chrome glyph, because it sits among the
  * dock's own furniture beside the move control rather than in the strip.
  *
  * It fills about ten of its eighteen pixels. The other sprites run edge to
  * edge because they are pictures of things; this one is a mark, and a mark
- * drawn to the same bounds as a globe reads as heavier than everything it
+ * drawn to the same bounds as a picture reads as heavier than everything it
  * sits beside rather than as the smallest control in the row.
  */
 /** The new-tab control. Drawn as the same thick, outlined cross the close is, turned a quarter — they are the same pair of gestures and should read as a pair. */
@@ -105,15 +48,16 @@ export function CloseRoom(): ReactNode {
 /*
  * ── the reference links ────────────────────────────────────────────────────
  *
- * One sprite per link in the Guides list, in the same flat-fill-on-one-outline
- * language as the rail's tools. Four of them are lifted from the design sheet
- * rather than redrawn — the open book, the folded map, the item cabinet and
- * the ruled page are `design/Rail.dc.html`'s own paths — and the rest are
- * built from the same vocabulary: parchment cream, gold for the thing being
- * counted, one 1.2–1.3px outline, nothing stroked that could be filled.
+ * One sprite per link in the launcher, in the same flat-fill-on-one-outline
+ * language the old tool rail's sprites were drawn in. Four of them are lifted
+ * from the design sheet rather than redrawn — the open book, the folded map,
+ * the item cabinet and the ruled page are `design/Rail.dc.html`'s own paths —
+ * and the rest are built from the same vocabulary: parchment cream, gold for
+ * the thing being counted, one 1.2–1.3px outline, nothing stroked that could be
+ * filled.
  */
 
-/** Forums. A notice pinned to a board — not a speech bubble, which Chat already owns. */
+/** Forums. A notice pinned to a board — not a speech bubble, which reads as chat. */
 function Forums(): ReactNode {
     return (
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">

@@ -120,7 +120,6 @@ input {
  */
 .tile,
 .sunk,
-.rail,
 .dock,
 .btn {
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.78);
@@ -242,21 +241,6 @@ input {
 }
 
 /*
- * The tool rail. It is a tile, except on its left edge: that edge meets the
- * panel rather than the window, so the highlight would draw a bright seam down
- * the middle of the chrome. Dark border plus an inset shadow makes a groove
- * there instead, and the rail reads as part of the same slab.
- */
-.rail {
-    background-color: var(--color-stone);
-    background-image: var(--stone-grain);
-    background-blend-mode: overlay, overlay;
-    border: 2px solid var(--color-edge-dark);
-    border-top-color: var(--color-edge-lit);
-    box-shadow: inset 2px 0 0 rgba(0, 0, 0, 0.28);
-}
-
-/*
  * The chat dock, and the rail's exception mirrored onto the other axis. The
  * dock's top edge meets the game rather than the window, so a highlight along
  * it would draw a bright line straight across the chrome; the groove goes
@@ -320,7 +304,7 @@ input {
     background: var(--color-gold);
 }
 
-/* A divider scored into the rail: the cut, then a hairline of light under it. */
+/* A divider scored into the stone: the cut, then a hairline of light under it. */
 .sep {
     width: 32px;
     height: 2px;

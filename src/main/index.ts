@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
 import { normaliseName } from '../shared/hiscores';
-import { IPC, TOOL_IDS, type ShellState, type ToolId } from '../shared/ipc';
+import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import type { PaneContent } from './paneTree';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
@@ -450,11 +450,6 @@ const actions: MenuActions = {
 
 ipcMain.handle(IPC.shellGet, (event): ShellState | null => windowFor(event.sender)?.state() ?? null);
 
-ipcMain.handle(IPC.shellSelectTool, (event, id: unknown) => {
-    if (!(TOOL_IDS as readonly string[]).includes(id as string)) return;
-    windowFor(event.sender)?.selectTool(id as ToolId);
-});
-
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
 
 /**
@@ -620,6 +615,12 @@ ipcMain.handle(IPC.tabContextMenu, (event, tabId: unknown, x: unknown, y: unknow
     if (typeof tabId !== 'string' || typeof x !== 'number' || typeof y !== 'number') return;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     windowFor(event.sender)?.showTabMenu(tabId, x, y);
+});
+
+ipcMain.handle(IPC.tabAddPaneMenu, (event, x: unknown, y: unknown) => {
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showAddPaneMenu(x, y);
 });
 
 ipcMain.handle(IPC.tabClose, async (event, tabId: unknown) => {
@@ -900,11 +901,12 @@ async function captureAndExit(dir: string): Promise<void> {
         await save(`${name}-game`, () => sw.captureGame());
     };
     /**
-     * Put a tool in a pane the way the rail does. Idempotent by construction —
-     * `selectTool` focuses a tool already placed rather than opening a second
-     * copy — so this needs none of the toggle-avoidance the panel version did.
+     * Put a tool in a pane the way the tab bar's Add pane does. Idempotent by
+     * construction — `addPane` focuses a tool already in the tab rather than
+     * opening a second copy — so this needs none of the toggle-avoidance the
+     * panel version did.
      */
-    const showTool = (sw: ServerWindow, tool: ToolId): void => sw.selectTool(tool);
+    const showTool = (sw: ServerWindow, tool: ToolId): void => sw.addPane({ kind: 'tool', tool });
     /** The focused pane, which is what every split and close below acts on. */
     const focused = (sw: ServerWindow): string => sw.state().panes.find(p => p.focused)?.paneId ?? '';
     const loaded = (sw: ServerWindow): Promise<'loaded' | 'failed' | 'timeout'> =>
@@ -981,13 +983,13 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] ${id} worlds: ${view?.status} ${view?.worlds.map(w => `W${w.id}=${w.players ?? '?'}p/${w.latencyMs ?? '?'}ms`).join(' ')}${view?.error ? ` error: ${view.error}` : ''}`);
             await shoot(`${id}-worlds`, hopper);
 
-            // Chat below the still-open Worlds pane: two tools and the game laid
-            // out at once, which is the arrangement the whole tree exists to
-            // allow and which the fixed column could not express at all. Every
-            // window opens with chat already there, so this only focuses it —
-            // `selectTool` never opens a second copy — and Worlds stays exactly
-            // as the shot above left it.
-            hopper.selectTool('chat');
+            // Chat beside the still-open Worlds column: two tools and the game
+            // laid out at once, which is the arrangement the whole tree exists
+            // to allow and which the fixed column could not express at all.
+            // Every window opens with chat already there, so this only focuses
+            // it — `addPane` never opens a second copy — and Worlds stays
+            // exactly as the shot above left it.
+            showTool(hopper, 'chat');
             await wait(500);
             // Maximised, which is now simply a bigger rect for the tree to
             // divide rather than the state that forced the old ladder into
@@ -1017,7 +1019,7 @@ async function captureAndExit(dir: string): Promise<void> {
             hopper.window.unmaximize();
             const restored = Date.now() + 5_000;
             while (Date.now() < restored && hopper.window.isMaximized()) await wait(100);
-            hopper.selectTool('chat');
+            showTool(hopper, 'chat');
             await wait(500);
 
             const target = view?.worlds.find(w => w.id !== view.current);

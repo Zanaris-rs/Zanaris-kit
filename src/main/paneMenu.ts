@@ -1,11 +1,12 @@
 import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
-import { contentOf, paneIds, parentSplitOf, type PaneContent, type PaneNode } from './paneTree.ts';
+import { canAppendColumn, contentOf, paneIds, parentSplitOf, type PaneContent, type PaneNode } from './paneTree.ts';
 
 /**
  * What a pane is called, and what its two menus offer: the gestures a
  * right-click gives it, and the contents its header's dropdown can put in it —
- * followed there by the gesture menu's two splits.
+ * followed there by the gesture menu's two splits. The tab bar's Add pane
+ * offers the same contents for a new column.
  *
  * Pure and tested for the usual reason, and for one specific to a menu: an item
  * that is offered and then refused is worse than one that was never offered,
@@ -83,17 +84,71 @@ export function paneName(content: PaneContent, links: readonly PaneLink[] = []):
 export function paneContentItems(opts: { trees: readonly PaneNode[]; paneId: string; tools: readonly ToolId[]; links: readonly PaneLink[] }): PaneContentItem[] {
     const here = opts.trees.reduce<PaneContent | null>((found, tree) => found ?? contentOf(tree, opts.paneId), null);
     const gameElsewhere = here?.kind !== 'game' && opts.trees.some(tree => paneIds(tree).some(id => contentOf(tree, id)?.kind === 'game'));
-    const item = (content: PaneContent, group: PaneContentItem['group'], label?: string): PaneContentItem => ({
+    return offered(opts.tools, opts.links).map(({ content, group }) => ({
         content,
-        label: label ?? paneName(content, opts.links),
+        label: labelFor(content, opts.links, gameElsewhere),
         group,
         current: here !== null && sameContent(here, content)
+    }));
+}
+
+/** What the tab bar's Add pane offers: one thing a new pane could hold. */
+export interface AddPaneItem {
+    content: PaneContent;
+    label: string;
+    group: PaneContentItem['group'];
+    /**
+     * The pane in this tab that already holds exactly this, or null. Choosing
+     * an item that has one goes to that pane instead of adding a second copy
+     * beside it, and the menu ticks it so the player can see that is what will
+     * happen.
+     */
+    openIn: string | null;
+    /** False only when adding would need a column the tab has no room for. Going to a pane that exists needs no room. */
+    enabled: boolean;
+}
+
+/**
+ * Everything the tab bar's Add pane may put in a new column: the same list, in
+ * the same words, that a pane's dropdown and the launcher offer.
+ *
+ * Only the active tab is searched for a copy that is already open, because it
+ * is the only one on screen — a Worlds in another tab is out of sight, and
+ * finding it would switch tabs under the player for a click that read as
+ * "add". The game is the exception the one-view rule forces: when it is in
+ * another tab, choosing it moves it here, and the label says so.
+ */
+export function addPaneItems(opts: { tree: PaneNode; trees: readonly PaneNode[]; tools: readonly ToolId[]; links: readonly PaneLink[]; width: number }): AddPaneItem[] {
+    const gameHere = paneHolding(opts.tree, { kind: 'game' }) !== null;
+    const gameElsewhere = !gameHere && opts.trees.some(tree => paneHolding(tree, { kind: 'game' }) !== null);
+    const room = canAppendColumn(opts.tree, opts.width);
+    return offered(opts.tools, opts.links).map(({ content, group }) => {
+        const openIn = paneHolding(opts.tree, content);
+        return { content, label: labelFor(content, opts.links, gameElsewhere), group, openIn, enabled: openIn !== null || room };
     });
+}
+
+/** The first pane in the tree holding exactly this, or null. */
+export function paneHolding(tree: PaneNode, content: PaneContent): string | null {
+    return (
+        paneIds(tree).find(id => {
+            const held = contentOf(tree, id);
+            return held !== null && sameContent(held, content);
+        }) ?? null
+    );
+}
+
+/** Everything a pane may hold in this window, in the order every menu lists it: tools, the game, links. */
+function offered(tools: readonly ToolId[], links: readonly PaneLink[]): { content: PaneContent; group: PaneContentItem['group'] }[] {
     return [
-        ...opts.tools.map(tool => item({ kind: 'tool', tool }, 'tool')),
-        item({ kind: 'game' }, 'game', gameElsewhere ? 'Move game here' : undefined),
-        ...opts.links.map(link => item({ kind: 'page', bookmark: link.url }, 'link'))
+        ...tools.map(tool => ({ content: { kind: 'tool', tool } as PaneContent, group: 'tool' as const })),
+        { content: { kind: 'game' }, group: 'game' as const },
+        ...links.map(link => ({ content: { kind: 'page', bookmark: link.url } as PaneContent, group: 'link' as const }))
     ];
+}
+
+function labelFor(content: PaneContent, links: readonly PaneLink[], gameElsewhere: boolean): string {
+    return content.kind === 'game' && gameElsewhere ? 'Move game here' : paneName(content, links);
 }
 
 function sameContent(a: PaneContent, b: PaneContent): boolean {

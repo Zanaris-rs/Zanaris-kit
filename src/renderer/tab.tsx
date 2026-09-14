@@ -17,7 +17,7 @@ import { CloseRoom } from './icons';
  * decided by stylesheet order, which is not something to leave to chance.
  */
 
-/** A text tab hugs its label instead of taking the rail tab's fixed 36x34 square. */
+/** A text tab hugs its label instead of taking `.tab`'s fixed 36x34 square. */
 const BOX: CSSProperties = { height: 26, width: 'auto' };
 
 export default function Tab({
@@ -66,7 +66,7 @@ export default function Tab({
     onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 }): ReactNode {
     /*
-     * One pair of faces for both states, the rail's own: resting is a tab cut
+     * One pair of faces for both states, `.tab`'s own: resting is a tab cut
      * into the stone, open lifts to the lit face above it.
      *
      * The open one used to be a `.tile`, which is the *same* fill as the bar it
@@ -74,9 +74,9 @@ export default function Tab({
      * the resting tab, darker and shadowed from above-left, was the only tab on
      * the strip with a strong physical read. The eye picked the resting one as
      * the open one. Lit stone is a step above the bar rather than level with
-     * it, which is the whole of the fix, and it is what the rail has always
-     * done. It also settles a wobble: `.tile` is a 2px border and `.tab` a 1px
-     * one, so a tab used to change size by two pixels on being opened.
+     * it, which is the whole of the fix, and it is what the tool rail's tabs
+     * always did. It also settles a wobble: `.tile` is a 2px border and `.tab`
+     * a 1px one, so a tab used to change size by two pixels on being opened.
      */
     const face = open ? 'tab tab-on' : 'tab text-dim';
     const skin = `flex items-center gap-[7px] px-2.5 ${face}`;
@@ -103,8 +103,8 @@ export default function Tab({
          * label is what gives way, never the close.
          *
          * The close's X is dimmed on a resting tab and full on the open one by
-         * `.tab svg` and `.tab-on svg`, which already do that for the rail's
-         * icons, so it sits back exactly as far as the tab it belongs to.
+         * `.tab svg` and `.tab-on svg`, which do that for any icon on a tab,
+         * so it sits back exactly as far as the tab it belongs to.
          */
         const close = closeLabel ?? `Close ${label}`;
         return (

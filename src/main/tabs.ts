@@ -52,8 +52,8 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  * own minimums decide. Nothing remembers these numbers — they are the shares
  * the split starts with, and the fractions carry them from there.
  *
- * Focus is on the game, so a tool chosen from the rail splits the game's pane
- * rather than replacing the chat below it.
+ * Focus is on the game, so Cmd/Ctrl+D and a right-click's splits start from the
+ * pane the player is looking at rather than from the chat below it.
  */
 export function openWindowTabs(treeHeight: number): TabSet {
     const gross = Math.max(0, treeHeight - SEAM);

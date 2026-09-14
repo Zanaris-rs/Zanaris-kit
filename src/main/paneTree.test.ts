@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clearGame, closePane, contentOf, evenOut, layoutTree, leaf, paneIds, parentSplitOf, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane } from './paneTree.ts';
+import { appendColumn, canAppendColumn, clearGame, closePane, contentOf, evenOut, layoutTree, leaf, paneIds, parentSplitOf, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -234,4 +234,60 @@ test('a swap that names one pane twice, or a pane that is not there, changes not
     const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
     assert.equal(swapPanes(tree, 'a', 'a'), tree, 'the same object, so nothing downstream repaints');
     assert.equal(swapPanes(tree, 'a', 'gone'), tree);
+});
+
+const worlds = { kind: 'tool', tool: 'worlds' } as const;
+const born = { paneId: 'new', splitId: 's-new' };
+
+test('a column added to a lone pane opens beside it at its preferred width', () => {
+    // 804 = 800 of pane plus the new seam; 320 of it is the column's.
+    const tree = appendColumn(leaf('a', { kind: 'game' }), worlds, 804, born);
+    assert.equal(tree.kind === 'split' && tree.axis, 'x');
+    assert.deepEqual(paneIds(tree), ['a', 'new'], 'the new pane is the rightmost');
+    assert.deepEqual(contentOf(tree, 'new'), worlds, 'holding what was asked for, not an empty pane');
+    const { panes } = layoutTree(tree, { x: 0, y: 0, width: 804, height: 600 });
+    assert.equal(panes.get('new')!.width, 320);
+    assert.equal(panes.get('a')!.width, 480, 'the pane already there gives up the rest');
+});
+
+test('a column added to a tab split top and bottom runs the full height beside both', () => {
+    const rows = split('s1', 'y', [leaf('g', { kind: 'game' }), leaf('c', { kind: 'tool', tool: 'chat' })], [0.7, 0.3]);
+    const tree = appendColumn(rows, worlds, 1104, born);
+    assert.equal(tree.kind === 'split' && tree.splitId, 's-new', 'wrapped in a new row, since the old root runs the other way');
+    assert.equal(tree.kind === 'split' && tree.children[0], rows, 'the game and chat keep their own split untouched');
+    const { panes } = layoutTree(tree, { x: 0, y: 0, width: 1104, height: 800 });
+    assert.equal(panes.get('new')!.height, 800, 'beside both rows, not under one of them');
+    assert.equal(panes.get('new')!.x, 784, 'at the right edge');
+});
+
+test('a column added to a row joins it rather than nesting, and the others keep their proportions', () => {
+    const row = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.75, 0.25]);
+    // 1208 = 1200 of panes plus two seams once the column is in.
+    const tree = appendColumn(row, worlds, 1208, born);
+    assert.equal(tree.kind === 'split' && tree.splitId, 's1', 'the same row, one child longer');
+    assert.deepEqual(paneIds(tree), ['a', 'b', 'new']);
+    const { panes } = layoutTree(tree, { x: 0, y: 0, width: 1208, height: 600 });
+    assert.equal(panes.get('new')!.width, 320);
+    assert.equal(panes.get('a')!.width, 660, 'three quarters of what is left');
+    assert.equal(panes.get('b')!.width, 220, 'and a quarter');
+});
+
+test('on a narrow window a new column takes an even share, not its preferred width', () => {
+    // gross 400: 320 would leave the pane beside it 80, so both get 200.
+    const tree = appendColumn(leaf('a', { kind: 'empty' }), worlds, 404, born);
+    const { panes } = layoutTree(tree, { x: 0, y: 0, width: 404, height: 600 });
+    assert.equal(panes.get('new')!.width, 200);
+    assert.equal(panes.get('a')!.width, 200);
+});
+
+test('a column can be added only while every column, the new one included, fits above its floor', () => {
+    // Two 120s and a seam.
+    assert.equal(canAppendColumn(leaf('a', { kind: 'empty' }), 243), false);
+    assert.equal(canAppendColumn(leaf('a', { kind: 'empty' }), 244), true);
+    const row = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    // Three 120s and two seams.
+    assert.equal(canAppendColumn(row, 367), false);
+    assert.equal(canAppendColumn(row, 368), true);
+    const rows = split('s1', 'y', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    assert.equal(canAppendColumn(rows, 244), true, 'rows stacked top and bottom are one column wide');
 });

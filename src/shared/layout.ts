@@ -1,9 +1,7 @@
 /** Geometry shared by main, which positions views, and the shell, which draws the chrome around them. */
 
-/** The bar of workspace tabs across the top, and the read-out that sits at its left. */
+/** The bar of workspace tabs across the top, and the Add pane control at its right. */
 export const TAB_BAR_HEIGHT = 36;
-/** The tool rail down the right edge. Window chrome rather than a pane: it is the way a tool gets into one. */
-export const RAIL_WIDTH = 48;
 
 /**
  * The draggable gap between two panes.
@@ -32,6 +30,18 @@ export const SEAM = 4;
  */
 export const PANE_MIN_WIDTH = 120;
 export const PANE_MIN_HEIGHT = 80;
+
+/**
+ * What a pane added from the tab bar asks for: a new column down the tab's
+ * right edge, 320px wide — the width the tools were drawn for when they lived
+ * in a fixed side panel.
+ *
+ * A preference, like the game's. The column never takes more than an even
+ * share of the row it joins, so on a narrow window it is the columns' equal
+ * rather than most of the window, and once placed it is an ordinary pane
+ * whose seam the player drags.
+ */
+export const COLUMN_PREFERRED_WIDTH = 320;
 
 /**
  * Every pane's own header: what the pane is called, whatever controls belong to

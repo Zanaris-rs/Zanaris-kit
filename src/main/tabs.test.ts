@@ -24,7 +24,7 @@ test('a new window opens on the game with chat below it, the game focused', () =
         paneIds(tree).map(id => contentOf(tree, id)),
         [{ kind: 'game' }, { kind: 'tool', tool: 'chat' }]
     );
-    assert.equal(set.tabs[0]!.focusedPaneId, 'pane-1', 'so the rail splits the game rather than replacing chat');
+    assert.equal(set.tabs[0]!.focusedPaneId, 'pane-1', 'so a split starts from the game rather than from chat');
 });
 
 test('at the size a window opens at, the game and chat each get exactly what they ask for', () => {

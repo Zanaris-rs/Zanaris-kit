@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaf, split } from './paneTree.ts';
-import { canClosePane, paneContentItems, paneMenuItems, paneName, paneSplitItems } from './paneMenu.ts';
+import { addPaneItems, canClosePane, paneContentItems, paneHolding, paneMenuItems, paneName, paneSplitItems } from './paneMenu.ts';
 
 const roomy = { width: 800, height: 600 };
 const byId = (items: ReturnType<typeof paneMenuItems>, id: string): (typeof items)[number] => items.find(i => i.id === id)!;
@@ -105,7 +105,7 @@ test("a pane may become one of this window's tools, the game, or one of this ser
     assert.deepEqual(
         list.map(item => item.label),
         ['Chat', 'Worlds', 'Game', 'Forums', 'World Map'],
-        'tools in rail order, then the game, then the links in catalog order'
+        "tools in the window's order, then the game, then the links in catalog order"
     );
     assert.deepEqual(
         list.map(item => item.group),
@@ -147,4 +147,56 @@ test('the game item is marked in the pane that holds it', () => {
         list.filter(item => item.current).map(item => item.label),
         ['Game']
     );
+});
+
+const adds = (opts: { tree: ReturnType<typeof leaf>; others?: ReturnType<typeof leaf>[]; width?: number }): ReturnType<typeof addPaneItems> =>
+    addPaneItems({ tree: opts.tree, trees: [opts.tree, ...(opts.others ?? [])], tools: ['chat', 'worlds'], links: LINKS, width: opts.width ?? 1200 });
+const named = (list: ReturnType<typeof addPaneItems>, label: string): (typeof list)[number] => list.find(item => item.label === label)!;
+
+test("the tab bar's Add pane offers what a pane's dropdown does, in the same order", () => {
+    const list = adds({ tree: leaf('a', { kind: 'empty' }) });
+    const dropdown = items(leaf('a', { kind: 'empty' }), 'a');
+    assert.deepEqual(
+        list.map(item => [item.label, item.group, item.content]),
+        dropdown.map(item => [item.label, item.group, item.content]),
+        'one list, so the two menus cannot come to offer different things'
+    );
+});
+
+test('something already in this tab is found rather than added a second time', () => {
+    const tree = split('s', 'x', [leaf('w', { kind: 'tool', tool: 'worlds' }), leaf('g', { kind: 'game' }), leaf('p', { kind: 'page', bookmark: LINKS[0]!.url })], [0.4, 0.3, 0.3]);
+    const list = adds({ tree });
+    assert.equal(named(list, 'Worlds').openIn, 'w');
+    assert.equal(named(list, 'Game').openIn, 'g', 'nothing to move: the game is already in this tab');
+    assert.equal(named(list, 'Forums').openIn, 'p');
+    assert.equal(named(list, 'Chat').openIn, null);
+    assert.equal(named(list, 'World Map').openIn, null, 'another link is not the one that is open');
+});
+
+test('a tool in another tab is added here, and the game in another tab is moved here', () => {
+    const list = adds({ tree: leaf('a', { kind: 'empty' }), others: [split('s', 'y', [leaf('g', { kind: 'game' }), leaf('c', { kind: 'tool', tool: 'chat' })], [0.5, 0.5])] });
+    assert.equal(named(list, 'Chat').openIn, null, 'only this tab is searched: another tab is out of sight');
+    assert.equal(list.find(item => item.group === 'game')!.label, 'Move game here');
+    assert.equal(list.find(item => item.group === 'game')!.openIn, null);
+});
+
+test('with no room for another column, only what is already open stays enabled', () => {
+    // One 120 floor already there, plus a seam and another 120, is 244.
+    const list = adds({ tree: leaf('w', { kind: 'tool', tool: 'worlds' }), width: 243 });
+    assert.deepEqual(
+        list.filter(item => item.enabled).map(item => item.label),
+        ['Worlds'],
+        'going to a pane that exists needs no room'
+    );
+    assert.equal(
+        adds({ tree: leaf('w', { kind: 'tool', tool: 'worlds' }), width: 244 }).every(item => item.enabled),
+        true
+    );
+});
+
+test('the pane holding something is found anywhere in the tab, and nowhere else', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), split('s2', 'y', [leaf('b', { kind: 'game' }), leaf('c', { kind: 'tool', tool: 'chat' })], [0.5, 0.5])], [0.5, 0.5]);
+    assert.equal(paneHolding(tree, { kind: 'tool', tool: 'chat' }), 'c');
+    assert.equal(paneHolding(tree, { kind: 'game' }), 'b');
+    assert.equal(paneHolding(tree, { kind: 'tool', tool: 'worlds' }), null);
 });

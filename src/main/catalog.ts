@@ -149,7 +149,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         worlds: null,
         // The reference links are offered on the two live servers people play
         // on and nowhere else. A development world is not one of them, and a
-        // window with no bookmarks gets no Guides tab on its rail.
+        // window with no bookmarks lists no links in its menus or launcher.
         bookmarks: [],
         // A one-player world has nobody to rank, so single player offers no lookup.
         hiscores: null

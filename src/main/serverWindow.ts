@@ -2,15 +2,15 @@ import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuI
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, RAIL_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
 import type { PaneView, SeamView } from '../shared/panes';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
-import { paneContentItems, paneMenuItems, paneSplitItems, type PaneMenuItem } from './paneMenu';
-import { contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
+import { addPaneItems, paneContentItems, paneHolding, paneMenuItems, paneSplitItems, type PaneMenuItem } from './paneMenu';
+import { canAppendColumn, contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
 import { holdsGame, openWindowTabs } from './tabs';
 import { layoutEntries, layoutFileName, readLayout, writeLayout } from './layoutFile';
 import { loadShell, preloadPath } from './renderer';
@@ -26,8 +26,8 @@ const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /**
  * The content area a new window opens with: the game at its preferred size and
  * the chat pane below it at its own, with the seam between them
- * (`tabs.openWindowTabs`). The tree fills the content area left of the rail and
- * below the bar exactly, so anything short of this would clip the bottom of the
+ * (`tabs.openWindowTabs`). The tree fills the content area below the bar
+ * exactly, so anything short of this would clip the bottom of the
  * canvas at the one size nobody chose.
  */
 const DEFAULT_CONTENT = { width: GAME_PREFERRED_WIDTH, height: GAME_PREFERRED_HEIGHT + SEAM + CHAT_PREFERRED_HEIGHT };
@@ -101,7 +101,7 @@ export interface ServerWindowDeps {
     position: { x: number; y: number } | null;
     /** The server's shared world list and latency, or null when the server has one page. */
     worlds: WorldsService | null;
-    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool off a single-player window's rail. */
+    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of a single-player window's menus. */
     hiscores: HiscoresService | null;
     /**
      * The one conversation, which is the app's rather than this window's: every
@@ -142,8 +142,15 @@ export interface ServerWindow extends ServerWindowHandle {
     readonly window: BrowserWindow;
     /** The shell view's webContents id, so IPC handlers can find the window from `event.sender`. */
     readonly shellContentsId: number;
-    /** The rail: puts a tool in the focused pane, splitting the game's rather than replacing it. */
-    selectTool(id: ToolId): void;
+    /**
+     * The tab bar's Add pane: goes to the pane in this tab already holding
+     * `content`, or adds a column down the tab's right edge holding it. The
+     * game is moved rather than duplicated. Does nothing when a column is
+     * needed and there is no room for one.
+     */
+    addPane(content: PaneContent): void;
+    /** Raises the tab bar's Add pane menu at a point in the window. */
+    showAddPaneMenu(x: number, y: number): void;
     /** Whether this window floats above other apps. Read back from the window itself, not from a flag kept beside it. */
     alwaysOnTop(): boolean;
     setAlwaysOnTop(on: boolean): void;
@@ -227,42 +234,36 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
     const single = server.kind === 'singleplayer' ? deps.singlePlayer : null;
     /**
-     * The rail this window offers. Chat is app-scoped, so every window offers
+     * The tools this window offers. Chat is app-scoped, so every window offers
      * it, and first: it is there whether or not the server has worlds to hop
-     * between. Everything after it is this window's server's, which is where
-     * the rail draws its divider — worlds to hop between, hiscores to look a
-     * player up on, the world this computer runs.
+     * between. Everything after it is this window's server's — worlds to hop
+     * between, hiscores to look a player up on, the world this computer runs.
      *
      * Each of the three is offered because the window was *given* the thing
      * behind it, rather than because of what kind of server this is: no
      * hiscores def means no service, no service means no tool, and single
      * player is the case that matters — a one-player world has nothing to
      * rank, and its catalog entry carries no hiscores, so the tool never
-     * reaches its rail without anything here naming it.
+     * reaches its menus without anything here naming it.
      *
-     * The rail's order is declared in three places nothing links together:
-     * this builder, which feeds `firstLegalSideOccupant` and so
-     * `panelAvailable`; `TOOLS` in `renderer/Shell.tsx`, which decides what is
-     * drawn; and `RAIL` in `chatDock.test.ts`, which stands in for this
-     * builder. They agree today, and no test would notice if they stopped —
-     * reorder one and the other two want the same edit. It matters in a way it
-     * did not before hiscores: every remote window now offers two server tools
-     * at once, so which of them comes first is a real question.
+     * The order declared here is the order every menu lists them in — a
+     * pane's dropdown, the launcher and Add pane all take it from
+     * `paneMenu.ts`, which takes it from this.
      */
     const tools: ToolId[] = ['chat'];
     if (worldSwitch) tools.push('worlds');
     if (deps.hiscores) tools.push('hiscores');
     if (single) tools.push('singleplayer');
-    // Which tools a window came up with is otherwise only visible by looking at
-    // the rail, and a tool missing from it looks the same as a tool that drew
+    // Which tools a window came up with is otherwise only visible by opening a
+    // menu, and a tool missing from it looks the same as a tool that drew
     // nothing. One line at open says which of the two happened.
-    deps.log(`${tag} rail: ${tools.join(' · ')}`);
+    deps.log(`${tag} tools: ${tools.join(' · ')}`);
 
     /** The URL main last asked the game view to load. The offline page may return to it; nothing else may navigate. */
     let expected = worldSwitch ? worldSwitch.url : server.url;
     let currentLatency: number | null = null;
     /** Where the window's own chrome sits. The panes' rects belong to the host. */
-    let rects = { tabBar: { x: 0, y: 0, width: 0, height: 0 }, rail: { x: 0, y: 0, width: 0, height: 0 }, tree: { x: 0, y: 0, width: 0, height: 0 } };
+    let rects = { tabBar: { x: 0, y: 0, width: 0, height: 0 }, tree: { x: 0, y: 0, width: 0, height: 0 } };
     /**
      * The live game view, or null once it has been closed.
      *
@@ -289,14 +290,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const display = screen.getDisplayNearestPoint(deps.position ?? screen.getCursorScreenPoint());
     const openHeight = Math.max(TAB_BAR_HEIGHT + PANE_MIN_HEIGHT, Math.min(TAB_BAR_HEIGHT + DEFAULT_CONTENT.height, display.workArea.height - FRAME_ALLOWANCE));
     const win = new BrowserWindow({
-        width: DEFAULT_CONTENT.width + RAIL_WIDTH,
+        width: DEFAULT_CONTENT.width,
         height: openHeight,
         // One pane's floor plus the chrome that never gives way. A constant
         // now: the old minimum moved as the dock opened and closed, because it
         // was protecting a region the layout was also protecting. Nothing is
         // protected any more — every pane gives way together — so there is
         // nothing left for the floor to track.
-        minWidth: PANE_MIN_WIDTH + RAIL_WIDTH,
+        minWidth: PANE_MIN_WIDTH,
         minHeight: TAB_BAR_HEIGHT + PANE_MIN_HEIGHT,
         useContentSize: true,
         ...(deps.position ?? {}),
@@ -389,7 +390,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         return { ...deps.worlds.view(), current: worldSwitch.world, detail: worldSwitch.detail, showDetail: server.worlds.detail };
     }
 
-    /** Which tools are placed in a pane somewhere, so the rail can light them rather than guess. */
+    /** Which tools are placed in a pane in the active tab, so the Worlds probe runs only while there is a list to show. */
     function openTools(): ToolId[] {
         const tree = host.tree();
         const placed = paneIds(tree)
@@ -411,7 +412,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             panes: host.panes(),
             seams: host.seams(),
             tools,
-            openTools: openTools(),
             worlds: worldsView(),
             hiscores: deps.hiscores?.view() ?? null,
             chat: deps.chat(),
@@ -438,7 +438,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * allocated — so the widen / shift / push ladder, the content extent
      * carried across a chrome toggle and the per-axis mode the shell used to
      * report all went with the chrome that motivated them. What is left is: the
-     * bar across the top, the rail down the right, and the tree in the rest.
+     * bar across the top and the tree in the rest. The tool rail that used to
+     * run down the right went too; the bar's Add pane is how a pane is added.
      *
      * The tree runs to the window's edges. It used to be inset by a pixel so a
      * gold ring round the focused pane had shell to land on; focus is a dot in
@@ -448,12 +449,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function applyLayout(): void {
         if (win.isDestroyed()) return;
         const { width, height } = win.getContentBounds();
-        const railW = Math.min(RAIL_WIDTH, width);
-        const below = Math.max(0, height - TAB_BAR_HEIGHT);
         rects = {
             tabBar: { x: 0, y: 0, width, height: Math.min(TAB_BAR_HEIGHT, height) },
-            rail: { x: width - railW, y: TAB_BAR_HEIGHT, width: railW, height: below },
-            tree: { x: 0, y: TAB_BAR_HEIGHT, width: Math.max(0, width - railW), height: below }
+            tree: { x: 0, y: TAB_BAR_HEIGHT, width, height: Math.max(0, height - TAB_BAR_HEIGHT) }
         };
         shellView.setBounds({ x: 0, y: 0, width, height });
         host.layout(rects.tree);
@@ -493,32 +491,61 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
-     * The rail. Puts a tool in the focused pane — or splits that pane and uses
-     * the new half when it holds the game, so a click on the rail can never
-     * cost the player their view of the game. A tool already placed is brought
-     * into focus instead of opened a second time: the rail is a set of
-     * destinations, not a queue of requests.
+     * The tab bar's Add pane. Something already in this tab is brought into
+     * focus instead of opened a second time — the menu ticks it, so that is
+     * what the player was told would happen — and anything else gets a new
+     * column down the tab's right edge (`paneTree.appendColumn`). Nothing
+     * already on screen is replaced, which is the difference from a pane's own
+     * dropdown: that one changes a pane, this one adds one.
+     *
+     * The game goes in through `setPaneContent` rather than straight into the
+     * column, because it is a move: the window has one game view, and the pane
+     * it leaves in another tab has to be emptied in the same breath.
      */
-    function selectTool(id: ToolId): void {
-        if (!tools.includes(id)) return;
-        const tree = host.tree();
-        const already = paneIds(tree).find(paneId => {
-            const content = contentOf(tree, paneId);
-            return content?.kind === 'tool' && content.tool === id;
-        });
-        if (already) {
-            host.focus(already);
+    function addPane(content: PaneContent): void {
+        if (content.kind === 'tool' && !tools.includes(content.tool)) return;
+        if (content.kind === 'page' && !server.bookmarks.some(b => b.url === content.bookmark)) return;
+        const open = paneHolding(host.tree(), content);
+        if (open) {
+            host.focus(open);
             return;
         }
-        const target = host.focusedPaneId();
-        if (contentOf(tree, target)?.kind === 'game') {
-            host.split(target, 'x');
-            host.setContent(host.focusedPaneId(), { kind: 'tool', tool: id });
-        } else {
-            host.setContent(target, { kind: 'tool', tool: id });
+        if (!canAppendColumn(host.tree(), rects.tree.width)) {
+            deps.log(`${tag} no room to add a pane`);
+            return;
         }
-        deps.log(`${tag} opened ${id} in a pane`);
+        const born = host.appendColumn(content.kind === 'game' ? { kind: 'empty' } : content, rects.tree.width);
+        if (content.kind === 'game') setPaneContent(born, content);
         syncPanelProbe();
+    }
+
+    /**
+     * The menu under the tab bar's Add pane: everything a new column could
+     * hold, from `paneMenu.addPaneItems`, which is the dropdown's list with
+     * two differences it works out and tests — what is already in this tab is
+     * ticked, and everything else is greyed when the tab has no room for
+     * another column.
+     *
+     * Native and built here for the reason the pane menus are: it drops down
+     * over the panes, and a list the shell drew would open behind a game or a
+     * page view.
+     */
+    function showAddPaneMenu(x: number, y: number): void {
+        if (win.isDestroyed()) return;
+        const items = addPaneItems({ tree: host.tree(), trees: host.trees(), tools, links: server.bookmarks, width: rects.tree.width });
+        const template: MenuItemConstructorOptions[] = items.flatMap((item, i): MenuItemConstructorOptions[] => [
+            ...(i > 0 && item.group === 'link' && items[i - 1]!.group !== 'link' ? [{ type: 'separator' as const }] : []),
+            {
+                label: item.label,
+                // Ticked the way a Window menu ticks the window already open:
+                // choosing it goes there rather than opening another.
+                type: 'checkbox' as const,
+                checked: item.openIn !== null,
+                enabled: item.enabled,
+                click: () => addPane(item.content)
+            }
+        ]);
+        Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
     /**
@@ -1140,7 +1167,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             win.focus();
         },
         close: () => win.close(),
-        selectTool,
+        addPane,
+        showAddPaneMenu,
         // Asked of the window rather than answered from a flag kept alongside
         // it. The window is where the state actually lives, so a copy here
         // would be a second one to keep in step, and the menu is built from

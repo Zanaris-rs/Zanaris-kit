@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
-import type { Rect, ShellState, ToolId } from '../shared/ipc';
+import type { Rect, ShellState } from '../shared/ipc';
 import type { PaneView, SeamView } from '../shared/panes';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
-import { Bars, Chat as ChatIcon, Globe, Hearth, Plus } from './icons';
+import { Caret, Plus } from './icons';
 import Grip from './grip';
 import Launcher from './Launcher';
 import PaneHeader, { type Grab } from './paneHeader';
@@ -26,24 +26,10 @@ function revisionOf(state: ShellState): string {
 
 /** The bar spans the window, so only its underside is bevelled. */
 const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
-/* The rail's unread count sits on a `.tab`, which is not one of the surfaces that
-   carry the stone's text shadow, and a gold digit on a lit sprite needs one of its
-   own to stay a digit. */
-const BADGE: CSSProperties = { textShadow: '1px 1px 0 rgba(0, 0, 0, 0.9)' };
-/** Sized inline for the reason `tab.tsx` sizes its own box inline: `.tab` carries the rail's 36x34 square and is unlayered CSS, which beats a utility of equal specificity whatever the order. */
+/** Sized inline for the reason `tab.tsx` sizes its own box inline: `.tab` carries a fixed 36x34 square and is unlayered CSS, which beats a utility of equal specificity whatever the order. */
 const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
-
-const TOOLS: { id: ToolId; label: string; group: 'app' | 'server'; icon: ReactNode }[] = [
-    { id: 'chat', label: 'Chat', group: 'app', icon: <ChatIcon /> },
-    { id: 'worlds', label: 'Worlds', group: 'server', icon: <Globe /> },
-    { id: 'hiscores', label: 'Hiscores', group: 'server', icon: <Bars /> },
-    { id: 'singleplayer', label: 'Single player', group: 'server', icon: <Hearth /> }
-];
-
-/** Highlights are lines that named you, so the count is worth carrying on the rail. */
-function unreadChat(state: ShellState): number {
-    return state.chat.channels.reduce((total, channel) => total + channel.highlights, 0);
-}
+/** The tabs' height, with `.btn`'s padding traded for room on the caret's side. Inline for the same reason as the box above. */
+const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
 
 /**
  * What the shell draws inside one pane, under the header every pane now has.
@@ -96,7 +82,7 @@ const ROOM_FOR_REVISION = 300;
  * reachable however narrow the pane gets.
  */
 function GameReadout({ state, width }: { state: ShellState; width: number }): ReactNode {
-    /* No shadow of its own, unlike the rail's count: the header is a `.tile`, and every tile already puts one under its text. */
+    /* No shadow of its own: the header is a `.tile`, and every tile already puts one under its text. */
     return (
         <span title={`${state.gameLabel} · ${revisionOf(state)}`} className="flex min-w-0 shrink items-center gap-[7px] truncate">
             <span className="truncate">{state.gameLabel}</span>
@@ -132,8 +118,8 @@ function Seam({ seam }: { seam: SeamView }): ReactNode {
 }
 
 /**
- * The chrome around the panes: the bar across the top, the rail down the right,
- * and whatever each pane is, drawn exactly where main placed it.
+ * The chrome around the panes: the bar across the top, and whatever each pane
+ * is, drawn exactly where main placed it.
  *
  * The window no longer has four fixed regions to arrange, so this no longer
  * arranges any. It renders a list, and the list is main's.
@@ -210,54 +196,88 @@ export default function Shell(): ReactNode {
     if (!state) return <div className="h-full bg-ink" />;
 
     const { rects } = state;
-    const tools = TOOLS.filter(t => state.tools.includes(t.id));
-    const unread = unreadChat(state);
 
     return (
         <div className="relative h-full overflow-hidden bg-ink text-cream">
             <div style={at(rects.tabBar)} className="flex flex-col">
                 {/*
-                 * Tabs and the control that makes one, and nothing else. The
-                 * game's read-out used to sit at this bar's left on the grounds
-                 * that it was the window's rather than any tab's — true, but it
-                 * left the bar reading as two unrelated things, and a read-out
-                 * about the game is easiest to believe beside the game. It is in
-                 * the game pane's own header now.
+                 * Tabs and the control that makes one, then Add pane at the far
+                 * end, and nothing else. The game's read-out used to sit at this
+                 * bar's left on the grounds that it was the window's rather than
+                 * any tab's — true, but it left the bar reading as two unrelated
+                 * things, and a read-out about the game is easiest to believe
+                 * beside the game. It is in the game pane's own header now.
                  */}
-                <header role="tablist" style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
+                <header style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
                     {/*
-                     * A tab and its close are one object: the close sits inside
-                     * the tab it shuts, so it reads as part of that workspace
-                     * rather than as another piece of the bar's furniture. Main
-                     * asks first when the tab holds the game. A right-click
-                     * raises the tab's own menu — save its panes as a layout,
-                     * load one, open the folder — which main builds, as it does
-                     * every pane menu.
+                     * The tablist is its own box so Add pane, a menu button
+                     * rather than a tab, sits outside it. `min-w-0` is what lets
+                     * the tabs give way to it as they multiply.
                      */}
-                    {state.tabs.map(tab => (
-                        <Tab
-                            key={tab.id}
-                            role="tab"
-                            label={tab.label}
-                            title={tab.label}
-                            open={tab.active}
-                            onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
-                            onClose={() => void window.zanaris.panes.closeTab(tab.id)}
-                            onContextMenu={event => {
-                                event.preventDefault();
-                                void window.zanaris.panes.tabMenu(tab.id, event.clientX, event.clientY);
-                            }}
-                        />
-                    ))}
+                    <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px]">
+                        {/*
+                         * A tab and its close are one object: the close sits inside
+                         * the tab it shuts, so it reads as part of that workspace
+                         * rather than as another piece of the bar's furniture. Main
+                         * asks first when the tab holds the game. A right-click
+                         * raises the tab's own menu — save its panes as a layout,
+                         * load one, open the folder — which main builds, as it does
+                         * every pane menu.
+                         */}
+                        {state.tabs.map(tab => (
+                            <Tab
+                                key={tab.id}
+                                role="tab"
+                                label={tab.label}
+                                title={tab.label}
+                                open={tab.active}
+                                onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
+                                onClose={() => void window.zanaris.panes.closeTab(tab.id)}
+                                onContextMenu={event => {
+                                    event.preventDefault();
+                                    void window.zanaris.panes.tabMenu(tab.id, event.clientX, event.clientY);
+                                }}
+                            />
+                        ))}
+                        <button
+                            type="button"
+                            title="New tab"
+                            aria-label="New tab"
+                            onClick={() => void window.zanaris.panes.newTab()}
+                            style={NEW_TAB_BOX}
+                            className="tab shrink-0"
+                        >
+                            <Plus />
+                        </button>
+                    </div>
+                    {/*
+                     * How a pane gets added, at the far end of the bar from the
+                     * tabs. It replaced the tool rail down the window's right
+                     * edge, which could reach the tools and none of the links,
+                     * and put what it opened in whichever pane had focus — so
+                     * nothing on screen said a second pane was possible, and a
+                     * click could replace the page you were reading.
+                     *
+                     * Words and a caret rather than a second plus: a plus in
+                     * this bar already means "new tab", and two of them side by
+                     * side is a guess about which is which. A raised `.btn`
+                     * rather than a tab's face, so it does not read as one more
+                     * tab. The menu is main's, like every pane menu, and opens
+                     * under the button.
+                     */}
                     <button
                         type="button"
-                        title="New tab"
-                        aria-label="New tab"
-                        onClick={() => void window.zanaris.panes.newTab()}
-                        style={NEW_TAB_BOX}
-                        className="tab shrink-0"
+                        title="Add a pane to this tab"
+                        aria-haspopup="menu"
+                        onClick={event => {
+                            const box = event.currentTarget.getBoundingClientRect();
+                            void window.zanaris.panes.addPaneMenu(box.left, box.bottom);
+                        }}
+                        style={ADD_PANE_BOX}
+                        className="btn shrink-0 gap-[3px]"
                     >
-                        <Plus />
+                        Add pane
+                        <Caret />
                     </button>
                 </header>
                 {/* The client parts its bars with a dark rule lit along the top, never a flat hairline. */}
@@ -339,36 +359,6 @@ export default function Shell(): ReactNode {
             {state.seams.map(seam => (
                 <Seam key={`${seam.splitId}:${seam.index}`} seam={seam} />
             ))}
-
-            {/* .rail paints the stone; main sizes it, so the stack of tabs is laid out here. */}
-            <nav style={at(rects.rail)} className="rail flex flex-col items-center gap-1 py-[5px]" aria-label="Tools">
-                {tools.map((tool, i) => {
-                    const badge = tool.id === 'chat' ? unread : 0;
-                    const on = state.openTools.includes(tool.id);
-                    const previous = tools[i - 1];
-                    return (
-                        <Fragment key={tool.id}>
-                            {previous && previous.group !== tool.group && <div className="sep" aria-hidden="true" />}
-                            <button
-                                type="button"
-                                title={tool.label}
-                                aria-label={badge > 0 ? `${tool.label}, ${badge} unread` : tool.label}
-                                aria-pressed={on}
-                                onClick={() => void window.zanaris.shell.selectTool(tool.id)}
-                                className={`tab relative ${on ? 'tab-on' : ''}`}
-                            >
-                                {tool.icon}
-                                {/* The count sits on the tab rather than beside it: the rail is 48px wide. */}
-                                {badge > 0 && (
-                                    <span style={BADGE} className="absolute top-0 right-[3px] font-pixel text-[12px] leading-none text-gold">
-                                        {badge > 99 ? '99+' : badge}
-                                    </span>
-                                )}
-                            </button>
-                        </Fragment>
-                    );
-                })}
-            </nav>
         </div>
     );
 }
