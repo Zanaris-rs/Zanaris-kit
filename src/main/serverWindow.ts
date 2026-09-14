@@ -277,8 +277,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const tools: ToolId[] = ['chat'];
     if (worldSwitch) tools.push('worlds');
     if (deps.hiscores) tools.push('hiscores');
-    if (single) tools.push('singleplayer');
     tools.push('timers');
+    if (single) tools.push('singleplayer');
     // Which tools a window came up with is otherwise only visible by opening a
     // menu, and a tool missing from it looks the same as a tool that drew
     // nothing. One line at open says which of the two happened.
@@ -1099,11 +1099,16 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (wc.getURL().startsWith('file:')) return;
             clocks.input();
         });
-        // Any page load in the game view — a world switch, a detail switch, a
-        // retry, the offline page — ends that login's idle timer.
-        wc.on('did-start-navigation', details => {
-            if (details.isMainFrame && !details.isSameDocument) clocks.gameGone();
-        });
+        // A page that actually loads in the game view — a world switch, a
+        // detail switch, a retry, the kit's offline or starting page — ends
+        // that login's idle timer. `did-navigate` fires only once a main-frame
+        // navigation commits, so one the guard above cancels — a link the
+        // player clicked, sent to the system browser instead — never reaches
+        // this at all: it loaded nothing, so it resets nothing, and the
+        // player's AFK clocks keep running while they are still logged in. An
+        // in-page navigation (a hash change, pushState) is a different event
+        // and does not fire this one either.
+        wc.on('did-navigate', () => clocks.gameGone());
         wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
             // -3 is ERR_ABORTED: a load superseded by another, not a failure.
             if (!isMainFrame || code === -3) return;
