@@ -111,10 +111,18 @@ itself.
 timers, which count up. Every clock has a threshold, a volume and AFK mode. A
 countdown alerts when it has that much left and then holds at 0:00; a timer
 alerts once when that much has passed and keeps counting. An alert is a silent
-system banner — shown only when the window is not the one in front — and your
-system's own alert sound, played by the kit at the clock's volume, since a
-banner's sound cannot have its volume set. When the system's sound cannot be
-found or decoded, the kit plays a chime of its own.
+system banner — shown only when the window is not the one in front — and a
+sound the kit plays at the clock's volume, since a banner's sound cannot have
+its volume set. The sound is the same on every platform:
+`static/sounds/alert.wav`, `confirmation_002` from
+[Kenney's Interface Sounds](https://kenney.nl/assets/interface-sounds) (CC0),
+made 6 dB louder with a limiter so it carries over the game. The system's own
+alert sound was tried first and was too quiet.
+
+The time is the largest thing in each row, with the clock's name, its kind and
+AFK mode small above it and Start or Pause, Reset and Edit as small glyphs beside
+it. One button in the pane is gold at a time — Add, or Save while a form is open —
+and the rest are quiet.
 
 Every server comes with two countdowns. **AFK** is 90 seconds with a 15-second
 threshold and AFK mode on: a click or key anywhere in the game pane starts it
@@ -648,8 +656,7 @@ src/main/worlds/probe.ts    TCP connect latency, node-only                      
 src/main/worlds/warning.ts  pure: what the switch confirmation says                 (tested)
 src/main/timers/defs.ts     pure: built-ins, the player's clocks and edits          (tested)
 src/main/timers/runner.ts   one window's clocks over an injected clock              (tested)
-src/main/timers/sound.ts    pure: which alert sound, and AIFF made playable         (tested)
-src/main/timers/electron.ts the alert sound's files and commands; the banner
+src/main/timers/electron.ts reads the alert sound; the banner
 src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
 src/main/menu.ts            application menu: new windows, the server list, the pane
@@ -665,6 +672,7 @@ src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
 src/renderer/tools/Worlds.tsx
 src/renderer/alertSound.ts  plays an alert at a clock's volume
 static/offline.html         shown when a server can't be reached
+static/sounds/alert.wav     every timer's alert: Kenney's confirmation_002 (CC0), louder
 ```
 
 ## Where v1 went

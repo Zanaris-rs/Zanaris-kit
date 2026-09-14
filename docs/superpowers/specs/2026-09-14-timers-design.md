@@ -29,7 +29,7 @@ A player can add their own clocks, edit the built-ins and restore them.
 | Question | Answer |
 |---|---|
 | What is AFK mode? | On or off, per clock. On: a mouse down or key down anywhere in the game view — not only on the game's canvas — restarts the clock. No per-input checkboxes. |
-| What is an alert? | A **silent** OS banner, plus the OS alert sound played **by the kit** at the clock's volume. An OS notification's own sound cannot have its volume set by an app. |
+| What is an alert? | A **silent** OS banner, plus a bundled alert sound played **by the kit** at the clock's volume. An OS notification's own sound cannot have its volume set by an app. (First the OS's own alert sound; replaced by a bundled CC0 sound after the owner found it too quiet.) |
 | What does a timer's threshold mean? | It alerts once when elapsed time reaches the threshold, then keeps counting. |
 | What does a countdown do at 0:00? | Holds there, marked expired, until reset (or, with AFK mode, restarted by input). No second alert. |
 | Where do a player's own clocks and edits live? | **App-wide.** One list for every server window. |
@@ -273,48 +273,55 @@ When a clock alerts, the runner calls `io.alert(def, at)` where `at` is
 
 ### Which sound
 
-Resolved **once at launch** in main, by `sound.ts` deciding and
-`timers/electron.ts` doing the reading:
+**One bundled sound, on every platform:** `static/sounds/alert.wav`. It is
+`confirmation_002` from Kenney's *Interface Sounds* pack (CC0, kenney.nl) — two
+quick rising runs, about half a second — made 6 dB louder with a limiter holding
+the peaks at −1 dBFS, and written as 16-bit mono 44.1 kHz PCM WAV:
 
-| Platform | Candidates, in order |
-|---|---|
-| macOS | the path in `defaults read -g com.apple.sound.beep.sound`, then `/System/Library/Sounds/Tink.aiff` — CoreAudio's own fallback when that key is unset (see **Build order**, step 1) |
-| Windows | the default value of `HKCU\AppEvents\Schemes\Apps\.Default\.Default\.Current`, with `%SystemRoot%`-style variables expanded |
-| Linux | `/usr/share/sounds/freedesktop/stereo/bell.oga`, then `…/complete.oga` |
-| every platform, last | `static/sounds/chime.wav`, bundled |
+```sh
+ffmpeg -i confirmation_002.ogg -af "volume=6dB,alimiter=limit=0.891:level=disabled:attack=1:release=40" \
+  -ar 44100 -ac 1 -c:a pcm_s16le -map_metadata -1 -fflags +bitexact -flags:a +bitexact static/sounds/alert.wav
+```
 
-Each candidate is read (at most 5 MB) and passed to `toPlayable(bytes)`, which
-sniffs the header:
+> The first version played the system's own alert sound (macOS's chosen alert or
+> `Tink.aiff`, the Windows registry default, the freedesktop bell) with a
+> generated chime as the fallback. The owner tried it and found it too quiet to
+> hear over the game; it also sounded different on every platform. It was
+> replaced by this file. See **Rejected**.
 
-- WAV (`RIFF…WAVE`), Ogg (`OggS`), FLAC (`fLaC`), MP3 (`ID3` or a frame sync) and
-  MPEG-4 (`ftyp`) pass through unchanged — Chromium decodes them;
-- AIFF (`FORM…AIFF`) and uncompressed AIFF-C (`FORM…AIFC` with compression `NONE`
-  or `sowt`) at 8, 16, 24 or 32 bits are rewritten as 16-bit little-endian PCM WAV
-  at the same rate and channel count. macOS's `/System/Library/Sounds/*.aiff` are
-  this (24-bit stereo, 48 kHz), and Chromium cannot decode AIFF;
-- anything else returns null, and the next candidate is tried.
+Main reads the file once (`timers/electron.ts` `readAlertSound`, not cached if
+the read fails) and hands the bytes to a shell that asks with
+`zanaris:timers-sound`. The shell decodes them with
+`AudioContext.decodeAudioData` and caches the buffer; a fetch or decode that
+fails is forgotten, so the next alert tries again. Each alert plays a
+`BufferSource` through a `GainNode` set to the clock's volume.
 
-The first playable candidate is the sound. `chime.wav` is always playable, so
-there always is one.
-
-The shell asks for the bytes once, with `zanaris:timers-sound`, decodes them with
-`AudioContext.decodeAudioData`, and caches the buffer. Each alert plays a
-`BufferSource` through a `GainNode` set to the clock's volume. If decoding fails,
-the shell asks once more with `fallback` set to `true` and main answers with
-`chime.wav`.
-
-`chime.wav` is made for this project by `scripts/make-chime.mjs` (a short
-two-tone sine, 44.1 kHz mono 16-bit, under half a second), and the generated file
-is committed. It is ours, so there is no licence to track.
+`alertSound.test.ts` checks the file stays what the shell relies on: 16-bit PCM
+WAV, under a second, peaks above −2 dBFS without clipping, RMS above −13 dBFS.
 
 ## The Timers pane
 
-`src/renderer/tools/Timers.tsx`, dressed as `design/Timers.dc.html`: a `.tile`
-panel with a list of rows in a `.sunk` well, and the form below.
+`src/renderer/tools/Timers.tsx`: a list of rows in a `.sunk` well, the form
+opening inside a row, and Add below the list.
 
-**A row:** the clock's name, its value in large tabular digits, an **AFK** tag
-when AFK mode is on, **Start**/**Pause** (one button, labelled for what it will
-do), **Reset**, and an edit toggle.
+**One gold button at a time.** `.btn` wears a gold label, and a panel of gold
+labels has no primary action. So only one button is gold: **Add countdown or
+timer** while no form is open, **Save** while one is. Every other button — Cancel,
+Test, the duration presets, Restore default, and Add while a form is open — is
+quiet: the same stone at the same compact size (13px), with a dim label that
+lights on hover. **Delete** is not a button at all but dim text at the right of
+the form's actions, red only on hover: deleting is rare, and a red slab beside
+Save was the loudest thing in the form.
+
+**A row** puts the time first:
+
+- a small line: the clock's name in 12px dim, then small badges — `Countdown` or
+  `Timer`, and `AFK` when AFK mode is on;
+- the time in 26px bold Arial (never the pixel face, where 5 reads as S), and on
+  the same line three small icon buttons the size of the pane header's own:
+  ▶ Start or ❚❚ Pause, ↺ Reset, ✎ Edit, each named by a tooltip. They are dim
+  glyphs on stone that light on hover; Edit is pressed into the stone while its
+  form is open.
 
 | Phase | Digits |
 |---|---|
@@ -327,10 +334,11 @@ do), **Reset**, and an edit toggle.
 
 **The edit form** opens in place under its row:
 
-- Name
-- Countdown / Timer (custom clocks only)
-- Duration, countdowns only: a text box read by `parseDuration`, and the artboard's
-  1 / 5 / 30 / 80 min buttons, which fill it
+- Name, a box about 170px wide
+- Countdown / Timer (custom clocks only), one small two-part switch cut into the
+  stone with the chosen half raised
+- Duration, countdowns only: a text box read by `parseDuration`, then quick
+  presets **1 5 30 60** (in Arial) and the word *min*
 - Threshold, the same kind of box
 - Volume, a 0–100% slider, and **Test**, which plays the sound at the slider's
   volume in the shell, with no IPC beyond fetching the bytes
@@ -338,7 +346,7 @@ do), **Reset**, and an edit toggle.
 - **Save** and **Cancel**; then **Delete** for a custom clock, or **Restore
   default** for a built-in that has an edit
 
-Save is disabled while the form is not a valid definition, with the reason shown
+Save is spent while the form is not a valid definition, with the reason shown
 under the field that makes it so. Main validates again at the IPC boundary and
 refuses an invalid definition; the renderer's check only spares the player a
 refusal.
@@ -347,7 +355,7 @@ refusal.
 countdown, 5:00, threshold 0:30, volume 80%, AFK mode off. It is disabled at 20
 custom clocks.
 
-The footer keeps the artboard's line: *Timers run with the panel closed.*
+The footer line: *Timers run with the panel closed.*
 
 ### Where the tool is offered
 
@@ -368,7 +376,7 @@ empty pane's launcher, like every other tool. The default layout for a new windo
 | `zanaris:timers-save` | shell → main | `Omit<TimerDef, 'id'> & { id: string \| null }` (null: a new custom, given an id by main) | validate, store, `setDefs` in every window |
 | `zanaris:timers-delete` | shell → main | `id` | custom only |
 | `zanaris:timers-restore` | shell → main | `id` | built-in only; clears its edit |
-| `zanaris:timers-sound` | shell → main | `fallback: boolean` | returns the sound bytes; `true` asks for `chime.wav` |
+| `zanaris:timers-sound` | shell → main | — | returns `alert.wav`'s bytes |
 | `zanaris:timers-alert` | main → shell | `{ volume }` | play |
 
 Start, pause and reset act on the calling window's runner only. Save, delete and
@@ -404,14 +412,13 @@ export interface ClockView {
 | `src/shared/timers.ts` | `TimerDef`, `TimersView`, `ClockView`, validation, `formatClock`, `parseDuration`, `clockTone` | yes |
 | `src/main/timers/defs.ts` | `readTimers`, `timersFor`, the save / delete / restore rules, `newServerTimers`, custom id generation | yes |
 | `src/main/timers/runner.ts` | `TimersRunner` over `TimersIo { now, setTimer, alert, changed }` (`setTimer` returns its own cancel); `isGameInput`, which input restarts AFK clocks | yes |
-| `src/main/timers/sound.ts` | platform candidates, `toPlayable`, AIFF → WAV | yes |
-| `src/main/timers/electron.ts` | `resolveAlertSound()` (`defaults`, `reg`, file reads), the banner | no — a seam, no rules |
+| `src/main/timers/electron.ts` | `readAlertSound()`, the banner | no — a seam, no rules |
 | `src/main/catalog.ts` | `timers` on each built-in, version 5, `refreshTimers`, the add path | yes |
 | `src/main/appState.ts` | the `timers` block | yes |
-| `src/main/serverWindow.ts`, `src/main/index.ts` | one app-wide definition store, the resolved sound and the settle on a wake from sleep in `index`; one runner per window, `input-event`, `gameGone`, the banner and the alert send in `serverWindow` | no |
+| `src/main/serverWindow.ts`, `src/main/index.ts` | one app-wide definition store, the sound request and the settle on a wake from sleep in `index`; one runner per window, `input-event`, `gameGone`, the banner and the alert send in `serverWindow` | no |
 | `src/preload/index.ts`, `src/shared/ipc.ts` | the `timers` API and channels | typecheck |
 | `src/renderer/tools/Timers.tsx`, `Shell.tsx` | the pane; the shell's alert player | no |
-| `static/sounds/chime.wav`, `scripts/make-chime.mjs` | the fallback sound; `electron-builder.yml` already ships `static/**` | — |
+| `static/sounds/alert.wav`, `src/main/timers/alertSound.test.ts` | the alert sound (Kenney, CC0) and the check that it stays decodable, short and loud; `electron-builder.yml` already ships `static/**` | yes |
 
 Every rule is in a tested module; `serverWindow`, `index` and the renderer only
 connect them, as `CLAUDE.md` requires.
@@ -429,9 +436,8 @@ connect them, as `CLAUDE.md` requires.
   `isSupported()` false). The sound still plays. Nothing is shown in its place.
 - **Volume 0 while the window is focused.** Nothing is heard and no banner is
   shown. The row turning red is the only alert. That is what the player set.
-- **An alert sound that cannot be read** (a missing file, a registry key that
-  isn't there, `reg` or `defaults` failing). The next candidate is tried, down to
-  the chime. `resolveAlertSound` logs which one it chose.
+- **An alert sound that cannot be read or decoded.** That alert is silent — the
+  banner and the red digits are still there — and the next alert asks again.
 
 ## Testing
 
@@ -468,10 +474,9 @@ connect them, as `CLAUDE.md` requires.
   - `dispose()` clears the pending timer;
   - `isGameInput` takes a mouse down or key down on a game page, and refuses the
     other input types and any input on a `file:` page.
-- **`sound.ts`**: candidate order per platform from injected facts; `toPlayable`
-  passes WAV/Ogg/FLAC/MP3/MPEG-4 through, converts 8-, 16- and 24-bit AIFF and a
-  `sowt` AIFF-C, built in the test, to 16-bit WAV whose samples match, and refuses a
-  compressed AIFF-C, a CAF and garbage.
+- **`alertSound.test.ts`**: `static/sounds/alert.wav` is 16-bit mono 44.1 kHz PCM
+  WAV, shorter than a second, peaks above −2 dBFS without clipping, and has an RMS
+  above −13 dBFS.
 - **`catalog.ts`**: all four built-ins carry AFK and Thieving with the values in
   **Goal**; a version 4 file migrates to 5 with timers filled, not renamed aside;
   `refreshTimers` re-adopts a hand-edited built-in and leaves an added server
@@ -506,7 +511,7 @@ previous frame.
    `sendInputEvent`, and `Notification.isSupported()` was true.
 2. `shared/timers.ts` and `main/timers/defs.ts`, with tests.
 3. `main/timers/runner.ts`, with tests.
-4. `main/timers/sound.ts`, fixtures, `make-chime.mjs` and `chime.wav`, with tests.
+4. `main/timers/sound.ts`, fixtures, `make-chime.mjs` and `chime.wav`, with tests — later replaced by the bundled `alert.wav` (see **Which sound**).
 5. Catalog version 5 and `refreshTimers`; the `appState` block; with tests.
 6. Main wiring: the definition store and sound in `index`, the runner, input,
    `gameGone`, banner and alert in `serverWindow`, IPC and preload.
@@ -521,6 +526,11 @@ previous frame.
   for. The renderer also cannot be tested here.
 - **The OS notification's own sound.** Its volume is the system's, not the kit's,
   and the brief asks for a volume control.
+- **The system's alert sound, played by the kit.** Built first: macOS's chosen
+  alert or `Tink.aiff` (converted from AIFF), the Windows registry default, the
+  freedesktop bell, and a generated chime as the fallback. The owner tried it and
+  found it too quiet to hear over the game, and it sounded different on each
+  platform. One loud bundled CC0 sound replaced it.
 - **Surviving a restart.** The earlier spec persisted absolute end times. A restart
   ends the login, which makes a saved AFK clock meaningless, and nothing asked for
   it for the others.

@@ -1,24 +1,35 @@
 import { useEffect, useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { CUSTOM_TIMERS_MAX, TIMER_NAME_MAX, blankDraft, clockTone, clockValueAt, draftOf, formatClock, readDraft, type ClockView, type TimerDraft, type TimerProblem, type TimersView } from '../../shared/timers';
 import { playAlert } from '../alertSound';
+import { Pause, Pencil, Play, Reload } from '../icons';
 
 /*
- * .btn is hand-written CSS carrying the gold label, so a control that wants a
- * quieter colour overrides it inline. A utility class of equal specificity
- * would be settled by stylesheet order rather than by intent.
+ * One gold button at a time. `.btn` carries the gold label, and a panel full of
+ * gold labels has no primary action at all, so only the one thing the player is
+ * most likely to do next wears it: Add, until a form is open, and then Save.
+ * Everything else is quiet — the same stone, a dim label that lights on hover.
+ *
+ * `.btn` and the base `button` rule are unlayered CSS, which beats a Tailwind
+ * utility of equal specificity whatever the order, so a quiet button's colour
+ * sits on a span inside it (a span has no unlayered rule to lose to) and its
+ * size is set inline. Gold and quiet buttons share one compact size, so the
+ * gold one stands out by its label, not by being bigger.
  */
-const MUTED: CSSProperties = { color: 'var(--color-dim)' };
-const SPENT: CSSProperties = { color: 'var(--color-faint)' };
+const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
+/* A duration preset: a number alone, with "min" said once after the row, so four of them fit beside the box in a 320px pane. */
+const PRESET_SIZE: CSSProperties = { fontSize: 13, padding: '1px 6px', minWidth: 26 };
 /* The slider and the checkbox wear the gold the rest of the controls do. */
 const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
+/* The pane header's own control size, so the row's icons match the ones above them. */
+const ICON_SIZE: CSSProperties = { width: 24, height: 22 };
 
 const FIELD = 'sunk min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
 
 /** Each digit tone `clockTone` decides, as the class that draws it. */
 const TONE_CLASS = { alarm: 'text-alarm', gold: 'text-gold', dim: 'text-dim' } as const;
 
-/** The artboard's quick durations, in minutes. */
-const PRESET_MINUTES = [1, 5, 30, 80] as const;
+/** Quick durations, in minutes. */
+const PRESET_MINUTES = [1, 5, 30, 60] as const;
 
 /**
  * How often the digits are redrawn while a clock runs. Only the drawing: each
@@ -38,6 +49,41 @@ function useNow(active: boolean): number {
     return now;
 }
 
+/** A secondary action: stone, a dim 13px label that lights on hover, and spent when it cannot be used. */
+function QuietButton({ onClick, disabled = false, title, size = BUTTON_SIZE, children }: { onClick: () => void; disabled?: boolean; title?: string; size?: CSSProperties; children: ReactNode }): ReactNode {
+    return (
+        <button type="button" disabled={disabled} title={title} onClick={onClick} style={size} className="btn group shrink-0">
+            <span className={disabled ? 'text-faint' : 'text-dim group-hover:text-cream'}>{children}</span>
+        </button>
+    );
+}
+
+/** A clock's own control: a glyph on a small tile, named by its tooltip. `expanded` is Edit's, pressed into the stone while its form is open. */
+function IconButton({ label, onClick, expanded, children }: { label: string; onClick: () => void; expanded?: boolean; children: ReactNode }): ReactNode {
+    return (
+        <button
+            type="button"
+            title={label}
+            aria-label={label}
+            aria-expanded={expanded}
+            onClick={onClick}
+            style={ICON_SIZE}
+            className={`${expanded ? 'sunk' : 'tile'} group flex shrink-0 items-center justify-center`}
+        >
+            <span className={`flex ${expanded ? 'text-cream' : 'text-dim group-hover:text-cream'}`}>{children}</span>
+        </button>
+    );
+}
+
+/** A small fact about a clock beside its name: its kind, or AFK mode. */
+function Badge({ title, children }: { title: string; children: ReactNode }): ReactNode {
+    return (
+        <span title={title} className="shrink-0 border border-edge-lit px-[3px] text-[10px] leading-[13px] text-dim">
+            {children}
+        </span>
+    );
+}
+
 /** Which form is open. One at a time: two open forms is two half-edited clocks. */
 type Open = { kind: 'clock'; id: string } | { kind: 'new' } | null;
 
@@ -46,7 +92,6 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
     const now = useNow(view.clocks.some(clock => clock.phase === 'running'));
     const [open, setOpen] = useState<Open>(null);
     const close = (): void => setOpen(null);
-    const adding = open?.kind === 'new';
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -60,9 +105,9 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
                         </li>
                     );
                 })}
-                {adding && (
+                {open?.kind === 'new' && (
                     <li className="px-2 py-1.5">
-                        <span className="text-cream">New countdown or timer</span>
+                        <span className="text-[12px] text-dim">New countdown or timer</span>
                         <ClockForm clock={null} onDone={close} />
                     </li>
                 )}
@@ -70,9 +115,15 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
             <div className="flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-1.5">
-                <button type="button" disabled={view.customsFull || adding} onClick={() => setOpen({ kind: 'new' })} style={view.customsFull || adding ? SPENT : undefined} className="btn">
-                    Add countdown or timer
-                </button>
+                {open === null && !view.customsFull ? (
+                    <button type="button" onClick={() => setOpen({ kind: 'new' })} style={BUTTON_SIZE} className="btn">
+                        Add countdown or timer
+                    </button>
+                ) : (
+                    <QuietButton disabled={view.customsFull || open?.kind === 'new'} onClick={() => setOpen({ kind: 'new' })}>
+                        Add countdown or timer
+                    </QuietButton>
+                )}
                 {view.customsFull && <span className="text-[12px] text-dim">{CUSTOM_TIMERS_MAX} of your own is the most.</span>}
             </div>
             <p className="px-2.5 pb-2 text-[12px] text-dim">Timers run with the panel closed.</p>
@@ -80,33 +131,35 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
     );
 }
 
-/** One clock: its name and digits, then Start or Pause, Reset and Edit on a line of their own so a narrow pane keeps the digits whole. */
+/**
+ * One clock. The time is what a player looks for, so it is the largest thing in
+ * the row; the name sits small above it with the clock's kind and AFK mode, and
+ * the controls are small glyphs on the time's own line.
+ */
 function ClockRow({ clock, now, editing, onEdit }: { clock: ClockView; now: number; editing: boolean; onEdit: () => void }): ReactNode {
     const { id, name, kind, afk } = clock.def;
     const running = clock.phase === 'running';
-    const tone = TONE_CLASS[clockTone(clock)];
     return (
         <>
-            <div className="flex items-baseline gap-2">
-                <span className="min-w-0 flex-1 truncate text-cream">{name}</span>
-                {afk && (
-                    <span title="Restarts on any click or key in the game" className="shrink-0 border border-edge-lit px-1 text-[11px] text-dim">
-                        AFK
-                    </span>
-                )}
-                {/* Arial, not the pixel face: in Pixelify Sans a 5 reads as an S and a 7 as a 1. */}
-                <span className={`shrink-0 font-sans text-[20px] font-bold tabular-nums ${tone}`}>{formatClock(clockValueAt(clock, now), kind)}</span>
+            <div className="flex min-w-0 items-center gap-1">
+                <span className="min-w-0 truncate text-[12px] text-dim">{name}</span>
+                <Badge title={kind === 'countdown' ? 'Counts down to 0:00' : 'Counts up from 0:00'}>{kind === 'countdown' ? 'Countdown' : 'Timer'}</Badge>
+                {afk && <Badge title="Restarts on any click or key in the game">AFK</Badge>}
             </div>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-                <button type="button" onClick={() => void (running ? window.zanaris.timers.pause(id) : window.zanaris.timers.start(id))} className="btn">
-                    {running ? 'Pause' : 'Start'}
-                </button>
-                <button type="button" onClick={() => void window.zanaris.timers.reset(id)} className="btn">
-                    Reset
-                </button>
-                <button type="button" aria-expanded={editing} onClick={onEdit} style={editing ? undefined : MUTED} className="btn">
-                    Edit
-                </button>
+            <div className="flex items-center gap-1">
+                {/* Arial, not the pixel face: in Pixelify Sans a 5 reads as an S and a 7 as a 1. */}
+                <span className={`min-w-0 flex-1 font-sans text-[26px] leading-[30px] font-bold tabular-nums ${TONE_CLASS[clockTone(clock)]}`}>
+                    {formatClock(clockValueAt(clock, now), kind)}
+                </span>
+                <IconButton label={running ? `Pause ${name}` : `Start ${name}`} onClick={() => void (running ? window.zanaris.timers.pause(id) : window.zanaris.timers.start(id))}>
+                    {running ? <Pause /> : <Play />}
+                </IconButton>
+                <IconButton label={`Reset ${name}`} onClick={() => void window.zanaris.timers.reset(id)}>
+                    <Reload />
+                </IconButton>
+                <IconButton label={`Edit ${name}`} expanded={editing} onClick={onEdit}>
+                    <Pencil />
+                </IconButton>
             </div>
         </>
     );
@@ -127,6 +180,7 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
     const problem: TimerProblem | null = reading.ok ? null : reading.problem;
     const builtIn = clock?.builtIn ?? false;
     const percent = Math.round(draft.volume * 100);
+    const saveable = reading.ok && !busy;
 
     const change = (patch: Partial<TimerDraft>): void => {
         setDraft(current => ({ ...current, ...patch }));
@@ -157,18 +211,34 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
                 <label htmlFor={`${id}-name`} className="text-[12px] text-dim">
                     Name
                 </label>
-                <input id={`${id}-name`} value={draft.name} maxLength={TIMER_NAME_MAX} onChange={e => change({ name: e.target.value })} className={FIELD} />
+                <input id={`${id}-name`} value={draft.name} maxLength={TIMER_NAME_MAX} onChange={e => change({ name: e.target.value })} className={`${FIELD} w-[170px] max-w-full`} />
                 {note('name')}
             </div>
 
-            {/* A built-in's kind is the kit's: an AFK countdown that counted up would not be one. */}
+            {/*
+             * A built-in's kind is the kit's: an AFK countdown that counted up
+             * would not be one. The two kinds are one small switch cut into the
+             * stone, the chosen half raised, rather than two buttons competing
+             * with Save for the gold.
+             */}
             {!builtIn && (
-                <div role="radiogroup" aria-label="Kind" className="flex gap-1.5">
-                    {(['countdown', 'timer'] as const).map(kind => (
-                        <button key={kind} type="button" role="radio" aria-checked={draft.kind === kind} onClick={() => change({ kind })} style={draft.kind === kind ? undefined : MUTED} className="btn">
-                            {kind === 'countdown' ? 'Countdown' : 'Timer'}
-                        </button>
-                    ))}
+                <div role="radiogroup" aria-label="Kind" className="sunk flex self-start p-[2px]">
+                    {(['countdown', 'timer'] as const).map(kind => {
+                        const chosen = draft.kind === kind;
+                        return (
+                            <button
+                                key={kind}
+                                type="button"
+                                role="radio"
+                                aria-checked={chosen}
+                                onClick={() => change({ kind })}
+                                style={chosen ? { padding: '0 8px' } : { padding: '0 8px', border: '2px solid transparent' }}
+                                className={`group font-pixel text-[13px] leading-[18px]${chosen ? ' tile' : ''}`}
+                            >
+                                <span className={chosen ? 'text-cream' : 'text-dim group-hover:text-cream'}>{kind === 'countdown' ? 'Countdown' : 'Timer'}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
@@ -177,13 +247,15 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
                     <label htmlFor={`${id}-duration`} className="text-[12px] text-dim">
                         Duration
                     </label>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <input id={`${id}-duration`} value={draft.duration} onChange={e => change({ duration: e.target.value })} placeholder="5:00" className={`${FIELD} w-[84px]`} />
+                    <div className="flex flex-wrap items-center gap-1">
+                        <input id={`${id}-duration`} value={draft.duration} onChange={e => change({ duration: e.target.value })} placeholder="5:00" className={`${FIELD} mr-1 w-[84px]`} />
                         {PRESET_MINUTES.map(minutes => (
-                            <button key={minutes} type="button" onClick={() => change({ duration: `${minutes}:00` })} style={MUTED} className="btn">
-                                {minutes} min
-                            </button>
+                            <QuietButton key={minutes} title={`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`} size={PRESET_SIZE} onClick={() => change({ duration: `${minutes}:00` })}>
+                                {/* Arial, as the digits are: in the pixel face this row read "1 S 30 60". */}
+                                <span className="font-sans text-[12px]">{minutes}</span>
+                            </QuietButton>
                         ))}
+                        <span className="text-[12px] text-dim">min</span>
                     </div>
                     {note('durationMs')}
                 </div>
@@ -204,9 +276,9 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
                 <div className="flex items-center gap-2">
                     <input id={`${id}-volume`} type="range" min={0} max={100} step={5} value={percent} onChange={e => change({ volume: Number(e.target.value) / 100 })} style={ACCENT} className="min-w-0 flex-1" />
                     <span className="w-[38px] shrink-0 text-right text-[12px] text-cream tabular-nums">{percent}%</span>
-                    <button type="button" disabled={percent === 0} onClick={() => void playAlert(draft.volume)} style={percent === 0 ? SPENT : undefined} className="btn shrink-0">
+                    <QuietButton disabled={percent === 0} onClick={() => void playAlert(draft.volume)}>
                         Test
-                    </button>
+                    </QuietButton>
                 </div>
                 {note('volume')}
             </div>
@@ -225,21 +297,23 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
             )}
 
             <div className="flex flex-wrap items-center gap-1.5">
-                <button type="submit" disabled={!reading.ok || busy} style={!reading.ok || busy ? SPENT : undefined} className="btn">
+                {/* The form's one gold button. Spent, not hidden, while the form cannot be saved: the reason is under the field. */}
+                <button type="submit" disabled={!saveable} style={saveable ? BUTTON_SIZE : { ...BUTTON_SIZE, color: 'var(--color-faint)' }} className="btn">
                     Save
                 </button>
-                <button type="button" onClick={onDone} style={MUTED} className="btn">
-                    Cancel
-                </button>
+                <QuietButton onClick={onDone}>Cancel</QuietButton>
                 {clock && !builtIn && (
-                    <button type="button" disabled={busy} onClick={() => void send(window.zanaris.timers.delete(clock.def.id))} className="btn btn-red ml-auto">
-                        Delete
+                    /* Text, not a button: deleting is rare, and a red slab beside Save is the loudest thing in the form. */
+                    <button type="button" disabled={busy} onClick={() => void send(window.zanaris.timers.delete(clock.def.id))} className="group ml-auto">
+                        <span className="text-[12px] text-dim underline-offset-2 group-hover:text-alarm group-hover:underline">Delete</span>
                     </button>
                 )}
                 {clock && builtIn && clock.edited && (
-                    <button type="button" disabled={busy} onClick={() => void send(window.zanaris.timers.restore(clock.def.id))} style={MUTED} className="btn ml-auto">
-                        Restore default
-                    </button>
+                    <span className="ml-auto">
+                        <QuietButton disabled={busy} onClick={() => void send(window.zanaris.timers.restore(clock.def.id))}>
+                            Restore default
+                        </QuietButton>
+                    </span>
                 )}
             </div>
         </form>
