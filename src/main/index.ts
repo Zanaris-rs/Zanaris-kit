@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -1351,6 +1351,10 @@ app.whenReady().then(async () => {
     appState.load();
     // Resolved in the background: nothing waits for it but the first alert.
     alertSound = resolveAlertSound(log);
+    // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
+    powerMonitor.on('resume', () => {
+        for (const sw of serverWindows.values()) sw.settleTimers();
+    });
     // The reference pages' shared session. They are somebody else's pages shown
     // inside the kit, so they get the web and nothing else: no file the user
     // did not ask for, and none of the permissions a browser would prompt over.

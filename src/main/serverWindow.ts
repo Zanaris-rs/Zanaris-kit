@@ -175,6 +175,8 @@ export interface ServerWindow extends ServerWindowHandle {
     resetTimer(id: string): void;
     /** The app-wide definitions changed: this window's runner takes the new list. */
     timersChanged(): void;
+    /** Judges this window's clocks at this moment: for a wake from sleep, when the runner's pending timeout is late. */
+    settleTimers(): void;
     /** Splits a pane, putting an empty one showing the launcher in the new half. */
     splitPane(paneId: string, axis: 'x' | 'y'): void;
     /** Closes a pane. Asks first when it is the game's, since that disconnects the player. */
@@ -1268,6 +1270,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             customsFull = next.customsFull;
             clocks.setDefs(next.listed);
         },
+        settleTimers: () => clocks.settle(),
         splitPane: (paneId, axis) => host.split(paneId, axis),
         closePane,
         setPaneContent,

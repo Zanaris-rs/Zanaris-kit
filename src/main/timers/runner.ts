@@ -60,9 +60,11 @@ function copyListed(listed: ListedTimer): ListedTimer {
  * Nothing here ticks. The runner keeps at most one pending timer, set for the
  * earliest thing that can happen next — a threshold not yet alerted, or a
  * countdown reaching zero — and when it fires, every clock is judged against
- * `now()` rather than against how long the timer was meant to take. That is
- * what makes waking from sleep correct: a countdown that crossed its threshold
- * and reached zero with the lid shut alerts once, and is expired.
+ * `now()` rather than against how long the timer was meant to take. So a
+ * countdown that crossed its threshold and reached zero with the lid shut
+ * alerts once, and is expired. The timer itself does not count the time
+ * asleep, though, so it can fire long after the wake; `settle()` is how main
+ * judges the clocks at the wake instead.
  */
 export class TimersRunner {
     private readonly io: TimersIo;
@@ -148,6 +150,15 @@ export class TimersRunner {
             this.lastInputPush = now;
             this.io.changed();
         }
+    }
+
+    /**
+     * For a wake from sleep, when the pending timeout is late because timers do
+     * not count sleep: settles whatever is due at `now()`, reschedules, and
+     * pushes only if something changed.
+     */
+    settle(): void {
+        this.act(() => false);
     }
 
     /** The game view was destroyed or began loading a page: that login's idle timer is gone, so its AFK clocks wait for the next input. */

@@ -20,7 +20,8 @@ interface Pending {
  * A runner over a hand-driven clock. `advance` fires each pending timer at its
  * own due time, as the event loop would; `sleep` moves time on with nothing
  * firing and then lets whatever was pending fire late, as a lid shut and
- * opened again does.
+ * opened again does; `jump` only moves time on, leaving the pending timer
+ * still waiting, as a timeout that does not count the time asleep is.
  */
 function harness(defs: TimerDef[]) {
     let now = 1_000_000;
@@ -73,6 +74,9 @@ function harness(defs: TimerDef[]) {
                 p.cancelled = true;
                 p.fn();
             }
+        },
+        jump(ms: number): void {
+            now += ms;
         },
         clock(id: string): ClockView {
             const found = runner.view().find(c => c.def.id === id);
@@ -288,6 +292,24 @@ test('waking from sleep past both threshold and zero alerts once and expires', (
     h.sleep(400_000);
     assert.deepEqual(h.alerts, ['thieving:threshold']);
     assert.equal(h.clock('thieving').phase, 'expired');
+});
+
+test('settle judges every clock at now, for a wake whose pending timeout has not fired yet', () => {
+    const h = harness([THIEVING]);
+    h.runner.start('thieving');
+    h.jump(400_000);
+    assert.deepEqual(h.alerts, [], 'the pending timeout has not fired');
+    h.runner.settle();
+    assert.deepEqual(h.alerts, ['thieving:threshold']);
+    assert.equal(h.clock('thieving').phase, 'expired');
+    assert.equal(h.live().length, 0, 'the late timeout is cancelled, and an expired clock waits for nothing');
+});
+
+test('settle on an idle runner pushes nothing', () => {
+    const h = harness([AFK, THIEVING]);
+    h.runner.settle();
+    assert.equal(h.pushes(), 0);
+    assert.equal(h.live().length, 0);
 });
 
 test('new definitions keep unchanged clocks, idle changed ones, drop removed ones and add new ones', () => {

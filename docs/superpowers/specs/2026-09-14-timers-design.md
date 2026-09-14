@@ -178,10 +178,15 @@ A timer has no end. It counts until paused or reset.
 The runner keeps **at most one pending timeout**, set for the earliest next
 event among running clocks: an un-alerted threshold crossing or a countdown's
 zero. When it fires, the runner reads `now()` and processes every clock whose
-event is due at or before it, then schedules the next. Reading the wall clock
-rather than trusting the timeout's delay is what makes a wake from system sleep
-correct: a countdown that crossed its threshold and reached zero while the lid
-was shut alerts once, and is `expired`.
+event is due at or before it, then schedules the next. Because it reads the wall
+clock rather than trusting the timeout's delay, a countdown that crossed its
+threshold and reached zero while the lid was shut alerts once, and is `expired`.
+
+The timeout itself does not count the time asleep, though, so after a wake it
+fires only once its remaining delay has passed, and until then the digits read
+0:00 with no alert. So on a wake from system sleep (`powerMonitor`'s `resume`)
+main also settles every window at once: each runner's `settle()` processes
+whatever is due at `now()` and schedules the next event.
 
 The shell draws the digits itself from what main sent — a value and the
 `Date.now()` it was true at — on a short interval of its own. A throttled hidden
@@ -387,7 +392,7 @@ export interface ClockView {
 | `src/main/timers/electron.ts` | `resolveAlertSound()` (`defaults`, `reg`, file reads), the banner | no — a seam, no rules |
 | `src/main/catalog.ts` | `timers` on each built-in, version 5, `refreshTimers`, the add path | yes |
 | `src/main/appState.ts` | the `timers` block | yes |
-| `src/main/serverWindow.ts`, `src/main/index.ts` | one app-wide definition store and the resolved sound in `index`; one runner per window, `input-event`, `gameGone`, the banner and the alert send in `serverWindow` | no |
+| `src/main/serverWindow.ts`, `src/main/index.ts` | one app-wide definition store, the resolved sound and the settle on a wake from sleep in `index`; one runner per window, `input-event`, `gameGone`, the banner and the alert send in `serverWindow` | no |
 | `src/preload/index.ts`, `src/shared/ipc.ts` | the `timers` API and channels | typecheck |
 | `src/renderer/tools/Timers.tsx`, `Shell.tsx` | the pane; the shell's alert player | no |
 | `static/sounds/chime.wav`, `scripts/make-chime.mjs` | the fallback sound; `electron-builder.yml` already ships `static/**` | — |
@@ -440,6 +445,8 @@ connect them, as `CLAUDE.md` requires.
   - `gameGone()` idles AFK clocks that are not paused and leaves the rest;
   - at most one timer is ever pending, and it targets the earliest event;
   - a `now()` far past both threshold and zero (sleep) alerts once and expires;
+  - `settle()` with the clock moved past both and the pending timeout not yet
+    fired alerts once and expires, and on an idle runner pushes nothing;
   - `setDefs` keeps unchanged clocks, idles changed ones, drops removed ones;
   - `dispose()` clears the pending timer.
 - **`sound.ts`**: candidate order per platform from injected facts; `toPlayable`
