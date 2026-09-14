@@ -19,6 +19,14 @@ import { CloseRoom } from './icons';
 
 /** A text tab hugs its label instead of taking `.tab`'s fixed 36x34 square. */
 const BOX: CSSProperties = { height: 26, width: 'auto' };
+/**
+ * The box with its sides padded, for a tab that is one element rather than a
+ * box around two buttons. Inline because the one element is usually a
+ * `<button>`, and `styles.css` resets every button to `padding: 0` in unlayered
+ * CSS, which beats a `px-` utility whatever the order — so the chat's rooms,
+ * the tabs drawn this way, had their labels run into their own borders.
+ */
+const PADDED: CSSProperties = { ...BOX, paddingLeft: 10, paddingRight: 10 };
 
 export default function Tab({
     label,
@@ -79,7 +87,7 @@ export default function Tab({
      * a 1px one, so a tab used to change size by two pixels on being opened.
      */
     const face = open ? 'tab tab-on' : 'tab text-dim';
-    const skin = `flex items-center gap-[7px] px-2.5 ${face}`;
+    const skin = `flex items-center gap-[7px] ${face}`;
     /* A real button already has the role it needs, so only the strip's read-out names one. */
     const announce: { role?: 'tab'; 'aria-selected'?: boolean; 'aria-current'?: true } =
         role === 'tab' ? { role: 'tab', 'aria-selected': open } : { 'aria-current': open || undefined };
@@ -121,11 +129,11 @@ export default function Tab({
     }
 
     return onSelect ? (
-        <button type="button" {...announce} title={title} onClick={onSelect} onContextMenu={onContextMenu} style={BOX} className={skin}>
+        <button type="button" {...announce} title={title} onClick={onSelect} onContextMenu={onContextMenu} style={PADDED} className={skin}>
             {body}
         </button>
     ) : (
-        <div {...announce} title={title} onContextMenu={onContextMenu} style={BOX} className={skin}>
+        <div {...announce} title={title} onContextMenu={onContextMenu} style={PADDED} className={skin}>
             {body}
         </div>
     );
