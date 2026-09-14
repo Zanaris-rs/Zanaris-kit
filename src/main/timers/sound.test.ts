@@ -115,6 +115,9 @@ test('uncompressed AIFF-C converts, little-endian sowt included; compressed AIFF
     const samples = [1000, -1000, 32767, -32768];
     assert.deepEqual(readWav(toPlayable(aiff({ bits: 16, channels: 2, rate: 44_100, samples, compression: 'sowt' }))!).samples, samples);
     assert.deepEqual(readWav(toPlayable(aiff({ bits: 24, channels: 1, rate: 48_000, samples: [0x123456], compression: 'NONE' }))!).samples, [0x1234]);
+    // 24-bit stereo sowt: little-endian branch of readSample16 must handle 24-bit correctly
+    const samples24 = [0x123456, -0x123456, 0x7fffff, -0x800000];
+    assert.deepEqual(readWav(toPlayable(aiff({ bits: 24, channels: 2, rate: 48_000, samples: samples24, compression: 'sowt' }))!).samples, samples24.map(s => s >> 8));
     assert.equal(toPlayable(aiff({ bits: 16, channels: 1, rate: 44_100, samples, compression: 'ima4' })), null);
 });
 
@@ -140,4 +143,32 @@ test('the bundled chime is always playable, and short', () => {
     assert.equal(wav.bits, 16);
     assert.ok(wav.samples.length / wav.rate < 0.5);
     assert.ok(wav.samples.some(s => Math.abs(s) > 10_000), 'and audible');
+});
+
+test('a frame count or sound offset that overruns the data is clamped or refused, never over-read', () => {
+    // Frame count larger than SSND payload should be clamped
+    let bytes = aiff({ bits: 16, channels: 1, rate: 44_100, samples: [1000, -1000, 32767] });
+    const view = new DataView(bytes.buffer);
+    // Find COMM chunk: starts at byte 12 (after 'FORM', size, 'AIFF'), then 'COMM' tag at 12
+    // COMM structure: tag (4) + size (4) + channels (2) + frameCount (4) = first u32 at offset 22
+    view.setUint32(22, 1000, false); // big-endian, set frame count to 1000 (much larger than 3 samples)
+    const wav = readWav(aiffToWav(bytes)!);
+    assert.deepEqual(wav.samples, [1000, -1000, 32767], 'frame count clamped to available data');
+
+    // SSND offset that pushes sound start past the data should return null
+    bytes = aiff({ bits: 16, channels: 1, rate: 44_100, samples: [1000, -1000, 32767] });
+    // Locate 'SSND' tag by scanning
+    let ssndIndex = -1;
+    for (let i = 0; i < bytes.length - 4; i++) {
+        if (bytes[i] === chars('S')[0] && bytes[i + 1] === chars('S')[0] &&
+            bytes[i + 2] === chars('N')[0] && bytes[i + 3] === chars('D')[0]) {
+            ssndIndex = i;
+            break;
+        }
+    }
+    assert.ok(ssndIndex >= 0, 'SSND found');
+    // SSND structure: tag (4) + size (4) + offset (4) = offset field at ssndIndex + 8
+    const dv = new DataView(bytes.buffer);
+    dv.setUint32(ssndIndex + 8, 1000, false); // big-endian, set offset to 1000 (beyond data)
+    assert.equal(aiffToWav(bytes), null, 'offset overrun refused');
 });
