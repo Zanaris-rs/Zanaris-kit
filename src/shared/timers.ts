@@ -18,7 +18,7 @@ export interface TimerDef {
     durationMs: number | null;
     /** Countdown: alert when this much is left. Timer: alert when this much has elapsed. */
     thresholdMs: number;
-    /** 0–1. Zero means banner only. */
+    /** 0–1. Zero plays no sound. */
     volume: number;
     /** A mouse down or key down in the game view restarts this clock. */
     afk: boolean;

@@ -503,7 +503,8 @@ export class Catalog {
      * entry must not freeze its revision. Version 3 knew only Lost City's
      * lookup, and left Zanaris and Labs with the null they were written with;
      * without this, every install that already exists would keep that null
-     * forever, since a version 4 file never passes through the migration again.
+     * forever, since a file already at version 4 or later never passes through
+     * the 3 → 4 step again.
      * It also means an endpoint that moves is picked up on the next launch
      * rather than at the next migration, of which there may not be one.
      *

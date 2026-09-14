@@ -28,7 +28,7 @@ A player can add their own clocks, edit the built-ins and restore them.
 
 | Question | Answer |
 |---|---|
-| What is AFK mode? | On or off, per clock. On: a mouse down or key down in the game view restarts the clock. No per-input checkboxes. |
+| What is AFK mode? | On or off, per clock. On: a mouse down or key down anywhere in the game view — not only on the game's canvas — restarts the clock. No per-input checkboxes. |
 | What is an alert? | A **silent** OS banner, plus the OS alert sound played **by the kit** at the clock's volume. An OS notification's own sound cannot have its volume set by an app. |
 | What does a timer's threshold mean? | It alerts once when elapsed time reaches the threshold, then keeps counting. |
 | What does a countdown do at 0:00? | Holds there, marked expired, until reset (or, with AFK mode, restarted by input). No second alert. |
@@ -57,7 +57,7 @@ export interface TimerDef {
     durationMs: number | null;
     /** Countdown: alert when this much is left. Timer: alert when this much has elapsed. */
     thresholdMs: number;
-    /** 0–1. Zero means banner only. */
+    /** 0–1. Zero plays no sound. */
     volume: number;
     /** A mouse down or key down in the game view restarts this clock. */
     afk: boolean;
@@ -198,14 +198,14 @@ down and key down restarts AFK clocks, and a whole shell state per keystroke is
 a lot to send for a restart the digits can barely show. So a restart by input
 pushes when it changes a phase or clears an alert, or when the last push for
 input was a second or more ago. Between those, the digits can read up to a second
-low, which errs early, as the rest of AFK mode does.
+low, which errs early.
 
 ### AFK mode and the game view
 
 `serverWindow` listens to the game view's `webContents` `input-event`. For
-`mouseDown`, `rawKeyDown` and `keyDown`, it calls `runner.input()`, which restarts
-every clock with `afk: true` that is **not paused**: `idle`, `running` and
-`expired` all run from the beginning. So:
+`mouseDown`, `rawKeyDown` and `keyDown` — `isGameInput` decides — it calls
+`runner.input()`, which restarts every clock with `afk: true` that is **not
+paused**: `idle`, `running` and `expired` all run from the beginning. So:
 
 - the built-in AFK countdown starts by itself at the first click or key after the
   window opens;
@@ -215,11 +215,25 @@ every clock with `afk: true` that is **not paused**: `idle`, `running` and
 
 Key repeat counts, as it does in the client.
 
-When the game view is **destroyed** (`destroyGame`) or **begins loading a page**
-(`loadGame`: a world switch, a detail switch, a retry), the runner's
-`gameGone()` puts every AFK clock that is not paused back to `idle`. That login's
-idle timer is gone, and the next one starts at the next input. Clocks without AFK
-mode are left alone.
+This is not the client's idle timer exactly, and it can be wrong in both
+directions:
+
+- **Early.** The client also counts mouse movement, which the kit does not, so
+  the client's idle timer can be reset when the countdown is not.
+- **Late.** The client counts only input on its own canvas (its handlers are on
+  the `canvas` element), while `input-event` reports a mouse down or key down
+  anywhere in the game view — the page margin, the controls strip below the
+  765×503 canvas, or a key typed after focus has left the canvas. Such input
+  restarts the countdown while the client's idle timer keeps running, so the
+  warning can come late.
+
+When the game view is **destroyed** (`destroyGame`), or a page **commits** in it —
+a main-frame `did-navigate`: a world switch, a detail switch, a retry, the kit's
+offline or starting page — the runner's `gameGone()` puts every AFK clock that is
+not paused back to `idle`. That login's idle timer is gone, and the next one
+starts at the next input. A navigation the guard cancels loads nothing, so it
+resets nothing, and neither does an in-page navigation. Clocks without AFK mode
+are left alone.
 
 ### Definition changes
 
@@ -286,7 +300,7 @@ there always is one.
 The shell asks for the bytes once, with `zanaris:timers-sound`, decodes them with
 `AudioContext.decodeAudioData`, and caches the buffer. Each alert plays a
 `BufferSource` through a `GainNode` set to the clock's volume. If decoding fails,
-the shell asks once more with `{ fallback: true }` and main answers with
+the shell asks once more with `fallback` set to `true` and main answers with
 `chime.wav`.
 
 `chime.wav` is made for this project by `scripts/make-chime.mjs` (a short
@@ -354,7 +368,7 @@ empty pane's launcher, like every other tool. The default layout for a new windo
 | `zanaris:timers-save` | shell → main | `Omit<TimerDef, 'id'> & { id: string \| null }` (null: a new custom, given an id by main) | validate, store, `setDefs` in every window |
 | `zanaris:timers-delete` | shell → main | `id` | custom only |
 | `zanaris:timers-restore` | shell → main | `id` | built-in only; clears its edit |
-| `zanaris:timers-sound` | shell → main | `{ fallback?: boolean }` | returns the sound bytes |
+| `zanaris:timers-sound` | shell → main | `fallback: boolean` | returns the sound bytes; `true` asks for `chime.wav` |
 | `zanaris:timers-alert` | main → shell | `{ volume }` | play |
 
 Start, pause and reset act on the calling window's runner only. Save, delete and
@@ -389,7 +403,7 @@ export interface ClockView {
 |---|---|---|
 | `src/shared/timers.ts` | `TimerDef`, `TimersView`, `ClockView`, validation, `formatClock`, `parseDuration`, `clockTone` | yes |
 | `src/main/timers/defs.ts` | `readTimers`, `timersFor`, the save / delete / restore rules, `newServerTimers`, custom id generation | yes |
-| `src/main/timers/runner.ts` | `TimersRunner` over `TimersIo { now, setTimer, clearTimer, alert, changed, log }`; `isGameInput`, which input restarts AFK clocks | yes |
+| `src/main/timers/runner.ts` | `TimersRunner` over `TimersIo { now, setTimer, alert, changed }` (`setTimer` returns its own cancel); `isGameInput`, which input restarts AFK clocks | yes |
 | `src/main/timers/sound.ts` | platform candidates, `toPlayable`, AIFF → WAV | yes |
 | `src/main/timers/electron.ts` | `resolveAlertSound()` (`defaults`, `reg`, file reads), the banner | no — a seam, no rules |
 | `src/main/catalog.ts` | `timers` on each built-in, version 5, `refreshTimers`, the add path | yes |
@@ -512,7 +526,10 @@ previous frame.
   it for the others.
 - **Mouse movement as AFK input.** The client counts it; the owner chose AFK mode
   as on/off over clicks and keys. Without movement, the countdown restarts less
-  often than the client's idle timer does, so it can only warn early, never late.
+  often than the client's idle timer does, which can make it warn early. It is not
+  the only difference: the kit counts clicks and keys anywhere in the game view,
+  and the client only those on its canvas, which can make it warn late (see
+  **AFK mode and the game view**).
 - **Per-input checkboxes, per-server custom clocks, separate Countdowns and Timers
   tools.** Each was offered and declined. Kind is a field, not a tool.
 - **Reading input through a preload on the game page.** The game view has no
@@ -524,3 +541,4 @@ previous frame.
 - Global or in-game hotkeys for Start and Reset.
 - An always-on-top overlay window.
 - Repeating alerts, or a second alert at zero.
+- Counting only input on the game's canvas for AFK mode.

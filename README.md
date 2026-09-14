@@ -117,15 +117,18 @@ banner's sound cannot have its volume set. When the system's sound cannot be
 found or decoded, the kit plays a chime of its own.
 
 Every server comes with two countdowns. **AFK** is 90 seconds with a 15-second
-threshold and AFK mode on: any click or key in the game starts it again, the
-way the client's own idle timer is reset, and a world switch sets it back to
-waiting for the next input. The client also counts mouse movement, which this
-does not, so it can only warn early. **Thieving** is five minutes with a
-30-second threshold, for an npc that despawns when it has not moved for that
-long; press Reset when it moves. Both can be edited and restored to their
-defaults. Clocks you add are yours everywhere, in every server's windows; the
-clocks themselves run per window, since each window is its own login, and they
-keep running with the pane closed.
+threshold and AFK mode on: a click or key anywhere in the game pane starts it
+again, and a world switch sets it back to waiting for the next input. That is
+close to the client's own idle timer but not the same. The client counts mouse
+movement too, which the kit does not, so the warning can come early. But the
+client counts only input on the game's own picture, so a click beside the game,
+on the page around it, restarts the countdown without resetting the client's
+idle timer, and then the warning can come late: click the game itself.
+**Thieving** is five minutes with a 30-second threshold, for an npc that
+despawns when it has not moved for that long; press Reset when it moves. Both
+can be edited and restored to their defaults. Clocks you add are yours
+everywhere, in every server's windows; the clocks themselves run per window,
+since each window is its own login, and they keep running with the pane closed.
 
 **The launcher** is the way into the reference pages, and it is what an empty
 pane shows. It lists this server's links, in order — for Lost City: Forums,

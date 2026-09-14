@@ -5,7 +5,7 @@ import type { ListedTimer } from './defs.ts';
  * How often a run of game input may push the digits. Every mouse down and key
  * down restarts the AFK clocks, and a whole shell state per keystroke is a lot
  * to send for a restart the digits can barely show; between pushes they can
- * read up to this much low, which errs early, as the rest of AFK mode does.
+ * read up to this much low, which errs early.
  */
 export const INPUT_PUSH_EVERY_MS = 1_000;
 
@@ -171,7 +171,7 @@ export class TimersRunner {
         this.act(() => false);
     }
 
-    /** The game view was destroyed or began loading a page: that login's idle timer is gone, so its AFK clocks wait for the next input. */
+    /** The game view was destroyed or loaded a new page: that login's idle timer is gone, so its AFK clocks wait for the next input. */
     gameGone(): void {
         this.act(now => {
             let changed = false;

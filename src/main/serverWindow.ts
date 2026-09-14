@@ -1092,10 +1092,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // A retry from the offline page is a fresh attempt.
             if (!url.startsWith('file:')) failedOver = false;
         });
-        // A mouse down or key down in the game restarts the AFK clocks. Only
-        // those two: the client also counts mouse movement, and leaving it out
-        // makes the countdown warn early, never late. The kit's own offline
-        // and starting pages have no login to be idle on.
+        // A mouse down or key down anywhere in the game view restarts the AFK
+        // clocks; `isGameInput` decides which input counts. That is not the
+        // client's idle timer exactly: the client also counts mouse movement,
+        // so these can warn early, and counts only input on its canvas, so a
+        // click beside the canvas restarts these while the client's timer runs
+        // on, and they can warn late.
         wc.on('input-event', (_event, input) => {
             if (isGameInput(input.type, wc.getURL())) clocks.input();
         });
