@@ -185,8 +185,13 @@ The shell draws the digits itself from what main sent — a value and the
 `Date.now()` it was true at — on a short interval of its own. A throttled hidden
 shell only delays digits nobody is looking at; the alert is main's.
 
-`ShellState.timers` is pushed on a **phase change** or a definition change, not
-on a tick.
+`ShellState.timers` is pushed on a **phase change**, an alert or a definition
+change, not on a tick. Input is the exception worth spelling out: every mouse
+down and key down restarts AFK clocks, and a whole shell state per keystroke is
+a lot to send for a restart the digits can barely show. So a restart by input
+pushes when it changes a phase or clears an alert, or when the last push for
+input was a second or more ago. Between those, the digits can read up to a second
+low, which errs early, as the rest of AFK mode does.
 
 ### AFK mode and the game view
 
