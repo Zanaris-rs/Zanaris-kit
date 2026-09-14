@@ -1,10 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, net, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
+import { CUSTOM_TIMERS_MAX } from '../shared/timers';
 import type { PaneContent } from './paneTree';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
@@ -21,6 +23,8 @@ import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
 import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
+import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
+import { chimeSound, resolveAlertSound, type AlertSound } from './timers/electron';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -124,6 +128,9 @@ let update: LatestRelease | null = null;
 
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
 let singlePlayer: SinglePlayerService | null = null;
+
+/** The alert sound, resolved once at ready. A promise, so a window that asks before it is read waits rather than going without. */
+let alertSound: Promise<AlertSound> | null = null;
 
 /**
  * The two menu items that belong to the focused window rather than to the app.
@@ -315,7 +322,11 @@ const windows = new ServerWindows((spec, onClosed) => {
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
-            singlePlayer
+            singlePlayer,
+            timers: () => {
+                const state = appState.timers();
+                return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
+            }
         }
     );
     serverWindows.set(spec.id, sw);
@@ -843,6 +854,56 @@ ipcMain.handle(IPC.singlePlayerShowLog, async () => {
     await shell.openPath(logPath);
 });
 
+// ── timers ────────────────────────────────────────────────────────────────
+
+ipcMain.handle(IPC.timersStart, (event, id: unknown) => {
+    if (typeof id === 'string') windowFor(event.sender)?.startTimer(id);
+});
+ipcMain.handle(IPC.timersPause, (event, id: unknown) => {
+    if (typeof id === 'string') windowFor(event.sender)?.pauseTimer(id);
+});
+ipcMain.handle(IPC.timersReset, (event, id: unknown) => {
+    if (typeof id === 'string') windowFor(event.sender)?.resetTimer(id);
+});
+
+/**
+ * Stores a change to the app-wide definitions and hands every window its new
+ * list. Answers what to tell the player when the change was refused, or null.
+ */
+function applyTimers(change: TimersChange): string | null {
+    if (!change.ok) return change.error;
+    appState.setTimers(change.state);
+    for (const sw of serverWindows.values()) sw.timersChanged();
+    return null;
+}
+
+/**
+ * A save is judged against the calling window's own server, because an edit
+ * to a built-in stores only what differs from that server's definition of it.
+ */
+ipcMain.handle(IPC.timersSave, (event, raw: unknown): string | null => {
+    const sw = windowFor(event.sender);
+    if (!sw) return null;
+    const input = readSaveInput(raw);
+    if (!input) return 'That is not a clock the kit can save.';
+    const state = appState.timers();
+    const taken = new Set(state.custom.map(def => def.id));
+    return applyTimers(saveTimer(state, sw.state().server.timers, input, () => newCustomId(() => randomBytes(4).toString('hex'), taken)));
+});
+ipcMain.handle(IPC.timersDelete, (event, id: unknown): string | null => {
+    if (typeof id !== 'string' || !windowFor(event.sender)) return null;
+    return applyTimers(deleteTimer(appState.timers(), id));
+});
+ipcMain.handle(IPC.timersRestore, (event, id: unknown): string | null => {
+    if (typeof id !== 'string' || !windowFor(event.sender)) return null;
+    return applyTimers(restoreTimer(appState.timers(), id));
+});
+ipcMain.handle(IPC.timersSound, async (event, fallback: unknown): Promise<Uint8Array | null> => {
+    if (!windowFor(event.sender)) return null;
+    if (fallback === true || !alertSound) return (await chimeSound()).bytes;
+    return (await alertSound).bytes;
+});
+
 // ── dev capture ───────────────────────────────────────────────────────────
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -1263,6 +1324,8 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // Resolved in the background: nothing waits for it but the first alert.
+    alertSound = resolveAlertSound(log);
     // The reference pages' shared session. They are somebody else's pages shown
     // inside the kit, so they get the web and nothing else: no file the user
     // did not ask for, and none of the permissions a browser would prompt over.

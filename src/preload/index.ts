@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type ShellState, type ZanarisApi } from '../shared/ipc';
+import type { TimerAlert } from '../shared/timers';
 
 /**
  * The only bridge between the shell and main. Deliberately narrow: no raw
@@ -58,6 +59,22 @@ const api: ZanarisApi = {
         retry: () => ipcRenderer.invoke(IPC.singlePlayerRetry),
         openSaves: () => ipcRenderer.invoke(IPC.singlePlayerOpenSaves),
         showLog: () => ipcRenderer.invoke(IPC.singlePlayerShowLog)
+    },
+    timers: {
+        start: id => ipcRenderer.invoke(IPC.timersStart, id),
+        pause: id => ipcRenderer.invoke(IPC.timersPause, id),
+        reset: id => ipcRenderer.invoke(IPC.timersReset, id),
+        save: input => ipcRenderer.invoke(IPC.timersSave, input),
+        delete: id => ipcRenderer.invoke(IPC.timersDelete, id),
+        restore: id => ipcRenderer.invoke(IPC.timersRestore, id),
+        sound: fallback => ipcRenderer.invoke(IPC.timersSound, fallback),
+        onAlert: cb => {
+            const handler = (_event: unknown, alert: TimerAlert): void => cb(alert);
+            ipcRenderer.on(IPC.timersAlert, handler);
+            return () => {
+                ipcRenderer.off(IPC.timersAlert, handler);
+            };
+        }
     }
 };
 

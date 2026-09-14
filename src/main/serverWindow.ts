@@ -7,6 +7,10 @@ import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
 import type { PaneView, SeamView } from '../shared/panes';
+import { alertTitle, type TimerDef } from '../shared/timers';
+import type { ListedTimer } from './timers/defs';
+import { TimersRunner } from './timers/runner';
+import { showAlertBanner } from './timers/electron';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHolding, paneMenuItems, paneSplitItems, type PaneMenuItem } from './paneMenu';
@@ -139,6 +143,13 @@ export interface ServerWindowDeps {
     probe: (host: string, port: number, timeoutMs: number) => Promise<number | null>;
     /** The world this computer runs, for a window of kind singleplayer; null otherwise. */
     singlePlayer: SinglePlayerHandle | null;
+    /**
+     * This window's clock definitions — its server's built-ins with the
+     * player's edits, then the player's own — and whether the player is at
+     * the most custom clocks. A getter: main calls `timersChanged` when the
+     * app-wide definitions move, and the window reads them again.
+     */
+    timers: () => { listed: ListedTimer[]; customsFull: boolean };
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -158,6 +169,12 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Whether this window floats above other apps. Read back from the window itself, not from a flag kept beside it. */
     alwaysOnTop(): boolean;
     setAlwaysOnTop(on: boolean): void;
+    startTimer(id: string): void;
+    pauseTimer(id: string): void;
+    /** Back to the beginning, and running. */
+    resetTimer(id: string): void;
+    /** The app-wide definitions changed: this window's runner takes the new list. */
+    timersChanged(): void;
     /** Splits a pane, putting an empty one showing the launcher in the new half. */
     splitPane(paneId: string, axis: 'x' | 'y'): void;
     /** Closes a pane. Asks first when it is the game's, since that disconnects the player. */
@@ -253,11 +270,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * The order declared here is the order every menu lists them in — a
      * pane's dropdown, the launcher and Add pane all take it from
      * `paneMenu.ts`, which takes it from this.
+     *
+     * Timers is offered in every window: every server carries the built-in
+     * clocks, and the player's own are app-wide.
      */
     const tools: ToolId[] = ['chat'];
     if (worldSwitch) tools.push('worlds');
     if (deps.hiscores) tools.push('hiscores');
     if (single) tools.push('singleplayer');
+    tools.push('timers');
     // Which tools a window came up with is otherwise only visible by opening a
     // menu, and a tool missing from it looks the same as a tool that drew
     // nothing. One line at open says which of the two happened.
@@ -352,6 +373,33 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         return view;
     }
 
+    /**
+     * This window's clocks. The runner holds every rule; this end gives it a
+     * clock and a timer, and turns its alerts into a banner and a sound. Each
+     * window has its own, because each game is its own login with its own
+     * idle timer.
+     */
+    const firstTimers = deps.timers();
+    let customsFull = firstTimers.customsFull;
+    const clocks = new TimersRunner(firstTimers.listed, {
+        now: Date.now,
+        setTimer: (fn, ms) => {
+            const timer = setTimeout(fn, ms);
+            return () => clearTimeout(timer);
+        },
+        alert: (def, at) => alertClock(def, at),
+        changed: () => pushState()
+    });
+
+    /** A banner only when the window is not focused: in front of the player, the pane and the sound are already enough. */
+    function alertClock(def: TimerDef, at: 'threshold' | 'zero'): void {
+        const heading = alertTitle(def, at);
+        deps.log(`${tag} ${heading}`);
+        if (win.isDestroyed()) return;
+        if (!win.isFocused()) showAlertBanner(win, heading, title());
+        if (def.volume > 0 && !shellView.webContents.isDestroyed()) shellView.webContents.send(IPC.timersAlert, { volume: def.volume });
+    }
+
     win.contentView.addChildView(shellView);
     gameView = makeGameView();
 
@@ -420,7 +468,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             worlds: worldsView(),
             hiscores: deps.hiscores?.view() ?? null,
             chat: deps.chat(),
-            singlePlayer: single?.view() ?? null
+            singlePlayer: single?.view() ?? null,
+            timers: { clocks: clocks.view(), customsFull }
         };
     }
 
@@ -735,6 +784,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             win.contentView.removeChildView(gameView);
             if (!gameView.webContents.isDestroyed()) gameView.webContents.close();
             gameView = null;
+            clocks.gameGone();
         }
         deps.log(`${tag} closed the game ${via === 'layout' ? 'to load a layout' : via} and disconnected`);
     }
@@ -1040,6 +1090,20 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // A retry from the offline page is a fresh attempt.
             if (!url.startsWith('file:')) failedOver = false;
         });
+        // A mouse down or key down in the game restarts the AFK clocks. Only
+        // those two: the client also counts mouse movement, and leaving it out
+        // makes the countdown warn early, never late. The kit's own offline
+        // and starting pages have no login to be idle on.
+        wc.on('input-event', (_event, input) => {
+            if (input.type !== 'mouseDown' && input.type !== 'rawKeyDown' && input.type !== 'keyDown') return;
+            if (wc.getURL().startsWith('file:')) return;
+            clocks.input();
+        });
+        // Any page load in the game view — a world switch, a detail switch, a
+        // retry, the offline page — ends that login's idle timer.
+        wc.on('did-start-navigation', details => {
+            if (details.isMainFrame && !details.isSameDocument) clocks.gameGone();
+        });
         wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
             // -3 is ERR_ABORTED: a load superseded by another, not a failure.
             if (!isMainFrame || code === -3) return;
@@ -1123,6 +1187,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (!deps.confirmClose(spec.title)) event.preventDefault();
     });
     win.on('closed', () => {
+        clocks.dispose();
         if (currentProbe) clearInterval(currentProbe);
         if (panelProbe) clearInterval(panelProbe);
         // The views go with the window; the `persist:pages` session does not, so
@@ -1189,6 +1254,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (win.isDestroyed()) return;
             win.setAlwaysOnTop(on);
             deps.log(`${tag} ${on ? 'pinned above other windows' : 'unpinned'}`);
+        },
+        startTimer: id => clocks.start(id),
+        pauseTimer: id => clocks.pause(id),
+        resetTimer: id => clocks.reset(id),
+        timersChanged: () => {
+            const next = deps.timers();
+            customsFull = next.customsFull;
+            clocks.setDefs(next.listed);
         },
         splitPane: (paneId, axis) => host.split(paneId, axis),
         closePane,
