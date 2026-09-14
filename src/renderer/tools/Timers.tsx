@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
-import { CUSTOM_TIMERS_MAX, TIMER_NAME_MAX, blankDraft, clockValueAt, draftOf, formatClock, readDraft, type ClockView, type TimerDraft, type TimerProblem, type TimersView } from '../../shared/timers';
+import { CUSTOM_TIMERS_MAX, TIMER_NAME_MAX, blankDraft, clockTone, clockValueAt, draftOf, formatClock, readDraft, type ClockView, type TimerDraft, type TimerProblem, type TimersView } from '../../shared/timers';
 import { playAlert } from '../alertSound';
 
 /*
@@ -13,6 +13,9 @@ const SPENT: CSSProperties = { color: 'var(--color-faint)' };
 const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
 
 const FIELD = 'sunk min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
+
+/** Each digit tone `clockTone` decides, as the class that draws it. */
+const TONE_CLASS = { alarm: 'text-alarm', gold: 'text-gold', dim: 'text-dim' } as const;
 
 /** The artboard's quick durations, in minutes. */
 const PRESET_MINUTES = [1, 5, 30, 80] as const;
@@ -81,7 +84,7 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
 function ClockRow({ clock, now, editing, onEdit }: { clock: ClockView; now: number; editing: boolean; onEdit: () => void }): ReactNode {
     const { id, name, kind, afk } = clock.def;
     const running = clock.phase === 'running';
-    const tone = clock.phase === 'expired' || (running && clock.alerted) ? 'text-alarm' : running ? 'text-gold' : 'text-dim';
+    const tone = TONE_CLASS[clockTone(clock)];
     return (
         <>
             <div className="flex items-baseline gap-2">

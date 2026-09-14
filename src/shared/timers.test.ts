@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alertTitle, blankDraft, clockValueAt, draftOf, formatClock, isCustomId, isTimerDef, parseDuration, readDraft, timerProblem, type TimerDef } from './timers.ts';
+import { alertTitle, blankDraft, clockTone, clockValueAt, draftOf, formatClock, isCustomId, isTimerDef, parseDuration, readDraft, timerProblem, type TimerDef } from './timers.ts';
 
 const COUNTDOWN: TimerDef = { id: 'thieving', name: 'Thieving', kind: 'countdown', durationMs: 300_000, thresholdMs: 30_000, volume: 0.8, afk: false };
 const TIMER: TimerDef = { id: 'custom-0000abcd', name: 'Stopwatch', kind: 'timer', durationMs: null, thresholdMs: 20_000, volume: 0.5, afk: false };
@@ -98,6 +98,15 @@ test('clockValueAt counts a running clock on from its snapshot and leaves the re
     assert.equal(clockValueAt({ def: TIMER, phase: 'running', valueMs: 5_000, at }, at + 10_000), 15_000);
     assert.equal(clockValueAt({ def: COUNTDOWN, phase: 'paused', valueMs: 60_000, at }, at + 10_000), 60_000);
     assert.equal(clockValueAt({ def: COUNTDOWN, phase: 'running', valueMs: 60_000, at }, at - 500), 60_000, 'a snapshot from the future counts nothing');
+});
+
+test('the digits are dim at rest, gold while running and alarm once alerted or expired', () => {
+    assert.equal(clockTone({ phase: 'idle', alerted: false }), 'dim');
+    assert.equal(clockTone({ phase: 'paused', alerted: false }), 'dim');
+    assert.equal(clockTone({ phase: 'paused', alerted: true }), 'dim');
+    assert.equal(clockTone({ phase: 'running', alerted: false }), 'gold');
+    assert.equal(clockTone({ phase: 'running', alerted: true }), 'alarm');
+    assert.equal(clockTone({ phase: 'expired', alerted: true }), 'alarm');
 });
 
 test('a form reads back to the definition it was made from', () => {

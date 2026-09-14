@@ -9,7 +9,7 @@ import type { SinglePlayerView } from '../shared/singleplayer';
 import type { PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
 import type { ListedTimer } from './timers/defs';
-import { TimersRunner } from './timers/runner';
+import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
@@ -1097,9 +1097,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // makes the countdown warn early, never late. The kit's own offline
         // and starting pages have no login to be idle on.
         wc.on('input-event', (_event, input) => {
-            if (input.type !== 'mouseDown' && input.type !== 'rawKeyDown' && input.type !== 'keyDown') return;
-            if (wc.getURL().startsWith('file:')) return;
-            clocks.input();
+            if (isGameInput(input.type, wc.getURL())) clocks.input();
         });
         // A page that actually loads in the game view — a world switch, a
         // detail switch, a retry, the kit's offline or starting page — ends

@@ -9,6 +9,16 @@ import type { ListedTimer } from './defs.ts';
  */
 export const INPUT_PUSH_EVERY_MS = 1_000;
 
+/**
+ * Whether an `input-event` in the game view restarts the AFK clocks: a mouse
+ * down or a key down, while the view shows a page that is not one of the kit's
+ * own `file:` pages (the offline or starting page), which have no login to be
+ * idle on. Mouse movement, key up and the rest are not counted.
+ */
+export function isGameInput(type: string, pageUrl: string): boolean {
+    return (type === 'mouseDown' || type === 'rawKeyDown' || type === 'keyDown') && !pageUrl.startsWith('file:');
+}
+
 export interface TimersIo {
     now(): number;
     /** Runs `fn` once after `ms`; the returned function cancels it. */

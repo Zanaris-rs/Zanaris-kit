@@ -161,6 +161,12 @@ export function clockValueAt(clock: Pick<ClockView, 'def' | 'phase' | 'valueMs' 
     return clock.def.kind === 'countdown' ? Math.max(0, clock.valueMs - passed) : clock.valueMs + passed;
 }
 
+/** The colour of a clock's digits: alarm once expired, or running and alerted; gold while running; dim otherwise. */
+export function clockTone(clock: Pick<ClockView, 'phase' | 'alerted'>): 'alarm' | 'gold' | 'dim' {
+    if (clock.phase === 'expired' || (clock.phase === 'running' && clock.alerted)) return 'alarm';
+    return clock.phase === 'running' ? 'gold' : 'dim';
+}
+
 /** The edit form as typed: the two spans are text until they are read. */
 export interface TimerDraft {
     id: string | null;

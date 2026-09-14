@@ -309,6 +309,8 @@ do), **Reset**, and an edit toggle.
 | `running`, alerted | red |
 | `expired` | red, 0:00 |
 
+`clockTone` in `shared/timers.ts` decides the tone; the pane only maps it to a class.
+
 **The edit form** opens in place under its row:
 
 - Name
@@ -385,9 +387,9 @@ export interface ClockView {
 
 | File | Holds | Tested |
 |---|---|---|
-| `src/shared/timers.ts` | `TimerDef`, `TimersView`, `ClockView`, validation, `formatClock`, `parseDuration` | yes |
+| `src/shared/timers.ts` | `TimerDef`, `TimersView`, `ClockView`, validation, `formatClock`, `parseDuration`, `clockTone` | yes |
 | `src/main/timers/defs.ts` | `readTimers`, `timersFor`, the save / delete / restore rules, `newServerTimers`, custom id generation | yes |
-| `src/main/timers/runner.ts` | `TimersRunner` over `TimersIo { now, setTimer, clearTimer, alert, changed, log }` | yes |
+| `src/main/timers/runner.ts` | `TimersRunner` over `TimersIo { now, setTimer, clearTimer, alert, changed, log }`; `isGameInput`, which input restarts AFK clocks | yes |
 | `src/main/timers/sound.ts` | platform candidates, `toPlayable`, AIFF → WAV | yes |
 | `src/main/timers/electron.ts` | `resolveAlertSound()` (`defaults`, `reg`, file reads), the banner | no — a seam, no rules |
 | `src/main/catalog.ts` | `timers` on each built-in, version 5, `refreshTimers`, the add path | yes |
@@ -423,7 +425,8 @@ connect them, as `CLAUDE.md` requires.
 
 - **`shared/timers.ts`**: validation limits on both sides of each boundary;
   `formatClock` around 59:59 / 1:00:00; `parseDuration` accepting `90`, `1:30`,
-  `1:00:00` and refusing `1:60`, `-5`, empty, words.
+  `1:00:00` and refusing `1:60`, `-5`, empty, words; `clockTone` for every phase,
+  alerted and not.
 - **`defs.ts`**: `timersFor` orders built-ins then customs; an edit applies to
   every server's copy of that built-in; a duration and a threshold lowered
   together both apply, directly and through a save; when the whole edit is
@@ -448,7 +451,9 @@ connect them, as `CLAUDE.md` requires.
   - `settle()` with the clock moved past both and the pending timeout not yet
     fired alerts once and expires, and on an idle runner pushes nothing;
   - `setDefs` keeps unchanged clocks, idles changed ones, drops removed ones;
-  - `dispose()` clears the pending timer.
+  - `dispose()` clears the pending timer;
+  - `isGameInput` takes a mouse down or key down on a game page, and refuses the
+    other input types and any input on a `file:` page.
 - **`sound.ts`**: candidate order per platform from injected facts; `toPlayable`
   passes WAV/Ogg/FLAC/MP3/MPEG-4 through, converts 8-, 16- and 24-bit AIFF and a
   `sowt` AIFF-C, built in the test, to 16-bit WAV whose samples match, and refuses a

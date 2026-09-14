@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { INPUT_PUSH_EVERY_MS, TimersRunner, type TimersIo } from './runner.ts';
+import { INPUT_PUSH_EVERY_MS, TimersRunner, isGameInput, type TimersIo } from './runner.ts';
 import type { ListedTimer } from './defs.ts';
 import type { ClockView, TimerDef } from '../../shared/timers.ts';
 
@@ -403,4 +403,11 @@ test('a dispose from inside an alert leaves nothing scheduled', () => {
     fn();
     assert.equal(live().length, 0, 'no timer left scheduled after dispose in alert');
     assert.equal(pushes, 1, 'no changed() call after dispose in alert');
+});
+
+test('game input is a mouse down or key down on a page of the game, not one of the kit\'s own', () => {
+    const game = 'https://w5-2004.lostcity.rs/rs2.cgi?lowmem=0';
+    for (const type of ['mouseDown', 'rawKeyDown', 'keyDown']) assert.equal(isGameInput(type, game), true, type);
+    for (const type of ['mouseUp', 'mouseMove', 'keyUp', 'char']) assert.equal(isGameInput(type, game), false, type);
+    assert.equal(isGameInput('mouseDown', 'file:///Applications/Zanaris%20Kit.app/Contents/Resources/offline.html'), false);
 });
