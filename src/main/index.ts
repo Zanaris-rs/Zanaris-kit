@@ -8,6 +8,7 @@ import { normaliseName } from '../shared/hiscores';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
 import type { PaneContent } from './paneTree';
+import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
@@ -607,15 +608,27 @@ ipcMain.handle(IPC.paneContentMenu, (event, paneId: unknown, x: unknown, y: unkn
     windowFor(event.sender)?.showPaneContentMenu(paneId, x, y);
 });
 
-ipcMain.handle(IPC.paneSwap, (event, a: unknown, b: unknown) => {
-    if (typeof a !== 'string' || typeof b !== 'string') return;
-    windowFor(event.sender)?.swapPanes(a, b);
+ipcMain.handle(IPC.paneBeginDrag, (event, from: unknown): DropTargets | null => {
+    if (typeof from !== 'string') return null;
+    return windowFor(event.sender)?.beginPaneDrag(from) ?? null;
 });
 
-ipcMain.handle(IPC.paneDragging, (event, on: unknown) => {
-    if (typeof on !== 'boolean') return;
-    windowFor(event.sender)?.setDragging(on);
+/**
+ * A malformed drop still ends the drag. The shell sends this instead of
+ * `endDrag` whenever it drops, so refusing it outright would leave every native
+ * view hidden with no gesture left to bring them back.
+ */
+ipcMain.handle(IPC.paneDrop, (event, from: unknown, to: unknown, zone: unknown) => {
+    const sw = windowFor(event.sender);
+    if (!sw) return;
+    if (typeof from !== 'string' || typeof to !== 'string' || !DROP_ZONES.includes(zone as DropZone)) {
+        sw.endPaneDrag();
+        return;
+    }
+    sw.dropPane(from, to, zone as DropZone);
 });
+
+ipcMain.handle(IPC.paneEndDrag, event => windowFor(event.sender)?.endPaneDrag());
 
 ipcMain.handle(IPC.tabNew, event => windowFor(event.sender)?.newTab());
 
@@ -1004,22 +1017,36 @@ async function captureAndExit(dir: string): Promise<void> {
         log(`[capture] ${split.title}: ${split.panes.length} pane(s), ${split.seams.length} seam(s), focus on ${split.panes.find(p => p.focused)?.content.kind}`);
         await shoot(`${first.state().server.id}-split`, first);
 
-        // And swapped: what dropping a dragged header on another pane does.
-        // Driven on the window rather than through the pointer, as everything
-        // else here is — there is no renderer to drag from. It evidences the
-        // tree operation and the views following it; the gesture that reaches
-        // it is grip-less and cannot be shot.
+        // And swapped: what dropping a dragged header in the middle of another
+        // pane does. Driven on the window rather than through the pointer, as
+        // everything else here is — there is no renderer to drag from. It
+        // evidences the tree operation and the views following it; the gesture
+        // that reaches it, and the preview it draws, cannot be shot from here.
+        const order = (panes: readonly { paneId: string; content: PaneContent }[]): string => panes.map(p => `${p.paneId}:${p.content.kind}`).join(' ');
         const pair = first.state().panes;
         const a = pair[0];
         const b = pair[1];
         if (a && b) {
-            first.swapPanes(a.paneId, b.paneId);
+            first.beginPaneDrag(a.paneId);
+            first.dropPane(a.paneId, b.paneId, 'centre');
             await wait(500);
-            const swapped = first.state().panes;
-            log(
-                `[capture] ${first.state().title}: swapped — ${a.paneId}/${b.paneId} held ${a.content.kind}/${b.content.kind}, now ${swapped.find(p => p.paneId === a.paneId)?.content.kind}/${swapped.find(p => p.paneId === b.paneId)?.content.kind}`
-            );
+            log(`[capture] ${first.state().title}: swapped — reading order was ${order(pair)}, now ${order(first.state().panes)}`);
             await shoot(`${first.state().server.id}-swapped`, first);
+
+            // And moved: the last pane in reading order dropped on the right
+            // edge of the one just swapped, which splits that pane and gives
+            // the dropped one its right half. A window opens on the game over
+            // chat, so this is chat moved up beside the game.
+            const before = first.state().panes;
+            const last = before[before.length - 1];
+            if (last && last.paneId !== a.paneId) {
+                first.beginPaneDrag(last.paneId);
+                first.dropPane(last.paneId, a.paneId, 'right');
+                await wait(500);
+                const moved = first.state();
+                log(`[capture] ${moved.title}: moved — reading order was ${order(before)}, now ${order(moved.panes)}, ${moved.seams.length} seam(s), focus on ${moved.panes.find(p => p.focused)?.paneId}`);
+                await shoot(`${moved.server.id}-moved`, first);
+            }
         }
 
         // The Worlds tool: open it on a loaded window that has worlds, wait for

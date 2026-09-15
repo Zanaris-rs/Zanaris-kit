@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState } from '../shared/ipc';
-import type { PaneView, SeamView } from '../shared/panes';
+import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
+import { draggedFar, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { Caret, Plus } from './icons';
 import { playAlert } from './alertSound';
+import DropIndicator from './dropIndicator';
 import Grip from './grip';
 import Launcher from './Launcher';
 import PaneHeader, { type Grab } from './paneHeader';
@@ -121,6 +123,42 @@ function Seam({ seam }: { seam: SeamView }): ReactNode {
     );
 }
 
+/** The pane a point falls in, or null for the seams and the chrome between them. */
+function paneAt(panes: PaneView[], x: number, y: number): PaneView | null {
+    return panes.find(p => x >= p.rect.x && x < p.rect.x + p.rect.width && y >= p.rect.y && y < p.rect.y + p.rect.height) ?? null;
+}
+
+/** What a dragged header is over: a pane and the zone of it, or nothing. */
+function aimAt(panes: PaneView[], x: number, y: number): { over: string | null; zone: DropZone } {
+    const pane = paneAt(panes, x, y);
+    return pane ? { over: pane.paneId, zone: zoneAt(pane.rect, x, y) } : { over: null, zone: 'centre' };
+}
+
+/** A header press. It becomes a drag once the pointer has travelled far enough, so a click on a header still only focuses its pane. */
+interface Held {
+    from: string;
+    pointerId: number;
+    start: { x: number; y: number };
+    dragging: boolean;
+    /** The panes' layout when the drag began, as `layoutKey` spells it. */
+    layout: string;
+    /** Main's answer, kept with the press so a release reads it even before a render has caught up. */
+    targets: DropTargets | null;
+}
+
+/** Which panes are showing and where, as one comparable string. A drag's targets were answered for exactly this. */
+function layoutKey(panes: PaneView[]): string {
+    return panes.map(p => `${p.paneId}@${p.rect.x},${p.rect.y},${p.rect.width}x${p.rect.height}`).join(' ');
+}
+
+/** A drag in progress. `targets` is main's answer to where each drop would land, and is null until it arrives. */
+interface Drag {
+    from: string;
+    targets: DropTargets | null;
+    over: string | null;
+    zone: DropZone;
+}
+
 /**
  * The chrome around the panes: the bar across the top, and whatever each pane
  * is, drawn exactly where main placed it.
@@ -128,33 +166,60 @@ function Seam({ seam }: { seam: SeamView }): ReactNode {
  * The window no longer has four fixed regions to arrange, so this no longer
  * arranges any. It renders a list, and the list is main's.
  */
-/** The pane a point falls in, or null for the seams and the chrome between them. */
-function paneAt(panes: PaneView[], x: number, y: number): string | null {
-    return panes.find(p => x >= p.rect.x && x < p.rect.x + p.rect.width && y >= p.rect.y && y < p.rect.y + p.rect.height)?.paneId ?? null;
-}
-
 export default function Shell(): ReactNode {
     const [state, setState] = useState<ShellState | null>(null);
     /**
      * The header drag. `held` is the pointer's, and survives a re-render; `drag`
      * is what the overlay reads, and causes them.
      *
-     * Main hides every native view between the two IPC calls below, because the
-     * shell cannot draw over a game or a page — those views sit above it, and a
-     * drop target painted under either would be invisible. So the panes go blank
-     * for the length of the gesture and each says its own name instead, which is
-     * also what makes an empty-looking game pane legible while it is moving.
+     * Main hides every native view from `beginDrag` until the drag ends, because
+     * the shell cannot draw over a game or a page — those views sit above it,
+     * and a drop target painted under either would be invisible. So the panes
+     * go blank for the length of the gesture and each says its own name
+     * instead, which is also what makes an empty-looking game pane legible
+     * while it is moving.
      */
-    const held = useRef<{ from: string; pointerId: number } | null>(null);
-    const [drag, setDrag] = useState<{ from: string; over: string | null } | null>(null);
+    const held = useRef<Held | null>(null);
+    const [drag, setDrag] = useState<Drag | null>(null);
+
+    /** Ends a drag without dropping. Reads nothing a render could leave stale, so the Escape listener can hold it. */
+    const cancelDrag = (): void => {
+        const grabbed = held.current;
+        held.current = null;
+        setDrag(null);
+        if (grabbed?.dragging) void window.zanaris.panes.endDrag();
+    };
 
     /* A drag interrupted by an unmount would otherwise leave every view hidden. */
     useEffect(
         () => () => {
-            if (held.current) void window.zanaris.panes.setDragging(false);
+            if (held.current?.dragging) void window.zanaris.panes.endDrag();
         },
         []
     );
+
+    /*
+     * A drag ends when the layout it was aimed at changes under it — a
+     * shortcut, a tab switch, a resize. Its targets were answered for the old
+     * rects, so the preview would be wrong; and when the change takes the
+     * dragged header off screen, its pointer events go with it, and nothing
+     * else would ever end the drag. Main ends it on its side too.
+     */
+    const layout = state ? layoutKey(state.panes) : '';
+    useEffect(() => {
+        if (held.current?.dragging && held.current.layout !== layout) cancelDrag();
+    }, [layout]);
+
+    /* Escape puts everything back where it was, as it does for any drag. */
+    const dragging = drag !== null;
+    useEffect(() => {
+        if (!dragging) return;
+        const onKey = (event: KeyboardEvent): void => {
+            if (event.key === 'Escape') cancelDrag();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [dragging]);
 
     useEffect(() => {
         let alive = true;
@@ -175,14 +240,25 @@ export default function Shell(): ReactNode {
      */
     useEffect(() => window.zanaris.timers.onAlert(alert => void playAlert(alert.volume)), []);
 
-    const endDrag = (event: PointerEvent<HTMLDivElement>, drop: boolean): void => {
+    /**
+     * The release. A drop goes to main only where main said it would land;
+     * anywhere else — a seam, the tab bar, a refused edge, or before main has
+     * answered at all — ends the drag and changes nothing. Main asks again
+     * before it drops.
+     */
+    const release = (event: PointerEvent<HTMLDivElement>): void => {
         const grabbed = held.current;
         if (!grabbed || event.pointerId !== grabbed.pointerId) return;
+        if (!grabbed.dragging || !state) {
+            cancelDrag();
+            return;
+        }
         held.current = null;
-        const over = drop && state ? paneAt(state.panes, event.clientX, event.clientY) : null;
+        const { over, zone } = aimAt(state.panes, event.clientX, event.clientY);
+        const landing = over ? grabbed.targets?.[over]?.[zone] : null;
         setDrag(null);
-        void window.zanaris.panes.setDragging(false);
-        if (over && over !== grabbed.from) void window.zanaris.panes.swap(grabbed.from, over);
+        if (over && landing) void window.zanaris.panes.drop(grabbed.from, over, zone);
+        else void window.zanaris.panes.endDrag();
     };
 
     const grabFor = (paneId: string): Grab => ({
@@ -190,18 +266,41 @@ export default function Shell(): ReactNode {
             // A press that began on a button is that button's: the nav arrows
             // and the caret must still click rather than start a drag.
             if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+            // A second pointer pressing a header mid-drag ends the first drag
+            // properly, rather than overwriting it and never telling main.
+            if (held.current) cancelDrag();
             event.currentTarget.setPointerCapture(event.pointerId);
-            held.current = { from: paneId, pointerId: event.pointerId };
-            setDrag({ from: paneId, over: paneId });
-            void window.zanaris.panes.setDragging(true);
+            held.current = { from: paneId, pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, dragging: false, layout: '', targets: null };
         },
         onPointerMove: event => {
             const grabbed = held.current;
             if (!grabbed || event.pointerId !== grabbed.pointerId || !state) return;
-            setDrag({ from: grabbed.from, over: paneAt(state.panes, event.clientX, event.clientY) });
+            const at = { x: event.clientX, y: event.clientY };
+            if (!grabbed.dragging) {
+                // A lone pane has nowhere to go, so pressing its header stays a
+                // click however far the pointer wanders.
+                if (state.panes.length < 2 || !draggedFar(grabbed.start, at)) return;
+                grabbed.dragging = true;
+                grabbed.layout = layoutKey(state.panes);
+                setDrag({ from: grabbed.from, targets: null, over: null, zone: 'centre' });
+                void window.zanaris.panes.beginDrag(grabbed.from).then(targets => {
+                    // Only for the drag that asked: this one may have ended, and
+                    // another begun, while main was answering.
+                    if (held.current !== grabbed) return;
+                    grabbed.targets = targets;
+                    setDrag(d => (d ? { ...d, targets } : d));
+                });
+            }
+            const { over, zone } = aimAt(state.panes, at.x, at.y);
+            setDrag(d => (d && (d.over !== over || d.zone !== zone) ? { ...d, over, zone } : d));
         },
-        onPointerUp: event => endDrag(event, true),
-        onPointerCancel: event => endDrag(event, false)
+        onPointerUp: release,
+        onPointerCancel: event => {
+            if (held.current?.pointerId === event.pointerId) cancelDrag();
+        },
+        onLostPointerCapture: event => {
+            if (held.current?.pointerId === event.pointerId) cancelDrag();
+        }
     });
 
     if (!state) return <div className="h-full bg-ink" />;
@@ -338,29 +437,27 @@ export default function Shell(): ReactNode {
                             active={pane.focused && state.panes.length > 1}
                             readout={pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined}
                             grab={grabFor(pane.paneId)}
+                            grabbing={drag?.from === pane.paneId}
                         />
                         <PaneBody pane={pane} state={state} />
                         {/*
                          * Over the body only, so the header stays readable and
                          * grabbable under the pointer that is dragging it. The
-                         * pane being carried is dimmed; the one that would take
-                         * it is lit. Everything says its name, because with the
-                         * native views hidden a game or page pane has nothing
-                         * else to identify it by.
+                         * pane being carried is dimmed. Everything says its name,
+                         * because with the native views hidden a game or page
+                         * pane has nothing else to identify it by — except the
+                         * pane under the pointer, whose middle the drop preview's
+                         * own label is about to cover. Its header still names it.
                          */}
                         {drag && (
                             <div
                                 aria-hidden="true"
                                 className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center font-pixel text-[15px] ${
-                                    drag.from === pane.paneId
-                                        ? 'text-faint opacity-60'
-                                        : drag.over === pane.paneId
-                                          ? 'border-2 border-gold bg-stone-lit/40 text-gold'
-                                          : 'text-dim'
+                                    drag.from === pane.paneId ? 'text-faint opacity-60' : 'text-dim'
                                 }`}
                                 style={{ top: PANE_HEADER_HEIGHT }}
                             >
-                                {pane.name}
+                                {drag.over === pane.paneId && drag.over !== drag.from && drag.targets ? null : pane.name}
                             </div>
                         )}
                     </div>
@@ -370,6 +467,19 @@ export default function Shell(): ReactNode {
             {state.seams.map(seam => (
                 <Seam key={`${seam.splitId}:${seam.index}`} seam={seam} />
             ))}
+
+            {/*
+             * Above the seams, since a preview can straddle one: an edge drop
+             * on a pane that already has a neighbour on that side lands against
+             * the seam between them.
+             */}
+            {(() => {
+                const target = drag?.over && drag.over !== drag.from ? state.panes.find(p => p.paneId === drag.over) : undefined;
+                const dragged = drag ? state.panes.find(p => p.paneId === drag.from) : undefined;
+                const zones = target && drag?.targets?.[target.paneId];
+                if (!drag || !target || !dragged || !zones) return null;
+                return <DropIndicator target={target.rect} targetName={target.name} landing={zones[drag.zone]} zone={drag.zone} dragged={dragged.name} />;
+            })()}
         </div>
     );
 }

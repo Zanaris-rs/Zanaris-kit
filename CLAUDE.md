@@ -55,7 +55,10 @@ Two properties in there are load-bearing and easy to break —
 - A split left holding one child is **collapsed into that child**. Without it
   the tree accumulates single-child splits, and then a split along what looks
   like the parent's axis nests instead of appending — so close-then-split stops
-  behaving like split on a fresh pane.
+  behaving like split on a fresh pane. A collapse can still leave a split
+  running the same way as its parent (a row collapsing into the column it held),
+  so that one is merged into the parent (`absorb`). Every edge drop goes through
+  a close, so without it an ordinary drag nests columns in columns.
 
 > The old invariant said the opposite: opening chrome must never resize the
 > game, because resizing cost the login. The second half was never true —

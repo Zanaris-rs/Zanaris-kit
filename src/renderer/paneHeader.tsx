@@ -105,16 +105,31 @@ function Step({ label, on, disabled, children }: { label: string; on: () => void
 
 /**
  * The pointer handlers that make this strip a drag handle. Shell's, because
- * only Shell knows every pane's rect and so where a drop would land.
+ * only Shell knows every pane's rect, and so which pane and which part of it
+ * the pointer is over.
  */
 export interface Grab {
     onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
     onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
     onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
     onPointerCancel: (event: PointerEvent<HTMLDivElement>) => void;
+    onLostPointerCapture: (event: PointerEvent<HTMLDivElement>) => void;
 }
 
-export default function PaneHeader({ pane, active, readout, grab }: { pane: PaneView; active: boolean; readout?: ReactNode; grab?: Grab }): ReactNode {
+export default function PaneHeader({
+    pane,
+    active,
+    readout,
+    grab,
+    grabbing = false
+}: {
+    pane: PaneView;
+    active: boolean;
+    readout?: ReactNode;
+    grab?: Grab;
+    /** This pane is the one being dragged. */
+    grabbing?: boolean;
+}): ReactNode {
     const go = window.zanaris.panes.go;
     /*
      * The menu opens under the button that asked for it. `getBoundingClientRect`
@@ -135,7 +150,7 @@ export default function PaneHeader({ pane, active, readout, grab }: { pane: Pane
          * ignore a press that began on a button, so the nav arrows and the
          * caret still click rather than starting a drag nobody asked for.
          */
-        <div style={{ ...STRIP, cursor: grab ? 'grab' : undefined }} {...grab} className="tile flex shrink-0 items-center gap-[5px] px-1.5">
+        <div style={{ ...STRIP, cursor: grab ? (grabbing ? 'grabbing' : 'grab') : undefined }} {...grab} className="tile flex shrink-0 items-center gap-[5px] px-1.5">
             {active && (
                 <span style={DOT} className="shrink-0 rounded-full bg-gold">
                     <span className="sr-only">Active pane:</span>

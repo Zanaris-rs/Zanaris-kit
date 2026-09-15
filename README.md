@@ -207,8 +207,8 @@ channel for either on SwiftIRC, and guessing one would risk dropping a player
 into a stranger's channel on a large public network. A local or self-added
 server gets no room either, since it would be a room of one.
 
-Chat is a pane like anything else: put it wherever you want it, drag its seams,
-close it. A new window opens with it already there, in a pane below the game —
+Chat is a pane like anything else: drag its header to wherever you want it, drag
+its seams, close it. A new window opens with it already there, in a pane below the game —
 chat is the kit's own reason to be open instead of a browser tab, and a pane
 nobody knows is there is a pane nobody opens. Closed, it comes back from **Add
 pane** in the tab bar, as a column down the tab's right edge.
@@ -382,14 +382,31 @@ greyed. It replaced a rail of tool icons down the window's right edge, which
 reached only the tools, put them in whichever pane had focus, and gave no sign
 that a second pane was possible.
 
-Panes are rearranged by dragging one header onto another: the two trade what
-they hold, and nothing else moves — the tree's shape, every pane's size and
-every seam stay exactly where they were. The header is the handle because it is
-the only part of a game or a page pane the shell can see; those are native
-views stacked above it and they take every pointer event that lands on them.
-For the length of the drag the views are hidden and each pane says its own
-name, for the same reason: a drop target painted under a game view would be
-invisible. Nothing reloads — it is the same hiding a tab switch does.
+Panes are rearranged by dragging one header onto another. Where on the other
+pane you let go decides what happens:
+
+- **An edge** (the outer quarter of the pane on that side) splits that pane and
+  moves the dragged one into the half on that side. Along the grain of a row or
+  column it joins it, taking half the target's share; across it, the target
+  and the dragged pane nest in a new split. The pane you dragged leaves its old
+  place the way a close would, so its neighbours take back the room.
+- **The middle** swaps the two panes, and nothing else moves: every other
+  pane's size and every seam stay exactly where they were.
+
+A gold box shows exactly where the pane will land. It is main's own layout of
+the result, not an estimate, so the pane ends up where the box was. An edge
+too small to hold two panes above the 120x80 floor is outlined dim and dashed,
+says "Too small to split", and letting go there does nothing. So does letting
+go over a seam or the tab bar, and Escape cancels a drag. A click on a header
+still only focuses its pane: a press has to move a few pixels before it drags.
+
+The header is the handle because it is the only part of a game or a page pane
+the shell can see; those are native views stacked above it and they take every
+pointer event that lands on them. For the length of the drag the views are
+hidden and each pane says its own name, for the same reason: a drop target
+painted under a game view would be invisible. Nothing reloads — it is the same
+hiding a tab switch does. A page keeps its history wherever it is dropped,
+since the pane moves whole rather than handing its contents to another.
 
 The pane you are standing in — the one Cmd/Ctrl+D and Cmd/Ctrl+W act on — has a small gold dot before its name in its header, shown
 only when the tab has more than one pane. It used to be a gold ring drawn round
@@ -568,6 +585,7 @@ One capture run with every catalog server open at once:
 | Zanaris, two pages stacked | untouched | both page panes headed with their catalog names — "Coord…", "Clue H…" — before their back, forward and reload, the name truncating rather than vanishing at 189px |
 | Lost City, seam dragged | 190px wide | asked for 190px of 761 and got 190; the game pane's header keeps its name and drops "rev 274", which is the half worth losing |
 | Lost City, split right then swapped | untouched | "Empty" beside "Game" over "Chat", the dot on the game's header only — the split shot itself came back a stale frame of the window before it (the capture hazard; so did the Single player tool's), and the swapped shot straight after it shows the three panes |
+| Lost City, swapped then moved (a later run, 2026-09-15) | followed its pane both times: 760x742 on the right after the swap, then 378x1554 as a full-height column after the move | swapped: "Empty" beside "Game" over "Chat", the dot on the game that was dragged, and the tab renamed "Empty" for its new first pane; moved: chat dropped on the game's right edge and became a third full-height column — "Empty", "Game", "Chat" — with the dot on chat. The split, swapped and moved shots all hash differently, so none is a stale frame |
 | Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, opening on the game over chat like every new window rather than on the first window's arrangement, which nothing saves any more |
 | Lost City (2), a layout saved and loaded into a new tab | not reloaded — no second load in the log | tabs "Empty" and "Game": the file saved "game over chat", the new tab loaded it, and the game moved into it, leaving the first tab's game pane empty. `state.json` holds no layouts |
 
@@ -634,11 +652,13 @@ from `event.sender`, never from a value the renderer supplies.
 ```
 src/shared/layout.ts        geometry constants shared by main and the shell
 src/shared/panes.ts         PaneView, SeamView, PageState — what the shell draws
+src/shared/dropZone.ts      pure: which zone of a pane a dragged header is over      (tested)
 src/shared/catalog.ts       ServerDef and the add-form input
 src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorld
 src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/shared/timers.ts        pure: clocks, their limits, digits and the edit form    (tested)
-src/main/paneTree.ts        pure: the split tree, its solver, splits and drags      (tested)
+src/main/paneTree.ts        pure: the split tree, its solver, splits, moves, swaps  (tested)
+src/main/paneDrop.ts        pure: what a header drop does and where the pane lands  (tested)
 src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
                             arrangement, loading a layout into a tab                (tested)
 src/main/layoutFile.ts      pure: a layout file — writing, validating, fresh ids    (tested)
@@ -668,6 +688,7 @@ src/renderer/Shell.tsx      the tab bar, Add pane, and every pane where main put
 src/renderer/paneHeader.tsx a pane's name, its own controls, and what it may become
 src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
 src/renderer/grip.tsx       one draggable seam, and its keyboard path
+src/renderer/dropIndicator.tsx where a dragged pane will land
 src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
 src/renderer/tools/Worlds.tsx
 src/renderer/alertSound.ts  plays an alert at a clock's volume

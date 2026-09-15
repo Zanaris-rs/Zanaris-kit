@@ -1,8 +1,9 @@
 /** What a tab's panes look like to the shell, which draws the chrome around them. */
 import type { PaneContent, Rect } from '../main/paneTree.ts';
 import type { PaneContentItem } from '../main/paneMenu.ts';
+import type { DropTargets, DropZone } from '../main/paneDrop.ts';
 
-export type { PaneContent, PaneContentItem, Rect };
+export type { DropTargets, DropZone, PaneContent, PaneContentItem, Rect };
 
 /** A page pane's own navigation state, as its toolbar reads it. One per page leaf, not one per window. */
 export interface PageState {

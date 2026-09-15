@@ -3,7 +3,7 @@ import type { ServerDef } from './catalog';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatView } from './chat';
 import type { HiscoresView } from './hiscores';
-import type { PaneView, SeamView, TabView } from './panes';
+import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
 import type { SinglePlayerView } from './singleplayer';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
@@ -19,8 +19,9 @@ export const IPC = {
     paneEvenOut: 'zanaris:pane-even-out',
     paneGo: 'zanaris:pane-go',
     paneContextMenu: 'zanaris:pane-context-menu',
-    paneSwap: 'zanaris:pane-swap',
-    paneDragging: 'zanaris:pane-dragging',
+    paneBeginDrag: 'zanaris:pane-begin-drag',
+    paneDrop: 'zanaris:pane-drop',
+    paneEndDrag: 'zanaris:pane-end-drag',
     paneContentMenu: 'zanaris:pane-content-menu',
     tabNew: 'zanaris:tab-new',
     tabClose: 'zanaris:tab-close',
@@ -172,18 +173,26 @@ export interface ZanarisApi {
         setContent(paneId: string, content: PaneContent): Promise<void>;
         focus(paneId: string): Promise<void>;
         /**
-         * Trades what two panes hold. What dropping a dragged header on another
-         * pane does; the tree's shape does not change, so nothing on screen
-         * moves except the contents of those two.
+         * Starts a header drag from `from`. Main hides every native view until
+         * the drag ends, because the shell cannot draw a drop target over a game
+         * or a page — those views sit above it. Nothing reloads: this is the
+         * same hiding a tab switch does.
+         *
+         * Resolves with every drop the drag could make: for each other pane and
+         * each zone, the rect the dragged pane would be drawn at, or null where
+         * that drop is refused. Null when the active tab has no such pane.
          */
-        swap(a: string, b: string): Promise<void>;
+        beginDrag(from: string): Promise<DropTargets | null>;
         /**
-         * Brackets a header drag. Main hides every native view while it is on,
-         * because the shell cannot draw a drop target over a game or a page —
-         * those views sit above it. Nothing reloads: this is the same hiding a
-         * tab switch does.
+         * Drops the dragged pane on `to`. The centre swaps the two panes; an
+         * edge moves the dragged pane beside `to`, splitting it on that side.
+         * Ends the drag in the same step, so the views come back already where
+         * the drop put them. Main asks again whether the drop is allowed and
+         * changes nothing when it is not.
          */
-        setDragging(on: boolean): Promise<void>;
+        drop(from: string, to: string, zone: DropZone): Promise<void>;
+        /** Ends a drag without dropping: Escape, a cancelled pointer, or a release over nothing that takes a drop. */
+        endDrag(): Promise<void>;
         /**
          * Drags a seam to a pixel position. Resolves with the position main
          * actually applied, after its own clamp — including when the request

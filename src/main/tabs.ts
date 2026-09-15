@@ -160,8 +160,8 @@ export function moveGame(set: TabSet, paneId: string): TabSet {
  * one: clicking between the game and the chat beside it renamed the tab on
  * every click, which makes the bar move under the pointer for no reason the
  * user asked for. The first pane only changes when its content does, or when
- * a close or a swap puts something else in that corner — each of which the
- * user did to that very pane. And not the game's either: a tab is named for
+ * a close, a swap or a move puts something else in that corner — each of which
+ * the user did to that very pane. And not the game's either: a tab is named for
  * where it starts, so the same arrangement always reads the same, and a page
  * gets its curated link name rather than a bare "Page".
  */

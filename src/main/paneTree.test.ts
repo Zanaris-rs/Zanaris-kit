@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendColumn, canAppendColumn, clearGame, closePane, contentOf, evenOut, layoutTree, leaf, paneIds, parentSplitOf, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane } from './paneTree.ts';
+import { appendColumn, canAppendColumn, clearGame, closePane, contentOf, evenOut, halvable, layoutTree, leaf, movePane, paneIds, parentSplitOf, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -81,6 +81,15 @@ test('a nested split collapses too, so close-then-split behaves like a fresh spl
     const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('c', { kind: 'page', bookmark: 'u' })], [0.5, 0.5])], [0.5, 0.5]);
     const next = closePane(tree, 'b');
     assert.deepEqual(next, split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('c', { kind: 'page', bookmark: 'u' })], [0.5, 0.5]));
+});
+
+test('a split left running the same way as its parent is merged into it, keeping every pane\'s share', () => {
+    // Game over a row of chat and a column of two. Closing chat collapses the
+    // row into that column, which would otherwise sit as a column inside a
+    // column: Even Out on it would reach only its own two panes, and its seam
+    // would move both of them as one.
+    const tree = split('s1', 'y', [leaf('g', { kind: 'game' }), split('s2', 'x', [leaf('c', { kind: 'empty' }), split('s3', 'y', [leaf('e1', { kind: 'empty' }), leaf('e2', { kind: 'empty' })], [0.5, 0.5])], [0.5, 0.5])], [0.6, 0.4]);
+    assert.deepEqual(closePane(tree, 'c'), split('s1', 'y', [leaf('g', { kind: 'game' }), leaf('e1', { kind: 'empty' }), leaf('e2', { kind: 'empty' })], [0.6, 0.2, 0.2]));
 });
 
 test('closing the only pane leaves an empty one rather than nothing', () => {
@@ -218,22 +227,95 @@ test('clearing a tree with no game in it changes nothing, by identity', () => {
     assert.equal(clearGame(tree), tree, 'the same object, so a caller can tell nothing moved');
 });
 
-test('two panes swap what they hold, leaving the tree exactly as it was', () => {
+test('two panes trade places, each keeping its id, and the slots they trade keep their shape', () => {
     const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('c', { kind: 'page', bookmark: 'u' })], [0.3, 0.7])], [0.4, 0.6]);
-    const next = swapPanes(tree, 'a', 'c');
-    assert.deepEqual(contentOf(next, 'a'), { kind: 'page', bookmark: 'u' });
-    assert.deepEqual(contentOf(next, 'c'), { kind: 'game' });
-    assert.deepEqual(contentOf(next, 'b'), { kind: 'empty' }, 'a bystander is untouched');
-    // The shape is the whole promise of a swap: the panes keep their sizes and
-    // their positions, and only what is inside them moves.
-    assert.deepEqual(paneIds(next), paneIds(tree));
-    assert.deepEqual(next.kind === 'split' && next.fractions, [0.4, 0.6]);
+    // The shape is the whole promise of a swap: every slot keeps its size and
+    // its seams, and only the two panes in them move. The ids move with them,
+    // because a page view is keyed by its pane's id — trading contents under
+    // fixed ids left each page's view where it was and swapped only the names.
+    assert.deepEqual(
+        swapPanes(tree, 'a', 'c'),
+        split('s1', 'x', [leaf('c', { kind: 'page', bookmark: 'u' }), split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('a', { kind: 'game' })], [0.3, 0.7])], [0.4, 0.6])
+    );
 });
 
 test('a swap that names one pane twice, or a pane that is not there, changes nothing', () => {
     const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
     assert.equal(swapPanes(tree, 'a', 'a'), tree, 'the same object, so nothing downstream repaints');
     assert.equal(swapPanes(tree, 'a', 'gone'), tree);
+});
+
+test('an extent can be halved only when both halves and the seam between them fit', () => {
+    // Two 120s and the 4px seam.
+    assert.equal(halvable(243, 120), false);
+    assert.equal(halvable(244, 120), true);
+});
+
+test('a pane dropped on the far side of its only neighbour trades sides with it, at even halves', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.7, 0.3]);
+    // Lifting a out collapses s1 into b, so b is split afresh and a keeps its id.
+    assert.deepEqual(movePane(tree, 'a', 'b', 'right', 's-new'), split('s-new', 'x', [leaf('b', { kind: 'tool', tool: 'chat' }), leaf('a', { kind: 'game' })], [0.5, 0.5]));
+});
+
+test('a pane dropped along its target\'s split joins it, halving only the target\'s share', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' }), leaf('c', { kind: 'empty' })], [0.4, 0.4, 0.2]);
+    // c leaves first and a and b share its fifth, so each has half; c then takes half of a's.
+    const next = movePane(tree, 'c', 'a', 'left', 's-new');
+    assert.deepEqual(next, split('s1', 'x', [leaf('c', { kind: 'empty' }), leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.25, 0.25, 0.5]), 'no new split — the row stays flat');
+});
+
+test('a pane dropped across its target\'s split nests the target with it', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'empty' }), leaf('c', { kind: 'tool', tool: 'chat' })], [0.4, 0.4, 0.2]);
+    assert.deepEqual(
+        movePane(tree, 'c', 'a', 'bottom', 's-new'),
+        split('s1', 'x', [split('s-new', 'y', [leaf('a', { kind: 'game' }), leaf('c', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]), leaf('b', { kind: 'empty' })], [0.5, 0.5])
+    );
+});
+
+test('the target\'s split is read after the pane has left, since leaving can collapse it', () => {
+    // a is dropped right of b. Before a leaves, b's parent runs top to bottom
+    // under a row; once a has gone the row collapses away, and b is nested in
+    // a new row inside what is left.
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('c', { kind: 'empty' })], [0.5, 0.5])], [0.5, 0.5]);
+    assert.deepEqual(
+        movePane(tree, 'a', 'b', 'right', 's-new'),
+        split('s2', 'y', [split('s-new', 'x', [leaf('b', { kind: 'empty' }), leaf('a', { kind: 'empty' })], [0.5, 0.5]), leaf('c', { kind: 'empty' })], [0.5, 0.5])
+    );
+});
+
+test('a pane moved out of a split that collapses into its parent\'s column joins that column flat', () => {
+    // Chat, beside a column of two under the game, dropped on the game's bottom
+    // edge: the game, chat and the two panes end up as one column of four.
+    const tree = split('s1', 'y', [leaf('g', { kind: 'game' }), split('s2', 'x', [leaf('c', { kind: 'empty' }), split('s3', 'y', [leaf('e1', { kind: 'empty' }), leaf('e2', { kind: 'empty' })], [0.5, 0.5])], [0.5, 0.5])], [0.6, 0.4]);
+    const next = movePane(tree, 'c', 'g', 'bottom', 's-new');
+    assert.deepEqual(next, split('s1', 'y', [leaf('g', { kind: 'game' }), leaf('c', { kind: 'empty' }), leaf('e1', { kind: 'empty' }), leaf('e2', { kind: 'empty' })], [0.3, 0.3, 0.2, 0.2]));
+    assert.equal(movePane(next, 'e1', 'c', 'bottom', 's-new'), next, 'and e1, already directly below chat, stays put when dropped there');
+});
+
+test('a pane dropped where it already is changes nothing, by identity', () => {
+    const row = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.3, 0.7]);
+    assert.equal(movePane(row, 'a', 'b', 'left', 's-new'), row, 'a is already directly left of b, so its share is not halved behind the player\'s back');
+    const column = split('s1', 'y', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.3, 0.7]);
+    assert.equal(movePane(column, 'a', 'b', 'top', 's-new'), column);
+    assert.equal(movePane(row, 'a', 'a', 'right', 's-new'), row, 'onto itself');
+    assert.equal(movePane(row, 'a', 'gone', 'right', 's-new'), row, 'onto a pane that is not there');
+    assert.notEqual(movePane(row, 'a', 'b', 'top', 's-new'), row, 'beside, but the other way, is a real move');
+});
+
+test('a pane that is beside its target but not next to it still moves', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' }), leaf('c', { kind: 'empty' })], [0.25, 0.25, 0.5]);
+    assert.deepEqual(paneIds(movePane(tree, 'a', 'c', 'left', 's-new')), ['b', 'a', 'c']);
+});
+
+test('after a move every pane and seam still tiles the tab exactly', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('c', { kind: 'empty' }), leaf('d', { kind: 'empty' })], [0.2, 0.5, 0.3])], [0.6, 0.4]);
+    const next = movePane(tree, 'd', 'a', 'top', 's-new');
+    assert.deepEqual([...paneIds(next)].sort(), ['a', 'b', 'c', 'd'], 'nothing gained or lost');
+    for (const [width, height] of [[1003, 701], [800, 600], [1281, 777]] as const) {
+        const { panes, seams } = layoutTree(next, { x: 0, y: 0, width, height });
+        const area = [...panes.values(), ...seams.map(s => s.rect)].reduce((sum, r) => sum + r.width * r.height, 0);
+        assert.equal(area, width * height, `no gap or overlap at ${width}x${height}`);
+    }
 });
 
 const worlds = { kind: 'tool', tool: 'worlds' } as const;
