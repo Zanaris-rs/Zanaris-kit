@@ -6,6 +6,7 @@ import type { HiscoresView } from './hiscores';
 import type { PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
 import type { SinglePlayerView } from './singleplayer';
+import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -41,21 +42,29 @@ export const IPC = {
     singlePlayerSetCheats: 'zanaris:singleplayer-set-cheats',
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
-    singlePlayerShowLog: 'zanaris:singleplayer-show-log'
+    singlePlayerShowLog: 'zanaris:singleplayer-show-log',
+    timersStart: 'zanaris:timers-start',
+    timersPause: 'zanaris:timers-pause',
+    timersReset: 'zanaris:timers-reset',
+    timersSave: 'zanaris:timers-save',
+    timersDelete: 'zanaris:timers-delete',
+    timersRestore: 'zanaris:timers-restore',
+    timersSound: 'zanaris:timers-sound',
+    timersAlert: 'zanaris:timers-alert'
 } as const;
 
 /**
- * The tools a window can offer. Four, since `guides` stopped being one: with
- * an empty pane showing a launcher that lists this server's links beside the
- * tools, the Guides panel had no separate job left. A registry is worth it when the
- * list grows. This is the set, not the menu order — which tools a given window
- * offers and in what order is `serverWindow`'s to say, and it is deliberately
- * not spelled out again here: that order already lives in three places that
- * have to be edited together, and a fourth copy sitting in a docstring none of
- * them cross-reference is the one that would go stale first and be believed
- * longest.
+ * The tools a window can offer. Five: `guides` stopped being one when an empty
+ * pane started showing a launcher that lists this server's links beside the
+ * tools, leaving the Guides panel with no separate job, and `timers` joined. A
+ * registry is worth it when the list grows. This is the set, not the menu
+ * order — which tools a given window offers and in what order is
+ * `serverWindow`'s to say, and it is deliberately not spelled out again here:
+ * that order already lives in three places that have to be edited together,
+ * and a fourth copy sitting in a docstring none of them cross-reference is the
+ * one that would go stale first and be believed longest.
  */
-export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer'] as const;
+export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer', 'timers'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
@@ -104,6 +113,8 @@ export interface ShellState {
     chat: ChatView;
     /** The world this computer runs; null for every other kind of window. */
     singlePlayer: SinglePlayerView | null;
+    /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
+    timers: TimersView;
 }
 
 export interface ZanarisApi {
@@ -228,5 +239,21 @@ export interface ZanarisApi {
         retry(): Promise<void>;
         openSaves(): Promise<void>;
         showLog(): Promise<void>;
+    };
+    timers: {
+        start(id: string): Promise<void>;
+        pause(id: string): Promise<void>;
+        /** Back to the beginning, and running. */
+        reset(id: string): Promise<void>;
+        /** Saves a clock for every window. Resolves with what main refused it for, or null once it is saved. */
+        save(input: TimerSaveInput): Promise<string | null>;
+        /** Custom clocks only. Resolves like `save`. */
+        delete(id: string): Promise<string | null>;
+        /** Built-ins only: clears the player's changes. Resolves like `save`. */
+        restore(id: string): Promise<string | null>;
+        /** The alert sound's bytes: the one bundled sound every alert plays. Null when the caller is not a server window's shell. */
+        sound(): Promise<Uint8Array | null>;
+        /** Main asking this window to play the alert. Returns an unsubscribe. */
+        onAlert(cb: (alert: TimerAlert) => void): () => void;
     };
 }

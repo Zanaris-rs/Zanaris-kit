@@ -1,10 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, net, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
+import { CUSTOM_TIMERS_MAX } from '../shared/timers';
 import type { PaneContent } from './paneTree';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
@@ -21,6 +23,8 @@ import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
 import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
+import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
+import { readAlertSound } from './timers/electron';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -315,7 +319,11 @@ const windows = new ServerWindows((spec, onClosed) => {
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
-            singlePlayer
+            singlePlayer,
+            timers: () => {
+                const state = appState.timers();
+                return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
+            }
         }
     );
     serverWindows.set(spec.id, sw);
@@ -843,6 +851,55 @@ ipcMain.handle(IPC.singlePlayerShowLog, async () => {
     await shell.openPath(logPath);
 });
 
+// ── timers ────────────────────────────────────────────────────────────────
+
+ipcMain.handle(IPC.timersStart, (event, id: unknown) => {
+    if (typeof id === 'string') windowFor(event.sender)?.startTimer(id);
+});
+ipcMain.handle(IPC.timersPause, (event, id: unknown) => {
+    if (typeof id === 'string') windowFor(event.sender)?.pauseTimer(id);
+});
+ipcMain.handle(IPC.timersReset, (event, id: unknown) => {
+    if (typeof id === 'string') windowFor(event.sender)?.resetTimer(id);
+});
+
+/**
+ * Stores a change to the app-wide definitions and hands every window its new
+ * list. Answers what to tell the player when the change was refused, or null.
+ */
+function applyTimers(change: TimersChange): string | null {
+    if (!change.ok) return change.error;
+    appState.setTimers(change.state);
+    for (const sw of serverWindows.values()) sw.timersChanged();
+    return null;
+}
+
+/**
+ * A save is judged against the calling window's own server, because an edit
+ * to a built-in stores only what differs from that server's definition of it.
+ */
+ipcMain.handle(IPC.timersSave, (event, raw: unknown): string | null => {
+    const sw = windowFor(event.sender);
+    if (!sw) return null;
+    const input = readSaveInput(raw);
+    if (!input) return 'That is not a clock the kit can save.';
+    const state = appState.timers();
+    const taken = new Set(state.custom.map(def => def.id));
+    return applyTimers(saveTimer(state, sw.state().server.timers, input, () => newCustomId(() => randomBytes(4).toString('hex'), taken)));
+});
+ipcMain.handle(IPC.timersDelete, (event, id: unknown): string | null => {
+    if (typeof id !== 'string' || !windowFor(event.sender)) return null;
+    return applyTimers(deleteTimer(appState.timers(), id));
+});
+ipcMain.handle(IPC.timersRestore, (event, id: unknown): string | null => {
+    if (typeof id !== 'string' || !windowFor(event.sender)) return null;
+    return applyTimers(restoreTimer(appState.timers(), id));
+});
+ipcMain.handle(IPC.timersSound, async (event): Promise<Uint8Array | null> => {
+    if (!windowFor(event.sender)) return null;
+    return readAlertSound();
+});
+
 // ── dev capture ───────────────────────────────────────────────────────────
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -1082,6 +1139,31 @@ async function captureAndExit(dir: string): Promise<void> {
             await shoot(`${server.id}-hiscores`, sw);
         }
 
+        // The Timers tool as a player finds it after a minute of play: AFK
+        // running, Thieving idle, and one clock of the capture's own past its
+        // threshold so the red can be seen. That clock is saved through the
+        // same `saveTimer` the IPC handler uses — into this capture profile's
+        // state.json, never the owner's — at volume 0 so the run makes no
+        // sound, and deleted again after the shot.
+        {
+            const sw = first;
+            sw.window.moveTop();
+            sw.focus();
+            await wait(500);
+            showTool(sw, 'timers');
+            const refused = applyTimers(
+                saveTimer(appState.timers(), sw.state().server.timers, { id: null, name: 'Capture', kind: 'countdown', durationMs: 5_000, thresholdMs: 4_000, volume: 0, afk: false }, () => 'custom-capture')
+            );
+            if (refused) log(`[capture] timers: could not add the capture clock: ${refused}`);
+            sw.startTimer('afk');
+            sw.startTimer('custom-capture');
+            await wait(1_500);
+            const clocks = sw.state().timers.clocks.map(c => `${c.def.id}=${c.phase}${c.alerted ? '!' : ''}`).join(' ');
+            log(`[capture] ${sw.state().server.id} timers: ${clocks}`);
+            await shoot(`${sw.state().server.id}-timers`, sw);
+            applyTimers(deleteTimer(appState.timers(), 'custom-capture'));
+        }
+
         // The chat dock: this profile has no nick — see the chat block in
         // app.whenReady, above — so chat never opens a socket here, and every
         // shot below lands on the nick prompt rather than a conversation.
@@ -1263,6 +1345,10 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
+    powerMonitor.on('resume', () => {
+        for (const sw of serverWindows.values()) sw.settleTimers();
+    });
     // The reference pages' shared session. They are somebody else's pages shown
     // inside the kit, so they get the web and nothing else: no file the user
     // did not ask for, and none of the permissions a browser would prompt over.

@@ -260,3 +260,40 @@ export function OpenExternal(): ReactNode {
         </svg>
     );
 }
+
+/*
+ * ── the Timers tool's controls ─────────────────────────────────────────────
+ *
+ * Chrome glyphs like the page toolbar's, in the stone's current colour, so a
+ * row of clocks reads as a row of quiet controls beside the digits rather than
+ * a stack of labelled buttons. Reset is `Reload`: the same cycle, back to the
+ * start.
+ */
+
+/** Start a clock. The one triangle, pointing the way time goes. */
+export function Play(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path d="M6 4l8 5-8 5z" fill="currentColor" />
+        </svg>
+    );
+}
+
+/** Pause a clock. Two bars, the other half of the same pair. */
+export function Pause(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" shapeRendering="crispEdges">
+            <path d="M5 4h3v10H5zM10 4h3v10h-3z" fill="currentColor" />
+        </svg>
+    );
+}
+
+/** Edit a clock. A pencil drawn in the stone's stroke, point down. */
+export function Pencil(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+            <path d="M11.8 3.6l2.6 2.6-7.6 7.6-3.3.7.7-3.3z" />
+            <path d="M10.2 5.2l2.6 2.6" strokeLinecap="round" />
+        </svg>
+    );
+}

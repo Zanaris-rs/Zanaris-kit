@@ -18,6 +18,7 @@ import {
     Catalog
 } from './catalog.ts';
 import { isWorldsDef } from './worlds/sources.ts';
+import { newServerTimers } from './timers/defs.ts';
 import type { NewServerInput, ServerDef } from '../shared/catalog.ts';
 
 const input = (over: Partial<NewServerInput> = {}): NewServerInput => ({
@@ -88,14 +89,15 @@ test('a version 2 file without local gets the single-player entry appended', () 
     assert.equal(migrated[0]!.kind, 'remote');
 });
 
-test('a version 4 file is taken as it is, and one lacking kind is rejected', () => {
-    const v4 = { version: 4, servers: DEFAULT_SERVERS.map(s => structuredClone(s)) };
-    assert.deepEqual(migrateCatalog(v4), v4.servers);
+test('a version 5 file is taken as it is, and one lacking kind is rejected', () => {
+    const v5 = { version: 5, servers: DEFAULT_SERVERS.map(s => structuredClone(s)) };
+    assert.deepEqual(migrateCatalog(v5), v5.servers);
     const { kind: _kind, ...bare } = DEFAULT_SERVERS[0]!;
+    assert.equal(migrateCatalog({ version: 5, servers: [bare] }), null);
     assert.equal(migrateCatalog({ version: 4, servers: [bare] }), null);
 });
 
-test('the catalog writes version 4 and upgrades a version 2 file on load', () => {
+test('the catalog writes version 5 and upgrades a version 2 file on load', () => {
     const dir = mkdtempSync(join(tmpdir(), 'catalog-'));
     const file = join(dir, 'servers.json');
     writeFileSync(file, JSON.stringify({ version: 2, servers: [] }));
@@ -103,7 +105,7 @@ test('the catalog writes version 4 and upgrades a version 2 file on load', () =>
     catalog.load();
     assert.equal(catalog.recovered, false);
     assert.deepEqual(catalog.list().map(s => s.id), ['singleplayer']);
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 4);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 5);
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -489,7 +491,7 @@ test('a v3 entry that no longer validates fails the whole file rather than being
     assert.equal(migrateCatalog(file), null);
 });
 
-test('Catalog.load rewrites a v3 file as version 4, keeping what the user added', () => {
+test('Catalog.load rewrites a v3 file as version 5, keeping what the user added', () => {
     const file = tempFile();
     writeFileSync(file, JSON.stringify(v3File()));
     const catalog = new Catalog(file);
@@ -497,10 +499,11 @@ test('Catalog.load rewrites a v3 file as version 4, keeping what the user added'
     assert.equal(catalog.recovered, false, 'a migration is not a recovery');
     assert.deepEqual(catalog.list().map(s => s.id), ['lostcity', 'my-server']);
     const written = JSON.parse(readFileSync(file, 'utf8')) as { version: number; servers: ServerDef[] };
-    assert.equal(written.version, 4);
+    assert.equal(written.version, 5);
     assert.equal(written.servers.find(s => s.id === 'local'), undefined);
     assert.equal(written.servers.find(s => s.id === 'my-server')!.notes, 'the one I run for friends');
     assert.equal(written.servers[0]!.hiscores!.source.url, V3_LOSTCITY_TEMPLATE);
+    assert.deepEqual(written.servers.find(s => s.id === 'my-server')!.timers, BUILT_IN_TIMERS);
 });
 
 test("a version 4 file keeps a local server the user added themselves", () => {
@@ -598,10 +601,10 @@ test("a server of the user's own that took a built-in id keeps its own hiscores"
     assert.equal(catalog.get('zanaris')!.url, 'https://play.example.com/rs2.cgi?lowmem=1');
 });
 
-test('a version 4 file round-trips through load untouched', () => {
+test('a version 5 file round-trips through load untouched', () => {
     const file = tempFile();
-    const servers = [...DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef), structuredClone(V3_CUSTOM) as ServerDef];
-    const before = `${JSON.stringify({ version: 4, servers }, null, 2)}\n`;
+    const servers = [...DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef), { ...structuredClone(V3_CUSTOM), timers: newServerTimers() } as ServerDef];
+    const before = `${JSON.stringify({ version: 5, servers }, null, 2)}\n`;
     writeFileSync(file, before);
     const catalog = new Catalog(file);
     catalog.load();
@@ -621,6 +624,7 @@ test('migrateCatalog turns a v1 file into the new built-ins in default order plu
     assert.equal(mine.worlds, null);
     assert.deepEqual(mine.bookmarks, []);
     assert.equal(mine.hiscores, null);
+    assert.deepEqual(mine.timers, BUILT_IN_TIMERS);
     assert.ok(isServerDef(mine));
 });
 
@@ -633,12 +637,12 @@ test('migrateCatalog treats a missing version as v1 and passes a v2 file through
 
 test('migrateCatalog returns null for junk, an invalid entry, or a version it does not know', () => {
     assert.equal(migrateCatalog(null), null);
-    assert.equal(migrateCatalog({ version: 5, servers: [] }), null);
+    assert.equal(migrateCatalog({ version: 6, servers: [] }), null);
     assert.equal(migrateCatalog({ version: 1, servers: [{ id: 'x' }] }), null);
     assert.equal(migrateCatalog({ version: 2, servers: [{ ...DEFAULT_SERVERS[0], worlds: 'nope' }] }), null);
 });
 
-test('Catalog.load migrates a v1 file in place and rewrites it as v4', () => {
+test('Catalog.load migrates a v1 file in place and rewrites it as v5', () => {
     const file = tempFile();
     writeFileSync(file, JSON.stringify({ version: 1, servers: V1_BUILTINS }));
     const catalog = new Catalog(file);
@@ -646,7 +650,7 @@ test('Catalog.load migrates a v1 file in place and rewrites it as v4', () => {
     assert.equal(catalog.recovered, false, 'a migration is not a recovery');
     assert.deepEqual(catalog.list().map(s => s.id), ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer']);
     const written = JSON.parse(readFileSync(file, 'utf8'));
-    assert.equal(written.version, 4);
+    assert.equal(written.version, 5);
     assert.equal(written.servers[0].id, 'lostcity');
 });
 
@@ -698,7 +702,7 @@ test('load writes the defaults when there is no file', () => {
     assert.equal(catalog.recovered, false);
     assert.deepEqual(catalog.list().map(s => s.id), DEFAULT_SERVERS.map(s => s.id));
     assert.ok(existsSync(file));
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 4);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 5);
 });
 
 test('add persists and a fresh load sees it', () => {
@@ -821,7 +825,8 @@ test('an entry that merely took a built-in id keeps its own links', () => {
         notes: null,
         worlds: null,
         bookmarks: [{ name: 'Mine', url: 'https://example.com/' }],
-        hiscores: null
+        hiscores: null,
+        timers: []
     };
     writeFileSync(file, JSON.stringify({ version: 4, servers: [mine] }));
     const catalog = new Catalog(file);
@@ -849,4 +854,80 @@ test('a link one built-in ships and another does not is not appended again on ev
         assert.deepEqual(zanaris.bookmarks, DEFAULT_SERVERS.find(s => s.id === 'zanaris')!.bookmarks, `launch ${launch + 1}`);
         assert.equal(new Set(zanaris.bookmarks.map(b => b.url)).size, zanaris.bookmarks.length, 'and never a duplicate row');
     }
+});
+
+// ── timers ────────────────────────────────────────────────────────────────
+
+const BUILT_IN_TIMERS = [
+    { id: 'afk', name: 'AFK', kind: 'countdown', durationMs: 90_000, thresholdMs: 15_000, volume: 0.8, afk: true },
+    { id: 'thieving', name: 'Thieving', kind: 'countdown', durationMs: 300_000, thresholdMs: 30_000, volume: 0.8, afk: false }
+];
+
+test('every built-in carries AFK and Thieving, each in a list of its own', () => {
+    assert.deepEqual(
+        DEFAULT_SERVERS.map(s => s.id),
+        ['lostcity', 'zanaris', 'lostcitylabs', 'singleplayer']
+    );
+    for (const server of DEFAULT_SERVERS) assert.deepEqual(server.timers, BUILT_IN_TIMERS, server.id);
+    const lists = new Set(DEFAULT_SERVERS.map(s => s.timers));
+    assert.equal(lists.size, DEFAULT_SERVERS.length, 'no two entries share one list');
+    const clocks = new Set(DEFAULT_SERVERS.flatMap(s => s.timers));
+    assert.equal(clocks.size, DEFAULT_SERVERS.length * 2, 'nor one clock object');
+});
+
+test('a server added through the form gets the same pair', () => {
+    const created = createServer(input(), []);
+    assert.ok(created.ok);
+    assert.deepEqual(created.server.timers, BUILT_IN_TIMERS);
+    assert.ok(isServerDef(created.server));
+});
+
+test('isServerDef refuses a missing, invalid, custom-id or repeated timer', () => {
+    const base = structuredClone(DEFAULT_SERVERS[0]!);
+    assert.ok(isServerDef(base));
+    assert.ok(isServerDef({ ...base, timers: [] }), 'an entry may have no built-in clocks');
+    const { timers: _timers, ...missing } = base;
+    assert.equal(isServerDef(missing), false);
+    assert.equal(isServerDef({ ...base, timers: [{ ...base.timers[0]!, thresholdMs: 90_000 }] }), false);
+    assert.equal(isServerDef({ ...base, timers: [{ ...base.timers[0]!, id: 'custom-1' }] }), false);
+    assert.equal(isServerDef({ ...base, timers: [base.timers[0]!, base.timers[0]!] }), false);
+});
+
+test('a version 4 file gains each server’s timers instead of being renamed aside', () => {
+    const file = tempFile();
+    const v4 = [...DEFAULT_SERVERS, V4_USER_LOCAL].map(s => {
+        const { timers: _timers, ...rest } = structuredClone(s) as Record<string, unknown>;
+        return rest;
+    });
+    writeFileSync(file, JSON.stringify({ version: 4, servers: v4 }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.recovered, false);
+    for (const server of catalog.list()) assert.deepEqual(server.timers, BUILT_IN_TIMERS, server.id);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 5);
+});
+
+test('a built-in’s timers are re-adopted on launch, and an added server keeps its own', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    servers.find(s => s.id === 'zanaris')!.timers = [{ ...BUILT_IN_TIMERS[0]!, thresholdMs: 5_000 } as ServerDef['timers'][number]];
+    const mine = { ...structuredClone(V3_CUSTOM), timers: [{ ...BUILT_IN_TIMERS[1]!, durationMs: 60_000 }] } as ServerDef;
+    writeFileSync(file, JSON.stringify({ version: 5, servers: [...servers, mine] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.deepEqual(catalog.get('zanaris')!.timers, BUILT_IN_TIMERS);
+    assert.deepEqual(catalog.get('my-server')!.timers, [{ ...BUILT_IN_TIMERS[1]!, durationMs: 60_000 }]);
+});
+
+test('an entry that only borrowed a built-in id keeps its own timers', () => {
+    const file = tempFile();
+    const theirs = { ...structuredClone(V3_CUSTOM), id: 'zanaris', name: 'Zanaris', timers: [] } as ServerDef;
+    writeFileSync(file, JSON.stringify({ version: 5, servers: [theirs] }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.deepEqual(catalog.get('zanaris')!.timers, []);
+});
+
+test('newServerTimers is the list the built-ins carry', () => {
+    assert.deepEqual(newServerTimers(), BUILT_IN_TIMERS);
 });

@@ -4,6 +4,8 @@ import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
 import { isChannel } from './chat/protocol.ts';
+import type { TimersState } from '../shared/timers.ts';
+import { emptyTimersState, readTimers } from './timers/defs.ts';
 
 interface StateFile {
     version: 1;
@@ -13,6 +15,7 @@ interface StateFile {
     singlePlayer: { cheats: boolean };
     hiscores: Record<string, string>;
     alwaysOnTop: boolean;
+    timers: TimersState;
 }
 
 // Well past base37's 12-character limit, so no real player name is ever
@@ -100,9 +103,11 @@ function readHiscores(x: unknown): Record<string, string> {
  * whether they still want warning before a switch reloads the game — and, now,
  * the one thing here that really is configuration: the chat nick and the IRC
  * server to reach it on, which live alongside the rest for want of a second
- * file worth keeping. Loading never fails and never complains; a file that
- * cannot be read is kept aside and the state starts empty, since nothing here
- * is worth interrupting a launch for.
+ * file worth keeping. It also holds the player's own countdowns and timers,
+ * and their changes to a server's built-in ones, since both are app-wide
+ * rather than a single server's. Loading never fails and never complains; a
+ * file that cannot be read is kept aside and the state starts empty, since
+ * nothing here is worth interrupting a launch for.
  */
 export class AppState {
     readonly file: string;
@@ -117,6 +122,9 @@ export class AppState {
     // Off until asked for: a window that floats over everything else is not
     // something to hand someone who never asked for it.
     private onTop = false;
+    // The player's own countdowns and timers, and their changes to the kit's.
+    // App-wide: the same list in every window, whatever its server.
+    private timersState: TimersState = emptyTimersState();
 
     constructor(file: string) {
         this.file = file;
@@ -129,6 +137,7 @@ export class AppState {
         this.cheats = false;
         this.hiscoresNames = new Map();
         this.onTop = false;
+        this.timersState = emptyTimersState();
         if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
@@ -145,6 +154,7 @@ export class AppState {
             this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
+            this.timersState = readTimers(parsed?.timers);
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
         }
@@ -243,6 +253,20 @@ export class AppState {
         this.save();
     }
 
+    /** The player's clocks and edits. A copy: changes go through setTimers. */
+    timers(): TimersState {
+        return structuredClone(this.timersState);
+    }
+
+    /**
+     * Read back through `readTimers` on the way in, as a file would be, so
+     * nothing stored here can be something a later load would drop.
+     */
+    setTimers(state: TimersState): void {
+        this.timersState = readTimers(structuredClone(state));
+        this.save();
+    }
+
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
         const data: StateFile = {
@@ -252,7 +276,8 @@ export class AppState {
             chat: this.chatSettings,
             singlePlayer: { cheats: this.cheats },
             hiscores: Object.fromEntries(this.hiscoresNames),
-            alwaysOnTop: this.onTop
+            alwaysOnTop: this.onTop,
+            timers: this.timersState
         };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
