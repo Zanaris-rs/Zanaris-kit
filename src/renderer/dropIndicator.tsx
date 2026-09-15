@@ -7,8 +7,8 @@ import type { DropZone, Rect } from '../shared/panes';
  * The box is the pane's real rect after the drop, as main laid it out when the
  * drag began, so the preview and the result cannot disagree. An edge shows the
  * half of the target the pane will take; the centre covers the whole target,
- * since a swap puts it exactly there. It is the only gold on screen during a
- * drag, so there is one thing to look at.
+ * since a swap puts it exactly there. It is the only gold box on screen during
+ * a drag, so there is one thing to look at.
  *
  * A refused edge outlines the whole target instead, in the dim dashed line of
  * something unavailable, and says why. The drop does nothing there, and a box

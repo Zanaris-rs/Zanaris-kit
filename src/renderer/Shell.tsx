@@ -140,6 +140,15 @@ interface Held {
     pointerId: number;
     start: { x: number; y: number };
     dragging: boolean;
+    /** The panes' layout when the drag began, as `layoutKey` spells it. */
+    layout: string;
+    /** Main's answer, kept with the press so a release reads it even before a render has caught up. */
+    targets: DropTargets | null;
+}
+
+/** Which panes are showing and where, as one comparable string. A drag's targets were answered for exactly this. */
+function layoutKey(panes: PaneView[]): string {
+    return panes.map(p => `${p.paneId}@${p.rect.x},${p.rect.y},${p.rect.width}x${p.rect.height}`).join(' ');
 }
 
 /** A drag in progress. `targets` is main's answer to where each drop would land, and is null until it arrives. */
@@ -189,6 +198,18 @@ export default function Shell(): ReactNode {
         []
     );
 
+    /*
+     * A drag ends when the layout it was aimed at changes under it — a
+     * shortcut, a tab switch, a resize. Its targets were answered for the old
+     * rects, so the preview would be wrong; and when the change takes the
+     * dragged header off screen, its pointer events go with it, and nothing
+     * else would ever end the drag. Main ends it on its side too.
+     */
+    const layout = state ? layoutKey(state.panes) : '';
+    useEffect(() => {
+        if (held.current?.dragging && held.current.layout !== layout) cancelDrag();
+    }, [layout]);
+
     /* Escape puts everything back where it was, as it does for any drag. */
     const dragging = drag !== null;
     useEffect(() => {
@@ -223,7 +244,7 @@ export default function Shell(): ReactNode {
      * The release. A drop goes to main only where main said it would land;
      * anywhere else — a seam, the tab bar, a refused edge, or before main has
      * answered at all — ends the drag and changes nothing. Main asks again
-     * either way.
+     * before it drops.
      */
     const release = (event: PointerEvent<HTMLDivElement>): void => {
         const grabbed = held.current;
@@ -234,7 +255,7 @@ export default function Shell(): ReactNode {
         }
         held.current = null;
         const { over, zone } = aimAt(state.panes, event.clientX, event.clientY);
-        const landing = over ? drag?.targets?.[over]?.[zone] : null;
+        const landing = over ? grabbed.targets?.[over]?.[zone] : null;
         setDrag(null);
         if (over && landing) void window.zanaris.panes.drop(grabbed.from, over, zone);
         else void window.zanaris.panes.endDrag();
@@ -245,8 +266,11 @@ export default function Shell(): ReactNode {
             // A press that began on a button is that button's: the nav arrows
             // and the caret must still click rather than start a drag.
             if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+            // A second pointer pressing a header mid-drag ends the first drag
+            // properly, rather than overwriting it and never telling main.
+            if (held.current) cancelDrag();
             event.currentTarget.setPointerCapture(event.pointerId);
-            held.current = { from: paneId, pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, dragging: false };
+            held.current = { from: paneId, pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, dragging: false, layout: '', targets: null };
         },
         onPointerMove: event => {
             const grabbed = held.current;
@@ -257,11 +281,14 @@ export default function Shell(): ReactNode {
                 // click however far the pointer wanders.
                 if (state.panes.length < 2 || !draggedFar(grabbed.start, at)) return;
                 grabbed.dragging = true;
+                grabbed.layout = layoutKey(state.panes);
                 setDrag({ from: grabbed.from, targets: null, over: null, zone: 'centre' });
                 void window.zanaris.panes.beginDrag(grabbed.from).then(targets => {
                     // Only for the drag that asked: this one may have ended, and
                     // another begun, while main was answering.
-                    if (held.current === grabbed) setDrag(d => (d ? { ...d, targets } : d));
+                    if (held.current !== grabbed) return;
+                    grabbed.targets = targets;
+                    setDrag(d => (d ? { ...d, targets } : d));
                 });
             }
             const { over, zone } = aimAt(state.panes, at.x, at.y);

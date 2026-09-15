@@ -73,12 +73,12 @@ The `paneSwap` and `paneDragging` channels are replaced by three new ones:
   1. Refuses the drop unless `canDrop` allows it. This re-checks in main in case the tree changed mid-drag.
   2. Sets `dragging = false`.
   3. Computes `next = dropPane(..., split-${nextSplit++})`. If the tree changed, it calls `adopt(next)`; otherwise it calls `place()`.
-  4. Calls `focus(from)`.
+  4. Calls `focus(from)`. **As built:** only when the tree changed; a refused or no-op drop leaves focus where the press put it, which is already `from`.
   - Views come back **after** the tree is adopted, which fixes today's one-frame flash of views at their old bounds.
 - `endDrag()` sets `dragging = false` and calls `place()`.
 - `swap` is removed.
 
-**Capture** (`src/main/index.ts` around line 1007): the swapped step calls `first.dropPane(a, b, 'centre')`, and its log shows the ids moving. A new `-moved` step drops a pane on another pane's `bottom` edge and logs the pane count and seams.
+**Capture** (`src/main/index.ts` around line 1007): the swapped step calls `first.dropPane(a, b, 'centre')`, and its log shows the ids moving. A new `-moved` step drops a pane on another pane's `bottom` edge and logs the pane count and seams. **As built:** it drops the last pane on the swapped pane's `right` edge, which in a window that opens on game over chat is chat moved up beside the game.
 
 ### 5. Shell gesture and indicator (`src/renderer`)
 
@@ -97,13 +97,21 @@ The `paneSwap` and `paneDragging` channels are replaced by three new ones:
   - Label in `font-pixel` gold. An edge shows the dragged pane's name; the centre shows `Swap`. **As built:** the centre says `Swap with <target>`, since the dragged pane's name would sit over the pane it is not going to replace.
   - For the centre, the landing rect is the target's own rect.
 - **Refused edge:** a dashed `border-faint` outline around the target, labelled "Too small to split". The drop does nothing.
-- **Pane overlays:** the name overlays stay, since native views are hidden during the drag, but the target loses today's solid gold box so the preview is the one gold thing on screen. The source stays dimmed.
+- **Pane overlays:** the name overlays stay, since native views are hidden during the drag, but the target loses today's solid gold box so the preview is the one gold box on screen (header names and the focus dot stay gold). The source stays dimmed.
 
 ### 6. Docs and comments
 
 - **`README.md`:** rewrite the drag paragraph (around lines 385–392) to cover the five zones, the preview, Escape to cancel, and "Too small to split".
 - **Comments:** re-read those around every changed function in `paneTree`, `paneHost`, `Shell`, `ipc` and `paneHeader`. `CLAUDE.md` treats a stale comment as a defect.
 - **Plan copy:** save this plan as `docs/superpowers/plans/2026-09-15-drag-to-split.md` with **no absolute home paths**, since history was rewritten for this before.
+
+### 7. After review (As built)
+
+An independent review of the finished branch found three more things, all fixed:
+
+- **A lost drag could leave the game hidden.** A shortcut pressed mid-drag (a new or switched tab) unmounts the dragged header, and its pointer events go with it. Main now ends the drag on any change to which panes exist or which tab shows (`adopt`, `newTab`, `selectTab`, `closeTab`, `replaceTab`, `moveGame`). The shell cancels a drag whose layout changes under it, and a second press cancels the first drag instead of overwriting it.
+- **`closePane`'s collapse could nest a column in a column**, and every edge drop goes through it. `absorb` merges a child split running along its parent's axis into the parent.
+- **`release` read targets from the last render.** They are now kept on the press itself.
 
 ## Tests (TDD, `node --test`, next to the source)
 

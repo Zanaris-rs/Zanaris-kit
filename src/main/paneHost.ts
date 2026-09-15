@@ -113,6 +113,12 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
      * drag has to show. Hiding is the same `setVisible(false)` a tab switch
      * uses — nothing reloads, the game keeps running — and unlike a close it
      * lasts exactly as long as a gesture the user is performing and watching.
+     *
+     * So anything that changes which panes exist or which tab is showing ends
+     * it too, here rather than trusting the shell to. A shortcut pressed
+     * mid-drag can take the dragged header off screen, and a drag the shell has
+     * lost track of would otherwise leave the game hidden with nothing saying
+     * why, which is the one thing `CLAUDE.md`'s layout invariant rules out.
      */
     let dragging = false;
 
@@ -290,6 +296,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         if (next === active()) return;
         const survives = paneIds(next).includes(focused());
         set = withActive(next, survives ? undefined : paneIds(next)[0]);
+        dragging = false;
         syncViews();
         deps.changed();
     }
@@ -378,6 +385,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         newTab(): void {
             set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`);
+            dragging = false;
             deps.changed();
         },
 
@@ -402,6 +410,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             const loaded = loadingLayout(set, tabId, tree);
             if (!loaded) return false;
             set = loaded.set;
+            dragging = false;
             syncViews();
             deps.changed();
             return true;
@@ -413,6 +422,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             if (next === null) return false;
             if (next === set) return true;
             set = next;
+            dragging = false;
             // The tab's panes went with it, so its page views have nothing left
             // pointing at them. Reconciled rather than tracked: `syncViews`
             // follows the tabs, and a view whose pane is gone from every tab is
@@ -426,6 +436,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             const next = selectTab(set, tabId);
             if (next === set) return;
             set = next;
+            dragging = false;
             deps.changed();
         },
 
@@ -465,6 +476,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             const next = moveGame(set, paneId);
             if (next === set) return;
             set = next;
+            dragging = false;
             syncViews();
             deps.changed();
         },
