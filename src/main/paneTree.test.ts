@@ -83,6 +83,15 @@ test('a nested split collapses too, so close-then-split behaves like a fresh spl
     assert.deepEqual(next, split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('c', { kind: 'page', bookmark: 'u' })], [0.5, 0.5]));
 });
 
+test('a split left running the same way as its parent is merged into it, keeping every pane\'s share', () => {
+    // Game over a row of chat and a column of two. Closing chat collapses the
+    // row into that column, which would otherwise sit as a column inside a
+    // column: Even Out on it would reach only its own two panes, and its seam
+    // would move both of them as one.
+    const tree = split('s1', 'y', [leaf('g', { kind: 'game' }), split('s2', 'x', [leaf('c', { kind: 'empty' }), split('s3', 'y', [leaf('e1', { kind: 'empty' }), leaf('e2', { kind: 'empty' })], [0.5, 0.5])], [0.5, 0.5])], [0.6, 0.4]);
+    assert.deepEqual(closePane(tree, 'c'), split('s1', 'y', [leaf('g', { kind: 'game' }), leaf('e1', { kind: 'empty' }), leaf('e2', { kind: 'empty' })], [0.6, 0.2, 0.2]));
+});
+
 test('closing the only pane leaves an empty one rather than nothing', () => {
     assert.deepEqual(closePane(leaf('a', { kind: 'game' }), 'a'), leaf('a', { kind: 'empty' }), 'the tab survives its last pane');
 });
@@ -272,6 +281,15 @@ test('the target\'s split is read after the pane has left, since leaving can col
         movePane(tree, 'a', 'b', 'right', 's-new'),
         split('s2', 'y', [split('s-new', 'x', [leaf('b', { kind: 'empty' }), leaf('a', { kind: 'empty' })], [0.5, 0.5]), leaf('c', { kind: 'empty' })], [0.5, 0.5])
     );
+});
+
+test('a pane moved out of a split that collapses into its parent\'s column joins that column flat', () => {
+    // Chat, beside a column of two under the game, dropped on the game's bottom
+    // edge: the game, chat and the two panes end up as one column of four.
+    const tree = split('s1', 'y', [leaf('g', { kind: 'game' }), split('s2', 'x', [leaf('c', { kind: 'empty' }), split('s3', 'y', [leaf('e1', { kind: 'empty' }), leaf('e2', { kind: 'empty' })], [0.5, 0.5])], [0.5, 0.5])], [0.6, 0.4]);
+    const next = movePane(tree, 'c', 'g', 'bottom', 's-new');
+    assert.deepEqual(next, split('s1', 'y', [leaf('g', { kind: 'game' }), leaf('c', { kind: 'empty' }), leaf('e1', { kind: 'empty' }), leaf('e2', { kind: 'empty' })], [0.3, 0.3, 0.2, 0.2]));
+    assert.equal(movePane(next, 'e1', 'c', 'bottom', 's-new'), next, 'and e1, already directly below chat, stays put when dropped there');
 });
 
 test('a pane dropped where it already is changes nothing, by identity', () => {

@@ -290,7 +290,7 @@ export function closePane(node: PaneNode, paneId: string): PaneNode {
     if (node.kind === 'leaf') return node.paneId === paneId ? leaf(node.paneId, { kind: 'empty' }) : node;
 
     const at = node.children.findIndex(child => child.kind === 'leaf' && child.paneId === paneId);
-    if (at < 0) return collapse({ ...node, children: node.children.map(child => closePane(child, paneId)) });
+    if (at < 0) return collapse(absorb({ ...node, children: node.children.map(child => closePane(child, paneId)) }));
 
     const children = node.children.filter((_, i) => i !== at);
     const kept = node.fractions.filter((_, i) => i !== at);
@@ -312,6 +312,35 @@ export function closePane(node: PaneNode, paneId: string): PaneNode {
 function collapse(node: PaneNode): PaneNode {
     if (node.kind === 'leaf' || node.children.length !== 1) return node;
     return node.children[0]!;
+}
+
+/**
+ * A child split running the same way as its parent is merged into it, each of
+ * its panes keeping the share of the whole it had.
+ *
+ * `collapse` can produce one: a row that loses a pane and collapses into the
+ * column it held lands as a column inside a column. That nesting is
+ * invisible, but it behaves wrongly. Even Out reaches only the inner panes, the
+ * seam above them moves them as one, and a pane dropped below its neighbour
+ * cannot see that it is already there. Splitting and moving never nest a
+ * split along its parent's grain, so a close is the only place one can appear,
+ * and this is where it is taken apart again.
+ */
+function absorb(node: PaneNode): PaneNode {
+    if (node.kind === 'leaf' || !node.children.some(child => child.kind === 'split' && child.axis === node.axis)) return node;
+    const children: PaneNode[] = [];
+    const fractions: number[] = [];
+    node.children.forEach((child, i) => {
+        const share = node.fractions[i]!;
+        if (child.kind === 'split' && child.axis === node.axis) {
+            children.push(...child.children);
+            fractions.push(...child.fractions.map(f => f * share));
+        } else {
+            children.push(child);
+            fractions.push(share);
+        }
+    });
+    return { ...node, children, fractions };
 }
 
 /**
