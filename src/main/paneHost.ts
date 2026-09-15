@@ -345,9 +345,9 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             const next = swapPanes(active(), a, b);
             if (next === active()) return;
             adopt(next);
-            // Focus follows the content rather than the pane: you dragged that
-            // thing somewhere, and where it landed is what you are looking at.
-            focus(b);
+            // Focus follows the pane you dragged: you took that thing somewhere,
+            // and where it landed is what you are looking at. Its id went with it.
+            focus(a);
         },
         rectOf: (paneId: string) => rects.get(paneId) ?? null,
 

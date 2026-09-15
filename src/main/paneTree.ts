@@ -151,6 +151,17 @@ function allocate(fractions: number[], gross: number, minimums: number[]): numbe
 }
 
 /**
+ * Whether one extent can hold two panes and the seam between them.
+ *
+ * The one test behind every way of halving a pane — the menus' Split Right and
+ * Split Down, and a header dropped on another pane's edge — so none of them can
+ * offer a split another would refuse.
+ */
+export function halvable(extent: number, floor: number): boolean {
+    return extent >= floor * 2 + SEAM;
+}
+
+/**
  * Splits the named pane, putting an empty pane in the new half.
  *
  * Ids are handed in rather than counted here, so this stays a pure function of
@@ -158,9 +169,20 @@ function allocate(fractions: number[], gross: number, minimums: number[]): numbe
  * does for page ids today.
  */
 export function splitPane(node: PaneNode, paneId: string, axis: 'x' | 'y', ids: { paneId: string; splitId: string }): PaneNode {
+    return insertBeside(node, paneId, axis, true, leaf(ids.paneId, { kind: 'empty' }), ids.splitId);
+}
+
+/**
+ * Puts `added` beside the named leaf on `axis`, after it or before it: the
+ * half of a split and of a move that is the same act.
+ *
+ * `splitId` names the split a lone leaf, or a leaf in a split running the other
+ * way, is nested in. Along the grain it goes unused.
+ */
+function insertBeside(node: PaneNode, paneId: string, axis: 'x' | 'y', after: boolean, added: PaneNode, splitId: string): PaneNode {
     if (node.kind === 'leaf') {
         if (node.paneId !== paneId) return node;
-        return split(ids.splitId, axis, [node, leaf(ids.paneId, { kind: 'empty' })], [0.5, 0.5]);
+        return split(splitId, axis, after ? [node, added] : [added, node], [0.5, 0.5]);
     }
     // Along the grain, the pane's own share is halved and a sibling takes the
     // other half — the parent absorbs it rather than a new split node nesting
@@ -171,14 +193,59 @@ export function splitPane(node: PaneNode, paneId: string, axis: 'x' | 'y', ids: 
         const at = node.children.findIndex(child => child.kind === 'leaf' && child.paneId === paneId);
         if (at >= 0) {
             const half = node.fractions[at]! / 2;
+            const cut = after ? at + 1 : at;
             return {
                 ...node,
-                children: [...node.children.slice(0, at + 1), leaf(ids.paneId, { kind: 'empty' }), ...node.children.slice(at + 1)],
+                children: [...node.children.slice(0, cut), added, ...node.children.slice(cut)],
                 fractions: [...node.fractions.slice(0, at), half, half, ...node.fractions.slice(at + 1)]
             };
         }
     }
-    return { ...node, children: node.children.map(child => splitPane(child, paneId, axis, ids)) };
+    return { ...node, children: node.children.map(child => insertBeside(child, paneId, axis, after, added, splitId)) };
+}
+
+/** A pane's edge, as a dragged header is dropped on it. */
+export type Side = 'left' | 'right' | 'top' | 'bottom';
+
+/**
+ * Moves a pane beside another, splitting the target on the side it was dropped
+ * on — what a header dragged onto another pane's edge does.
+ *
+ * The pane is lifted out the way a close takes it, then put back the way a split
+ * adds one: along the grain of the target's split it becomes a sibling taking
+ * half the target's share, and across it the target nests in a new split with
+ * it. Lifting comes first because it can change the answer. Taking the pane out
+ * can collapse the split it was in, and when the target was in that split, which
+ * way the target's parent runs is only known afterwards.
+ *
+ * The leaf keeps its id, for the reason `swapPanes` gives: a page's view is
+ * keyed by it, so a page moved under a fresh id would reload.
+ *
+ * Returns the tree itself, by identity, when there is nothing to do: a pane
+ * dropped on itself, a pane that is not in this tree, or a pane already directly
+ * on that side of its target. That last would otherwise halve the two panes'
+ * shares and nothing more, which reads as the drop having gone wrong.
+ */
+export function movePane(node: PaneNode, from: string, to: string, side: Side, splitId: string): PaneNode {
+    const content = contentOf(node, from);
+    if (from === to || !content || !contentOf(node, to)) return node;
+    const axis = side === 'left' || side === 'right' ? 'x' : 'y';
+    const after = side === 'right' || side === 'bottom';
+    if (besideAlready(node, from, to, axis, after)) return node;
+    return insertBeside(closePane(node, from), to, axis, after, leaf(from, content), splitId);
+}
+
+/** Whether `from` is the leaf directly after (or before) `to` in a split running along `axis`. */
+function besideAlready(node: PaneNode, from: string, to: string, axis: 'x' | 'y', after: boolean): boolean {
+    if (node.kind === 'leaf') return false;
+    if (node.axis === axis) {
+        const at = node.children.findIndex(child => child.kind === 'leaf' && child.paneId === to);
+        if (at >= 0) {
+            const neighbour = node.children[after ? at + 1 : at - 1];
+            return neighbour?.kind === 'leaf' && neighbour.paneId === from;
+        }
+    }
+    return node.children.some(child => besideAlready(child, from, to, axis, after));
 }
 
 /**
@@ -399,12 +466,18 @@ export function parentSplitOf(node: PaneNode, paneId: string): string | null {
 }
 
 /**
- * Trades what two panes hold, leaving the tree's shape untouched.
+ * Trades two panes' places, leaving the tree's shape untouched.
  *
- * What a drag between panes does. A swap rather than a lift-and-reinsert
- * because the panes keep their sizes and their positions and only the contents
- * move — which is what "drag this into that slot" means, and what makes the
- * result predictable: nothing else on screen shifts to accommodate it.
+ * What a header dropped in the middle of another pane does. The slots keep
+ * their sizes and their seams, so nothing else on screen shifts. Only the two
+ * panes move between them, which makes the result predictable. `movePane` is
+ * the drop on an edge, which does reshape the tree.
+ *
+ * The leaves move whole, each keeping its id, rather than trading contents under
+ * fixed ids. Everything keyed by a pane id then follows its pane: a page's view
+ * and its history, and whatever a tool pane was holding. Trading contents once
+ * left two swapped pages' views where they were under each other's names, and
+ * reloaded a page traded with a tool.
  *
  * Naming one pane twice, or naming one that is not in this tree, returns the
  * tree itself rather than a copy. That identity is load-bearing upstream: the
@@ -416,5 +489,11 @@ export function swapPanes(node: PaneNode, a: string, b: string): PaneNode {
     const left = contentOf(node, a);
     const right = contentOf(node, b);
     if (!left || !right) return node;
-    return setContent(setContent(node, a, right), b, left);
+    const traded = (n: PaneNode): PaneNode => {
+        if (n.kind === 'split') return { ...n, children: n.children.map(traded) };
+        if (n.paneId === a) return leaf(b, right);
+        if (n.paneId === b) return leaf(a, left);
+        return n;
+    };
+    return traded(node);
 }

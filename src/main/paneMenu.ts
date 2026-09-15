@@ -1,6 +1,6 @@
-import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM } from '../shared/layout.ts';
+import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
-import { canAppendColumn, contentOf, paneIds, parentSplitOf, type PaneContent, type PaneNode } from './paneTree.ts';
+import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, type PaneContent, type PaneNode } from './paneTree.ts';
 
 /**
  * What a pane is called, and what its two menus offer: the gestures a
@@ -156,11 +156,6 @@ function sameContent(a: PaneContent, b: PaneContent): boolean {
     if (a.kind === 'page' && b.kind === 'page') return a.bookmark === b.bookmark;
     if (a.kind === 'tool' && b.kind === 'tool') return a.tool === b.tool;
     return true;
-}
-
-/** Whether one extent can hold two panes and the seam between them. */
-function halvable(extent: number, floor: number): boolean {
-    return extent >= floor * 2 + SEAM;
 }
 
 /**
