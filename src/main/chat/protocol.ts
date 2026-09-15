@@ -3,6 +3,8 @@
  * socket, no state, so every rule here is tested against real server lines.
  */
 
+import { asChannel } from '../../shared/ircNames.ts';
+
 export interface IrcMessage {
     /** The raw prefix, without its leading colon. Null when the server sent none. */
     prefix: string | null;
@@ -78,25 +80,8 @@ export function formatCommand(command: string, params: string[]): string {
     return parts.join(' ');
 }
 
-export function isChannel(target: string): boolean {
-    return target.startsWith('#') || target.startsWith('&');
-}
-
-/**
- * IRC names — nicks and channels alike — are case-insensitive on the wire, so
- * "#LostCity" and "#lostcity" name the same channel. This is the one place
- * that fact lives; every identity comparison in this codebase folds through
- * here rather than repeating its own `.toLowerCase()`. Display case is a
- * separate concern and is never touched by this — fold only to compare.
- */
-export function foldName(name: string): string {
-    return name.toLowerCase();
-}
-
-/** Whether two IRC names — nicks or channels — are the same, case folded. */
-export function sameName(a: string, b: string): boolean {
-    return foldName(a) === foldName(b);
-}
+/** Re-exported so the chat code keeps one import for everything about IRC; the Settings form reads the same rules from shared. */
+export { asChannel, foldName, isChannel, sameName } from '../../shared/ircNames.ts';
 
 /** The characters that can sit inside a nick, so "matt" does not match "mattress". */
 const NICK_CHAR = /[A-Za-z0-9\[\]\\`^{}|_-]/;
@@ -114,6 +99,99 @@ export function mentions(text: string, nick: string): boolean {
     return false;
 }
 
+// ── what the server supports ──────────────────────────────────────────────
+
+/**
+ * The parts of a server's 005 (ISUPPORT) that change how lines are read: which
+ * rank symbols a NAMES reply can hang off a nick, the mode letter behind each,
+ * and which channel modes take a parameter. The defaults are what RFC-era
+ * servers mean when they say nothing, so a server that never sends 005 still
+ * reads right.
+ */
+export interface Isupport {
+    /** Mode letters for the ranks, highest first: "qaohv". */
+    prefixModes: string;
+    /** The symbol for each of those, in the same order: "~&@%+". */
+    prefixSymbols: string;
+    /** CHANMODES: A lists (always a parameter), B (always), C (only when set), D (never). */
+    chanModes: [string, string, string, string];
+}
+
+export const DEFAULT_ISUPPORT: Isupport = { prefixModes: 'qaohv', prefixSymbols: '~&@%+', chanModes: ['beI', 'k', 'l', 'imnpst'] };
+
+/**
+ * Folds one 005 line's tokens into what was known. A 005 arrives in several
+ * lines, each naming only some tokens, so anything a line does not mention is
+ * kept. A malformed PREFIX — letters and symbols of different lengths — is
+ * ignored rather than half-applied, since a wrong pairing would mislabel ops.
+ */
+export function readIsupport(known: Isupport, tokens: string[]): Isupport {
+    const next: Isupport = { ...known, chanModes: [...known.chanModes] };
+    for (const token of tokens) {
+        const eq = token.indexOf('=');
+        if (eq === -1) continue;
+        const name = token.slice(0, eq).toUpperCase();
+        const value = token.slice(eq + 1);
+        if (name === 'PREFIX') {
+            const match = /^\(([A-Za-z]*)\)(\S*)$/.exec(value);
+            if (match && match[1]!.length === match[2]!.length) {
+                next.prefixModes = match[1]!;
+                next.prefixSymbols = match[2]!;
+            }
+        } else if (name === 'CHANMODES') {
+            const [a = '', b = '', c = '', d = ''] = value.split(',');
+            next.chanModes = [a, b, c, d];
+        }
+    }
+    return next;
+}
+
+export interface ModeChange {
+    adding: boolean;
+    mode: string;
+    /** The nick, key or limit the mode came with; null for a flag. */
+    param: string | null;
+}
+
+/**
+ * Splits "+o-v+l" and its parameters into one change per letter. Which letters
+ * consume a parameter is the server's to say, which is why this takes its
+ * ISUPPORT: read wrongly, every parameter after the first mistake lands on the
+ * wrong letter and the wrong person is shown as an op. A letter the server
+ * never described takes none. A parameter the line ran out of is null.
+ */
+export function modeChanges(modes: string, params: string[], support: Isupport): ModeChange[] {
+    const changes: ModeChange[] = [];
+    const [lists, always, whenSet] = support.chanModes;
+    let adding = true;
+    let next = 0;
+    for (const mode of modes) {
+        if (mode === '+' || mode === '-') {
+            adding = mode === '+';
+            continue;
+        }
+        const takes = support.prefixModes.includes(mode) || lists.includes(mode) || always.includes(mode) || (adding && whenSet.includes(mode));
+        const param = takes ? (params[next++] ?? null) : null;
+        changes.push({ adding, mode, param });
+    }
+    return changes;
+}
+
+/**
+ * mIRC's formatting codes — bold, colour, reverse, italic, underline, reset —
+ * are how a topic like "Migrating channels, please join #LostCity" arrives
+ * wrapped in colour. The pane draws text as text, so they are taken out rather
+ * than shown as boxes. Colour takes its numbers with it; a comma with no
+ * background after it is left, since it is part of the message.
+ */
+const COLOUR = new RegExp(`${String.fromCharCode(3)}(\\d{1,2}(,\\d{1,2})?)?`, 'g');
+const HEX_COLOUR = new RegExp(`${String.fromCharCode(4)}([0-9A-Fa-f]{6}(,[0-9A-Fa-f]{6})?)?`, 'g');
+const FORMATTING = new RegExp(`[${[2, 15, 17, 22, 29, 30, 31].map(code => String.fromCharCode(code)).join('')}]`, 'g');
+
+export function stripFormatting(text: string): string {
+    return text.replace(COLOUR, '').replace(HEX_COLOUR, '').replace(FORMATTING, '');
+}
+
 // ── what the user types ───────────────────────────────────────────────────
 
 export type Input =
@@ -124,11 +202,6 @@ export type Input =
     | { kind: 'join'; channel: string }
     | { kind: 'part'; channel: string }
     | { kind: 'unknown'; command: string };
-
-/** A channel the user named without its prefix is one they meant to hash. */
-function asChannel(name: string): string {
-    return isChannel(name) ? name : `#${name}`;
-}
 
 /**
  * Reads one typed line. Null means there is nothing to do — an empty line, or

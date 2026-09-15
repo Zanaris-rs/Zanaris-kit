@@ -1,8 +1,7 @@
 import { connect } from 'node:tls';
-import { LOBBY, SERVER_LOG, type ChatSettings, type ChatView } from '../../shared/chat.ts';
-import { serverChannel } from './channels.ts';
+import { DEFAULT_AUTO_JOIN, SERVER_LOG, type ChatSettings, type ChatSettingsView, type ChatView } from '../../shared/chat.ts';
 import { backoffDelay, IrcClient } from './client.ts';
-import { parseInput, sameName } from './protocol.ts';
+import { isChannel, sameName } from './protocol.ts';
 
 /**
  * The app's one chat connection.
@@ -55,72 +54,49 @@ export function splitLines(pending: string, chunk: string): { lines: string[]; r
     return { lines: parts.map(line => line.replace(/\r$/, '')).filter(line => line !== ''), rest };
 }
 
-/**
- * The channels the app should be in: the shared lobby, always, plus a room for
- * each open server that has one. Local and user-added servers map to nothing
- * and drop out here.
- */
-export function wantedChannels(serverIds: string[]): string[] {
-    const channels = [LOBBY];
-    for (const id of serverIds) {
-        const channel = serverChannel(id);
-        // Two windows on one server share its room, so an id already mapped adds nothing.
-        if (channel !== null && !channels.includes(channel)) channels.push(channel);
-    }
-    return channels;
-}
+/** What the Settings tab shows when no service exists to ask: the defaults, nothing saved. */
+const NO_SETTINGS: ChatSettingsView = { nick: null, autoJoin: [...DEFAULT_AUTO_JOIN], hasPassword: false, canSavePassword: false };
 
 /** What the panel shows when there is no connection to describe yet. */
-export function offlineChat(nick: string | null): ChatView {
-    return { status: 'offline', nick, channels: [], active: SERVER_LOG, lines: [], error: null, needsNick: nick === null };
+export function offlineChat(nick: string | null, settings: ChatSettingsView = NO_SETTINGS): ChatView {
+    return { status: 'offline', nick, channels: [], active: SERVER_LOG, lines: [], error: null, needsNick: nick === null, settings };
 }
 
-/**
- * What a freshly built IrcClient should join: the auto set plus whatever
- * rooms were persisted, so a hand-joined room from a previous run comes back
- * on this run's first connection. Folded to compare so a persisted room that
- * only differs in case from an auto-joined one is not listed, and later
- * joined, twice.
- */
-export function initialChannels(autoSet: string[], rooms: string[]): string[] {
-    const channels = [...autoSet];
-    for (const room of rooms) if (!channels.some(c => sameName(c, room))) channels.push(room);
-    return channels;
+/** What the service starts from: the saved settings, and the password `index.ts` opened for it. */
+export interface ChatStart extends ChatSettings {
+    /** In the clear, for the length of the run. Null for none. */
+    password: string | null;
+    /** Whether a password given now would be saved; the Settings tab says so when it would not. */
+    canSavePassword: boolean;
 }
 
-/**
- * Everything the client is in that the auto set does not account for — the
- * derivation the whole close feature rests on. Folded to compare: IRC names
- * are case-insensitive, so a room that entered `wanted` in a different case
- * than the auto set's own canonical spelling is still the same room, and
- * must not be misread as the user's own to close.
- */
-export function handJoinedChannels(wanted: string[], autoSet: string[]): string[] {
-    return wanted.filter(channel => !autoSet.some(auto => sameName(auto, channel)));
+/** One save from the Settings tab, already checked by `readSettingsDraft`. */
+export interface SettingsChange {
+    nick: string;
+    autoJoin: string[];
+    /** Absent leaves the password alone; a string replaces it; null forgets it. */
+    password?: string | null;
 }
 
 export class ChatService {
     private readonly io: ChatIo;
     private readonly host: string;
     private readonly port: number;
+    private readonly canSavePassword: boolean;
     private nick: string | null;
-    /**
-     * The user's own rooms: seeded from what was persisted at launch, then
-     * kept live as the user hand-joins or closes a room this session. This is
-     * the one list both handJoined() and setServers's part decision consult,
-     * so a room can no longer be closable to one and parted by the other —
-     * and a restart() rebuilds from what is hand-joined *this* session,
-     * rather than only what launched with it.
-     */
-    private handJoinedRooms: string[];
+    private autoJoin: string[];
+    private password: string | null;
     private client: IrcClient | null = null;
     private socket: ChatSocket | null = null;
     private pending = '';
-    private channels: string[] = wantedChannels([]);
     /** Failed attempts since the last connection that reached online, which is what the backoff counts. */
     private attempt = 0;
     private cancelRetry: (() => void) | null = null;
-    private stopped = false;
+    /**
+     * The user does not want a connection: they pressed Disconnect, this run or
+     * the last, or the app is quitting. Nothing reconnects while it is set.
+     */
+    private stopped: boolean;
     /**
      * Which connection the handlers belong to. A socket that closes after we
      * have moved on — one we replaced, or one stop() dropped — must not be
@@ -129,56 +105,36 @@ export class ChatService {
     private generation = 0;
     private readonly subscribers = new Set<(view: ChatView) => void>();
 
-    constructor(settings: ChatSettings, io: ChatIo) {
+    constructor(start: ChatStart, io: ChatIo) {
         this.io = io;
-        this.host = settings.server;
-        this.port = settings.port;
-        this.nick = settings.nick === '' ? null : settings.nick;
-        this.handJoinedRooms = [...settings.rooms];
-        // A remembered nick connects straight away; without one nothing opens,
-        // which is what a capture run — whose profile has no nick — relies on.
-        if (this.nick !== null) this.open();
+        this.host = start.server;
+        this.port = start.port;
+        this.canSavePassword = start.canSavePassword;
+        this.nick = start.nick === '' ? null : start.nick;
+        this.autoJoin = [...start.autoJoin];
+        this.password = start.password;
+        this.stopped = !start.autoConnect;
+        // A remembered nick connects straight away unless the user last
+        // pressed Disconnect; without a nick nothing opens, which is what a
+        // capture run — whose profile has no nick — relies on.
+        this.open();
     }
 
     view(): ChatView {
-        if (this.client === null) return offlineChat(this.nick);
+        const settings: ChatSettingsView = {
+            nick: this.nick,
+            autoJoin: [...this.autoJoin],
+            hasPassword: this.password !== null,
+            canSavePassword: this.canSavePassword
+        };
+        if (this.client === null) return offlineChat(this.nick, settings);
         const snapshot = this.client.snapshot();
-        const handJoined = this.handJoined();
         return {
             ...snapshot,
-            // Folded as a guard, not a fix: IrcClient.join() pushes a channel into
-            // `want` and calls chan() with that identical string in the same
-            // statement, and chan() never renames an existing entry, so channel.name
-            // here and its match in handJoined are always the same literal today,
-            // never merely case-equivalent. This does not depend on that staying true.
-            channels: snapshot.channels.map(channel => ({ ...channel, closable: handJoined.some(c => sameName(c, channel.name)) })),
-            needsNick: this.nick === null
+            channels: snapshot.channels.map(channel => ({ ...channel, closable: isChannel(channel.name) })),
+            needsNick: this.nick === null,
+            settings
         };
-    }
-
-    /**
-     * The user's own rooms that the auto set does not currently also want —
-     * the derivation the whole close feature rests on. `handJoinedRooms` is
-     * the one list this and setServers's part decision both read, so a close
-     * button and a window closing cannot disagree about what is closable.
-     * That single list is not the second one the spec warns against — there
-     * is still only one fact, "which rooms are the user's own," read from one
-     * place; what changed is that this service now also updates it, rather
-     * than re-deriving it from `client.wanted()` on every call.
-     */
-    private handJoined(): string[] {
-        if (this.client === null) return [];
-        return handJoinedChannels(this.handJoinedRooms, this.channels);
-    }
-
-    /** The user asked for this room, this session or a previous one. Idempotent: joining twice marks it once. */
-    private markHandJoined(channel: string): void {
-        if (!this.handJoinedRooms.some(r => sameName(r, channel))) this.handJoinedRooms.push(channel);
-    }
-
-    /** The user no longer has this room — closed, or /part by hand — so a later window closing must not think it is theirs to spare. */
-    private forgetHandJoined(channel: string): void {
-        this.handJoinedRooms = this.handJoinedRooms.filter(r => !sameName(r, channel));
     }
 
     subscribe(cb: (view: ChatView) => void): () => void {
@@ -188,84 +144,81 @@ export class ChatService {
         };
     }
 
-    /** Chooses the nick and connects. Until one is set the app stays offline, which is what capture mode runs as. */
-    setNick(nick: string): void {
-        const wanted = nick.trim();
-        if (wanted === '' || wanted === this.nick) return;
-        this.nick = wanted;
+    /**
+     * Connect, from the Settings tab. The auto-join list is joined again —
+     * closing a tab lasted for the session, and this starts the next one —
+     * alongside the channels still wanted from before, and the log is kept.
+     */
+    connect(): void {
+        if (this.nick === null) return;
         this.stopped = false;
-        const client = this.client;
-        const status = client?.snapshot().status;
-        if (client !== null && (status === 'online' || status === 'registering')) {
-            // A rename on a live connection is the server's to confirm, so it
-            // goes over the wire and the view follows the echo.
-            client.input(`/nick ${wanted}`);
+        if (this.client !== null) for (const channel of this.autoJoin) this.client.join(channel);
+        if (this.socket !== null) {
+            // Already up, or on its way: the joins above are all there was to do.
             this.emit();
             return;
         }
-        // Otherwise the nick only becomes real by registering with it, and this
-        // client took the old one at construction: start the conversation over.
-        this.restart();
+        // A retry waiting out its backoff is not worth waiting for when the user has asked.
+        this.attempt = 0;
+        this.open();
+    }
+
+    /** Disconnect, from the Settings tab. The tabs and their logs stay to be read. */
+    disconnect(): void {
+        this.hangUp();
     }
 
     /**
-     * The servers with a window open. Their rooms plus the lobby are the set we
-     * mean to be in; a change joins and parts the difference rather than
-     * reconnecting. Channels the user joined by hand are left alone: only rooms
-     * this mapping added are ever parted by it.
+     * A save from the Settings tab. Each field changes what it can without
+     * dropping the connection:
+     *
+     * - The nick and password are who NickServ is told we are, from now on.
+     *   A new password, or a new nick with one saved, identifies at once on a
+     *   live connection — before the rename, so the new nick arrives already
+     *   identified.
+     * - A new nick on a live connection is asked for with /nick, and the
+     *   connection takes it when the server agrees. Otherwise it is simply the
+     *   nick the next registration uses. It is compared with the nick the
+     *   connection holds rather than the saved one: a refused registration
+     *   leaves the client claiming "matt___", and saving "matt" again has to
+     *   put that right even though "matt" is what is stored.
+     * - A channel added to the list is joined now, or as soon as the
+     *   connection on its way is up. One taken off is not parted: the list
+     *   says what to join next time, and closing the tab is how to leave now.
      */
-    setServers(serverIds: string[]): void {
-        const wanted = wantedChannels(serverIds);
-        const added = wanted.filter(channel => !this.channels.includes(channel));
-        const gone = this.channels.filter(channel => !wanted.includes(channel));
-        this.channels = wanted;
-        if (this.client === null || (added.length === 0 && gone.length === 0)) return;
-        for (const channel of added) this.client.join(channel);
-        // A room this mapping is done with is only ours to part if the user has
-        // not separately claimed it — the same room, hand-joined before this
-        // window opened or while it was, is the user's to keep after it closes.
-        for (const channel of gone) if (!this.handJoinedRooms.some(r => sameName(r, channel))) this.client.part(channel);
+    applySettings(change: SettingsChange): void {
+        const added = change.autoJoin.filter(channel => !this.autoJoin.some(saved => sameName(saved, channel)));
+        this.autoJoin = [...change.autoJoin];
+        if (change.password !== undefined) this.password = change.password;
+        const nick = change.nick.trim();
+        const client = this.client;
+
+        if (client !== null) {
+            const { status, nick: holding } = client.snapshot();
+            if (nick !== '') client.setCredentials(nick, this.password);
+            if (nick !== '' && nick !== holding) {
+                if (status === 'online' || status === 'registering') client.input(`/nick ${nick}`);
+                else client.rename(nick);
+            }
+            if (status !== 'offline') for (const channel of added) client.join(channel);
+        }
+        if (nick !== '') this.nick = nick;
         this.emit();
     }
 
-    /**
-     * One typed line. Text beginning with / is a command; the client decides
-     * what it means. The two halves that keep handJoinedRooms live work
-     * differently on purpose:
-     *
-     * Marking reads intent, not effect: a /join is marked regardless of
-     * whether `want` actually changes, because IrcClient.join() is a no-op on
-     * `want` for a channel already there — typing /join for a room a window
-     * already opened is exactly how a coincidence begins, and a room hand-
-     * joined that way would otherwise leave no trace to protect it later.
-     *
-     * Forgetting stays on the diff: /part with no argument means "the active
-     * channel", which only the client knows, and resolving that here would
-     * duplicate its own logic for no gain — whatever /part actually dropped
-     * from `want` is the one thing worth forgetting.
-     */
+    /** One typed line. Text beginning with / is a command; the client decides what it means. */
     send(text: string): void {
         if (this.client === null) return;
-        const typed = parseInput(text);
-        if (typed?.kind === 'join') this.markHandJoined(typed.channel);
-        const before = this.client.wanted();
         this.client.input(text);
-        const after = this.client.wanted();
-        for (const channel of before) if (!after.some(a => sameName(a, channel))) this.forgetHandJoined(channel);
         this.emit();
     }
 
-    /**
-     * Parts a room the user joined by hand. Refused for anything else — the
-     * lobby and a per-server room are not the user's to close from here, and
-     * that refusal belongs here rather than in the caller: only the service
-     * has both halves handJoined() derives from, so only it can tell the two
-     * cases apart without re-deriving the same set a second time.
-     */
+    /** Leaves a channel for the rest of the session. Status is refused, since it is not a room and the server keeps talking into it. */
     closeRoom(channel: string): boolean {
-        if (this.client === null || !this.handJoined().some(c => sameName(c, channel))) return false;
+        if (this.client === null || !isChannel(channel)) return false;
+        const known = this.client.snapshot().channels.some(c => sameName(c.name, channel));
+        if (!known) return false;
         this.client.part(channel);
-        this.forgetHandJoined(channel);
         this.emit();
         return true;
     }
@@ -282,26 +235,26 @@ export class ChatService {
 
     /** For quit. The close this causes is ours, so nothing reconnects after it. */
     stop(): void {
-        this.stopped = true;
-        this.cancel();
-        this.generation++;
-        this.socket?.close();
-        this.socket = null;
-        this.client?.closed('', false);
-        this.emit();
+        this.hangUp();
     }
 
     // ── the connection ───────────────────────────────────────────────────
 
-    /** Drops everything and connects afresh, for a change the current registration cannot carry. */
-    private restart(): void {
+    /**
+     * Says goodbye and drops the socket, and stops anything that would bring
+     * it back. The QUIT goes out before the close, while there is still a
+     * socket to write it to.
+     */
+    private hangUp(): void {
+        this.stopped = true;
         this.cancel();
+        if (this.socket !== null) this.client?.quit();
         this.generation++;
         this.socket?.close();
         this.socket = null;
-        this.client = null;
-        this.attempt = 0;
-        this.open();
+        this.pending = '';
+        this.client?.closed('', false);
+        this.emit();
     }
 
     private open(): void {
@@ -313,7 +266,8 @@ export class ChatService {
             this.client ??
             new IrcClient({
                 nick: this.nick,
-                channels: initialChannels(this.channels, this.handJoinedRooms),
+                channels: [...this.autoJoin],
+                password: this.password,
                 now: () => this.io.now(),
                 send: line => this.socket?.send(line)
             });
@@ -378,6 +332,9 @@ export class ChatService {
     }
 }
 
+/** How long a closing socket may take to flush its goodbye before it is cut off. */
+const CLOSE_GRACE_MS = 2_000;
+
 /**
  * The real transport: one TLS socket, decoded as UTF-8 so a multi-byte
  * character split across packets is the decoder's problem rather than the
@@ -397,8 +354,18 @@ export function tlsConnect(host: string, port: number, handlers: SocketHandlers)
     socket.on('close', () => handlers.closed(failure ?? 'the connection closed'));
     return {
         send: line => {
+            // The last guard between a line and the wire. Every caller already
+            // refuses a line break, but a stored profile or a future caller that
+            // did not would otherwise end this command and start another.
+            if (/[\r\n\0]/.test(line)) return;
             if (!socket.destroyed) socket.write(`${line}\r\n`);
         },
-        close: () => socket.destroy()
+        close: () => {
+            // end() rather than destroy(), so a QUIT written just before is
+            // flushed to the server instead of dropped with the buffer. A
+            // server that never closes its half is not waited on for long.
+            socket.end();
+            setTimeout(() => socket.destroy(), CLOSE_GRACE_MS).unref();
+        }
     };
 }

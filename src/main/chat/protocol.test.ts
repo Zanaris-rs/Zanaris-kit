@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCommand, isChannel, mentions, parseInput, parseLine } from './protocol.ts';
+import { DEFAULT_ISUPPORT, formatCommand, isChannel, mentions, modeChanges, parseInput, parseLine, readIsupport, stripFormatting } from './protocol.ts';
 
 // ── parseLine ─────────────────────────────────────────────────────────────
 
@@ -163,4 +163,65 @@ test('/part may name a channel or leave it to the client', () => {
 test('an unrecognised slash command reports itself rather than going on the wire', () => {
     assert.deepEqual(parseInput('/quit now'), { kind: 'unknown', command: 'quit' });
     assert.deepEqual(parseInput('/'), { kind: 'unknown', command: '' });
+});
+
+// ── ISUPPORT and modes ────────────────────────────────────────────────────
+
+test('005 PREFIX and CHANMODES replace the defaults, and a line naming neither keeps them', () => {
+    const tokens = ['CHANTYPES=#', 'PREFIX=(ov)@+', 'CHANMODES=beI,kfL,lj,psmntirRcOAQKVCuzNSMTGZ', 'NETWORK=SwiftIRC'];
+    const read = readIsupport(DEFAULT_ISUPPORT, tokens);
+    assert.equal(read.prefixModes, 'ov');
+    assert.equal(read.prefixSymbols, '@+');
+    assert.deepEqual(read.chanModes, ['beI', 'kfL', 'lj', 'psmntirRcOAQKVCuzNSMTGZ']);
+    assert.deepEqual(readIsupport(read, ['AWAYLEN=200', 'SAFELIST']), read, 'a later 005 line with other tokens changes nothing here');
+    assert.deepEqual(DEFAULT_ISUPPORT.prefixSymbols, '~&@%+', 'and the defaults were not mutated');
+});
+
+test('a PREFIX whose letters and symbols do not pair up is ignored rather than half applied', () => {
+    const read = readIsupport(DEFAULT_ISUPPORT, ['PREFIX=(qaohv)@+']);
+    assert.equal(read.prefixModes, DEFAULT_ISUPPORT.prefixModes);
+    assert.equal(read.prefixSymbols, DEFAULT_ISUPPORT.prefixSymbols);
+});
+
+test('rank modes take a nick each, in order, across a mixed + and -', () => {
+    assert.deepEqual(modeChanges('+o-v', ['alice', 'bob'], DEFAULT_ISUPPORT), [
+        { adding: true, mode: 'o', param: 'alice' },
+        { adding: false, mode: 'v', param: 'bob' }
+    ]);
+});
+
+test('list and always modes take a parameter, a set-only mode takes one only when set, and a flag takes none', () => {
+    assert.deepEqual(modeChanges('+nkbl', ['secret', '*!*@bad', '50'], DEFAULT_ISUPPORT), [
+        { adding: true, mode: 'n', param: null },
+        { adding: true, mode: 'k', param: 'secret' },
+        { adding: true, mode: 'b', param: '*!*@bad' },
+        { adding: true, mode: 'l', param: '50' }
+    ]);
+    assert.deepEqual(
+        modeChanges('-lo', ['matt'], DEFAULT_ISUPPORT),
+        [
+            { adding: false, mode: 'l', param: null },
+            { adding: false, mode: 'o', param: 'matt' }
+        ],
+        'removing a limit takes no parameter, so the nick is not swallowed by it'
+    );
+});
+
+test('a mode line that runs out of parameters gives null rather than shifting', () => {
+    assert.deepEqual(modeChanges('+ov', ['alice'], DEFAULT_ISUPPORT), [
+        { adding: true, mode: 'o', param: 'alice' },
+        { adding: true, mode: 'v', param: null }
+    ]);
+});
+
+// ── formatting codes ──────────────────────────────────────────────────────
+
+test('bold, colour, italic, underline, reverse and reset codes are stripped, colour numbers with them', () => {
+    const c = (code: number): string => String.fromCharCode(code);
+    assert.equal(stripFormatting(`${c(3)}04,01Migrating${c(15)} channels, ${c(2)}please${c(2)} join ${c(3)}4#LostCity`), 'Migrating channels, please join #LostCity');
+    assert.equal(stripFormatting(`${c(29)}italic${c(29)} ${c(31)}under${c(31)} ${c(22)}rev${c(22)}`), 'italic under rev');
+    assert.equal(stripFormatting(`${c(4)}FF0000red${c(4)}`), 'red');
+    assert.equal(stripFormatting(`${c(3)}12,5 on 5`), ' on 5', 'a background takes its digits too');
+    assert.equal(stripFormatting(`${c(3)}, not a colour`), ', not a colour', 'a comma with no colour before it is text');
+    assert.equal(stripFormatting('plain text'), 'plain text');
 });

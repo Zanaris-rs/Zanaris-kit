@@ -12,16 +12,6 @@ import type { ReactNode } from 'react';
 /** The outline every sprite shares, as sprite art does. */
 const OUTLINE = '#3a3428';
 
-/**
- * Close a room. A filled diagonal cross on the shared outline, a sprite like
- * the links' rather than a stroked chrome glyph, because it sits among the
- * dock's own furniture beside the move control rather than in the strip.
- *
- * It fills about ten of its eighteen pixels. The other sprites run edge to
- * edge because they are pictures of things; this one is a mark, and a mark
- * drawn to the same bounds as a picture reads as heavier than everything it
- * sits beside rather than as the smallest control in the row.
- */
 /** The new-tab control. Drawn as the same thick, outlined cross the close is, turned a quarter — they are the same pair of gestures and should read as a pair. */
 export function Plus(): ReactNode {
     return (
@@ -31,6 +21,16 @@ export function Plus(): ReactNode {
     );
 }
 
+/**
+ * Close a tab: a window strip page, or a chat channel. A filled diagonal cross
+ * on the shared outline, a sprite like the links' rather than a stroked chrome
+ * glyph, so it matches the Plus beside the strip's tabs.
+ *
+ * It fills about ten of its eighteen pixels. The other sprites run edge to
+ * edge because they are pictures of things; this one is a mark, and a mark
+ * drawn to the same bounds as a picture reads as heavier than everything it
+ * sits beside rather than as the smallest control in the row.
+ */
 export function CloseRoom(): ReactNode {
     return (
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
