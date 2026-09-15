@@ -6,7 +6,7 @@ import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOS
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
-import type { PaneView, SeamView } from '../shared/panes';
+import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
 import type { ListedTimer } from './timers/defs';
 import { TimersRunner, isGameInput } from './timers/runner';
@@ -184,10 +184,12 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Puts something in a pane. A page must be one of this server's links; asking for the game moves it out of whatever pane held it. */
     setPaneContent(paneId: string, content: PaneContent): void;
     focusPane(paneId: string): void;
-    /** Trades what two panes hold, for a header dragged onto another pane. */
-    swapPanes(a: string, b: string): void;
-    /** Hides every native view for the length of a drag, so the shell can draw over their rects. */
-    setDragging(on: boolean): void;
+    /** Starts a header drag: hides every native view so the shell can draw drop targets over their rects, and answers where each drop would land. Null when the active tab has no such pane. */
+    beginPaneDrag(from: string): DropTargets | null;
+    /** Drops a dragged pane on another and ends the drag. The centre swaps the two; an edge moves the dragged pane beside the other, splitting it. */
+    dropPane(from: string, to: string, zone: DropZone): void;
+    /** Ends a drag without dropping. */
+    endPaneDrag(): void;
     /** Raises the pane menu at a point in the window. */
     showPaneMenu(paneId: string, x: number, y: number): void;
     /** Raises a pane header's dropdown — everything that pane could become — at a point in the window. */
@@ -1275,8 +1277,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         closePane,
         setPaneContent,
         focusPane: paneId => host.focus(paneId),
-        swapPanes: (a, b) => host.swap(a, b),
-        setDragging: on => host.setDragging(on),
+        beginPaneDrag: from => host.beginDrag(from),
+        dropPane: (from, to, zone) => host.drop(from, to, zone),
+        endPaneDrag: () => host.endDrag(),
         showPaneMenu,
         showPaneContentMenu,
         setSeam: (splitId, index, px) => host.dragSeam(splitId, index, px),
