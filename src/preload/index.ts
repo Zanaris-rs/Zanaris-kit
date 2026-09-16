@@ -63,6 +63,12 @@ const api: ZanarisApi = {
         openSaves: () => ipcRenderer.invoke(IPC.singlePlayerOpenSaves),
         showLog: () => ipcRenderer.invoke(IPC.singlePlayerShowLog)
     },
+    share: {
+        start: () => ipcRenderer.invoke(IPC.shareStart),
+        stop: () => ipcRenderer.invoke(IPC.shareStop),
+        copyLink: () => ipcRenderer.invoke(IPC.shareCopy),
+        openLink: () => ipcRenderer.invoke(IPC.shareOpen)
+    },
     timers: {
         start: id => ipcRenderer.invoke(IPC.timersStart, id),
         pause: id => ipcRenderer.invoke(IPC.timersPause, id),

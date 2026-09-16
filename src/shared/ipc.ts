@@ -7,6 +7,7 @@ import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
 import type { SinglePlayerView } from './singleplayer';
+import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 
 export const IPC = {
@@ -47,6 +48,10 @@ export const IPC = {
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
     singlePlayerShowLog: 'zanaris:singleplayer-show-log',
+    shareStart: 'zanaris:share-start',
+    shareStop: 'zanaris:share-stop',
+    shareCopy: 'zanaris:share-copy',
+    shareOpen: 'zanaris:share-open',
     timersStart: 'zanaris:timers-start',
     timersPause: 'zanaris:timers-pause',
     timersReset: 'zanaris:timers-reset',
@@ -117,6 +122,8 @@ export interface ShellState {
     chat: ChatView;
     /** The world this computer runs; null for every other kind of window. */
     singlePlayer: SinglePlayerView | null;
+    /** Whether that world is shared with a link; null wherever `singlePlayer` is. */
+    share: ShareView | null;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
 }
@@ -256,6 +263,15 @@ export interface ZanarisApi {
         retry(): Promise<void>;
         openSaves(): Promise<void>;
         showLog(): Promise<void>;
+    };
+    share: {
+        /** Asks first: to download cloudflared if it is not here yet, then to share. */
+        start(): Promise<void>;
+        stop(): Promise<void>;
+        /** Main copies the link it holds; the renderer never supplies one. */
+        copyLink(): Promise<void>;
+        /** Opens the link in the system browser, to see what friends see. */
+        openLink(): Promise<void>;
     };
     timers: {
         start(id: string): Promise<void>;

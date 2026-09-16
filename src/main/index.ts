@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, powerMonitor, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -25,6 +25,8 @@ import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
 import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
+import { ShareService, shareDialogs } from './share/service';
+import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 
@@ -130,6 +132,7 @@ let update: LatestRelease | null = null;
 
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
 let singlePlayer: SinglePlayerService | null = null;
+let share: ShareService | null = null;
 
 /**
  * The two menu items that belong to the focused window rather than to the app.
@@ -322,6 +325,7 @@ const windows = new ServerWindows((spec, onClosed) => {
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
             singlePlayer,
+            share,
             timers: () => {
                 const state = appState.timers();
                 return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
@@ -875,6 +879,50 @@ ipcMain.handle(IPC.singlePlayerShowLog, async () => {
     const logPath = join(singlePlayerHome(), 'world.log');
     if (!existsSync(logPath)) writeFileSync(logPath, '');
     await shell.openPath(logPath);
+});
+
+// ── sharing the single-player world ──────────────────────────────────────
+
+/** Sharing is asked for from a single-player window's panel and nowhere else. */
+function singlePlayerWindow(sender: WebContents): ServerWindow | undefined {
+    const sw = windowFor(sender);
+    return sw?.state().server.kind === 'singleplayer' ? sw : undefined;
+}
+
+ipcMain.handle(IPC.shareStart, async event => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !share || !singlePlayer || !shareAsset) return;
+    const { status } = share.view();
+    if (status !== 'off' && status !== 'failed') return;
+    const dialogs = shareDialogs({ asset: shareAsset, installed: await cloudflaredInstalled(), cheats: singlePlayer.view().cheats });
+    for (const ask of dialogs) {
+        const { response } = await dialog.showMessageBox(sw.window, {
+            type: ask.kind === 'share' ? 'warning' : 'question',
+            buttons: [ask.confirm, 'Cancel'],
+            // Letting strangers into the world is not something Return should do by accident.
+            defaultId: ask.kind === 'share' ? 1 : 0,
+            cancelId: 1,
+            message: ask.message,
+            detail: ask.detail
+        });
+        if (response !== 0) return;
+    }
+    await share.start();
+});
+
+ipcMain.handle(IPC.shareStop, async event => {
+    if (!singlePlayerWindow(event.sender) || !share) return;
+    await share.stop();
+});
+
+ipcMain.handle(IPC.shareCopy, event => {
+    const url = singlePlayerWindow(event.sender) ? share?.view().url : null;
+    if (url) clipboard.writeText(url);
+});
+
+ipcMain.handle(IPC.shareOpen, async event => {
+    const url = singlePlayerWindow(event.sender) ? share?.view().url : null;
+    if (url?.startsWith('https://')) await shell.openExternal(url);
 });
 
 // ── timers ────────────────────────────────────────────────────────────────
@@ -1431,6 +1479,19 @@ app.whenReady().then(async () => {
     singlePlayer.subscribe(() => {
         for (const sw of serverWindows.values()) if (sw.state().server.kind === 'singleplayer') sw.pushState();
     });
+    share = new ShareService(
+        shareDeps({
+            // Asked per request by the relay, so a restarted world is found on its new port.
+            worldPort: () => {
+                const view = singlePlayer?.view();
+                return view?.status === 'ready' ? view.port : null;
+            },
+            log
+        })
+    );
+    share.subscribe(() => {
+        for (const sw of serverWindows.values()) if (sw.state().server.kind === 'singleplayer') sw.pushState();
+    });
     void checkForUpdate();
 
     log('');
@@ -1473,18 +1534,25 @@ app.on('browser-window-focus', () => {
     syncMenuWindowItems();
 });
 
-/** Set once the world has been stopped for the quit, so the second quit goes through. */
+/** Set once the world and the share have been stopped for the quit, so the second quit goes through. */
 let worldStoppedForQuit = false;
 app.on('before-quit', event => {
     quitting = true;
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
+    if (worldStoppedForQuit) return;
     // The world writes the player's saves as it shuts down, so the quit waits for
     // it — bounded by the service's own ten-second grace before it kills the world.
     const status = singlePlayer?.view().status;
-    if (singlePlayer && !worldStoppedForQuit && status !== 'stopped' && status !== 'failed' && status !== undefined) {
+    const world = singlePlayer && status !== 'stopped' && status !== 'failed' && status !== undefined ? singlePlayer : null;
+    const sharing = share && share.view().status !== 'off' ? share : null;
+    if (world || sharing) {
         event.preventDefault();
-        void singlePlayer.stop().finally(() => {
+        // The link closes first, so nobody new walks into a world on its way down.
+        void (async () => {
+            await sharing?.stop();
+            await world?.stop();
+        })().finally(() => {
             worldStoppedForQuit = true;
             app.quit();
         });

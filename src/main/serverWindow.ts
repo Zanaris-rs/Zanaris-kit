@@ -6,6 +6,7 @@ import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOS
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { SinglePlayerView } from '../shared/singleplayer';
+import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
 import type { ListedTimer } from './timers/defs';
@@ -89,6 +90,13 @@ export interface SinglePlayerHandle {
     retry(): Promise<string>;
 }
 
+/** What a single-player window needs of sharing: a view to draw, and a count of the windows that can stop it. */
+export interface ShareHandle {
+    view(): ShareView;
+    acquire(): void;
+    release(): void;
+}
+
 const STATUS_WORD: Record<SinglePlayerView['status'], string> = {
     stopped: 'stopped',
     preparing: 'getting ready',
@@ -143,6 +151,8 @@ export interface ServerWindowDeps {
     probe: (host: string, port: number, timeoutMs: number) => Promise<number | null>;
     /** The world this computer runs, for a window of kind singleplayer; null otherwise. */
     singlePlayer: SinglePlayerHandle | null;
+    /** Sharing that world. Only a single-player window takes it. */
+    share: ShareHandle | null;
     /**
      * This window's clock definitions — its server's built-ins with the
      * player's edits, then the player's own — and whether the player is at
@@ -258,6 +268,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const tag = `[${spec.title}]`;
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
     const single = server.kind === 'singleplayer' ? deps.singlePlayer : null;
+    const shared = single ? deps.share : null;
     /**
      * The tools this window offers. Chat is app-scoped, so every window offers
      * it, and first: it is there whether or not the server has worlds to hop
@@ -473,6 +484,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             hiscores: deps.hiscores?.view() ?? null,
             chat: deps.chat(),
             singlePlayer: single?.view() ?? null,
+            share: shared?.view() ?? null,
             timers: { clocks: clocks.view(), customsFull }
         };
     }
@@ -1205,6 +1217,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         unsubscribeWorlds?.();
         unsubscribeSingle?.();
         single?.release();
+        shared?.release();
         onClosed();
     });
 
@@ -1219,6 +1232,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     loadShell(shellView.webContents);
 
     let unsubscribeSingle: (() => void) | null = null;
+    shared?.acquire();
     if (single) {
         // The load promise stays pending until the game itself loads, or the world fails.
         loadPromise = new Promise<LoadResult>(resolve => {
