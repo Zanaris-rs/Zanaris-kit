@@ -31,8 +31,9 @@ function binary(file: string, size: number, sha256: string): CloudflaredAsset {
 
 /*
  * The archives' digests are GitHub's. The release notes list different ones
- * for the two .tgz files — those are the digests of the binary inside, which is
- * what binarySha256 holds.
+ * for the two .tgz files: cloudflared's github_release.py unpacks a .tgz and
+ * hashes the binary inside, and github_message.py writes those hashes into the
+ * notes. binarySha256 holds them.
  */
 const WINDOWS = binary('cloudflared-windows-amd64.exe', 54_976_432, '2837888cc0f5d58f15b6dc478376de90b4d3ba5241c7947455d1e0a0df429712');
 

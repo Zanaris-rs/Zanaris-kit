@@ -186,9 +186,27 @@ logs you out and asks first.
 Your world is not a live one, and it does not pretend to be: the RuneScape
 Guide will offer to skip the tutorial, whether cheats are on or off and however
 many characters you start. That is deliberate. Nobody should have to redo the
-tutorial on their own machine to get to the game, and a world that only you can
-reach has nothing to protect by making them. What the Cheats switch controls is
-the developer commands, and only those.
+tutorial on their own machine to get to the game, and a world that only you, and
+whoever you share it with, can reach has nothing to protect by making them. What
+the Cheats switch controls is the developer commands, and only those.
+
+**Playing with friends.** The Single player tool's Play with friends section
+lets friends join that world from a browser. Share with friends downloads
+Cloudflare's tunnel program the first time — 19 to 55 MB depending on the
+system, from Cloudflare's own GitHub release, checked against a digest pinned in
+the kit — then opens a free Cloudflare quick tunnel, which needs no Cloudflare
+account, and shows a `https://<words>.trycloudflare.com/rs2.cgi` link to copy.
+The kit asks before the download and before every share. The link lasts until
+you stop sharing, close the last Single player window, or quit. Restarting the
+world, which turning cheats on or off does, keeps it: friends reload once the
+world is back. Each new share gets a new link.
+
+The link is the only lock. A world on this computer checks no passwords, so
+anyone holding the link can log in as any character, yours included, and has
+cheats whenever you have them on. The kit says so before it shares and for as
+long as it does. Friends join with the web client only. Cloudflare offers quick
+tunnels for testing, with no uptime promise and a cap of 200 requests in flight
+at once, which a ten-player world stays well under.
 
 Nothing is injected into a game page: no preload, no main-world code. The page
 that runs is byte-for-byte the page the server served. A modified client is
@@ -675,6 +693,10 @@ right-click menu's splits.
   for the run that hit it was keeping the display awake throughout, per the
   bullet above; the safeguard for reading the evidence is not trusting a
   capture's log line over its own pixels.
+- **A kit that is killed outright can leave cloudflared running.** A quit, a
+  closed window or Stop sharing ends it, and so does any exit that runs Node's
+  `exit` handlers. A `kill -9` does not, and the orphan keeps a link that only
+  answers errors, since the relay behind it is gone, until it is stopped by hand.
 
 ## Security posture
 
@@ -689,6 +711,19 @@ nothing can walk back through worlds. The preload exposes exactly the shell
 and worlds calls in `src/shared/ipc.ts`, and IPC handlers identify a window
 from `event.sender`, never from a value the renderer supplies.
 
+**Sharing** exposes one thing: a loopback relay in the main process, which
+forwards `GET`, `HEAD` and the game's websocket upgrade to the world's web port
+and refuses every other method. The world still binds loopback only, and its
+management port, which answers `POST /shutdown`, is never the relay's target.
+What makes the web port safe to expose is the `node.debug: false` the kit
+writes into `world.json`: with debug on, the engine would also serve `/data/` —
+the world's RSA key and every save — and accept writes under `/content/`.
+`src/main/share/invariants.test.ts` pins that and the loopback binds.
+cloudflared is started with `--no-autoupdate`, a `--config` file holding `{}`
+and none of its `TUNNEL_*` environment, so nothing else on the machine can
+point the tunnel somewhere else or swap the checked binary. The link itself
+is the only access control; see Playing with friends.
+
 ## Layout of the source
 
 ```
@@ -700,6 +735,7 @@ src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorl
 src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/shared/timers.ts        pure: clocks, their limits, digits and the edit form    (tested)
 src/shared/chatSettings.ts  pure: the chat Settings form, line times, rank tones    (tested)
+src/shared/share.ts         ShareView — what Play with friends draws
 src/main/paneTree.ts        pure: the split tree, its solver, splits, moves, swaps  (tested)
 src/main/paneDrop.ts        pure: what a header drop does and where the pane lands  (tested)
 src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
@@ -725,6 +761,11 @@ src/main/chat/client.ts     one IRC conversation over an injected send          
 src/main/chat/service.ts    the app's one connection: socket, backoff, settings     (tested)
 src/main/chat/secret.ts     sealing the NickServ password with the OS store         (tested)
 src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
+src/main/share/cloudflared.ts  the pinned cloudflared: download, check, unpack       (tested)
+src/main/share/quickTunnel.ts  a quick tunnel: its arguments, its log, the retry     (tested)
+src/main/share/relay.ts     loopback relay: GET, HEAD and the websocket to the world (tested)
+src/main/share/service.ts   the one share, and what to ask before it                (tested)
+src/main/share/electron.ts  cloudflared's folder, net.fetch, killing it at exit
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
 src/main/menu.ts            application menu: new windows, the server list, the pane
                             gestures, the switch warning
@@ -741,6 +782,7 @@ src/renderer/tools/Worlds.tsx
 src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
 src/renderer/tools/ChatUsers.tsx     a channel's users by rank, and its modes and age
+src/renderer/tools/ShareWorld.tsx    Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
 static/offline.html         shown when a server can't be reached
 static/sounds/alert.wav     every timer's alert: Kenney's confirmation_002 (CC0), louder
