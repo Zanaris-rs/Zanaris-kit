@@ -184,9 +184,9 @@ export class IrcClient {
     }
 
     /** Says goodbye, for a disconnect the user asked for. Only a registered connection has anyone to say it to. */
-    quit(): void {
+    quit(reason = ''): void {
         if (this.status !== 'online' && this.status !== 'registering') return;
-        this.opts.send(formatCommand('QUIT', [REALNAME]));
+        this.opts.send(formatCommand('QUIT', [reason === '' ? REALNAME : reason]));
     }
 
     /**
@@ -626,6 +626,11 @@ export class IrcClient {
                 this.part(channel);
                 return;
             }
+            case 'quit':
+                // Only the goodbye: ChatService reads /quit before it gets here and
+                // disconnects around it, which is what stops the reconnect.
+                this.quit(typed.reason);
+                return;
             case 'raw':
                 // Not echoed: this client does not know what the command meant, so
                 // it has nothing to say about it that the server's own answer does

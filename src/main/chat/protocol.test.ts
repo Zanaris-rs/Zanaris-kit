@@ -166,6 +166,12 @@ test('a slash command this client has no reading of its own for is one for the s
     assert.deepEqual(parseInput('/TOPIC #LostHQ :hello there'), { kind: 'raw', command: 'topic', args: '#LostHQ :hello there' }, 'the arguments are the user\'s, colon included');
 });
 
+test('/quit is read here, with its reason as the trailing text it will be sent as', () => {
+    assert.deepEqual(parseInput('/quit'), { kind: 'quit', reason: '' });
+    assert.deepEqual(parseInput('/QUIT gone fishing'), { kind: 'quit', reason: 'gone fishing' });
+    assert.deepEqual(parseInput('/quit :gone fishing'), { kind: 'quit', reason: 'gone fishing' }, 'a colon typed out of IRC habit is not part of the reason');
+});
+
 test('something that is not a command at all is refused here rather than sent as one', () => {
     assert.deepEqual(parseInput('/'), { kind: 'unknown', command: '' });
     assert.deepEqual(parseInput('/123 go'), { kind: 'unknown', command: '123' });

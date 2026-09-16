@@ -243,8 +243,12 @@ lands in Status. Arguments are IRC's own, so a trailing parameter needs its
 colon. A slash naming something that is not a command — `/123`, `/?` — is still
 refused locally, since the server could only answer it with a 421.
 
-Known edge: `/quit` really does quit, and the kit then reconnects, because
-Disconnect is what tells it to stay offline.
+`/quit [reason]` was then mapped to Disconnect, at the owner's request. A plain
+QUIT dropped the connection the way a network fault does, and the kit
+reconnected behind it. `ChatService.send` reads it before the client and calls
+`disconnect(reason)`. Connect, Disconnect and `/quit` all report through
+`ChatStart.onConnectionWanted`, which `index.ts` turns into `chat.autoConnect`;
+`stop()`, for the app quitting, does not.
 
 ## Out of scope
 

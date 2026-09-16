@@ -256,9 +256,10 @@ mean.
 The first time you open chat it opens on Settings, because there is nothing
 sensible to default a nick to, and a name others see should be chosen rather
 than assigned. Nothing connects until you pick one, which is also why an
-unattended capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join` and
-`/part` are the kit's own: they change what it draws, so it has to understand
-them. Every other slash command goes to the server as typed — `/invite bob
+unattended capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join`,
+`/part` and `/quit` are the kit's own: they change what it draws, so it has to
+understand them. `/quit [reason]` is the Disconnect button, remembered the same
+way, rather than a dropped connection the kit would reconnect behind. Every other slash command goes to the server as typed — `/invite bob
 #LostHQ`, `/whois`, `/mode`, `/kick` — in IRC's own argument order, colons and
 all, so `/topic #LostHQ :hello there` needs its colon or the server keeps only
 the first word. The answer comes back in Status, including the complaint when

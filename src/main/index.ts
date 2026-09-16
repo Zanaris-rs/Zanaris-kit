@@ -798,18 +798,14 @@ ipcMain.handle(IPC.chatSaveSettings, (_event, input: unknown): string | null => 
     return null;
 });
 
-/** Connect, and connect on the next launch too. */
+/** Connect, and connect on the next launch too — the service tells `appState` so. */
 ipcMain.handle(IPC.chatConnect, () => {
-    if (chat === null) return;
-    appState.setChat({ autoConnect: true });
-    chat.connect();
+    chat?.connect();
 });
 
-/** Disconnect, and stay offline on the next launch until Connect. */
+/** Disconnect, and stay offline on the next launch until Connect — the service tells `appState` so. */
 ipcMain.handle(IPC.chatDisconnect, () => {
-    if (chat === null) return;
-    appState.setChat({ autoConnect: false });
-    chat.disconnect();
+    chat?.disconnect();
 });
 
 // ── single player ─────────────────────────────────────────────────────────
@@ -1406,7 +1402,9 @@ app.whenReady().then(async () => {
         {
             ...appState.chat(),
             password: openSecret(appState.sealedNickserv(), safeStorage, process.platform),
-            canSavePassword: canSeal(safeStorage, process.platform)
+            canSavePassword: canSeal(safeStorage, process.platform),
+            // Connect, Disconnect and /quit all land here, so the next launch does what the user last asked.
+            onConnectionWanted: wanted => appState.setChat({ autoConnect: wanted })
         },
         {
             connect: tlsConnect,

@@ -699,14 +699,17 @@ test('rename does nothing on a live connection, where the server has to agree to
     assert.deepEqual(f.sent, []);
 });
 
-test('quit says goodbye only to a server that is listening', () => {
+test('quit says goodbye only to a server that is listening, with the reason given or the kit\'s own', () => {
     const offline = fake();
     offline.client.quit();
+    offline.client.input('/quit bye');
     assert.deepEqual(offline.sent, []);
 
     const f = online();
     f.client.quit();
-    assert.deepEqual(f.sent, ['QUIT :Zanaris Kit']);
+    f.client.quit('gone fishing');
+    f.client.input('/quit bye');
+    assert.deepEqual(f.sent, ['QUIT :Zanaris Kit', 'QUIT :gone fishing', 'QUIT bye']);
 });
 
 // ── what the review found ─────────────────────────────────────────────────

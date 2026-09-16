@@ -553,6 +553,50 @@ test('a reconnect keeps the conversation rather than starting a new one', () => 
     );
 });
 
+test('/quit is a disconnect: goodbye with the reason, no retry, and remembered like the button', () => {
+    const f = fake();
+    const wanted: boolean[] = [];
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', onConnectionWanted: on => wanted.push(on) }, f.io);
+    f.register();
+    f.sent.length = 0;
+
+    service.send('/quit gone fishing');
+    assert.deepEqual(f.sent, ['QUIT :gone fishing']);
+    assert.equal(f.closes, 1);
+    assert.equal(service.view().status, 'offline');
+    assert.deepEqual(wanted, [false]);
+
+    f.drop('closed by us');
+    assert.deepEqual(f.timers.filter(t => !t.cancelled), [], 'the server closing behind the QUIT brings nothing back');
+    assert.equal(f.connects.length, 1);
+});
+
+test('/quit while offline is still a disconnect, so a waiting retry stops and the next launch stays offline', () => {
+    const f = fake();
+    const wanted: boolean[] = [];
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', onConnectionWanted: on => wanted.push(on) }, f.io);
+    f.register();
+    f.drop();
+    f.sent.length = 0;
+
+    service.send('/quit');
+    assert.deepEqual(f.sent, [], 'no socket to say goodbye on');
+    assert.deepEqual(f.timers.filter(t => !t.cancelled), []);
+    assert.deepEqual(wanted, [false]);
+});
+
+test('connect and disconnect say whether a connection is wanted; stop, for the app quitting, does not', () => {
+    const f = fake();
+    const wanted: boolean[] = [];
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoConnect: false, onConnectionWanted: on => wanted.push(on) }, f.io);
+    service.connect();
+    f.register();
+    service.disconnect();
+    service.connect();
+    service.stop();
+    assert.deepEqual(wanted, [true, false, true], 'quitting the app while connected must reconnect on the next launch');
+});
+
 test('stop says goodbye, closes the socket and does not reconnect', () => {
     const f = fake();
     const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);

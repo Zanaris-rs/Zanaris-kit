@@ -126,7 +126,13 @@ belong to strangers. If it turns out to be someone else's channel, change the
 default rather than adding a special case.
 
 **Disconnect is persisted** as `chat.autoConnect: false`, so launch stays
-offline until Connect. `ChatService.stop()` (quit) must not touch it.
+offline until Connect. Connect, Disconnect and a typed `/quit` report through
+`ChatStart.onConnectionWanted`, the one writer of that flag.
+`ChatService.stop()`, for the app quitting, must not call it.
+
+**Typed commands:** `/me /msg /nick /join /part /quit` are read by the kit.
+Everything else goes to the server as typed (`Input` kind `raw`), and the reply
+lands in Status.
 
 Chat connects to **SwiftIRC** (`irc.swiftirc.net:6697`, TLS, confirmed by
 handshake against its Let's Encrypt certificate), not Libera. That is where

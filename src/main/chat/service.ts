@@ -1,7 +1,7 @@
 import { connect } from 'node:tls';
 import { DEFAULT_AUTO_JOIN, SERVER_LOG, type ChatSettings, type ChatSettingsView, type ChatView } from '../../shared/chat.ts';
 import { backoffDelay, IrcClient } from './client.ts';
-import { isChannel, sameName } from './protocol.ts';
+import { isChannel, parseInput, sameName } from './protocol.ts';
 
 /**
  * The app's one chat connection.
@@ -68,6 +68,12 @@ export interface ChatStart extends ChatSettings {
     password: string | null;
     /** Whether a password given now would be saved; the Settings tab says so when it would not. */
     canSavePassword: boolean;
+    /**
+     * Told when the user asks for a connection or asks to be rid of one — Connect,
+     * Disconnect, or /quit — so the next launch can do the same. Not told when
+     * the app quits: a kit closed while connected should connect again.
+     */
+    onConnectionWanted?: (wanted: boolean) => void;
 }
 
 /** One save from the Settings tab, already checked by `readSettingsDraft`. */
@@ -83,6 +89,7 @@ export class ChatService {
     private readonly host: string;
     private readonly port: number;
     private readonly canSavePassword: boolean;
+    private readonly onConnectionWanted: (wanted: boolean) => void;
     private nick: string | null;
     private autoJoin: string[];
     private password: string | null;
@@ -110,6 +117,7 @@ export class ChatService {
         this.host = start.server;
         this.port = start.port;
         this.canSavePassword = start.canSavePassword;
+        this.onConnectionWanted = start.onConnectionWanted ?? (() => {});
         this.nick = start.nick === '' ? null : start.nick;
         this.autoJoin = [...start.autoJoin];
         this.password = start.password;
@@ -152,6 +160,7 @@ export class ChatService {
     connect(): void {
         if (this.nick === null) return;
         this.stopped = false;
+        this.onConnectionWanted(true);
         if (this.client !== null) for (const channel of this.autoJoin) this.client.join(channel);
         if (this.socket !== null) {
             // Already up, or on its way: the joins above are all there was to do.
@@ -163,9 +172,10 @@ export class ChatService {
         this.open();
     }
 
-    /** Disconnect, from the Settings tab. The tabs and their logs stay to be read. */
-    disconnect(): void {
-        this.hangUp();
+    /** Disconnect, from the Settings tab or /quit. The tabs and their logs stay to be read. */
+    disconnect(reason = ''): void {
+        this.onConnectionWanted(false);
+        this.hangUp(reason);
     }
 
     /**
@@ -206,9 +216,19 @@ export class ChatService {
         this.emit();
     }
 
-    /** One typed line. Text beginning with / is a command; the client decides what it means. */
+    /**
+     * One typed line. Text beginning with / is a command, and the client
+     * decides what it means — except /quit, which is a disconnect. Sent as a
+     * plain QUIT it would drop the connection the way a network fault does, and
+     * the kit would reconnect behind it.
+     */
     send(text: string): void {
         if (this.client === null) return;
+        const typed = parseInput(text);
+        if (typed?.kind === 'quit') {
+            this.disconnect(typed.reason);
+            return;
+        }
         this.client.input(text);
         this.emit();
     }
@@ -245,10 +265,10 @@ export class ChatService {
      * it back. The QUIT goes out before the close, while there is still a
      * socket to write it to.
      */
-    private hangUp(): void {
+    private hangUp(reason = ''): void {
         this.stopped = true;
         this.cancel();
-        if (this.socket !== null) this.client?.quit();
+        if (this.socket !== null) this.client?.quit(reason);
         this.generation++;
         this.socket?.close();
         this.socket = null;

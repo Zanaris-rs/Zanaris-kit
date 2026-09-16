@@ -201,6 +201,8 @@ export type Input =
     | { kind: 'nick'; nick: string }
     | { kind: 'join'; channel: string }
     | { kind: 'part'; channel: string }
+    /** Leave the network. ChatService reads it as Disconnect, so the kit does not reconnect behind it. */
+    | { kind: 'quit'; reason: string }
     /** A command for the server, as typed: this client has no reading of its own for it. */
     | { kind: 'raw'; command: string; args: string }
     | { kind: 'unknown'; command: string };
@@ -239,11 +241,14 @@ export function parseInput(text: string): Input | null {
         case 'part':
             // No channel means the active one, which only the client knows.
             return { kind: 'part', channel: first === '' ? '' : asChannel(first) };
+        case 'quit':
+            // The reason is sent as trailing text, so a colon typed out of IRC habit is not part of it.
+            return { kind: 'quit', reason: args.replace(/^:/, '') };
         default:
             /*
-             * Everything else is the server's. The five above are here because
-             * the client has to know what they did — a join opens a tab, a part
-             * closes one, /me is a message. INVITE, TOPIC, WHOIS, KICK, MODE and
+             * Everything else is the server's. The commands above are here
+             * because the client has to know what they did — a join opens a tab,
+             * a part closes one, /me is a message, a quit is a disconnect. INVITE, TOPIC, WHOIS, KICK, MODE and
              * the rest change nothing this client tracks, so passing them on is
              * both less code and more commands than a list could hold: the answer
              * comes back from the server and lands in Status like any other.
