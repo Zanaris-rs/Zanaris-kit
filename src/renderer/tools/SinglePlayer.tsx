@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { SinglePlayerView } from '../../shared/singleplayer';
+import type { ShareView } from '../../shared/share';
+import ShareWorld from './ShareWorld';
 
 const STATUS: Record<SinglePlayerView['status'], string> = {
     stopped: 'Stopped',
@@ -19,8 +21,8 @@ const MUTED: CSSProperties = { color: 'var(--color-dim)' };
 /* A control the world is currently busy with: spent, since .btn:disabled paints nothing of its own. */
 const SPENT: CSSProperties = { color: 'var(--color-faint)' };
 
-/** The Single player tool: what the world is doing, the cheats switch, and where its files are. */
-export default function SinglePlayer({ view }: { view: SinglePlayerView }): ReactNode {
+/** The Single player tool: what the world is doing, the cheats switch, sharing it, and where its files are. */
+export default function SinglePlayer({ view, share }: { view: SinglePlayerView; share: ShareView | null }): ReactNode {
     const busy = view.status === 'preparing' || view.status === 'starting' || view.status === 'stopping';
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
     return (
@@ -67,6 +69,8 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
                  */}
                 <p className="mt-2 text-[12px] text-dim">Your own world, not a live one. The guide will offer to skip the tutorial, however many characters you start.</p>
             </div>
+
+            {share && <ShareWorld view={share} worldReady={view.status === 'ready'} />}
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
             <div className="mt-auto flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-1.5">

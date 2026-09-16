@@ -60,7 +60,7 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
                 case 'hiscores':
                     return state.hiscores ? <Hiscores view={state.hiscores} /> : null;
                 case 'singleplayer':
-                    return state.singlePlayer ? <SinglePlayer view={state.singlePlayer} /> : null;
+                    return state.singlePlayer ? <SinglePlayer view={state.singlePlayer} share={state.share} /> : null;
                 case 'timers':
                     return <Timers view={state.timers} />;
             }
