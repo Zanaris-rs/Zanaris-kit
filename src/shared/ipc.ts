@@ -128,7 +128,7 @@ export interface ZanarisApi {
         onState(cb: (state: ShellState) => void): () => void;
     };
     chat: {
-        /** Sends a line. Text beginning with / is a command: /me, /msg, /nick, /join, /part. */
+        /** Sends a line. Text beginning with / is a command: /me, /msg, /nick, /join and /part are read here, and anything else goes to the server as typed. */
         send(text: string): Promise<void>;
         /** Shows a channel in the panel and marks it read. */
         select(channel: string): Promise<void>;

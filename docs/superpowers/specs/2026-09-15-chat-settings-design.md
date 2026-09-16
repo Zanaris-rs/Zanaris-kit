@@ -233,6 +233,19 @@ The pane was checked in a gitignored harness (`.superpowers/harness/chat.html`)
 at 765px and 320px, including first run. That covered validation, save then
 connect, closing a tab, the users toggle and the Settings button states.
 
+## Follow-up, 2026-09-16
+
+`/invite` did nothing: `parseInput` read five commands and answered everything
+else with "unknown command", which was the chat-dock design's rule. The owner
+chose pass-through with no per-command helpers, so an unknown command now goes
+to the server as typed, with only its name uppercased, and the server's answer
+lands in Status. Arguments are IRC's own, so a trailing parameter needs its
+colon. A slash naming something that is not a command — `/123`, `/?` — is still
+refused locally, since the server could only answer it with a 421.
+
+Known edge: `/quit` really does quit, and the kit then reconnects, because
+Disconnect is what tells it to stay offline.
+
 ## Out of scope
 
 - Private-message tabs.

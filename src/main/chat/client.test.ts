@@ -392,11 +392,29 @@ test('a channel wanted while offline is joined on the next 001', () => {
     assert.deepEqual(f.sent, ['JOIN #04scape']);
 });
 
-test('an unknown command is answered in the log, not on the wire', () => {
+test('a command this client does not read itself goes to the server as typed, uppercased', () => {
     const f = online();
-    f.client.input('/frobnicate the widget');
+    f.client.input('/invite bob #LostHQ');
+    f.client.input('/whois bob');
+    f.client.input('/topic #04scape :hello there');
+    f.client.input('/away');
+    assert.deepEqual(f.sent, ['INVITE bob #LostHQ', 'WHOIS bob', 'TOPIC #04scape :hello there', 'AWAY']);
+    assert.deepEqual(f.lines(), [], 'the server answers in Status; the client does not echo what it does not understand');
+});
+
+test('a passed-through command while not connected says so instead of being dropped silently', () => {
+    const f = fake();
+    f.client.input('/invite bob #04scape');
     assert.deepEqual(f.sent, []);
-    assert.match(f.lines().at(-1)?.text ?? '', /frobnicate/);
+    assert.equal(f.lines().at(-1)?.kind, 'system');
+    assert.match(f.lines().at(-1)?.text ?? '', /not connected/);
+});
+
+test('a slash that names no command is answered in the log, not on the wire', () => {
+    const f = online();
+    f.client.input('/123 go');
+    assert.deepEqual(f.sent, []);
+    assert.match(f.lines().at(-1)?.text ?? '', /123/);
     assert.equal(f.lines().at(-1)?.kind, 'system');
 });
 

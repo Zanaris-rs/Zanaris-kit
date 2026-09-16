@@ -201,7 +201,12 @@ export type Input =
     | { kind: 'nick'; nick: string }
     | { kind: 'join'; channel: string }
     | { kind: 'part'; channel: string }
+    /** A command for the server, as typed: this client has no reading of its own for it. */
+    | { kind: 'raw'; command: string; args: string }
     | { kind: 'unknown'; command: string };
+
+/** A command is letters. Anything else — "/123", "/?" — is a typo, and typing it at the server would only earn a 421. */
+const COMMAND_WORD = /^[A-Za-z]+$/;
 
 /**
  * Reads one typed line. Null means there is nothing to do — an empty line, or
@@ -235,6 +240,18 @@ export function parseInput(text: string): Input | null {
             // No channel means the active one, which only the client knows.
             return { kind: 'part', channel: first === '' ? '' : asChannel(first) };
         default:
-            return { kind: 'unknown', command };
+            /*
+             * Everything else is the server's. The five above are here because
+             * the client has to know what they did — a join opens a tab, a part
+             * closes one, /me is a message. INVITE, TOPIC, WHOIS, KICK, MODE and
+             * the rest change nothing this client tracks, so passing them on is
+             * both less code and more commands than a list could hold: the answer
+             * comes back from the server and lands in Status like any other.
+             *
+             * The arguments go as typed, IRC's own order and its own colon rules
+             * included, since guessing where a trailing parameter starts is the
+             * client-side reading this deliberately does not do.
+             */
+            return COMMAND_WORD.test(command) ? { kind: 'raw', command, args } : { kind: 'unknown', command };
     }
 }

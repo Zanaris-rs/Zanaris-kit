@@ -257,7 +257,13 @@ The first time you open chat it opens on Settings, because there is nothing
 sensible to default a nick to, and a name others see should be chosen rather
 than assigned. Nothing connects until you pick one, which is also why an
 unattended capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join` and
-`/part` work, and an unrecognised slash command is refused rather than sent.
+`/part` are the kit's own: they change what it draws, so it has to understand
+them. Every other slash command goes to the server as typed — `/invite bob
+#LostHQ`, `/whois`, `/mode`, `/kick` — in IRC's own argument order, colons and
+all, so `/topic #LostHQ :hello there` needs its colon or the server keeps only
+the first word. The answer comes back in Status, including the complaint when
+the command was a typo. A slash followed by something that is not a command at
+all, like `/123`, is still refused here rather than sent.
 
 The protocol layer is hand-written and tested rather than a dependency: a
 parser and serializer for the commands and numerics this needs, including the

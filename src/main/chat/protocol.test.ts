@@ -160,9 +160,16 @@ test('/part may name a channel or leave it to the client', () => {
     assert.deepEqual(parseInput('/part'), { kind: 'part', channel: '' }, 'the caller parts the active channel');
 });
 
-test('an unrecognised slash command reports itself rather than going on the wire', () => {
-    assert.deepEqual(parseInput('/quit now'), { kind: 'unknown', command: 'quit' });
+test('a slash command this client has no reading of its own for is one for the server', () => {
+    assert.deepEqual(parseInput('/invite bob #LostHQ'), { kind: 'raw', command: 'invite', args: 'bob #LostHQ' });
+    assert.deepEqual(parseInput('/away'), { kind: 'raw', command: 'away', args: '' });
+    assert.deepEqual(parseInput('/TOPIC #LostHQ :hello there'), { kind: 'raw', command: 'topic', args: '#LostHQ :hello there' }, 'the arguments are the user\'s, colon included');
+});
+
+test('something that is not a command at all is refused here rather than sent as one', () => {
     assert.deepEqual(parseInput('/'), { kind: 'unknown', command: '' });
+    assert.deepEqual(parseInput('/123 go'), { kind: 'unknown', command: '123' });
+    assert.deepEqual(parseInput('/!? x'), { kind: 'unknown', command: '!?' });
 });
 
 // ── ISUPPORT and modes ────────────────────────────────────────────────────

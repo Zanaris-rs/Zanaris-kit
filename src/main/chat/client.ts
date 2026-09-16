@@ -626,6 +626,14 @@ export class IrcClient {
                 this.part(channel);
                 return;
             }
+            case 'raw':
+                // Not echoed: this client does not know what the command meant, so
+                // it has nothing to say about it that the server's own answer does
+                // not say better — and a password typed into one is never written
+                // into the log by the way out.
+                if (!this.online(this.activeName)) return;
+                this.opts.send(typed.args === '' ? typed.command.toUpperCase() : `${typed.command.toUpperCase()} ${typed.args}`);
+                return;
             case 'unknown':
                 this.push(this.activeName, 'system', null, `unknown command: /${typed.command}`);
                 return;
