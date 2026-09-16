@@ -87,30 +87,62 @@ list of rects and draws it; it does not know what a fraction is.
 
 ## Chat and IRC
 
-Hand-written IRC over raw TLS (`node:tls`), no library, no WebSocket. Registration
-is two lines — `NICK` and `USER` (`src/main/chat/client.ts:104-109`) — with **no
-`PASS`, no SASL and no NickServ identify**; `ChatSettings` cannot hold a password.
-Host and port are captured `readonly` at construction, so changing them needs an
-app restart, and there is no UI for them.
+Hand-written IRC over raw TLS (`node:tls`), no library, no WebSocket.
+
+- **Registration** is `CAP REQ multi-prefix`, `NICK` and `USER`, with `CAP END` on
+  the answer. There is no `PASS` and no SASL.
+- **A saved NickServ password** goes out on `001`, before the JOINs, as
+  `PRIVMSG NickServ :IDENTIFY <account> <pass>` (`IrcClient.identify`). The
+  account is the nick saved in Settings. Keep the two-word form: the bare one
+  identifies whatever nick the connection holds (`matt_` after a 433), and
+  services split a password with a space in it into account and password.
+- **Host and port** are captured `readonly` at construction, so changing them
+  needs an app restart, and there is no UI for them.
+- **`tlsConnect.send` refuses** any line holding CR, LF or NUL.
+
+**The password never enters a log line or the renderer.** `identify()` writes
+straight to `send` and never through `push()`. `ChatView.settings` carries only
+`hasPassword`. `state.json` holds it sealed by `safeStorage` (`chat/secret.ts`),
+and `basic_text` on Linux counts as no store. Keep all three true: a debug line
+that logs `sent`, or a view field that echoes the password, is a leak.
+
+**Settings is the only writer of chat's saved nick and auto-join list.**
+Nothing learnt from the connection is saved. `chatPersist.ts`, which used to
+learn the nick from the view, is gone. A services rename to `Guest12345`
+saved as the nick would have been the next launch's nick.
+`ChatSettingsView.nick` is the saved nick and `ChatView.nick` is the
+connection's; the form shows the first.
+
+**Channels come from the auto-join list and nowhere else.** The list defaults to
+`#2004scape, #LostHQ, #Zanaris`, is edited only in the Settings tab, and is joined
+again on every Connect. Closing a tab or typing `/join` lasts for the session and
+never writes the list. The old always-joined lobby and the per-window
+`#LostCity` rule (`chat/channels.ts`, `setServers`) were removed on the owner's
+call on 2026-09-15; don't bring back rooms that follow windows.
+
+`#Zanaris` is in the defaults because the owner asked for it. The kit used to
+avoid guessing a Zanaris room, since on a large public network the name could
+belong to strangers. If it turns out to be someone else's channel, change the
+default rather than adding a special case.
+
+**Disconnect is persisted** as `chat.autoConnect: false`, so launch stays
+offline until Connect. Connect, Disconnect and a typed `/quit` report through
+`ChatStart.onConnectionWanted`, the one writer of that flag.
+`ChatService.stop()`, for the app quitting, must not call it.
+
+**Typed commands:** `/me /msg /nick /join /part /quit` are read by the kit.
+Everything else goes to the server as typed (`Input` kind `raw`), and the reply
+lands in Status.
 
 Chat connects to **SwiftIRC** (`irc.swiftirc.net:6697`, TLS, confirmed by
-handshake against its Let's Encrypt certificate), not Libera — this is where
-LostHQ's actual community is, in `#LostHQ` (the always-joined lobby) and
-`#LostCity` (joined while a Lost City window is open). The existing `tlsConnect`
-reaches it unchanged; no WebSocket transport was needed.
+handshake against its Let's Encrypt certificate), not Libera. That is where
+LostHQ's actual community is.
 
 - **`https://irc.losthq.rs/` is a web client, not a server.** Only 443 is open on
   that host. Its own defaults are `wss://irc.swiftirc.net:4443/`, joining
-  `#LostCity` and `#LostHQ` — the same two rooms this app's raw-TLS client joins
-  directly.
+  `#LostCity` and `#LostHQ`, rooms this app's raw-TLS client reaches directly.
 - LostHQ's NickServ pass is **optional**, so those rooms are not
-  registered-only and the missing password support does not block joining.
-- **Zanaris and Labs get no channel.** There is no room for either on SwiftIRC,
-  and `chat/channels.ts` deliberately maps them to nothing rather than guessing
-  one — a speculative `#Zanaris` would very likely be somebody else's channel on
-  a large public network. Having no room is the safe failure; having the wrong
-  room is not. The old `#04scape-` prefix served the same purpose on Libera and
-  is gone along with it; it is not a convention worth reinventing here.
+  registered-only.
 
 ## No migrations needed — for now
 

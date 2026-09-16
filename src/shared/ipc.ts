@@ -2,6 +2,7 @@
 import type { ServerDef } from './catalog';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatView } from './chat';
+import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
@@ -39,7 +40,9 @@ export const IPC = {
     chatSend: 'zanaris:chat-send',
     chatSelect: 'zanaris:chat-select',
     chatCloseRoom: 'zanaris:chat-close-room',
-    chatSetNick: 'zanaris:chat-set-nick',
+    chatSaveSettings: 'zanaris:chat-save-settings',
+    chatConnect: 'zanaris:chat-connect',
+    chatDisconnect: 'zanaris:chat-disconnect',
     singlePlayerSetCheats: 'zanaris:singleplayer-set-cheats',
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
@@ -125,21 +128,26 @@ export interface ZanarisApi {
         onState(cb: (state: ShellState) => void): () => void;
     };
     chat: {
-        /** Sends a line. Text beginning with / is a command: /me, /msg, /nick, /join, /part. */
+        /** Sends a line. Text beginning with / is a command: /me, /msg, /nick, /join and /part are read here, and anything else goes to the server as typed. */
         send(text: string): Promise<void>;
         /** Shows a channel in the panel and marks it read. */
         select(channel: string): Promise<void>;
         /**
-         * Leaves a room the user joined by hand, and forgets it, so it does not
-         * come back on the next launch. Main refuses anything else: a
-         * per-server room would be rejoined by the next window that wants it,
-         * and the lobby would not come back at all, since nothing puts it back
-         * into the set the client rejoins. Neither is the user's to close from
-         * here.
+         * Leaves a channel for the rest of the session. The saved auto-join
+         * list is not touched, so an auto-join channel comes back on the next
+         * connect. Main refuses Status, which is not a channel.
          */
         closeRoom(channel: string): Promise<void>;
-        /** Chooses the nick and connects. */
-        setNick(nick: string): Promise<void>;
+        /**
+         * Saves the Settings form and applies what it can to the connection as
+         * it is. Resolves to null when saved, or to why it was refused — main
+         * checks the form again, whatever the shell already checked.
+         */
+        saveSettings(save: SettingsSave): Promise<string | null>;
+        /** Connects with the saved settings, and remembers to connect on the next launch. */
+        connect(): Promise<void>;
+        /** Says goodbye and stays offline, this launch and the next, until connect. */
+        disconnect(): Promise<void>;
     };
     worlds: {
         refresh(): Promise<void>;

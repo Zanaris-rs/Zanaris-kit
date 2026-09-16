@@ -1,7 +1,10 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react';
 import { SERVER_LOG, type ChatLine, type ChatStatus, type ChatView, type ViewChannel } from '../../shared/chat';
-import { CloseRoom } from '../icons';
+import { clockTime, isConnectionWanted } from '../../shared/chatSettings';
 import Tab from '../tab';
+import ChatSettings from './ChatSettings';
+import ChatUsers from './ChatUsers';
+import { nickColour } from './nickColour';
 
 /*
  * .btn and .sunk are hand-written CSS carrying colour and padding, so the few
@@ -9,48 +12,11 @@ import Tab from '../tab';
  * specificity would be settled by stylesheet order rather than by intent — and
  * unlayered CSS beats Tailwind's layered utilities outright.
  */
-
-/** A channel chip sits tighter than a full button, as the design draws them. */
-const CHIP: CSSProperties = { padding: '2px 10px' };
-const CHIP_QUIET: CSSProperties = { ...CHIP, color: 'var(--color-dim)' };
-
-/*
- * A room and whatever belongs to it are one item of the row. In the dock that
- * keeps a close reading as part of its room rather than as another piece of
- * the row's furniture; in the panel, whose chips wrap, it stops a wrap landing
- * a close on the next line from the room it would close. The 2px inside is
- * tighter than either row's own gap — 5px in the dock, 6px in the panel — so
- * the pair groups against the rhythm of the rooms around it.
- *
- * Deliberately no `min-w-0`: the slot keeps the content-based shrink floor
- * flex gives by default, which is the floor each Tab had while it was a direct
- * child of the row. Zeroing it would let a crowded dock squeeze a room away
- * entirely, which is a new behaviour rather than the preserved one.
- */
-const ROOM_SLOT = 'flex items-center gap-[2px]';
-
-/**
- * Nick colours, so a conversation can be followed by shape instead of by
- * reading every name. The palette is the era's chat set — pale blue, pink,
- * tan, green, purple, cyan — and a nick is hashed into it rather than dealt
- * one on arrival, so a person keeps their colour across restarts and looks the
- * same in every window. Your own nick is gold instead: the one voice you
- * always want to find in the log.
- */
-const NICK_COLOURS = ['#9db8c3', '#faa8aa', '#c8a86a', '#90c040', '#c503fd', '#6fc9d8'];
-
-function nickColour(nick: string, self: string | null): string {
-    /* IRC nicks are case-insensitive, so Kev and kev are one person and one colour. */
-    const name = nick.toLowerCase();
-    if (self !== null && name === self.toLowerCase()) return 'var(--color-gold)';
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-    return NICK_COLOURS[hash % NICK_COLOURS.length] ?? '#9db8c3';
-}
+const QUIET_SIZE: CSSProperties = { fontSize: 13, padding: '0 8px' };
 
 /** Plain words, not a state name: what is true right now and whether to wait. */
 const STATUS_NOTE: Record<ChatStatus, string | null> = {
-    offline: 'Not connected, so nothing is arriving.',
+    offline: 'Not connected. Connect from Settings.',
     connecting: 'Connecting to chat…',
     registering: 'Signing in…',
     online: null,
@@ -62,9 +28,10 @@ const STATUS_NOTE: Record<ChatStatus, string | null> = {
  * region is always in the tree so a change to it is announced rather than
  * appearing silently; it collapses when there is nothing to say.
  */
-function Status({ view }: { view: ChatView }): ReactNode {
-    /* Before a nick exists, offline is the state you are always in, not news — showing it here would read as a fault. A real error still gets through. */
-    const note = view.needsNick && view.status === 'offline' ? null : STATUS_NOTE[view.status];
+function Status({ view, onSettings }: { view: ChatView; onSettings: boolean }): ReactNode {
+    /* On Settings, "connect from Settings" is the button under the reader's hand; before a nick exists, offline is not news either. A real error still gets through. */
+    const quiet = view.status === 'offline' && (onSettings || view.needsNick);
+    const note = quiet ? null : STATUS_NOTE[view.status];
     return (
         <div aria-live="polite" className="px-2.5 pb-1.5 text-[12px] empty:hidden">
             {note !== null && <p className="text-dim">{note}</p>}
@@ -74,48 +41,27 @@ function Status({ view }: { view: ChatView }): ReactNode {
 }
 
 function channelLabel(name: string): string {
-    if (name === SERVER_LOG) return 'server';
-    return name;
+    return name === SERVER_LOG ? 'Status' : name;
 }
 
-/*
- * The open room says which it is differently in the two views — `aria-current`
- * on the dock's tabs, `aria-pressed` on the panel's chips — and the restore
- * below has to find whichever one it is looking at.
- */
-const OPEN_ROOM = '[aria-current="true"],[aria-pressed="true"]';
+/** The open tab carries `aria-current`, which is what the focus restore below looks for. */
+const OPEN_TAB = '[aria-current="true"]';
 
 /**
- * Puts the keyboard back somewhere after a room closes.
+ * Puts the keyboard back somewhere after a channel closes.
  *
- * Closing is the only destructive control in the row, and pressing it takes its
- * own button out of the tree, so focus falls to the document body. The log
- * swaps to the server log in the same moment, because the client hands `active`
- * back when it forgets a channel. A keyboard user is left with no position.
+ * Pressing a close takes its own button out of the tree, so focus falls to the
+ * document body, and a keyboard user is left with no position. Moving focus to
+ * whichever tab is open now answers that: it carries `aria-current`, so a
+ * screen reader announces where the user is, and that announcement is the
+ * confirmation.
  *
- * Moving focus to whichever room is open now answers both together. The room it
- * lands on carries `aria-current` or `aria-pressed`, so a screen reader
- * announces where the user is, and that announcement *is* the confirmation. The
- * log below is a second live region and is not silent — it is `role="log"`, and
- * every line in it changes when `active` does — but what it announces is the
- * server log's contents, which is where the close landed the user rather than
- * anything about what they asked for.
- *
- * It waits for the room to leave `channels` rather than firing on the press,
- * because closing is a round trip through main and main may refuse. That wait
- * is not sufficient on its own. The only refusal the service can produce is a
- * room that has stopped being hand-joined, which happens when a window claims
- * it — and that same change flips `closable` and unmounts this button. So a
- * refusal loses the focus without ever satisfying the wait, and leaves the
- * room's name latched here. The renderer cannot notice: the handler discards
- * `closeRoom`'s boolean and the call is typed `Promise<void>`.
- *
- * Hence the second condition. The focus is restored only if nothing has taken
- * it in the meantime — `document.body` is where an unmount leaves it, and
- * anything else means the user has moved on, most likely into the message input
- * further down this same view. A latch left over from a refused close then
- * expires harmlessly on that room's eventual departure, instead of yanking the
- * caret out of a half-typed line.
+ * It waits for the channel to leave `channels` rather than firing on the press,
+ * because closing is a round trip through main. The focus is restored only if
+ * nothing has taken it in the meantime — `document.body` is where an unmount
+ * leaves it, and anything else means the user has moved on, most likely into
+ * the message box, and yanking the caret out of a half-typed line is worse
+ * than leaving focus where it went.
  */
 function useCloseFocus(channels: ViewChannel[]): {
     group: RefObject<HTMLDivElement | null>;
@@ -132,7 +78,7 @@ function useCloseFocus(channels: ViewChannel[]): {
         awaited.current = null;
         const idle = document.activeElement === null || document.activeElement === document.body;
         if (!idle) return;
-        group.current?.querySelector<HTMLElement>(OPEN_ROOM)?.focus();
+        group.current?.querySelector<HTMLElement>(OPEN_TAB)?.focus();
     }, [channels]);
 
     return {
@@ -144,89 +90,63 @@ function useCloseFocus(channels: ViewChannel[]): {
 }
 
 /**
- * Gives up a room the user joined by hand: it is parted and forgotten, so it
- * does not come back on the next launch. Whether a room is the user's to close
- * is `channel.closable`, which the service stamps and the panel never works out
- * for itself — only the service knows which rooms an open window claims, and a
- * close drawn on one of those would appear to work and then undo itself the
- * next time a window opened. What happens on a press is the service's too: it
- * refuses anything not hand-joined, so this asks and does not also judge.
+ * The row of tabs: Settings, Status, then every channel in the order it was
+ * joined. The channels never reorder — an unread count changes inside a tab
+ * that stays put, and a row that reshuffles as people talk is a row you cannot
+ * aim at.
  *
- * A pointer is not required to reach it. It is an ordinary button sitting next
- * in order after the room it belongs to, present whenever that room is the
- * open one, so the keyboard route is the room, then Tab once; `useCloseFocus`
- * is what gives the keyboard somewhere to be afterwards.
+ * Every channel carries its own close, inside the tab, as the window strip's
+ * tabs do: any channel may be closed, so there is no rule about which to
+ * learn. Settings and Status have none, because neither is a room you are in.
  *
- * The label names the room rather than the act, as the move control names its
- * destination: "Close" is the same word on every one of them, and a screen
- * reader reading it out says which button you are on and nothing about which
- * conversation it would take away.
+ * They wrap onto as many rows as they need rather than shrinking: a wide pane
+ * holds its usual handful on one row, and truncating "#2004scape" to "#20…"
+ * when there are more would leave a row of tabs that all read the same.
  *
- * The height is taken from the slot this shares with its room, not stated. It
- * was 26px — the dock tab's own height, which `tab.tsx` forces inline — and that
- * is right in the dock and 4.5px short in the panel, whose chips are 30.5px.
- * Wanting the two views to agree is what made the size wrong in one of them:
- * what has to agree is each control with the room it is bevelled against, and
- * in a design that draws a hard two-colour edge on every surface, two squares
- * whose edges miss each other read as a mistake.
- *
- * `self-stretch` measures that slot, and the slot is the height of its own room
- * only because both rows say `items-center`. Without it the panel's slots would
- * stretch to their wrapped line instead, and the close would size against the
- * tallest chip in the row rather than the one it is beside — invisible while
- * every chip is identical, and wrong the first time one is not.
- *
- * The 24px width stays stated, because it is a floor rather than a fit — WCAG
- * 2.5.8 asks 24 CSS px of target in both directions, and width is the tight one
- * here: the shortest room this ever stands beside is the dock's 26px tab.
+ * A group of buttons rather than a tablist, and every tab acts when pressed,
+ * including the open one — see `role` in tab.tsx.
  */
-function CloseControl({ channel, closing }: { channel: string; closing: (channel: string) => void }): ReactNode {
-    const label = `Close ${channel}`;
-    return (
-        <button
-            type="button"
-            title={label}
-            aria-label={label}
-            onClick={() => {
-                /* Name what is about to go before asking for it, so the focus restore knows whose disappearance it is waiting on. */
-                closing(channel);
-                void window.zanaris.chat.closeRoom(channel);
-            }}
-            className="tile flex w-[24px] shrink-0 items-center justify-center self-stretch"
-        >
-            <CloseRoom />
-        </button>
-    );
-}
-
-function Channels({ view }: { view: ChatView }): ReactNode {
+function ChatTabs({
+    view,
+    onSettings,
+    showSettings,
+    showChannel
+}: {
+    view: ChatView;
+    onSettings: boolean;
+    showSettings: () => void;
+    showChannel: (name: string) => void;
+}): ReactNode {
     const { group, closing } = useCloseFocus(view.channels);
     return (
-        <div ref={group} className="flex flex-wrap items-center gap-1.5 px-2.5 pb-[7px]" role="group" aria-label="Channels">
+        <div
+            ref={group}
+            role="group"
+            aria-label="Chat"
+            className="flex min-w-0 flex-wrap items-center gap-[5px] px-1.5 py-[3px]"
+        >
+            <Tab role="button" label="Settings" open={onSettings} onSelect={showSettings} />
             {view.channels.map(channel => {
-                const on = channel.name === view.active;
-                /* No title here: these chips wrap onto new rows rather than truncating, so
-                   the label is always the room's full name already — unlike the dock's Tab
-                   below, whose truncate class can still clip a crowded row. */
+                const open = !onSettings && channel.name === view.active;
                 return (
-                    <div key={channel.name} className={ROOM_SLOT}>
-                        <button
-                            type="button"
-                            aria-pressed={on}
-                            onClick={() => !on && void window.zanaris.chat.select(channel.name)}
-                            style={on ? CHIP : CHIP_QUIET}
-                            className={`btn gap-[7px] ${on ? 'btn-red' : ''}`}
-                        >
-                            {channelLabel(channel.name)}
-                            {!on && channel.unread > 0 && <span className="text-gold">{channel.unread}</span>}
-                        </button>
-                        {/* These chips wrap, so they could afford a close on every hand-joined room
-                            where the dock's single row cannot — but two rules about the same four
-                            rooms is one more than anyone should have to learn, so this follows the
-                            dock and shows the close on the open room only. Beside the chip rather
-                            than inside it, for the reason the dock's does the same. */}
-                        {on && channel.closable && <CloseControl channel={channel.name} closing={closing} />}
-                    </div>
+                    <Tab
+                        key={channel.name}
+                        role="button"
+                        label={channelLabel(channel.name)}
+                        title={channel.name === SERVER_LOG ? 'Messages from the server' : channel.name}
+                        open={open}
+                        onSelect={() => showChannel(channel.name)}
+                        after={!open && channel.unread > 0 ? <span className="shrink-0 text-gold">{channel.unread}</span> : null}
+                        onClose={
+                            channel.closable
+                                ? () => {
+                                      /* Name what is about to go before asking for it, so the focus restore knows whose disappearance it is waiting on. */
+                                      closing(channel.name);
+                                      void window.zanaris.chat.closeRoom(channel.name);
+                                  }
+                                : undefined
+                        }
+                    />
                 );
             })}
         </div>
@@ -234,85 +154,59 @@ function Channels({ view }: { view: ChatView }): ReactNode {
 }
 
 /**
- * The dock's one row of furniture: the rooms as tabs and the move control. The
- * side panel gives the same rooms a wrapping row of chips instead, which 600px
- * of height can afford and 200px cannot, so the dock buys that room back with
- * a single ~33px row.
- *
- * The rooms sit in the order they were joined and never reorder. An unread
- * count changes inside a tab that stays put; a room list that reshuffles as
- * people talk is a room list you cannot aim at.
- *
- * The close control appears on the open room and nowhere else. One on every
- * hand-joined room would put a control per room into a row already carrying
- * names, unread counts and the move control. Revealed on hover instead it
- * would be the one control here a keyboard could not reach, and revealing it
- * would either shove every room to its right as the pointer crossed the row
- * or reserve the width it was meant to save. Tied to the open room there is
- * at most one of it, shifting the row by a fixed 26px however many rooms there
- * are. That shift is real, not nil, and not always the user's doing: it also
- * arrives and leaves when a room's `closable` flips, which is what happens when
- * a game window opens or closes and claims a room the user had joined by hand.
- * The case against hover-reveal was never that a row must not move — it is that
- * it must not move under a pointer that was only crossing it.
+ * One line of the log: its time, then what was said. The time is its own
+ * column, so wrapped text hangs clear of it and the times read down the left
+ * edge like the margin of a transcript. The nick is the coloured part and the
+ * words stay cream, so a wall of chat still scans as one column of prose;
+ * system lines drop to faint because they are the room talking about itself,
+ * not somebody in it.
  */
-function DockHeader({ view }: { view: ChatView }): ReactNode {
-    const { group, closing } = useCloseFocus(view.channels);
+function Line({ line, self }: { line: ChatLine; self: string | null }): ReactNode {
+    const nick = line.nick;
+    const colour = nick === null ? undefined : nickColour(nick, self);
+    const at = new Date(line.at);
     return (
-        <div className="flex items-center gap-[5px] px-1.5 py-[3px]">
-            {/* A group of controls rather than a tablist, and every room acts when clicked, including the open one — see `role` in tab.tsx. */}
-            <div ref={group} role="group" aria-label="Channels" className="flex min-w-0 items-center gap-[5px] overflow-hidden">
-                {view.channels.map(channel => {
-                    const on = channel.name === view.active;
-                    return (
-                        <div key={channel.name} className={ROOM_SLOT}>
-                            <Tab
-                                role="button"
-                                label={channelLabel(channel.name)}
-                                title={channel.name}
-                                open={on}
-                                onSelect={() => void window.zanaris.chat.select(channel.name)}
-                                after={!on && channel.unread > 0 ? <span className="shrink-0 text-gold">{channel.unread}</span> : null}
-                            />
-                            {/* Beside the tab, never in its `after`, which renders inside the tab's
-                                own button — a button within a button is invalid HTML that no two
-                                browsers agree on. Why only the open room is above. */}
-                            {on && channel.closable && <CloseControl channel={channel.name} closing={closing} />}
-                        </div>
-                    );
-                })}
+        <div className={`flex gap-[7px] px-1 py-[2px] ${line.highlight ? 'bg-stone-lit/40 shadow-[inset_2px_0_0_var(--color-gold)]' : ''}`}>
+            <time dateTime={at.toISOString()} title={at.toLocaleString()} className="shrink-0 text-[12px] leading-[1.6] text-faint tabular-nums">
+                {clockTime(line.at)}
+            </time>
+            <div className="min-w-0 flex-1 wrap-break-word">
+                {line.kind === 'system' || nick === null ? (
+                    <span className="text-faint">{line.text}</span>
+                ) : line.kind === 'action' ? (
+                    <>
+                        <span style={{ color: colour }}>* {nick}</span> {line.text}
+                    </>
+                ) : (
+                    <>
+                        {/* A private message lands in Status beside notices, so it says which it is. */}
+                        {line.kind === 'private' && <span className="text-faint">pm </span>}
+                        <span style={{ color: colour }}>{nick}</span> {line.text}
+                    </>
+                )}
             </div>
-            {/* No title left to share the row with, so the control claims the right edge on its own. */}
         </div>
     );
 }
 
 /**
- * One line of the log. The nick is the coloured part and the words stay cream,
- * so a wall of chat still scans as one column of prose; system lines drop to
- * faint because they are the room talking about itself, not somebody in it.
+ * The channel's topic, on one line above the log, with who set it and when in
+ * its tooltip. In a narrow pane it also carries the button that swaps the log
+ * for the user list, which has no room to sit beside it.
  */
-function Line({ line, self }: { line: ChatLine; self: string | null }): ReactNode {
-    const nick = line.nick;
-    const colour = nick === null ? undefined : nickColour(nick, self);
+function TopicBar({ channel, wide, usersOpen, toggleUsers }: { channel: ViewChannel; wide: boolean; usersOpen: boolean; toggleUsers: () => void }): ReactNode {
+    const topic = channel.topic;
+    const setBy = topic?.setBy ? `Set by ${topic.setBy}${topic.setAt !== null ? ` on ${new Date(topic.setAt).toLocaleString()}` : ''}` : null;
+    const count = channel.users.length;
     return (
-        <div
-            className={`px-1 py-[2px] wrap-break-word ${
-                line.highlight ? 'bg-stone-lit/40 shadow-[inset_2px_0_0_var(--color-gold)]' : ''
-            }`}
-        >
-            {line.kind === 'system' || nick === null ? (
-                <span className="text-faint">{line.text}</span>
-            ) : line.kind === 'action' ? (
-                <>
-                    <span style={{ color: colour }}>* {nick}</span> {line.text}
-                </>
-            ) : (
-                <>
-                    {/* A private message lands in the server log beside notices, so it says which it is. */}
-                    {line.kind === 'private' && <span className="text-faint">pm </span>}
-                    <span style={{ color: colour }}>{nick}</span> {line.text}
-                </>
+        <div className="mx-2.5 mb-1.5 flex min-w-0 items-center gap-1.5 text-[12px]">
+            <p title={topic === null ? undefined : [topic.text, setBy].filter(Boolean).join('\n')} className="min-w-0 flex-1 truncate">
+                {topic === null ? <span className="text-faint">No topic set</span> : <span className="text-cream">{topic.text}</span>}
+            </p>
+            {!wide && (
+                <button type="button" aria-expanded={usersOpen} onClick={toggleUsers} style={QUIET_SIZE} className="btn group shrink-0">
+                    <span className={usersOpen ? 'text-cream' : 'text-dim group-hover:text-cream'}>{usersOpen ? 'Back to chat' : count === 1 ? '1 user' : `${count} users`}</span>
+                </button>
             )}
         </div>
     );
@@ -322,15 +216,17 @@ function Line({ line, self }: { line: ChatLine; self: string | null }): ReactNod
 const STICK_SLACK = 24;
 
 /**
- * The conversation: rooms across the top, the log, and the line you are typing.
+ * The conversation: the topic, the log with the user list beside it, and the
+ * line you are typing.
  *
- * Only the furniture above the log knows which home it is in. The log and the
- * composer are the same object at 320px wide and at 735px, so they are written
- * once; a second log would be a second set of scroll rules to keep in step.
+ * The log and the composer are the same object at 320px wide and at 735px, so
+ * they are written once; a second log would be a second set of scroll rules to
+ * keep in step. What changes with the width is only where the user list goes.
  */
 function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactNode {
     const [draft, setDraft] = useState('');
     const [behind, setBehind] = useState(false);
+    const [usersOpen, setUsersOpen] = useState(false);
     const log = useRef<HTMLDivElement | null>(null);
     /*
      * Whether the reader is at the end. A ref rather than state: it is read by
@@ -339,6 +235,10 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
      */
     const stuck = useRef(true);
 
+    const channel = view.active === SERVER_LOG ? null : (view.channels.find(c => c.name === view.active) ?? null);
+    /* A narrow pane shows the list in place of the log, so the log is only there when the list is not. */
+    const listInstead = !wide && usersOpen && channel !== null;
+
     const toBottom = (): void => {
         const el = log.current;
         stuck.current = true;
@@ -346,10 +246,10 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
         if (el) el.scrollTop = el.scrollHeight;
     };
 
-    /* A different room is a different conversation: start it at its end. */
+    /* A different room is a different conversation, and coming back from the list is coming back to it: start at its end. */
     useLayoutEffect(() => {
         toBottom();
-    }, [view.active]);
+    }, [view.active, listInstead]);
 
     /*
      * Follow new lines only for a reader who was already at the bottom. Someone
@@ -380,50 +280,48 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
         /* Speaking is a claim on the end of the log, wherever you had scrolled to. */
         stuck.current = true;
         setBehind(false);
+        setUsersOpen(false);
         void window.zanaris.chat.send(text);
     };
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {wide ? (
-                <>
-                    <DockHeader view={view} />
-                    <Status view={view} />
-                </>
-            ) : (
-                <>
-                    <Status view={view} />
-                    {view.channels.length > 1 && <Channels view={view} />}
-                </>
-            )}
+            {channel !== null && <TopicBar channel={channel} wide={wide} usersOpen={usersOpen} toggleUsers={() => setUsersOpen(!usersOpen)} />}
 
-            {/*
-             * mt-auto on the lines: a short log sits on the floor of the well
-             * the way a chat window fills from the bottom, rather than hanging
-             * from the top of an empty box.
-             */}
-            <div
-                ref={log}
-                onScroll={onScroll}
-                role="log"
-                aria-label="Conversation"
-                className="sunk mx-2.5 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1.5 leading-[1.45]"
-            >
-                <div className="mt-auto">
-                    {view.lines.map(line => (
-                        <Line key={line.id} line={line} self={view.nick} />
-                    ))}
-                    {view.lines.length === 0 && (
-                        <p className="px-1 py-[2px] text-dim">
-                            {view.active === SERVER_LOG ? 'Nothing from the server yet.' : 'Nothing said here yet.'}
-                        </p>
-                    )}
-                </div>
+            <div className="mx-2.5 flex min-h-0 flex-1 gap-[5px]">
+                {listInstead && channel !== null ? (
+                    <ChatUsers channel={channel} self={view.nick} className="min-w-0 flex-1" />
+                ) : (
+                    /*
+                     * mt-auto on the lines: a short log sits on the floor of the well
+                     * the way a chat window fills from the bottom, rather than hanging
+                     * from the top of an empty box.
+                     */
+                    <div
+                        ref={log}
+                        onScroll={onScroll}
+                        role="log"
+                        aria-label={channel === null ? 'Status' : `Conversation in ${channel.name}`}
+                        className="sunk flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-2 py-1.5 leading-[1.45]"
+                    >
+                        <div className="mt-auto">
+                            {view.lines.map(line => (
+                                <Line key={line.id} line={line} self={view.nick} />
+                            ))}
+                            {view.lines.length === 0 && (
+                                <p className="px-1 py-[2px] text-dim">{channel === null ? 'Nothing from the server yet.' : 'Nothing said here yet.'}</p>
+                            )}
+                        </div>
+                    </div>
+                )}
+                {/* 150px: a nick and its rank without truncating most of them, and little enough that the log keeps the pane. */}
+                {wide && channel !== null && <ChatUsers channel={channel} self={view.nick} className="w-[150px] shrink-0" />}
             </div>
 
-            {behind && (
+            {behind && !listInstead && (
                 <div className="px-2.5 pt-1">
-                    <button type="button" onClick={toBottom} className="link text-[12px]">
+                    {/* The size inline: `button { font: inherit }` is unlayered, and beats a text- utility. */}
+                    <button type="button" onClick={toBottom} style={{ fontSize: 12 }} className="link">
                         More below — jump to the latest
                     </button>
                 </div>
@@ -435,7 +333,7 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
                     value={draft}
                     onChange={event => setDraft(event.target.value)}
                     aria-label="Message"
-                    placeholder={offline ? 'Chat is not connected' : 'Say something'}
+                    placeholder={offline ? 'Chat is not connected' : channel === null ? 'Commands like /join #channel' : `Message ${channel.name}`}
                     maxLength={400}
                     autoComplete="off"
                     spellCheck={false}
@@ -450,73 +348,46 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
 }
 
 /**
- * The first thing a new user meets, so it asks rather than complains: chat is
- * one public conversation and it needs something to call you. The field and
- * its button are the same pair as the message row underneath the log, so the
- * panel does not change shape when the name is set.
- */
-function NickPrompt({ view }: { view: ChatView }): ReactNode {
-    const [nick, setNick] = useState('');
-    const ready = nick.trim() !== '';
-
-    const claim = (event: FormEvent): void => {
-        event.preventDefault();
-        const name = nick.trim();
-        if (name === '') return;
-        void window.zanaris.chat.setNick(name);
-    };
-
-    return (
-        <form onSubmit={claim} className="flex min-h-0 flex-1 flex-col pt-2">
-            {/* No title above it any more, so the padding lives on the form itself — Status collapses to nothing when there is no note or error, and would otherwise take the top space with it. */}
-            <Status view={view} />
-
-            <div className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5 leading-[1.45]">
-                <p>Everyone playing shares one conversation here. Pick a name for it — the other players will see it.</p>
-                <p className="mt-2 text-dim">
-                    It does not have to be your character's name, and you can change it later by typing{' '}
-                    <span className="text-cream">/nick</span> in the chat.
-                </p>
-            </div>
-
-            <div className="flex items-center gap-1.5 px-2.5 py-2">
-                <input
-                    value={nick}
-                    onChange={event => setNick(event.target.value)}
-                    aria-label="Your name in chat"
-                    placeholder="Pick a name"
-                    maxLength={30}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="sunk min-w-0 flex-1 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint"
-                />
-                <button type="submit" disabled={!ready} className="btn btn-red shrink-0 disabled:opacity-60">
-                    Join
-                </button>
-            </div>
-        </form>
-    );
-}
-
-/**
- * The Chat tool: one connection, shared by every window this kit has open, and
- * drawn either along the bottom of the window or down the side column.
- * `NickPrompt` is the same in both — at 735px its two paragraphs land in three
- * or four lines instead of a column, which is the only difference.
- */
-/**
- * The width at which the wide layout starts paying for itself.
+ * The width at which a channel's user list sits beside the log rather than in
+ * place of it, and the Settings form puts two fields on a row.
  *
  * A conversation is a column of short lines, and a narrow pane wraps almost
- * every one of them — which is the whole argument the bottom dock was built on
- * (`2026-09-07-chat-dock-design.md`). What has changed is only where the answer
- * comes from: the dock was a place chat could be *moved* to, and the shape had
- * to be remembered app-wide because nothing else could tell you it. A pane
- * knows its own width, so it is read rather than stored, and dragging the seam
- * is what "move chat" used to mean.
+ * every one of them; taking 150px more for names would leave the log too thin
+ * to read. A pane knows its own width, so the layout is read from it rather
+ * than stored.
  */
 const WIDE_ENOUGH = 560;
 
+/**
+ * The Chat tool: one connection, shared by every window this kit has open.
+ *
+ * Which page a pane shows — Settings or a channel — is the pane's own, so two
+ * chat panes can have one on Settings while the other follows the talk. Which
+ * channel is open is app-wide, as it always was, since it is the client's.
+ * With no nick yet, or nothing to show but Settings, Settings is the page.
+ */
 export default function Chat({ view, width }: { view: ChatView; width: number }): ReactNode {
-    return view.needsNick ? <NickPrompt view={view} /> : <Conversation view={view} wide={width >= WIDE_ENOUGH} />;
+    const wide = width >= WIDE_ENOUGH;
+    const [page, setPage] = useState<'settings' | 'chat'>(() => (view.needsNick || !isConnectionWanted(view.status) ? 'settings' : 'chat'));
+    const onSettings = page === 'settings' || view.needsNick || view.channels.length === 0;
+
+    return (
+        <div className="flex min-h-0 flex-1 flex-col">
+            <ChatTabs
+                view={view}
+                onSettings={onSettings}
+                showSettings={() => setPage('settings')}
+                showChannel={name => {
+                    setPage('chat');
+                    void window.zanaris.chat.select(name);
+                }}
+            />
+            <Status view={view} onSettings={onSettings} />
+            {onSettings ? (
+                <ChatSettings view={view} wide={wide} onConnected={() => setPage('chat')} />
+            ) : (
+                <Conversation view={view} wide={wide} />
+            )}
+        </div>
+    );
 }

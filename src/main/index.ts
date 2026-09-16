@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
+import { passwordProblem, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
@@ -16,8 +17,8 @@ import { createServerWindow, type ServerWindow } from './serverWindow';
 import { installMenu, type MenuActions, type MenuWindowState } from './menu';
 import { WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
-import { ChatService, offlineChat, tlsConnect } from './chat/service';
-import { chatChanges } from './chatPersist';
+import { ChatService, offlineChat, tlsConnect, type SettingsChange } from './chat/service';
+import { canSeal, open as openSecret, seal } from './chat/secret';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
@@ -331,16 +332,7 @@ const windows = new ServerWindows((spec, onClosed) => {
     byShell.set(sw.shellContentsId, sw);
     log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
     return sw;
-}, syncChatChannels);
-
-/**
- * Chat follows the windows: the rooms are those of the servers currently open,
- * alongside the lobby. Called on every open and close, so a room is joined with
- * the first window on its server and left with the last.
- */
-function syncChatChannels(): void {
-    chat?.setServers(windows.list().map(w => w.serverId));
-}
+});
 
 function openServer(server: ServerDef): ServerWindow {
     return serverWindows.get(windows.open(server).id)!;
@@ -741,21 +733,13 @@ ipcMain.handle(IPC.hiscoresOpenSite, event => {
 // One conversation for the app, so these take no window: any window's panel
 // drives the same connection, and every window is shown the result.
 
-/**
- * Writes back the two chat fields that follow the connection rather than a
- * control: the nick the connection ended up with, and the rooms joined by
- * hand — the two the owner asked to survive a restart. Both are learnt by
- * watching the view rather than by hooking each command; `chatPersist.ts`
- * argues why. This is the whole of it in main: which rooms are the user's own
- * is the service's to say, and nothing here re-derives it.
- *
- * What was last written is read back out of `AppState` rather than kept in a
- * variable beside it. `AppState` holds what `save()` put in the file, so there
- * is no second copy of the truth for a writer somewhere else to leave stale.
- */
-function persistChat(view: ChatView): void {
-    const patch = chatChanges(appState.chat(), view);
-    if (patch !== null) appState.setChat(patch);
+/** The Settings form off the wire, or null when it is not one. Its contents are judged next, by the same rules the form used. */
+function readSettingsSave(x: unknown): SettingsSave | null {
+    if (typeof x !== 'object' || x === null) return null;
+    const form = x as Record<string, unknown>;
+    if (typeof form.nick !== 'string' || typeof form.channels !== 'string') return null;
+    if (form.password !== undefined && form.password !== null && typeof form.password !== 'string') return null;
+    return { nick: form.nick, channels: form.channels, ...(form.password === undefined ? {} : { password: form.password as string | null }) };
 }
 
 ipcMain.handle(IPC.chatGet, (): ChatView => chatView());
@@ -770,29 +754,58 @@ ipcMain.handle(IPC.chatSelect, (_event, channel: unknown) => {
     chat?.select(channel);
 });
 
-/**
- * Whether this room is the user's to close is not asked here: only the service
- * has both halves of that derivation, so it makes the judgement and refuses
- * what is not hand-joined. A copy of the test in this handler would be a
- * second opinion, and the day the two disagreed the close control would be
- * the one telling the truth.
- */
+/** Any channel may be closed, for the session; the service refuses Status, and a channel that is not open. */
 ipcMain.handle(IPC.chatCloseRoom, (_event, channel: unknown) => {
     if (typeof channel !== 'string') return;
     chat?.closeRoom(channel);
 });
 
 /**
- * Deliberately does not write the nick: `persistChat` above does, from the
- * view, which is what makes the next launch connect without asking again. The
- * two are not the same value — a 433 renames us, and the server can rename us
- * again later — and of the two writers only the observer revisits its answer.
- * Writing here as well would leave the one that never looks again to win any
- * launch where the rename came after it.
+ * A save from the Settings tab. The form is checked again here, since what
+ * arrives over IPC is only as trustworthy as the renderer that sent it, and
+ * then written and applied.
+ *
+ * Settings is the only writer of chat's saved nick and list. Nothing learnt
+ * from the connection is saved: a /nick, a taken nick's underscore and a
+ * services rename to a guest nick all last for the session, the way closing a
+ * tab and /join do — and the guest nick is exactly the one that must never
+ * become what the next launch registers with.
+ *
+ * The password is sealed by the OS store when there is one; where there is
+ * not, it is held by the service for this run and nothing is written, and the
+ * tab says so.
  */
-ipcMain.handle(IPC.chatSetNick, (_event, nick: unknown) => {
-    if (typeof nick !== 'string' || nick.trim() === '') return;
-    chat?.setNick(nick.trim());
+ipcMain.handle(IPC.chatSaveSettings, (_event, input: unknown): string | null => {
+    const service = chat;
+    if (service === null) return 'Chat is still starting. Try again in a moment.';
+    const form = readSettingsSave(input);
+    if (form === null) return 'Those settings could not be read.';
+    const reading = readSettingsDraft(form);
+    if (!reading.ok) return reading.problem.message;
+    if (typeof form.password === 'string') {
+        const problem = passwordProblem(form.password);
+        if (problem !== null) return problem;
+    }
+
+    const { draft } = reading;
+    appState.setChat({ nick: draft.nick, autoJoin: draft.autoJoin });
+    const change: SettingsChange = { nick: draft.nick, autoJoin: draft.autoJoin };
+    if (form.password !== undefined) {
+        change.password = form.password;
+        appState.setNickservSealed(form.password === null ? null : seal(form.password, safeStorage, process.platform));
+    }
+    service.applySettings(change);
+    return null;
+});
+
+/** Connect, and connect on the next launch too — the service tells `appState` so. */
+ipcMain.handle(IPC.chatConnect, () => {
+    chat?.connect();
+});
+
+/** Disconnect, and stay offline on the next launch until Connect — the service tells `appState` so. */
+ipcMain.handle(IPC.chatDisconnect, () => {
+    chat?.disconnect();
 });
 
 // ── single player ─────────────────────────────────────────────────────────
@@ -1191,13 +1204,13 @@ async function captureAndExit(dir: string): Promise<void> {
             applyTimers(deleteTimer(appState.timers(), 'custom-capture'));
         }
 
-        // The chat dock: this profile has no nick — see the chat block in
+        // Chat: this profile has no nick — see the chat block in
         // app.whenReady, above — so chat never opens a socket here, and every
-        // shot below lands on the nick prompt rather than a conversation.
+        // shot below lands on the Settings tab rather than a conversation.
         // That is the correct thing to capture, not a bug to paper over: log
-        // it plainly so nobody later mistakes an offline dock for a broken one,
+        // it plainly so nobody later mistakes offline chat for broken chat,
         // and never fake a connection just to get a prettier screenshot.
-        log('[capture] chat: no nick in this profile, so the dock captures the nick prompt, not a conversation');
+        log('[capture] chat: no nick in this profile, so chat captures its Settings tab, not a conversation');
 
         // A seam dragged without a pointer: the same clamp `paneSetSeam`
         // applies, driven directly the way this whole function drives
@@ -1383,24 +1396,29 @@ app.whenReady().then(async () => {
     pages.on('will-download', event => event.preventDefault());
     pages.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     // Offline until a nick is set, which is why a capture run — whose profile has
-    // none — never opens a socket.
-    chat = new ChatService(appState.chat(), {
-        connect: tlsConnect,
-        now: Date.now,
-        setTimer: (fn, ms) => {
-            const timer = setTimeout(fn, ms);
-            return () => clearTimeout(timer);
+    // none — never opens a socket. The password is opened here, after ready,
+    // because the OS store is not available before it.
+    chat = new ChatService(
+        {
+            ...appState.chat(),
+            password: openSecret(appState.sealedNickserv(), safeStorage, process.platform),
+            canSavePassword: canSeal(safeStorage, process.platform),
+            // Connect, Disconnect and /quit all land here, so the next launch does what the user last asked.
+            onConnectionWanted: wanted => appState.setChat({ autoConnect: wanted })
+        },
+        {
+            connect: tlsConnect,
+            now: Date.now,
+            setTimer: (fn, ms) => {
+                const timer = setTimeout(fn, ms);
+                return () => clearTimeout(timer);
+            }
         }
-    });
-    chat.subscribe(view => {
-        // The push first, and not because anything it reads depends on the
-        // write: nothing in a shell state comes from the fields persistChat
-        // touches. It is that this runs inside the socket's data handler, where
-        // a failed save() is an uncaught exception in main rather than a
-        // rejected IPC promise — so the panel is made live before anything can
-        // throw.
+    );
+    // Every window's panel follows the one connection. Nothing is saved from
+    // here: chat's saved settings change only in the Settings tab.
+    chat.subscribe(() => {
         for (const sw of serverWindows.values()) sw.pushState();
-        persistChat(view);
     });
     loadCatalog();
     singlePlayer = new SinglePlayerService(

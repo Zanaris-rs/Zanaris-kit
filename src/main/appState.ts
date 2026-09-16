@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
-import { isChannel } from './chat/protocol.ts';
+import { AUTO_JOIN_MAX, channelProblem, isNick } from '../shared/chatSettings.ts';
 import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
 
@@ -11,7 +11,8 @@ interface StateFile {
     version: 1;
     worlds: Record<string, RememberedWorld>;
     warnOnSwitch: boolean;
-    chat: ChatSettings;
+    /** `nickserv` is the NickServ password sealed by the OS store (`chat/secret.ts`), and absent when there is none. */
+    chat: ChatSettings & { nickserv?: string };
     singlePlayer: { cheats: boolean };
     hiscores: Record<string, string>;
     alwaysOnTop: boolean;
@@ -23,20 +24,18 @@ interface StateFile {
 // long string down the wire when a later task builds a lookup URL from it.
 const HISCORES_NAME_MAX = 30;
 
-// RFC 2812 caps a channel name at 50 characters, so nothing a real IRC server
-// would accept is ever rejected here. ROOMS_MAX is a sanity rail against a
-// hand-edited file, not a real ceiling on how many rooms someone could join.
-const ROOM_NAME_MAX = 50;
-const ROOMS_MAX = 20;
+// A sealed password is base64 of a few hundred bytes at most; anything far past
+// that is not one, and is not worth handing to the OS store to fail on.
+const SEALED_MAX = 4096;
 
 /**
- * DEFAULT_CHAT, cloned deep enough that rooms is never shared: every other
- * field is a primitive, so `{ ...DEFAULT_CHAT }` was a safe copy until rooms
- * arrived. Without this, every fresh AppState and every reset on a failed
- * load would start out holding DEFAULT_CHAT's own array by reference.
+ * DEFAULT_CHAT, cloned deep enough that autoJoin is never shared: every other
+ * field is a primitive, so `{ ...DEFAULT_CHAT }` alone would leave every fresh
+ * AppState, and every reset on a failed load, holding DEFAULT_CHAT's own array
+ * by reference.
  */
 function defaultChat(): ChatSettings {
-    return { ...DEFAULT_CHAT, rooms: [...DEFAULT_CHAT.rooms] };
+    return { ...DEFAULT_CHAT, autoJoin: [...DEFAULT_CHAT.autoJoin] };
 }
 
 function isRemembered(x: unknown): x is RememberedWorld {
@@ -63,18 +62,30 @@ function readChat(x: unknown): ChatSettings {
     const chat = defaultChat();
     if (typeof x !== 'object' || x === null) return chat;
     const c = x as Record<string, unknown>;
-    if (c.nick === null || (typeof c.nick === 'string' && c.nick !== '')) chat.nick = c.nick;
+    // Judged as the Settings form judges it: this nick goes out as NICK, and a
+    // hand-edited one holding a line break would be a second command.
+    if (c.nick === null || (typeof c.nick === 'string' && isNick(c.nick))) chat.nick = c.nick;
     if (typeof c.server === 'string' && c.server !== '') chat.server = c.server;
     if (typeof c.port === 'number' && Number.isInteger(c.port) && c.port >= 1 && c.port <= 65535) chat.port = c.port;
-    if (Array.isArray(c.rooms)) {
-        const rooms: string[] = [];
-        for (const room of c.rooms) {
-            if (rooms.length >= ROOMS_MAX) break;
-            if (typeof room === 'string' && room !== '' && room.length <= ROOM_NAME_MAX && isChannel(room)) rooms.push(room);
+    // An array, even an empty one, is the user's list: they may have cleared it on purpose.
+    // Only a missing or non-array value falls back to the defaults.
+    if (Array.isArray(c.autoJoin)) {
+        const autoJoin: string[] = [];
+        for (const channel of c.autoJoin) {
+            if (autoJoin.length >= AUTO_JOIN_MAX) break;
+            if (typeof channel === 'string' && channelProblem(channel) === null) autoJoin.push(channel);
         }
-        chat.rooms = rooms;
+        chat.autoJoin = autoJoin;
     }
+    if (typeof c.autoConnect === 'boolean') chat.autoConnect = c.autoConnect;
     return chat;
+}
+
+/** The sealed NickServ password out of a stored chat block, or null. Opening it is `chat/secret.ts`'s, at launch. */
+function readSealed(x: unknown): string | null {
+    if (typeof x !== 'object' || x === null) return null;
+    const sealed = (x as Record<string, unknown>).nickserv;
+    return typeof sealed === 'string' && sealed !== '' && sealed.length <= SEALED_MAX ? sealed : null;
 }
 
 /**
@@ -115,6 +126,8 @@ export class AppState {
     // An opt-out: the warning shows until the user has ticked "don't ask again".
     private warn = true;
     private chatSettings: ChatSettings = defaultChat();
+    // Sealed, never the password itself: see `chat/secret.ts`.
+    private nickservSealed: string | null = null;
     // Developer commands in the single-player world: off until asked for.
     private cheats = false;
     // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
@@ -134,6 +147,7 @@ export class AppState {
         this.worlds = new Map();
         this.warn = true;
         this.chatSettings = defaultChat();
+        this.nickservSealed = null;
         this.cheats = false;
         this.hiscoresNames = new Map();
         this.onTop = false;
@@ -149,6 +163,7 @@ export class AppState {
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.warnOnSwitch === 'boolean') this.warn = parsed.warnOnSwitch;
             this.chatSettings = readChat(parsed?.chat);
+            this.nickservSealed = readSealed(parsed?.chat);
             const sp = parsed?.singlePlayer;
             if (typeof sp === 'object' && sp !== null && typeof (sp as { cheats?: unknown }).cheats === 'boolean') this.cheats = (sp as { cheats: boolean }).cheats;
             this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
@@ -180,13 +195,24 @@ export class AppState {
         this.save();
     }
 
-    /** Where chat connects, and as whom. Falls back to the SwiftIRC defaults field by field. */
+    /** Where chat connects, as whom, and what it joins. Falls back to the SwiftIRC defaults field by field. */
     chat(): ChatSettings {
-        // rooms is cloned too, unlike the rest of the spread: it is the one array
-        // in an otherwise-primitive settings object, and returning it by reference
-        // would let a caller mutate this instance's own list without going
-        // through setChat/stageChat at all.
-        return { ...this.chatSettings, rooms: [...this.chatSettings.rooms] };
+        // autoJoin is cloned too, unlike the rest of the spread: it is the one
+        // array in an otherwise-primitive settings object, and returning it by
+        // reference would let a caller mutate this instance's own list without
+        // going through setChat/stageChat at all.
+        return { ...this.chatSettings, autoJoin: [...this.chatSettings.autoJoin] };
+    }
+
+    /** The NickServ password as sealed by the OS store, or null when none is kept. */
+    sealedNickserv(): string | null {
+        return this.nickservSealed;
+    }
+
+    /** Keeps a sealed password, or forgets it with null. Only ever a sealed one: `chat/secret.ts` decides whether sealing is safe. */
+    setNickservSealed(sealed: string | null): void {
+        this.nickservSealed = sealed === '' ? null : sealed;
+        this.save();
     }
 
     setChat(patch: Partial<ChatSettings>): void {
@@ -203,10 +229,10 @@ export class AppState {
      */
     stageChat(patch: Partial<ChatSettings>): void {
         this.chatSettings = { ...this.chatSettings, ...patch };
-        // Cloned for the same reason chat() clones on the way out: rooms is an
+        // Cloned for the same reason chat() clones on the way out: autoJoin is an
         // array, and holding the caller's own array by reference would let it
         // mutate this instance's settings from outside setChat/stageChat entirely.
-        if (patch.rooms !== undefined) this.chatSettings.rooms = [...patch.rooms];
+        if (patch.autoJoin !== undefined) this.chatSettings.autoJoin = [...patch.autoJoin];
     }
 
     /** Whether the single-player world grants developer commands. Off until asked for. */
@@ -273,7 +299,7 @@ export class AppState {
             version: 1,
             worlds: Object.fromEntries(this.worlds),
             warnOnSwitch: this.warn,
-            chat: this.chatSettings,
+            chat: this.nickservSealed === null ? this.chatSettings : { ...this.chatSettings, nickserv: this.nickservSealed },
             singlePlayer: { cheats: this.cheats },
             hiscores: Object.fromEntries(this.hiscoresNames),
             alwaysOnTop: this.onTop,

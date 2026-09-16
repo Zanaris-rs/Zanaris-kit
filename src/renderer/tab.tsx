@@ -3,12 +3,12 @@ import { CloseRoom } from './icons';
 
 /**
  * The text-bearing interface tab, worn by the window strip and by the chat
- * dock's row of rooms.
+ * pane's row of Settings, Status and channels.
  *
  * It lives here rather than in either of them because they are the same
  * object: one box, one open-versus-resting split, one place to change it. Two
- * copies of a tab are two tabs that drift, and a dock whose rooms stopped
- * looking like the strip's pages would read as somebody else's control.
+ * copies of a tab are two tabs that drift, and chat tabs that stopped looking
+ * like the strip's pages would read as somebody else's control.
  */
 
 /*
@@ -48,8 +48,8 @@ export default function Tab({
      * is drawn — both look the same, and only one of them is a tab widget.
      *
      * 'tab' is the window strip, which is a read-out of which page is in front,
-     * sits in a role="tablist", and means aria-selected. 'button' is the dock's
-     * rooms, which are a row of controls: they have no tabpanel to point at,
+     * sits in a role="tablist", and means aria-selected. 'button' is chat's
+     * tabs, which are a row of controls: they have no tabpanel to point at,
      * because the log below them has to stay a role="log" live region or new
      * lines stop being announced at all, and they have no arrow-key roving. A
      * tablist missing both would tell a screen reader "tab 2 of 4" about
@@ -62,15 +62,11 @@ export default function Tab({
     onSelect?: () => void;
     /** The detail some tabs carry to the right of the label: a revision, an unread count. */
     after?: ReactNode;
-    /**
-     * Puts a close inside the tab, at its right edge. The window strip's tabs
-     * carry one; the dock's rooms do not, and keep their close beside the tab
-     * for the open room only — see `CloseControl` in `tools/Chat.tsx`.
-     */
+    /** Puts a close inside the tab, at its right edge. The window strip's tabs carry one, and so does every chat channel. */
     onClose?: () => void;
     /** What the close is announced as. Names the tab rather than the act, since "Close" alone says nothing about which one. */
     closeLabel?: string;
-    /** A right-click anywhere on the tab, close included. The window strip's tabs raise their layout menu with it; the dock's rooms have none. */
+    /** A right-click anywhere on the tab, close included. The window strip's tabs raise their layout menu with it; chat's tabs have none. */
     onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 }): ReactNode {
     /*
@@ -120,7 +116,7 @@ export default function Tab({
                 <button type="button" {...announce} onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-[7px] self-stretch">
                     {body}
                 </button>
-                {/* 24px wide for the WCAG 2.5.8 floor the dock's close keeps; the tab's own 24px inside its border is the height. */}
+                {/* 24px wide for the WCAG 2.5.8 floor; the tab's own 24px inside its border is the height. */}
                 <button type="button" title={close} aria-label={close} onClick={onClose} className="tab-close flex w-[24px] shrink-0 items-center justify-center self-stretch">
                     <CloseRoom />
                 </button>

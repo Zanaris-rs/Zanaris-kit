@@ -200,12 +200,43 @@ detection; everything equivalent here is done from main or not at all.
 
 Chat is one IRC connection for the whole app, not one per window: it stays up
 while you open and close game windows, and every window shows the same
-conversation. It joins SwiftIRC over TLS — the network LostHQ's community
-actually uses — in the shared `#LostHQ` lobby always, plus `#LostCity` while
-you have a Lost City window open. Zanaris and Labs get no room: there is no
-channel for either on SwiftIRC, and guessing one would risk dropping a player
-into a stranger's channel on a large public network. A local or self-added
-server gets no room either, since it would be a room of one.
+conversation. It connects to SwiftIRC over TLS, the network LostHQ's community
+actually uses, and joins the channels on its auto-join list:
+`#2004scape, #LostHQ, #Zanaris` until you change it.
+
+Its tabs are **Settings**, **Status**, then one per channel in the order they
+were joined:
+
+- **Settings** can't be closed. It has the nickname, an optional NickServ
+  password, the auto-join list, and Connect or Disconnect.
+- **Status** is where the server talks to you. It shows the welcome, the
+  message of the day, notices, private messages and anything refused. It can't
+  be closed either.
+- **Every channel has its own close.** Closing a tab leaves that channel for
+  the session, and `/join` joins one for the session. Only Settings changes the
+  saved list, and each Connect joins that list again.
+- **The nick works the same way.** A `/nick`, the underscore added to a taken
+  nick, or a services rename to a guest nick lasts for the session. Settings
+  shows the saved nick and, while they differ, what the connection is called.
+- **Disconnect is remembered.** A kit you disconnected stays offline on its
+  next launch until you press Connect.
+- **The NickServ password** is sent when the server welcomes you, as
+  `IDENTIFY <saved nick> <password>`, so a password with spaces works and the
+  right account is identified even under a fallback nick. It goes out before
+  the joins. Services may still confirm after them, so a registered-only room
+  can refuse; that refusal shows in Status.
+  - It is sealed by the system's own secret store (Electron's `safeStorage`)
+    rather than written into `state.json` in the clear.
+  - The chat pane is never given it back.
+  - Where there is no real store, such as Linux with no keyring, it is kept only
+    until you quit, and Settings says so.
+
+Inside a channel, each line carries the time it arrived, with the full date in
+its tooltip. The topic sits above the log, with who set it and when in its
+tooltip. The user list is ranked first and named second: owners, admins and
+ops in gold, half-ops in orange, voices in green. Each nick has the same colour
+as in the log. Above the list are the user count, the channel's modes and the
+date it was created.
 
 Chat is a pane like anything else: drag its header to wherever you want it, drag
 its seams, close it. A new window opens with it already there, in a pane below the game —
@@ -214,25 +245,36 @@ nobody knows is there is a pane nobody opens. Closed, it comes back from **Add
 pane** in the tab bar, as a column down the tab's right edge.
 
 It draws itself two ways, and picks between them by reading its own width
-rather than remembering a preference. A conversation is a column of short lines,
-and at 320px almost every one of them wraps; past about 560px the same log runs
-wide and short instead, so six rows hold roughly what eleven hold in a narrow
-column. That is the whole argument the old bottom dock was built on — what has
-changed is only that a pane knows its own shape, so nothing has to be stored or
-moved. Dragging the seam is what "move chat to the bottom" used to mean.
+rather than remembering a preference. A conversation is a column of short
+lines, and at 320px almost every one of them wraps. Past about 560px the same
+log runs wide and short instead, so six rows hold roughly what eleven hold in a
+narrow column. Wide, the tabs keep to one row and the user list sits beside the
+log. Narrow, the tabs wrap, and a "12 users" button on the topic bar swaps the
+log for the list. Dragging the seam is what "move chat to the bottom" used to
+mean.
 
-The first time you open chat it asks for a nick, because there is nothing
-sensible to default to and a name others see should be chosen rather than
-assigned. Nothing connects until you pick one, which is also why an unattended
-capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join` and `/part`
-work; an unrecognised slash command is refused rather than sent.
+The first time you open chat it opens on Settings, because there is nothing
+sensible to default a nick to, and a name others see should be chosen rather
+than assigned. Nothing connects until you pick one, which is also why an
+unattended capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join`,
+`/part` and `/quit` are the kit's own: they change what it draws, so it has to
+understand them. `/quit [reason]` is the Disconnect button, remembered the same
+way, rather than a dropped connection the kit would reconnect behind. Every other slash command goes to the server as typed — `/invite bob
+#LostHQ`, `/whois`, `/mode`, `/kick` — in IRC's own argument order, colons and
+all, so `/topic #LostHQ :hello there` needs its colon or the server keeps only
+the first word. The answer comes back in Status, including the complaint when
+the command was a typo. A slash followed by something that is not a command at
+all, like `/123`, is still refused here rather than sent.
 
 The protocol layer is hand-written and tested rather than a dependency: a
-parser and serializer for the dozen commands and numerics this needs, and a
-client that is pure over an injected `send`, so the whole conversation can be
-driven in tests without a socket. The service around it owns the TLS socket
-and the reconnect backoff, which grows and caps — a client that retries harder
-the longer a network is down is a client that gets banned.
+parser and serializer for the commands and numerics this needs, including the
+server's ISUPPORT rank prefixes, which modes take a parameter, and the
+`multi-prefix` capability, so someone who is both op and voiced keeps their
+voice when they lose op. The client is
+pure over an injected `send`, so the whole conversation can be driven in tests
+without a socket. The service around it owns the TLS socket and the reconnect
+backoff, which grows and caps: a client that retries harder the longer a
+network is down is a client that gets banned.
 
 Not carried over from LostKit, which reaches LostHQ's community through
 `https://irc.losthq.rs/`, a hosted web client rather than a server: that host
@@ -574,7 +616,7 @@ One capture run with every catalog server open at once:
 
 | window | game | shell |
 |---|---|---|
-| Lost City | the whole login screen, canvas and controls strip, nothing clipped at 765x535 inside the window's own opening size of 813x839 | the game's pane headed "Game · Lost City · W2 · low · 283 ms · rev 274" with the focus dot before its name, over a 232px chat pane showing the nick prompt; no ring round either |
+| Lost City | the whole login screen, canvas and controls strip, nothing clipped at 765x535 inside the window's own opening size of 813x839 | the game's pane headed "Game · Lost City · W2 · low · 283 ms · rev 274" with the focus dot before its name, over a 232px chat pane showing the nick prompt (since 2026-09-15, its Settings tab); no ring round either |
 | Zanaris | login screen | "Game · Zanaris · W1 · low · 268 ms" |
 | Lost City Labs | login screen | "Game · Lost City Labs · W1 · N ms", no detail since Labs has no switch |
 | Lost City, split right | untouched at 765→381px wide | the new pane headed "Empty", its launcher offering Chat, Worlds, Hiscores, **Move game here**, then the eleven links under a rule |
@@ -657,6 +699,7 @@ src/shared/catalog.ts       ServerDef and the add-form input
 src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorld
 src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/shared/timers.ts        pure: clocks, their limits, digits and the edit form    (tested)
+src/shared/chatSettings.ts  pure: the chat Settings form, line times, rank tones    (tested)
 src/main/paneTree.ts        pure: the split tree, its solver, splits, moves, swaps  (tested)
 src/main/paneDrop.ts        pure: what a header drop does and where the pane lands  (tested)
 src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
@@ -677,6 +720,10 @@ src/main/worlds/warning.ts  pure: what the switch confirmation says             
 src/main/timers/defs.ts     pure: built-ins, the player's clocks and edits          (tested)
 src/main/timers/runner.ts   one window's clocks over an injected clock              (tested)
 src/main/timers/electron.ts reads the alert sound; the banner
+src/main/chat/protocol.ts   pure: IRC lines, ISUPPORT, modes, what a typed line is  (tested)
+src/main/chat/client.ts     one IRC conversation over an injected send              (tested)
+src/main/chat/service.ts    the app's one connection: socket, backoff, settings     (tested)
+src/main/chat/secret.ts     sealing the NickServ password with the OS store         (tested)
 src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
 src/main/menu.ts            application menu: new windows, the server list, the pane
@@ -691,6 +738,9 @@ src/renderer/grip.tsx       one draggable seam, and its keyboard path
 src/renderer/dropIndicator.tsx where a dragged pane will land
 src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
 src/renderer/tools/Worlds.tsx
+src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
+src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
+src/renderer/tools/ChatUsers.tsx     a channel's users by rank, and its modes and age
 src/renderer/alertSound.ts  plays an alert at a clock's volume
 static/offline.html         shown when a server can't be reached
 static/sounds/alert.wav     every timer's alert: Kenney's confirmation_002 (CC0), louder
@@ -709,5 +759,6 @@ the reload button) is parked in `git stash`.
    per-pane zoom, and tearing a pane off into its own window. (Reopening what
    was open at quit landed with the pane tree.)
 4. **Shared tools.** Screenshot cropped to the canvas, notes, settings.
-5. **Chat.** IRC on SwiftIRC, joining `#LostHQ` and `#LostCity`.
+5. **Chat.** Private-message tabs, input history and nick completion. IRC on
+   SwiftIRC, with Settings, users and topics, landed on 2026-09-15.
 6. **Server tools.** Clue lookup and calculators, with the data pack loader.

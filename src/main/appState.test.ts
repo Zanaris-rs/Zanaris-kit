@@ -193,94 +193,144 @@ test('setChat leaves the remembered worlds and the warning alone', () => {
     assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' });
 });
 
-test('a stored rooms list round-trips, and an older file with no rooms key loads clean', () => {
+test('a stored auto-join list round-trips, an empty one stays empty, and a file with no list gets the defaults', () => {
     const file = tempFile();
-    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, rooms: ['#rscape', '#help'] };
+    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, autoJoin: ['#rscape', '#help'] };
     writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
     const state = new AppState(file);
     state.load();
-    assert.deepEqual(state.chat().rooms, ['#rscape', '#help']);
+    assert.deepEqual(state.chat().autoJoin, ['#rscape', '#help']);
+
+    const cleared = tempFile();
+    writeFileSync(cleared, JSON.stringify({ version: 1, worlds: {}, chat: { ...chat, autoJoin: [] } }));
+    const emptied = new AppState(cleared);
+    emptied.load();
+    assert.deepEqual(emptied.chat().autoJoin, [], 'the user cleared the list, and that is kept');
 
     const older = tempFile();
-    writeFileSync(older, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat: { nick: 'lumbridge', server: 'irc.example.net', port: 6667 } }));
-    const beforeRooms = new AppState(older);
-    beforeRooms.load();
-    assert.deepEqual(beforeRooms.chat().rooms, [], 'no rooms key at all is not a broken file');
+    writeFileSync(older, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat: { nick: 'lumbridge', server: 'irc.example.net', port: 6667, rooms: ['#old'] } }));
+    const beforeList = new AppState(older);
+    beforeList.load();
+    assert.deepEqual(beforeList.chat().autoJoin, ['#2004scape', '#LostHQ', '#Zanaris'], 'no autoJoin key at all is the defaults, and the old rooms key is not read');
 });
 
-test('a rooms value that is missing, not an array, or holds an invalid entry loses only that entry, keeping the rest of chat and the worlds', () => {
+test('an auto-join value that is not an array falls back to the defaults, and a bad entry loses only itself', () => {
     const cases: Array<[unknown, string[]]> = [
-        [undefined, []],
-        ['#rscape', []], // a single string is not an array of them
-        [42, []],
+        ['#rscape', ['#2004scape', '#LostHQ', '#Zanaris']], // a single string is not an array of them
+        [42, ['#2004scape', '#LostHQ', '#Zanaris']],
         [['#rscape', 'not-a-channel', '#help'], ['#rscape', '#help']], // missing the # or & prefix
-        [['#rscape', '', '#help'], ['#rscape', '#help']], // empty string
-        [['#rscape', 7, '#help'], ['#rscape', '#help']] // not a string at all
+        [['#rscape', '', '#help'], ['#rscape', '#help']],
+        [['#rscape', '#', '#help'], ['#rscape', '#help']], // a prefix is not a name
+        [['#rscape', 7, '#help'], ['#rscape', '#help']]
     ];
-    for (const [rooms, expected] of cases) {
+    for (const [autoJoin, expected] of cases) {
         const file = tempFile();
-        const chat: Record<string, unknown> = { nick: 'lumbridge', server: 'irc.example.net', port: 6667 };
-        if (rooms !== undefined) chat.rooms = rooms;
-        writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat: { nick: 'lumbridge', autoJoin } }));
         const state = new AppState(file);
         state.load();
-        assert.deepEqual(state.chat().rooms, expected, `expected ${JSON.stringify(rooms)} to become ${JSON.stringify(expected)}`);
-        assert.equal(state.chat().nick, 'lumbridge', `expected ${JSON.stringify(rooms)} to leave the rest of chat intact`);
-        assert.deepEqual(state.world('lostcity'), REMEMBERED, `expected ${JSON.stringify(rooms)} to leave the remembered worlds alone`);
-        assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false, `expected ${JSON.stringify(rooms)} not to be treated as a broken file`);
+        assert.deepEqual(state.chat().autoJoin, expected, `expected ${JSON.stringify(autoJoin)} to become ${JSON.stringify(expected)}`);
+        assert.equal(state.chat().nick, 'lumbridge');
+        assert.deepEqual(state.world('lostcity'), REMEMBERED);
+        assert.equal(readdirSync(join(file, '..')).some(n => n.startsWith('state.json.broken-')), false);
     }
 });
 
-test('a room name past the length cap is rejected, leaving the rest of the list alone', () => {
+test('a stored nick or channel that IRC would refuse, or that could smuggle a second command, is not read', () => {
     const file = tempFile();
-    const atMax = `#${'x'.repeat(49)}`; // 50 characters, the RFC 2812 limit
-    const overMax = `#${'x'.repeat(50)}`; // 51 characters
-    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, rooms: [overMax, atMax] };
-    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+    writeFileSync(
+        file,
+        JSON.stringify({ version: 1, worlds: {}, chat: { nick: 'matt\r\nJOIN #elsewhere', autoJoin: ['#ok', '#bad\r\nQUIT', '#two words', '#fine'] } })
+    );
     const state = new AppState(file);
     state.load();
-    assert.deepEqual(state.chat().rooms, [atMax], 'the over-long name is dropped, the one at the cap is kept');
+    assert.equal(state.chat().nick, null);
+    assert.deepEqual(state.chat().autoJoin, ['#ok', '#fine']);
 });
 
-test('rooms past the count cap are dropped, keeping the earlier ones', () => {
+test('an auto-join name past the length cap is dropped, and entries past the count cap are too', () => {
     const file = tempFile();
-    const rooms = Array.from({ length: 25 }, (_, i) => `#room${i}`);
-    const chat = { nick: 'lumbridge', server: 'irc.example.net', port: 6667, rooms };
-    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, chat }));
+    const atMax = `#${'x'.repeat(49)}`;
+    const overMax = `#${'x'.repeat(50)}`;
+    const many = Array.from({ length: 25 }, (_, i) => `#room${i}`);
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, chat: { autoJoin: [overMax, atMax, ...many] } }));
     const state = new AppState(file);
     state.load();
-    assert.deepEqual(state.chat().rooms, rooms.slice(0, 20));
+    assert.deepEqual(state.chat().autoJoin, [atMax, ...many.slice(0, 19)]);
 });
 
-test('setChat with rooms saves, and a fresh instance reads them back', () => {
+test('autoConnect defaults on, round-trips off, and ignores anything not a boolean', () => {
     const file = tempFile();
     const a = new AppState(file);
     a.load();
-    a.setChat({ rooms: ['#rscape'] });
+    assert.equal(a.chat().autoConnect, true);
+    a.setChat({ autoConnect: false });
     const b = new AppState(file);
     b.load();
-    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, rooms: ['#rscape'] });
-    const written = JSON.parse(readFileSync(file, 'utf8'));
-    assert.deepEqual(written.chat, { ...DEFAULT_CHAT, rooms: ['#rscape'] });
+    assert.equal(b.chat().autoConnect, false);
+
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, chat: { autoConnect: 'no' } }));
+    const c = new AppState(file);
+    c.load();
+    assert.equal(c.chat().autoConnect, true);
+});
+
+test('setChat with an auto-join list saves a copy, and a fresh instance reads it back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    const list = ['#rscape'];
+    a.setChat({ autoJoin: list });
+    list.push('#later');
+    assert.deepEqual(a.chat().autoJoin, ['#rscape'], 'the caller\'s array is not held');
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, autoJoin: ['#rscape'] });
+});
+
+test('a sealed NickServ password is kept in the chat block, read back, and forgotten with null', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    assert.equal(a.sealedNickserv(), null);
+    a.setChat({ nick: 'lumbridge' });
+    assert.equal('nickserv' in JSON.parse(readFileSync(file, 'utf8')).chat, false, 'no key at all when there is nothing to keep');
+
+    a.setNickservSealed('c2VhbGVk');
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).chat.nickserv, 'c2VhbGVk');
+    const b = new AppState(file);
+    b.load();
+    assert.equal(b.sealedNickserv(), 'c2VhbGVk');
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge' }, 'and it is not one of the chat settings');
+
+    b.setNickservSealed(null);
+    const c = new AppState(file);
+    c.load();
+    assert.equal(c.sealedNickserv(), null);
+});
+
+test('a sealed password that is not a string, or absurdly long, is not kept', () => {
+    for (const nickserv of [42, '', 'x'.repeat(5000), null]) {
+        const file = tempFile();
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, chat: { nick: 'lumbridge', nickserv } }));
+        const state = new AppState(file);
+        state.load();
+        assert.equal(state.sealedNickserv(), null, JSON.stringify(nickserv).slice(0, 20));
+        assert.equal(state.chat().nick, 'lumbridge');
+    }
 });
 
 test('stageChat applies in memory and writes nothing until save is called', () => {
-    // What the dock drag leans on: a height arrives once an animation frame,
-    // so the layout must see it immediately while the profile is written once,
-    // when the drag settles. A stageChat that saved would be sixty rewrites of
-    // the whole file a second; one that did not apply would leave every
-    // window laying out against the old height.
     const file = tempFile();
     const a = new AppState(file);
     a.load();
     a.setChat({ nick: 'lumbridge' });
-    a.stageChat({ rooms: ['#rscape'] });
-    assert.deepEqual(a.chat().rooms, ['#rscape'], 'the staged value is live in memory at once');
-    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).chat.rooms, [], 'and nothing has been written yet');
+    a.stageChat({ autoJoin: ['#rscape'] });
+    assert.deepEqual(a.chat().autoJoin, ['#rscape'], 'the staged value is live in memory at once');
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).chat.autoJoin, [...DEFAULT_CHAT.autoJoin], 'and nothing has been written yet');
     a.save();
     const b = new AppState(file);
     b.load();
-    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', rooms: ['#rscape'] }, 'the save writes the staged value alongside everything else');
+    assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', autoJoin: ['#rscape'] }, 'the save writes the staged value alongside everything else');
 });
 
 test('single-player cheats are off by default, persist, and survive a file without the key', () => {
