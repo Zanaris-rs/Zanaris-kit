@@ -10,10 +10,10 @@
  *   them, so scripts/stage-engine.mjs lists them into COMMANDS.json.
  * - The engine's own commands, typed `::name`, written out by hand below.
  *
- * Debug procs need staff level 4 and a world that is not production; the
- * engine commands below need staff level 2 or 3. The kit gives level 4 with
- * cheats on and 0 with them off, and at 0 the world ignores every one of them
- * without a word.
+ * Debug procs, and the engine's reload, speed, fly and naive, need staff
+ * level 4 and a world that is not production; the other engine commands below
+ * need staff level 2 or 3. The kit gives level 4 with cheats on and 0 with them
+ * off, and at 0 the world ignores every one of them without a word.
  */
 
 export interface CommandParam {
