@@ -10,6 +10,7 @@ export interface CharacterFs {
     writeBytes(path: string, bytes: Uint8Array): void;
     rename(from: string, to: string): void;
     copyFile(from: string, to: string): void;
+    /** Makes the directory and any missing parents; quiet when it already exists. */
     mkdir(path: string): void;
     /** Recursive, and quiet when the path is absent. */
     rm(path: string): void;
@@ -46,11 +47,14 @@ const PART_EXTENSION = '.part';
 
 type Read = { ok: true; bytes: Uint8Array; summary: SaveSummary } | { ok: false; problem: FileProblem };
 type Named = { ok: true; name: string } | { ok: false; message: string };
+/** What moving a name's save to the trash did: there was none, it went, or the trash refused. */
+type Trashed = 'absent' | 'trashed' | 'failed';
 
 const CANCELLED: CharacterOutcome = { kind: 'cancelled' };
 const done = (name: string): CharacterOutcome => ({ kind: 'done', name });
 const refused = (message: string): CharacterOutcome => ({ kind: 'refused', message });
 const GONE = 'That character is not in the saves folder any more.';
+const NOT_WAITING = 'That file is no longer waiting to be imported. Choose it again.';
 const PLAYING = "You're playing right now.";
 const replaced = (who: string): string => `The ${who} you have now goes to the trash.`;
 
@@ -62,6 +66,11 @@ function named(typed: string): Named {
 
 function sentences(...parts: (string | null)[]): string {
     return parts.filter((part): part is string => part !== null).join(' ');
+}
+
+/** A refusal that came after the old save went to the trash says so, since the name is empty now. */
+function afterTrash(message: string, name: string, trashed: Trashed): string {
+    return trashed === 'trashed' ? `${message} The old ${toDisplayName(name)} is in the trash.` : message;
 }
 
 /** The name an imported file suggests: its own, less `.sav`, as the engine would file it. Empty when that is no name. */
@@ -115,22 +124,32 @@ export function deleteQuestion(name: string, running: boolean): Confirmation {
 
 /**
  * The single-player characters: one file each in the saves folder, named for
- * the character. Every path built here goes through `path`, which takes only a
- * name `toSafeName` leaves as it is, so nothing typed or picked can reach a
- * file outside the folder, or one the engine would never look for.
+ * the character. Every path this builds for a character goes through `path`,
+ * which takes only a name `toSafeName` leaves as it is, so no typed name can
+ * reach a file outside the folder, or one the engine would never look for. A
+ * picked import is read from wherever the player picked it, and an export is
+ * written wherever the player chose.
  *
  * Nothing here is destroyed. A character that another is about to replace, or
  * that is deleted, goes to the system trash, and a change that cannot move it
- * there changes nothing.
+ * there changes nothing. A change that fails after that step says the old save
+ * is in the trash.
  *
  * Changes are allowed while the world runs, and ask first: a player logged in
  * as one of these writes it again on logout, and the kit cannot tell who is
  * logged in.
+ *
+ * The file work of each change runs one change at a time, after its question
+ * is answered, and first checks again what the question was about. Two
+ * windows, or two clicks, could otherwise interleave a trash and a rename on
+ * one name.
  */
 export class Characters {
     private readonly deps: CharactersDeps;
     /** Picked files waiting for a name, by token, oldest first. */
     private readonly pending = new Map<string, string>();
+    /** The file work of the change running now; the next one waits on it. */
+    private queue: Promise<unknown> = Promise.resolve();
 
     constructor(deps: CharactersDeps) {
         this.deps = deps;
@@ -192,19 +211,28 @@ export class Characters {
     /** The second half: files the picked save under a typed name. The file is read again, since it is the player's and may have changed. */
     async importAs(token: string, typed: string, ctx: ChangeContext): Promise<CharacterOutcome> {
         const source = this.pending.get(token);
-        if (source === undefined) return refused('That file is no longer waiting to be imported. Choose it again.');
+        if (source === undefined) return refused(NOT_WAITING);
         const target = named(typed);
         if (!target.ok) return refused(target.message);
-        const read = this.read(source);
-        if (!read.ok) {
+        const first = this.read(source);
+        if (!first.ok) {
             this.pending.delete(token);
-            return refused(PROBLEM_TEXT[read.problem]);
+            return refused(PROBLEM_TEXT[first.problem]);
         }
         const replacing = this.deps.fs.exists(this.path(target.name));
         if ((replacing || ctx.running) && !(await ctx.confirm(importQuestion(target.name, replacing, ctx.running)))) return CANCELLED;
-        const outcome = await this.write(target.name, read.bytes);
-        if (outcome.kind === 'done') this.pending.delete(token);
-        return outcome;
+        return this.exclusive(async () => {
+            // Another import of the same pick may have finished while this one was asking.
+            if (this.pending.get(token) !== source) return refused(NOT_WAITING);
+            const read = this.read(source);
+            if (!read.ok) {
+                this.pending.delete(token);
+                return refused(PROBLEM_TEXT[read.problem]);
+            }
+            const outcome = await this.write(target.name, read.bytes);
+            if (outcome.kind === 'done') this.pending.delete(token);
+            return outcome;
+        });
     }
 
     async rename(from: string, typed: string, ctx: ChangeContext): Promise<CharacterOutcome> {
@@ -215,13 +243,17 @@ export class Characters {
         if (target.name === source.name) return refused(`${toDisplayName(source.name)} already has that name.`);
         const replacing = this.deps.fs.exists(this.path(target.name));
         if ((replacing || ctx.running) && !(await ctx.confirm(renameQuestion(source.name, target.name, replacing, ctx.running)))) return CANCELLED;
-        if (!(await this.trash(target.name))) return refused(`Couldn't move the old ${toDisplayName(target.name)} to the trash, so nothing was renamed.`);
-        try {
-            this.deps.fs.rename(this.path(source.name), this.path(target.name));
-        } catch {
-            return refused("The save couldn't be renamed.");
-        }
-        return done(target.name);
+        return this.exclusive(async () => {
+            if (!this.existing(source.name).ok) return refused(GONE);
+            const trashed = await this.trash(target.name);
+            if (trashed === 'failed') return refused(`Couldn't move the old ${toDisplayName(target.name)} to the trash, so nothing was renamed.`);
+            try {
+                this.deps.fs.rename(this.path(source.name), this.path(target.name));
+            } catch {
+                return refused(afterTrash("The save couldn't be renamed.", target.name, trashed));
+            }
+            return done(target.name);
+        });
     }
 
     async duplicate(from: string, typed: string, ctx: ChangeContext): Promise<CharacterOutcome> {
@@ -232,13 +264,16 @@ export class Characters {
         if (target.name === source.name) return refused('A copy needs a name of its own.');
         const replacing = this.deps.fs.exists(this.path(target.name));
         if ((replacing || ctx.running) && !(await ctx.confirm(duplicateQuestion(source.name, target.name, replacing, ctx.running)))) return CANCELLED;
-        let bytes: Uint8Array;
-        try {
-            bytes = this.deps.fs.readBytes(this.path(source.name));
-        } catch {
-            return refused("The save couldn't be read.");
-        }
-        return this.write(target.name, bytes);
+        return this.exclusive(async () => {
+            if (!this.existing(source.name).ok) return refused(GONE);
+            let bytes: Uint8Array;
+            try {
+                bytes = this.deps.fs.readBytes(this.path(source.name));
+            } catch {
+                return refused("The save couldn't be read.");
+            }
+            return this.write(target.name, bytes);
+        });
     }
 
     /** Moves a character to the system trash, always asking first. */
@@ -246,8 +281,11 @@ export class Characters {
         const source = this.existing(name);
         if (!source.ok) return refused(source.message);
         if (!(await ctx.confirm(deleteQuestion(source.name, ctx.running)))) return CANCELLED;
-        if (!(await this.trash(source.name))) return refused(`Couldn't move ${toDisplayName(source.name)} to the trash, so it was not deleted.`);
-        return done(source.name);
+        return this.exclusive(async () => {
+            if (!this.existing(source.name).ok) return refused(GONE);
+            if ((await this.trash(source.name)) === 'failed') return refused(`Couldn't move ${toDisplayName(source.name)} to the trash, so it was not deleted.`);
+            return done(source.name);
+        });
     }
 
     /** Copies a character's save to where the player chose. It only reads the folder, so it never asks. */
@@ -264,8 +302,15 @@ export class Characters {
 
     // ── internals ────────────────────────────────────────────────────────
 
+    /** Runs `work` once every change already running has finished, so no two changes interleave their file work. */
+    private exclusive(work: () => Promise<CharacterOutcome>): Promise<CharacterOutcome> {
+        const run = this.queue.then(work);
+        this.queue = run.catch(() => undefined);
+        return run;
+    }
+
     private existing(name: string): Named {
-        if (toSafeName(name) !== name || !this.deps.fs.exists(this.path(name))) return { ok: false, message: GONE };
+        if (toSafeName(name) !== name || !this.deps.fs.stat(this.path(name))?.isFile) return { ok: false, message: GONE };
         return { ok: true, name };
     }
 
@@ -286,22 +331,25 @@ export class Characters {
         }
     }
 
-    /** True once nothing is filed under `name`: it never was, or it is in the trash now. */
-    private async trash(name: string): Promise<boolean> {
+    /** Moves whatever is filed under `name` to the system trash. */
+    private async trash(name: string): Promise<Trashed> {
         const path = this.path(name);
-        if (!this.deps.fs.exists(path)) return true;
+        if (!this.deps.fs.exists(path)) return 'absent';
         try {
             await this.deps.fs.trash(path);
-            return true;
+            return 'trashed';
         } catch {
-            return false;
+            return 'failed';
         }
     }
 
     /**
-     * Files `bytes` under `name` through a `.part` file and a rename, so a
-     * crash leaves the old save or the new one and never half of one.
-     * Anything already under the name goes to the trash first.
+     * Files `bytes` under `name`. They go to a `.part` file first and are
+     * renamed into place, so the name never holds half a save. Anything
+     * already under the name goes to the trash between those two steps. A
+     * crash there leaves the old save in the trash and the new one in the
+     * `.part` file, which the list never shows. A rename that fails there
+     * removes the `.part` file and says the old save is in the trash.
      */
     private async write(name: string, bytes: Uint8Array): Promise<CharacterOutcome> {
         const { fs, dir } = this.deps;
@@ -311,19 +359,29 @@ export class Characters {
             fs.mkdir(dir);
             fs.writeBytes(part, bytes);
         } catch {
-            fs.rm(part);
+            this.discard(part);
             return refused("The save couldn't be written.");
         }
-        if (!(await this.trash(name))) {
-            fs.rm(part);
+        const trashed = await this.trash(name);
+        if (trashed === 'failed') {
+            this.discard(part);
             return refused(`Couldn't move the old ${toDisplayName(name)} to the trash, so nothing was replaced.`);
         }
         try {
             fs.rename(part, path);
         } catch {
-            fs.rm(part);
-            return refused("The save couldn't be written.");
+            this.discard(part);
+            return refused(afterTrash("The save couldn't be written.", name, trashed));
         }
         return done(name);
+    }
+
+    /** Removes a `.part` file this store wrote. Anything there that is not a file is left alone. */
+    private discard(part: string): void {
+        try {
+            if (this.deps.fs.stat(part)?.isFile) this.deps.fs.rm(part);
+        } catch {
+            // A leftover `.part` is never listed, and the next write to the name replaces it.
+        }
     }
 }

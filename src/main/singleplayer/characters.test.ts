@@ -14,6 +14,8 @@ interface Disk {
     calls: string[];
     trashed: string[];
     trashFails: { value: boolean };
+    renameFails: { value: boolean };
+    writeFails: { value: boolean };
     put(path: string, bytes: Uint8Array): void;
 }
 
@@ -24,6 +26,8 @@ function disk(): Disk {
     const calls: string[] = [];
     const trashed: string[] = [];
     const trashFails = { value: false };
+    const renameFails = { value: false };
+    const writeFails = { value: false };
     let clock = 0;
     const put = (path: string, bytes: Uint8Array): void => void files.set(path, { bytes, modified: ++clock });
     const get = (path: string): { bytes: Uint8Array; modified: number } => {
@@ -36,10 +40,12 @@ function disk(): Disk {
         readBytes: path => get(path).bytes,
         writeBytes: (path, bytes) => {
             calls.push(`write ${path}`);
+            if (writeFails.value) throw new Error('ENOSPC');
             put(path, bytes);
         },
         rename: (from, to) => {
             calls.push(`rename ${from} ${to}`);
+            if (renameFails.value) throw new Error('EPERM');
             const file = get(from);
             files.delete(from);
             files.set(to, file);
@@ -71,7 +77,7 @@ function disk(): Disk {
             files.delete(path);
         }
     };
-    return { fs, files, dirs, calls, trashed, trashFails, put };
+    return { fs, files, dirs, calls, trashed, trashFails, renameFails, writeFails, put };
 }
 
 function setup(): Disk & { characters: Characters } {
@@ -102,6 +108,7 @@ function pickOk(characters: Characters, path: string): string {
 }
 
 const FIXTURE_SUMMARY = { version: 7, combatLevel: 126, totalLevel: 1881, playtimeTicks: 3529 };
+const GONE = 'That character is not in the saves folder any more.';
 
 test('list shows each save with its levels, newest first, and a damaged one with its problem', () => {
     const d = setup();
@@ -342,4 +349,136 @@ test('whatever is typed, every file written, moved or trashed is a safe name in 
     const touched = d.calls.flatMap(call => call.split(' ').slice(1));
     assert.ok(touched.length > 0);
     for (const path of touched) assert.match(path, safe);
+});
+
+test('a rename into place that fails after the old save went to the trash says where the old one went, and leaves no part file', async () => {
+    const d = setup();
+    save(d, 'zezima');
+    d.put('/downloads/x.sav', fixtureSave());
+    const token = pickOk(d.characters, '/downloads/x.sav');
+    d.renameFails.value = true;
+    assert.deepEqual(await d.characters.importAs(token, 'zezima', answering(true)), { kind: 'refused', message: "The save couldn't be written. The old Zezima is in the trash." });
+    assert.deepEqual(d.trashed, [`${DIR}/zezima.sav`]);
+    assert.equal(d.files.has(`${DIR}/zezima.sav.part`), false);
+});
+
+test('a failed write to a free name says only that it failed', async () => {
+    const d = setup();
+    d.put('/downloads/x.sav', fixtureSave());
+    const token = pickOk(d.characters, '/downloads/x.sav');
+    d.renameFails.value = true;
+    assert.deepEqual(await d.characters.importAs(token, 'zezima', answering(true)), { kind: 'refused', message: "The save couldn't be written." });
+    assert.equal(d.files.has(`${DIR}/zezima.sav.part`), false);
+});
+
+test('a part file that cannot be written leaves nothing behind and trashes nothing', async () => {
+    const d = setup();
+    save(d, 'zezima');
+    d.put('/downloads/x.sav', fixtureSave());
+    const token = pickOk(d.characters, '/downloads/x.sav');
+    d.writeFails.value = true;
+    assert.deepEqual(await d.characters.importAs(token, 'zezima', answering(true)), { kind: 'refused', message: "The save couldn't be written." });
+    assert.deepEqual(d.trashed, []);
+    assert.equal(d.files.has(`${DIR}/zezima.sav`), true);
+});
+
+test('a rename whose target cannot go to the trash changes nothing', async () => {
+    const d = setup();
+    save(d, 'zezima');
+    save(d, 'bob');
+    d.trashFails.value = true;
+    assert.deepEqual(await d.characters.rename('zezima', 'bob', answering(true)), { kind: 'refused', message: "Couldn't move the old Bob to the trash, so nothing was renamed." });
+    assert.equal(d.files.has(`${DIR}/zezima.sav`), true);
+    assert.equal(d.files.has(`${DIR}/bob.sav`), true);
+});
+
+test('a rename that fails after its target went to the trash says where the old one went', async () => {
+    const d = setup();
+    save(d, 'zezima');
+    save(d, 'bob');
+    d.renameFails.value = true;
+    assert.deepEqual(await d.characters.rename('zezima', 'bob', answering(true)), { kind: 'refused', message: "The save couldn't be renamed. The old Bob is in the trash." });
+    assert.equal(d.files.has(`${DIR}/zezima.sav`), true);
+});
+
+test('a character that vanishes while its question is open is not renamed, copied or deleted, and nothing is trashed', async () => {
+    const d = setup();
+    save(d, 'bob');
+    const vanishing = (): ChangeContext => ({
+        running: true,
+        confirm: async () => {
+            d.files.delete(`${DIR}/zezima.sav`);
+            return true;
+        }
+    });
+    save(d, 'zezima');
+    assert.deepEqual(await d.characters.rename('zezima', 'bob', vanishing()), { kind: 'refused', message: GONE });
+    save(d, 'zezima');
+    assert.deepEqual(await d.characters.duplicate('zezima', 'bob', vanishing()), { kind: 'refused', message: GONE });
+    save(d, 'zezima');
+    assert.deepEqual(await d.characters.remove('zezima', vanishing()), { kind: 'refused', message: GONE });
+    assert.deepEqual(d.trashed, []);
+    assert.equal(d.files.has(`${DIR}/bob.sav`), true);
+});
+
+test('two imports of one pick answered together import it once', async () => {
+    const d = setup();
+    d.put('/downloads/x.sav', fixtureSave());
+    const token = pickOk(d.characters, '/downloads/x.sav');
+    let answer!: () => void;
+    const answered = new Promise<void>(resolve => {
+        answer = resolve;
+    });
+    const held: ChangeContext = {
+        running: true,
+        confirm: async () => {
+            await answered;
+            return true;
+        }
+    };
+    const both = Promise.all([d.characters.importAs(token, 'zezima', held), d.characters.importAs(token, 'zezima', held)]);
+    answer();
+    const outcomes = await both;
+    assert.deepEqual(outcomes.map(o => o.kind).sort(), ['done', 'refused']);
+    assert.equal(d.calls.filter(call => call.startsWith('write ')).length, 1);
+    assert.deepEqual(d.trashed, []);
+    assert.equal(d.files.has(`${DIR}/zezima.sav`), true);
+});
+
+test('two changes to one name answered together run one after the other, and the first save goes to the trash', async () => {
+    const d = setup();
+    const older = buildSave({ playtime: 1 });
+    const newer = buildSave({ playtime: 2 });
+    d.put('/downloads/a.sav', older);
+    d.put('/downloads/b.sav', newer);
+    const first = pickOk(d.characters, '/downloads/a.sav');
+    const second = pickOk(d.characters, '/downloads/b.sav');
+    let answer!: () => void;
+    const answered = new Promise<void>(resolve => {
+        answer = resolve;
+    });
+    const held: ChangeContext = {
+        running: true,
+        confirm: async () => {
+            await answered;
+            return true;
+        }
+    };
+    const both = Promise.all([d.characters.importAs(first, 'zezima', held), d.characters.importAs(second, 'zezima', held)]);
+    answer();
+    assert.deepEqual(await both, [
+        { kind: 'done', name: 'zezima' },
+        { kind: 'done', name: 'zezima' }
+    ]);
+    assert.equal(d.files.get(`${DIR}/zezima.sav`)!.bytes, newer);
+    assert.deepEqual(d.trashed, [`${DIR}/zezima.sav`]);
+    assert.equal(d.files.has(`${DIR}/zezima.sav.part`), false);
+});
+
+test('a directory named like a save is not a character', async () => {
+    const d = setup();
+    d.dirs.add(`${DIR}/folder.sav`);
+    assert.equal(d.characters.has('folder'), false);
+    assert.deepEqual(await d.characters.remove('folder', answering(true)), { kind: 'refused', message: GONE });
+    assert.deepEqual(d.trashed, []);
 });
