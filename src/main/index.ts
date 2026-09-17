@@ -7,6 +7,7 @@ import type { ChatView } from '../shared/chat';
 import { passwordProblem, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
+import { NAME_INPUT_MAX } from '../shared/names';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
@@ -25,7 +26,7 @@ import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
 import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
-import { worldRunning } from '../shared/singleplayer';
+import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/singleplayer';
 import type { Confirm, Confirmation } from './singleplayer/confirm';
 import { changesSettings, readSettingChange, restartConfirmation } from './singleplayer/settings';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
@@ -878,6 +879,62 @@ ipcMain.handle(IPC.singlePlayerSetSetting, async (event, key: unknown, value: un
 ipcMain.handle(IPC.singlePlayerRetry, async event => {
     if (!singlePlayerWindow(event.sender) || !singlePlayer) return;
     await singlePlayer.retry().catch(() => undefined);
+});
+
+/** What a character handler answers for a payload that is not a change. */
+const NOT_A_CHANGE: CharacterOutcome = { kind: 'refused', message: 'That is not a change the kit can make.' };
+/** A name as typed. Its rules are `shared/names.ts`'s; this only bounds what crosses the bridge. */
+const isTyped = (x: unknown): x is string => typeof x === 'string' && x.length <= NAME_INPUT_MAX;
+
+ipcMain.handle(IPC.singlePlayerPickImport, async (event): Promise<ImportPick | null> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(sw.window, {
+        title: 'Import a character',
+        buttonLabel: 'Import',
+        filters: [{ name: 'Character saves', extensions: ['sav'] }],
+        properties: ['openFile']
+    });
+    const path = filePaths[0];
+    return canceled || path === undefined ? null : singlePlayer.pickCharacter(path);
+});
+
+ipcMain.handle(IPC.singlePlayerImport, async (event, token: unknown, name: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof token !== 'string' || !isTyped(name)) return NOT_A_CHANGE;
+    return singlePlayer.importCharacter(token, name, confirmOn(sw));
+});
+
+ipcMain.handle(IPC.singlePlayerRename, async (event, from: unknown, to: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof from !== 'string' || !isTyped(to)) return NOT_A_CHANGE;
+    return singlePlayer.renameCharacter(from, to, confirmOn(sw));
+});
+
+ipcMain.handle(IPC.singlePlayerDuplicate, async (event, from: unknown, to: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof from !== 'string' || !isTyped(to)) return NOT_A_CHANGE;
+    return singlePlayer.duplicateCharacter(from, to, confirmOn(sw));
+});
+
+ipcMain.handle(IPC.singlePlayerDelete, async (event, name: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof name !== 'string') return NOT_A_CHANGE;
+    return singlePlayer.deleteCharacter(name, confirmOn(sw));
+});
+
+/** Where to is the save dialog's question, and so is whether to write over a file already there. */
+ipcMain.handle(IPC.singlePlayerExport, async (event, name: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof name !== 'string' || !singlePlayer.hasCharacter(name)) return NOT_A_CHANGE;
+    const { canceled, filePath } = await dialog.showSaveDialog(sw.window, {
+        title: 'Export a character',
+        buttonLabel: 'Export',
+        defaultPath: join(app.getPath('documents'), `${name}.sav`),
+        filters: [{ name: 'Character saves', extensions: ['sav'] }]
+    });
+    if (canceled || !filePath) return { kind: 'cancelled' };
+    return singlePlayer.exportCharacter(name, filePath);
 });
 
 ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {

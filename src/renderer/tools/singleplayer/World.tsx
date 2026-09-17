@@ -87,9 +87,6 @@ export default function World({ view }: { view: SinglePlayerView }): ReactNode {
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
             <div className="flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-1.5">
-                <button type="button" onClick={() => void window.zanaris.singlePlayer.openSaves()} style={QUIET} className="btn group">
-                    <span className="text-dim group-hover:text-cream">Open saves folder</span>
-                </button>
                 <button type="button" onClick={() => void window.zanaris.singlePlayer.showLog()} style={QUIET} className="btn group">
                     <span className="text-dim group-hover:text-cream">Show log</span>
                 </button>

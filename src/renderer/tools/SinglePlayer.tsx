@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { SinglePlayerView } from '../../shared/singleplayer';
+import Tab from '../tab';
+import Characters from './singleplayer/Characters';
 import World from './singleplayer/World';
 
 const STATUS: Record<SinglePlayerView['status'], string> = {
@@ -11,8 +13,16 @@ const STATUS: Record<SinglePlayerView['status'], string> = {
     failed: 'Failed'
 };
 
-/** The Single player tool. What the world is doing sits at the top, above the World section. */
+type Section = 'world' | 'characters';
+
+const SECTIONS: readonly { id: Section; label: string }[] = [
+    { id: 'world', label: 'World' },
+    { id: 'characters', label: 'Characters' }
+];
+
+/** The Single player tool. What the world is doing sits above the sections, since it is true of all of them. Which section is open belongs to this pane and is not kept. */
 export default function SinglePlayer({ view }: { view: SinglePlayerView }): ReactNode {
+    const [open, setOpen] = useState<Section>('world');
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -43,7 +53,19 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
                 </>
             )}
 
-            <World view={view} />
+            {/*
+             * Chat's row of tabs, worn the same way and for the same reason:
+             * buttons with aria-current, since there is no tabpanel here that a
+             * tablist could point at.
+             */}
+            <div role="group" aria-label="Single player" className="mt-2.5 flex flex-wrap items-center gap-[5px] px-2.5">
+                {SECTIONS.map(section => (
+                    <Tab key={section.id} role="button" label={section.label} open={open === section.id} onSelect={() => setOpen(section.id)} />
+                ))}
+            </div>
+
+            {open === 'world' && <World view={view} />}
+            {open === 'characters' && <Characters view={view} />}
         </div>
     );
 }

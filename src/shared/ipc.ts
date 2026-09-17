@@ -6,7 +6,7 @@ import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
-import type { SinglePlayerSettings, SinglePlayerView } from './singleplayer';
+import type { CharacterOutcome, ImportPick, SinglePlayerSettings, SinglePlayerView } from './singleplayer';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 
 export const IPC = {
@@ -47,6 +47,12 @@ export const IPC = {
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
     singlePlayerShowLog: 'zanaris:singleplayer-show-log',
+    singlePlayerPickImport: 'zanaris:singleplayer-pick-import',
+    singlePlayerImport: 'zanaris:singleplayer-import',
+    singlePlayerExport: 'zanaris:singleplayer-export',
+    singlePlayerRename: 'zanaris:singleplayer-rename',
+    singlePlayerDuplicate: 'zanaris:singleplayer-duplicate',
+    singlePlayerDelete: 'zanaris:singleplayer-delete',
     timersStart: 'zanaris:timers-start',
     timersPause: 'zanaris:timers-pause',
     timersReset: 'zanaris:timers-reset',
@@ -256,6 +262,22 @@ export interface ZanarisApi {
         retry(): Promise<void>;
         openSaves(): Promise<void>;
         showLog(): Promise<void>;
+        /** Opens a file dialog and reads the save picked. Null when the dialog was cancelled. */
+        pickImport(): Promise<ImportPick | null>;
+        /**
+         * Files a picked save under a name. Main checks the name and reads the
+         * file again, and asks first when that replaces a character or the
+         * world is running.
+         */
+        importAs(token: string, name: string): Promise<CharacterOutcome>;
+        /** Copies a character's save to where a save dialog says. */
+        exportCharacter(name: string): Promise<CharacterOutcome>;
+        /** Asks first when that replaces a character or the world is running. */
+        rename(from: string, to: string): Promise<CharacterOutcome>;
+        /** Asks first when that replaces a character or the world is running. */
+        duplicate(from: string, to: string): Promise<CharacterOutcome>;
+        /** Moves a character's save to the system trash, after asking. */
+        remove(name: string): Promise<CharacterOutcome>;
     };
     timers: {
         start(id: string): Promise<void>;

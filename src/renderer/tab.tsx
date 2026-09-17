@@ -2,8 +2,9 @@ import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { CloseRoom } from './icons';
 
 /**
- * The text-bearing interface tab, worn by the window strip and by the chat
- * pane's row of Settings, Status and channels.
+ * The text-bearing interface tab, worn by the window strip, by the chat
+ * pane's row of Settings, Status and channels, and by the Single player
+ * tool's rows of sections and command lists.
  *
  * It lives here rather than in either of them because they are the same
  * object: one box, one open-versus-resting split, one place to change it. Two
@@ -54,8 +55,8 @@ export default function Tab({
      * lines stop being announced at all, and they have no arrow-key roving. A
      * tablist missing both would tell a screen reader "tab 2 of 4" about
      * something that behaves like buttons, so these carry aria-current and
-     * claim only what they do. Required rather than defaulted: two call sites,
-     * and neither should get the wrong answer by saying nothing.
+     * claim only what they do. Required rather than defaulted: several call
+     * sites, and none should get the wrong answer by saying nothing.
      */
     role: 'tab' | 'button';
     /** Left off for a tab that only reports which page is in front; such a tab is not a control and is not drawn as one. */
