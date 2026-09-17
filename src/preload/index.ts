@@ -58,10 +58,17 @@ const api: ZanarisApi = {
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
     },
     singlePlayer: {
-        setCheats: on => ipcRenderer.invoke(IPC.singlePlayerSetCheats, on),
+        setSetting: (key, value) => ipcRenderer.invoke(IPC.singlePlayerSetSetting, key, value),
         retry: () => ipcRenderer.invoke(IPC.singlePlayerRetry),
         openSaves: () => ipcRenderer.invoke(IPC.singlePlayerOpenSaves),
-        showLog: () => ipcRenderer.invoke(IPC.singlePlayerShowLog)
+        showLog: () => ipcRenderer.invoke(IPC.singlePlayerShowLog),
+        pickImport: () => ipcRenderer.invoke(IPC.singlePlayerPickImport),
+        importAs: (token, name) => ipcRenderer.invoke(IPC.singlePlayerImport, token, name),
+        exportCharacter: name => ipcRenderer.invoke(IPC.singlePlayerExport, name),
+        rename: (from, to) => ipcRenderer.invoke(IPC.singlePlayerRename, from, to),
+        duplicate: (from, to) => ipcRenderer.invoke(IPC.singlePlayerDuplicate, from, to),
+        remove: name => ipcRenderer.invoke(IPC.singlePlayerDelete, name),
+        commands: () => ipcRenderer.invoke(IPC.singlePlayerCommands)
     },
     timers: {
         start: id => ipcRenderer.invoke(IPC.timersStart, id),

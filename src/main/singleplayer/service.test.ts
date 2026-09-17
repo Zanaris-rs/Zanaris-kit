@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DEFAULT_SINGLE_PLAYER_SETTINGS, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
 import { SinglePlayerService, type SinglePlayerDeps, type SpawnSpec, type WorldProcess } from './service.ts';
+import type { Confirmation } from './confirm.ts';
+import { buildSave } from './testSaves.ts';
 
 const VERSION = JSON.stringify({ engine: { repo: 'r', commit: 'e1' }, content: { repo: 'c', commit: 'c1' }, revision: 274, built: '2026-09-06T00:00:00.000Z' });
 
@@ -30,24 +33,33 @@ class FakeProcess implements WorldProcess {
 interface Harness {
     deps: SinglePlayerDeps;
     files: Map<string, string>;
+    saves: Map<string, Uint8Array>;
     dirs: Set<string>;
     copies: [string, string][];
     processes: FakeProcess[];
     posts: string[];
     statusQueue: (number | null)[];
     clock: { now: number };
-    cheats: { value: boolean };
+    settings: { value: SinglePlayerSettings };
+    watchers: Map<string, () => void>;
+    trashed: string[];
+    /** How many times a directory has been listed. */
+    lists: { count: number };
 }
 
 function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } = {}): Harness {
     const files = new Map<string, string>();
+    const saves = new Map<string, Uint8Array>();
     const dirs = new Set<string>();
     const copies: [string, string][] = [];
     const processes: FakeProcess[] = [];
     const posts: string[] = [];
     const statusQueue: (number | null)[] = [];
     const clock = { now: 1_000_000 };
-    const cheats = { value: false };
+    const settings = { value: { ...DEFAULT_SINGLE_PLAYER_SETTINGS } };
+    const watchers = new Map<string, () => void>();
+    const trashed: string[] = [];
+    const lists = { count: 0 };
     if (over.staged !== false) {
         files.set('/res/VERSION.json', VERSION);
         for (const tree of ['/res/data/pack', '/res/data/raw', '/res/public', '/res/view']) dirs.add(tree);
@@ -55,14 +67,23 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
         files.set('/res/data/config/public.pem', 'pub');
     }
     if (over.stamp) files.set('/home/engine.stamp', VERSION);
+    const bytesAt = (p: string): Uint8Array => {
+        const bytes = saves.get(p);
+        if (bytes === undefined) throw new Error(`ENOENT ${p}`);
+        return bytes;
+    };
     const deps: SinglePlayerDeps = {
         resources: '/res',
         home: '/home',
         baseUrl: over.baseUrl ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
-        cheats: { get: () => cheats.value, set: v => void (cheats.value = v) },
+        settings: { get: () => ({ ...settings.value }), set: patch => void (settings.value = { ...settings.value, ...patch }) },
         join: (...parts) => parts.join('/'),
+        token: (() => {
+            let next = 0;
+            return () => `token-${++next}`;
+        })(),
         fs: {
-            exists: p => files.has(p) || dirs.has(p),
+            exists: p => files.has(p) || dirs.has(p) || saves.has(p),
             readText: p => {
                 const text = files.get(p);
                 if (text === undefined) throw new Error(`ENOENT ${p}`);
@@ -74,6 +95,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
             rm: p => {
                 files.delete(p);
                 dirs.delete(p);
+                saves.delete(p);
             },
             rename: (from, to) => {
                 if (dirs.delete(from)) dirs.add(to);
@@ -82,10 +104,34 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
                     files.delete(from);
                     files.set(to, text);
                 }
+                const bytes = saves.get(from);
+                if (bytes !== undefined) {
+                    saves.delete(from);
+                    saves.set(to, bytes);
+                }
             },
             copyDir: async (from, to) => {
                 copies.push([from, to]);
                 dirs.add(to);
+            },
+            readBytes: bytesAt,
+            writeBytes: (p, bytes) => void saves.set(p, bytes),
+            copyFile: (from, to) => void saves.set(to, bytesAt(from)),
+            list: p => {
+                lists.count++;
+                return [...saves.keys()].filter(k => k.startsWith(`${p}/`) && !k.slice(p.length + 1).includes('/')).map(k => k.slice(p.length + 1));
+            },
+            stat: p => {
+                const bytes = saves.get(p);
+                return bytes === undefined ? null : { size: bytes.length, modified: 0, isFile: true };
+            },
+            trash: async p => {
+                trashed.push(p);
+                saves.delete(p);
+            },
+            watchDir: (p, onChange) => {
+                watchers.set(p, onChange);
+                return () => void watchers.delete(p);
             }
         },
         freePort: (() => {
@@ -108,7 +154,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
         now: () => clock.now,
         log: () => {}
     };
-    return { deps, files, dirs, copies, processes, posts, statusQueue, clock, cheats };
+    return { deps, files, saves, dirs, copies, processes, posts, statusQueue, clock, settings, watchers, trashed, lists };
 }
 
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
@@ -221,24 +267,32 @@ test('retry from failed starts again without changing the window count', async (
     assert.equal(service.view().status, 'stopping');
 });
 
-test('setCheats persists, and restarts a running world with the new staff level', async () => {
+test('setSettings persists, and restarts a running world with the new staff level, xp rate and members', async () => {
     const h = harness({ stamp: true });
     const service = new SinglePlayerService(h.deps);
-    await service.setCheats(true);
-    assert.equal(h.cheats.value, true);
-    assert.equal(h.processes.length, 0);
+    await service.setSettings({ cheats: true });
+    assert.equal(h.settings.value.cheats, true);
+    assert.equal(h.processes.length, 0, 'a stopped world is not started by a setting');
     h.statusQueue.push(200);
     await service.acquire();
-    assert.equal(JSON.parse(h.files.get('/home/data/config/world.json')!).node.localStaffLevel, 4);
-    h.statusQueue.push(200);
-    const restart = service.setCheats(false);
-    await tick();
-    h.processes[0]!.exit(0);
-    await restart;
-    assert.equal(h.processes.length, 2);
-    assert.equal(JSON.parse(h.files.get('/home/data/config/world.json')!).node.localStaffLevel, 0);
+    const first = JSON.parse(h.files.get('/home/data/config/world.json')!);
+    assert.equal(first.node.localStaffLevel, 4);
+    assert.equal(first.node.xpRate, 1);
+    assert.equal(first.node.members, true);
+    for (const patch of [{ cheats: false }, { xpRate: 5 as const }, { members: false }]) {
+        h.statusQueue.push(200);
+        const restart = service.setSettings(patch);
+        await tick();
+        h.processes.at(-1)!.exit(0);
+        await restart;
+    }
+    assert.equal(h.processes.length, 4);
+    const last = JSON.parse(h.files.get('/home/data/config/world.json')!);
+    assert.equal(last.node.localStaffLevel, 0);
+    assert.equal(last.node.xpRate, 5);
+    assert.equal(last.node.members, false);
     assert.equal(service.view().status, 'ready');
-    assert.equal(service.view().cheats, false);
+    assert.deepEqual(service.view().settings, { cheats: false, xpRate: 5, members: false });
 });
 
 test('a crash while ready is reported as failed and subscribers hear about it', async () => {
@@ -410,4 +464,121 @@ test('an unexpected failure after the spawn reaps the world, and a later stop se
     assert.equal(h.processes[0]!.killed, 1);
     await service.stop();
     assert.equal(service.view().status, 'stopped');
+});
+
+const SAVES = '/home/data/players/main';
+
+test('the first acquire makes the saves folder, reads it and watches it, once; dispose stops the watch', async () => {
+    const h = harness({ stamp: true });
+    h.saves.set(`${SAVES}/zezima.sav`, buildSave());
+    const service = new SinglePlayerService(h.deps);
+    assert.deepEqual(service.view().characters, [], 'nothing is read before a window wants the world');
+    assert.equal(h.lists.count, 0);
+    h.statusQueue.push(200);
+    await service.acquire();
+    assert.ok(h.dirs.has(SAVES));
+    assert.ok(h.watchers.has(SAVES));
+    assert.deepEqual(service.view().characters.map(c => c.name), ['zezima']);
+    await service.acquire();
+    assert.equal(h.watchers.size, 1, 'one watch however many windows');
+    service.dispose();
+    assert.equal(h.watchers.size, 0);
+});
+
+test('a burst of changes in the saves folder is read once, after a short wait, and pushed', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    let pushes = 0;
+    service.subscribe(() => pushes++);
+    const before = h.lists.count;
+    h.saves.set(`${SAVES}/zezima.sav`, buildSave());
+    const changed = h.watchers.get(SAVES)!;
+    changed();
+    changed();
+    changed();
+    assert.equal(h.lists.count, before, 'nothing is read until the wait is over');
+    await tick();
+    await tick();
+    assert.equal(h.lists.count, before + 1);
+    assert.equal(pushes, 1);
+    assert.deepEqual(service.view().characters.map(c => c.name), ['zezima']);
+});
+
+test('a status change reads the saves folder again, for a watch that missed a logout', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    h.saves.set(`${SAVES}/zezima.sav`, buildSave());
+    await service.stop();
+    assert.deepEqual(service.view().characters.map(c => c.name), ['zezima']);
+});
+
+test('an import through the service writes the save and pushes the new list', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    await service.stop();
+    h.saves.set('/downloads/Zezima.sav', buildSave());
+    const pick = service.pickCharacter('/downloads/Zezima.sav');
+    if (!pick.ok) return assert.fail('picked a save');
+    assert.equal(pick.suggestedName, 'zezima');
+    let pushes = 0;
+    service.subscribe(() => pushes++);
+    const outcome = await service.importCharacter(pick.token, 'Zezima', async () => assert.fail('a stopped world and a free name ask nothing'));
+    assert.deepEqual(outcome, { kind: 'done', name: 'zezima' });
+    assert.ok(h.saves.has(`${SAVES}/zezima.sav`));
+    assert.deepEqual(service.view().characters.map(c => c.name), ['zezima']);
+    assert.equal(pushes, 1);
+    assert.equal(service.hasCharacter('zezima'), true);
+});
+
+test('a change while the world runs asks with the reason, and a no changes nothing', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    h.saves.set(`${SAVES}/zezima.sav`, buildSave());
+    const asked: Confirmation[] = [];
+    const outcome = await service.deleteCharacter('zezima', async question => {
+        asked.push(question);
+        return false;
+    });
+    assert.deepEqual(outcome, { kind: 'cancelled' });
+    assert.match(asked[0]!.detail, /playing right now/);
+    assert.ok(h.saves.has(`${SAVES}/zezima.sav`));
+    assert.deepEqual(h.trashed, []);
+});
+
+test('a refused change still reads the saves folder again and pushes it', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    await service.stop();
+    let pushes = 0;
+    service.subscribe(() => pushes++);
+    const before = h.lists.count;
+    const outcome = await service.importCharacter('no-such-token', 'zezima', async () => true);
+    assert.equal(outcome.kind, 'refused');
+    assert.equal(h.lists.count, before + 1);
+    assert.equal(pushes, 1);
+});
+
+test('rename, copy and export go through to the characters', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    await service.stop();
+    h.saves.set(`${SAVES}/zezima.sav`, buildSave());
+    const yes = async (): Promise<boolean> => true;
+    assert.deepEqual(await service.renameCharacter('zezima', 'bob', yes), { kind: 'done', name: 'bob' });
+    assert.deepEqual(await service.duplicateCharacter('bob', 'bob two', yes), { kind: 'done', name: 'bob_two' });
+    assert.deepEqual(service.exportCharacter('bob', '/documents/bob.sav'), { kind: 'done', name: 'bob' });
+    assert.ok(h.saves.has('/documents/bob.sav'));
+    assert.deepEqual(service.view().characters.map(c => c.name), ['bob', 'bob_two']);
 });

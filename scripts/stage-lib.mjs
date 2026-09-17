@@ -101,3 +101,71 @@ export function readPatches(dir) {
 export function patchStamp(patches) {
     return patches.map(({ name, sha256 }) => `${name} ${sha256}`).join('\n');
 }
+
+/**
+ * A debug proc declaration: `[debugproc,name]` at the start of a line, then
+ * perhaps `(type $name, ...)`, then the rest of the line. A few procs are one
+ * line long, with their code after the brackets.
+ */
+const DEBUGPROC = /^\[debugproc,([a-z0-9_]+)\](?:\(([^)]*)\))?(.*)$/;
+
+/** Folders under content/scripts/_test/scripts, most useful first; any other group follows them. */
+const GROUP_ORDER = ['cheats', 'debug', 'engine'];
+
+/**
+ * The debug procs one .rs2 file declares, as { kind, name, params, note, group }.
+ * `file` is the script's path under content/scripts with forward slashes, and
+ * gives the group. A note is whatever follows `//` on the declaring line.
+ */
+export function parseDebugprocs(text, file) {
+    const group = debugprocGroup(file);
+    const found = [];
+    for (const line of text.split(/\r?\n/)) {
+        const match = DEBUGPROC.exec(line);
+        if (!match) continue;
+        const [, name, params = '', rest] = match;
+        const at = rest.indexOf('//');
+        const note = at === -1 ? null : rest.slice(at + 2).trim() || null;
+        found.push({ kind: 'debugproc', name, params: parseParams(params), note, group });
+    }
+    return found;
+}
+
+/** `stat $stat, int $amount` as [{ type, name }]; anything else is kept whole as the name. */
+function parseParams(text) {
+    return text
+        .split(',')
+        .map(part => part.trim())
+        .filter(part => part !== '')
+        .map(part => {
+            const match = /^(\S+)\s+\$(\S+)$/.exec(part);
+            return match ? { type: match[1], name: match[2] } : { type: 'value', name: part };
+        });
+}
+
+/** The folder under `_test/scripts/` for the test scripts (cheats, debug, engine), and the first folder for anything else (quests). */
+export function debugprocGroup(file) {
+    const parts = file.split('/');
+    if (parts[0] === '_test' && parts[1] === 'scripts' && parts.length > 3) return parts[2];
+    return parts[0];
+}
+
+/**
+ * COMMANDS.json's text: every debug proc, cheats first, then the other test
+ * folders, then the rest, each group by name. The content compiler refuses a
+ * name declared twice, so meeting one here means this parser misread a file.
+ */
+export function commandsJson(procs) {
+    const seen = new Set();
+    for (const proc of procs) {
+        if (seen.has(proc.name)) throw new Error(`debugproc ${proc.name} is declared twice`);
+        seen.add(proc.name);
+    }
+    const rank = group => {
+        const at = GROUP_ORDER.indexOf(group);
+        return at === -1 ? GROUP_ORDER.length : at;
+    };
+    const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    const sorted = [...procs].sort((a, b) => rank(a.group) - rank(b.group) || byCode(a.group, b.group) || byCode(a.name, b.name));
+    return `${JSON.stringify({ version: 1, debugprocs: sorted }, null, 4)}\n`;
+}

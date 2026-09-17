@@ -6,7 +6,8 @@ import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
-import type { SinglePlayerView } from './singleplayer';
+import type { CharacterOutcome, ImportPick, SinglePlayerSettings, SinglePlayerView } from './singleplayer';
+import type { CommandRef } from './commands';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 
 export const IPC = {
@@ -43,10 +44,17 @@ export const IPC = {
     chatSaveSettings: 'zanaris:chat-save-settings',
     chatConnect: 'zanaris:chat-connect',
     chatDisconnect: 'zanaris:chat-disconnect',
-    singlePlayerSetCheats: 'zanaris:singleplayer-set-cheats',
+    singlePlayerSetSetting: 'zanaris:singleplayer-set-setting',
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
     singlePlayerShowLog: 'zanaris:singleplayer-show-log',
+    singlePlayerPickImport: 'zanaris:singleplayer-pick-import',
+    singlePlayerImport: 'zanaris:singleplayer-import',
+    singlePlayerExport: 'zanaris:singleplayer-export',
+    singlePlayerRename: 'zanaris:singleplayer-rename',
+    singlePlayerDuplicate: 'zanaris:singleplayer-duplicate',
+    singlePlayerDelete: 'zanaris:singleplayer-delete',
+    singlePlayerCommands: 'zanaris:singleplayer-commands',
     timersStart: 'zanaris:timers-start',
     timersPause: 'zanaris:timers-pause',
     timersReset: 'zanaris:timers-reset',
@@ -251,11 +259,34 @@ export interface ZanarisApi {
         openExternal(url: string): Promise<void>;
     };
     singlePlayer: {
-        /** Asks first when the world is running, since it restarts. */
-        setCheats(on: boolean): Promise<void>;
+        /** Changes one of the world's settings. Asks first when the world is running, since the change restarts it. */
+        setSetting<K extends keyof SinglePlayerSettings>(key: K, value: SinglePlayerSettings[K]): Promise<void>;
         retry(): Promise<void>;
         openSaves(): Promise<void>;
         showLog(): Promise<void>;
+        /** Opens a file dialog and reads the save picked. Null when the dialog was cancelled. */
+        pickImport(): Promise<ImportPick | null>;
+        /**
+         * Files a picked save under a name. Main checks the name and reads the
+         * file again, and asks first when that replaces a character or the
+         * world is running.
+         */
+        importAs(token: string, name: string): Promise<CharacterOutcome>;
+        /** Copies a character's save to where a save dialog says. */
+        exportCharacter(name: string): Promise<CharacterOutcome>;
+        /** Asks first when that replaces a character or the world is running. */
+        rename(from: string, to: string): Promise<CharacterOutcome>;
+        /** Asks first when that replaces a character or the world is running. */
+        duplicate(from: string, to: string): Promise<CharacterOutcome>;
+        /** Moves a character's save to the system trash, after asking. */
+        remove(name: string): Promise<CharacterOutcome>;
+        /**
+         * The content's debug procs, from the staged COMMANDS.json. Null when
+         * this build has none. Asked for once by the Commands section rather
+         * than carried in ShellState: some 250 entries that never change,
+         * which the shell state would push to every window on every layout.
+         */
+        commands(): Promise<CommandRef[] | null>;
     };
     timers: {
         start(id: string): Promise<void>;

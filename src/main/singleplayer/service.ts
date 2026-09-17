@@ -1,5 +1,7 @@
-import type { SinglePlayerStatus, SinglePlayerVersion, SinglePlayerView } from '../../shared/singleplayer.ts';
+import { worldRunning, type CharacterInfo, type CharacterOutcome, type ImportPick, type SinglePlayerSettings, type SinglePlayerStatus, type SinglePlayerVersion, type SinglePlayerView } from '../../shared/singleplayer.ts';
+import { Characters, type ChangeContext, type CharacterFs } from './characters.ts';
 import { CONTENT_DIR, gameUrl, LOG_TAIL_LINES, parseVersion, stampMatches, worldJson, type WorldPorts } from './config.ts';
+import type { Confirm } from './confirm.ts';
 
 export interface WorldProcess {
     /** Resolves with the exit code, null when killed, once the process is gone. */
@@ -20,19 +22,20 @@ export interface SinglePlayerDeps {
     home: string;
     /** The catalog entry's url; the port is applied at start. */
     baseUrl: string;
-    cheats: { get(): boolean; set(on: boolean): void };
+    /** The player's choices for the world, kept by appState. */
+    settings: { get(): SinglePlayerSettings; set(patch: Partial<SinglePlayerSettings>): void };
     join(...parts: string[]): string;
-    fs: {
-        exists(path: string): boolean;
+    /** An unguessable token, for an imported file waiting on its name. */
+    token(): string;
+    /** The world's files and the characters'. Every character path is built by `Characters`. */
+    fs: CharacterFs & {
         readText(path: string): string;
         writeText(path: string, text: string): void;
         appendText(path: string, text: string): void;
-        mkdir(path: string): void;
-        /** Recursive, and quiet when the path is absent. */
-        rm(path: string): void;
-        rename(from: string, to: string): void;
         /** Asynchronous: the trees are tens of megabytes, and the main process has to stay live. */
         copyDir(from: string, to: string): Promise<void>;
+        /** Calls back after anything changes in the directory, until the returned stop is called. Quiet when the directory cannot be watched. */
+        watchDir(path: string, onChange: () => void): () => void;
     };
     freePort(): Promise<number>;
     spawn(spec: SpawnSpec): WorldProcess;
@@ -50,6 +53,8 @@ const PEMS = ['data/config/private.pem', 'data/config/public.pem'];
 const READY_TIMEOUT_MS = 60_000;
 const POLL_MS = 250;
 const STOP_GRACE_MS = 10_000;
+/** Watch events come in bursts for one write; one read after this long answers them all. */
+const REFRESH_WAIT_MS = 400;
 
 class Failure extends Error {}
 
@@ -73,9 +78,19 @@ export class SinglePlayerService {
     private generation = 0;
     private readonly listeners = new Set<() => void>();
     private readonly deps: SinglePlayerDeps;
+    /** <home>/data/players/main: the folder the characters live in, and the one watched. */
+    readonly savesDir: string;
+    private readonly characters: Characters;
+    private characterList: CharacterInfo[] = [];
+    /** Set by the first acquire. Until then no window has shown a character, and the folder is not read. */
+    private watching = false;
+    private stopWatching: (() => void) | null = null;
+    private refreshQueued = false;
 
     constructor(deps: SinglePlayerDeps) {
         this.deps = deps;
+        this.savesDir = deps.join(deps.home, 'data', 'players', 'main');
+        this.characters = new Characters({ fs: deps.fs, join: deps.join, dir: this.savesDir, token: () => deps.token() });
     }
 
     view(): SinglePlayerView {
@@ -86,7 +101,8 @@ export class SinglePlayerService {
             reason: this.status === 'failed' ? this.reason : null,
             logTail: [...this.logTail],
             version: this.version,
-            cheats: this.deps.cheats.get()
+            settings: this.deps.settings.get(),
+            characters: [...this.characterList]
         };
     }
 
@@ -98,6 +114,7 @@ export class SinglePlayerService {
     /** A window wants the world. Resolves with the game url; rejects when it cannot start. */
     async acquire(): Promise<string> {
         this.windows++;
+        this.watchSaves();
         return this.ensure();
     }
 
@@ -112,13 +129,51 @@ export class SinglePlayerService {
         return this.ensure();
     }
 
-    async setCheats(on: boolean): Promise<void> {
-        this.deps.cheats.set(on);
+    /** Stores a change to the world's settings, and restarts a running world so the change takes effect. */
+    async setSettings(patch: Partial<SinglePlayerSettings>): Promise<void> {
+        this.deps.settings.set(patch);
         this.notify();
         if (this.status === 'ready' || this.status === 'starting' || this.status === 'preparing') {
             await this.stop();
             if (this.windows > 0) await this.ensure().catch(() => undefined);
         }
+    }
+
+    /** The first half of an import, for a path the open dialog returned. */
+    pickCharacter(path: string): ImportPick {
+        return this.characters.pick(path);
+    }
+
+    hasCharacter(name: string): boolean {
+        return this.characters.has(name);
+    }
+
+    importCharacter(token: string, name: string, confirm: Confirm): Promise<CharacterOutcome> {
+        return this.change(ctx => this.characters.importAs(token, name, ctx), confirm);
+    }
+
+    renameCharacter(from: string, to: string, confirm: Confirm): Promise<CharacterOutcome> {
+        return this.change(ctx => this.characters.rename(from, to, ctx), confirm);
+    }
+
+    duplicateCharacter(from: string, to: string, confirm: Confirm): Promise<CharacterOutcome> {
+        return this.change(ctx => this.characters.duplicate(from, to, ctx), confirm);
+    }
+
+    deleteCharacter(name: string, confirm: Confirm): Promise<CharacterOutcome> {
+        return this.change(ctx => this.characters.remove(name, ctx), confirm);
+    }
+
+    /** Copies a save out, to a path a save dialog returned. */
+    exportCharacter(name: string, destination: string): CharacterOutcome {
+        return this.characters.exportTo(name, destination);
+    }
+
+    /** Stops following the saves folder. For the app quitting. */
+    dispose(): void {
+        this.stopWatching?.();
+        this.stopWatching = null;
+        this.watching = false;
     }
 
     /** Quit, or a restart: stops whatever is running, regardless of windows. */
@@ -150,6 +205,8 @@ export class SinglePlayerService {
 
     private set(status: SinglePlayerStatus): void {
         this.status = status;
+        // A logout writes a save, and a stop logs everyone out; this catches what a watch misses.
+        if (this.watching) this.refreshCharacters();
         this.notify();
     }
 
@@ -162,6 +219,53 @@ export class SinglePlayerService {
                 this.deps.log(`[singleplayer] a status listener threw: ${String(err)}`);
             }
         }
+    }
+
+    /**
+     * Starts following the saves folder, once: the first window to want the
+     * world is the first to show its characters. The engine writes a save on
+     * logout and every fifteen minutes, and the watch is what brings either
+     * into the panel.
+     */
+    private watchSaves(): void {
+        if (this.watching) return;
+        this.watching = true;
+        try {
+            this.deps.fs.mkdir(this.savesDir);
+        } catch (err) {
+            this.deps.log(`[singleplayer] could not make the saves folder: ${String(err)}`);
+        }
+        this.stopWatching = this.deps.fs.watchDir(this.savesDir, () => void this.queueRefresh());
+        this.refreshCharacters();
+    }
+
+    /** One write raises several events; one read after a short wait answers them all. */
+    private async queueRefresh(): Promise<void> {
+        if (this.refreshQueued) return;
+        this.refreshQueued = true;
+        await this.deps.sleep(REFRESH_WAIT_MS);
+        this.refreshQueued = false;
+        if (!this.watching) return;
+        this.refreshCharacters();
+        this.notify();
+    }
+
+    private refreshCharacters(): void {
+        try {
+            this.characterList = this.characters.list();
+        } catch (err) {
+            this.deps.log(`[singleplayer] could not read the saves folder: ${String(err)}`);
+        }
+    }
+
+    /** Runs a change to the characters with the world's state, and pushes the list unless the change was cancelled: a refusal can come after a save went to the trash. */
+    private async change(run: (ctx: ChangeContext) => Promise<CharacterOutcome>, confirm: Confirm): Promise<CharacterOutcome> {
+        const outcome = await run({ running: worldRunning(this.status), confirm });
+        if (outcome.kind !== 'cancelled') {
+            this.refreshCharacters();
+            this.notify();
+        }
+        return outcome;
     }
 
     /** True once a stop has taken the world away from a start still in flight. */
@@ -208,7 +312,7 @@ export class SinglePlayerService {
             this.ports = ports;
             const url = gameUrl(deps.baseUrl, ports.web);
             fs.mkdir(join(deps.home, 'data', 'config'));
-            fs.writeText(join(deps.home, 'data', 'config', 'world.json'), worldJson({ ports, cheats: deps.cheats.get(), revision: version.revision }));
+            fs.writeText(join(deps.home, 'data', 'config', 'world.json'), worldJson({ ports, settings: deps.settings.get(), revision: version.revision }));
             const logPath = join(deps.home, 'world.log');
             fs.writeText(logPath, '');
             const process = deps.spawn({

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertPack, classify, findNativeModules, hasTsUrl, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { assertPack, classify, commandsJson, debugprocGroup, findNativeModules, hasTsUrl, parseDebugprocs, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { readCommandsFile } from '../src/shared/commands.ts';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'stage-lib-'));
 
@@ -102,4 +103,77 @@ test('readPatches lists only .patch files, in apply order, and digests them', ()
     writeFileSync(join(dir, '0001-a.patch'), 'one, amended');
     assert.notEqual(patchStamp(readPatches(dir)), before);
     rmSync(dir, { recursive: true, force: true });
+});
+
+test('parseDebugprocs reads names, typed params and notes, and nothing that is not a declaration', () => {
+    const text = [
+        '// official name',
+        '[debugproc,maxme]',
+        'stat_advance(attack, 0);',
+        '[debugproc,addxp](stat $stat, int $amount)',
+        '[debugproc,west](int $distance)//Direction teleport west',
+        '[debugproc,cq] @debug_completequests; // Complete all quests',
+        '[debugproc,pp1] if (p_finduid(uid) = true) p_telejump(0_53_54_15_33);',
+        '[proc,not_a_debugproc](int $x)',
+        '  [debugproc,indented]',
+        '[debugproc,lf]// legends fire'
+    ].join('\n');
+    const proc = (name, params = [], note = null) => ({ kind: 'debugproc', name, params, note, group: 'cheats' });
+    assert.deepEqual(parseDebugprocs(text, '_test/scripts/cheats/cheat_x.rs2'), [
+        proc('maxme'),
+        proc('addxp', [
+            { type: 'stat', name: 'stat' },
+            { type: 'int', name: 'amount' }
+        ]),
+        proc('west', [{ type: 'int', name: 'distance' }], 'Direction teleport west'),
+        proc('cq', [], 'Complete all quests'),
+        proc('pp1'),
+        proc('lf', [], 'legends fire')
+    ]);
+});
+
+test('parseDebugprocs reads Windows line endings without keeping the carriage return', () => {
+    const text = ['[debugproc,a]//first', '[debugproc,b]'].join(String.fromCharCode(13, 10));
+    assert.deepEqual(
+        parseDebugprocs(text, 'quests/quest_x/scripts/quest_x.rs2').map(p => [p.name, p.note, p.group]),
+        [
+            ['a', 'first', 'quests'],
+            ['b', null, 'quests']
+        ]
+    );
+});
+
+test('debugprocGroup is the folder under _test/scripts, or the first folder otherwise', () => {
+    assert.equal(debugprocGroup('_test/scripts/cheats/cheat_bank.rs2'), 'cheats');
+    assert.equal(debugprocGroup('_test/scripts/engine/debug_pos.rs2'), 'engine');
+    assert.equal(debugprocGroup('quests/quest_eadgar/scripts/quest_eadgar.rs2'), 'quests');
+    assert.equal(debugprocGroup('_test/scripts/loose.rs2'), '_test');
+});
+
+test('commandsJson puts cheats first, then the other test folders, then the rest, each by name, and refuses a name declared twice', () => {
+    const p = (name, group) => ({ kind: 'debugproc', name, params: [], note: null, group });
+    const written = JSON.parse(commandsJson([p('zz', 'quests'), p('b', 'engine'), p('a', 'debug'), p('maxme', 'cheats'), p('bank', 'cheats')]));
+    assert.equal(written.version, 1);
+    assert.deepEqual(
+        written.debugprocs.map(x => x.name),
+        ['bank', 'maxme', 'a', 'b', 'zz']
+    );
+    assert.throws(() => commandsJson([p('a', 'cheats'), p('a', 'debug')]), /declared twice/);
+});
+
+test('what commandsJson writes, the kit reads back whole', () => {
+    const procs = parseDebugprocs(['[debugproc,addxp](stat $stat, int $amount)//Add xp', '[debugproc,maxme]'].join('\n'), '_test/scripts/cheats/c.rs2');
+    assert.deepEqual(readCommandsFile(commandsJson(procs)), [
+        {
+            kind: 'debugproc',
+            name: 'addxp',
+            params: [
+                { name: 'stat', type: 'stat', optional: false },
+                { name: 'amount', type: 'int', optional: false }
+            ],
+            note: 'Add xp',
+            group: 'cheats'
+        },
+        { kind: 'debugproc', name: 'maxme', params: [], note: null, group: 'cheats' }
+    ]);
 });

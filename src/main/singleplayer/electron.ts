@@ -1,10 +1,12 @@
-import { app, net, utilityProcess } from 'electron';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { app, net, shell, utilityProcess } from 'electron';
+import { randomBytes } from 'node:crypto';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs';
 import { cp } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { SinglePlayerDeps, SpawnSpec, WorldProcess } from './service.ts';
+import { readCommandsFile, type CommandRef } from '../../shared/commands.ts';
 
 /** The staged engine: beside the app's asar when packaged, engine-dist/ in dev. */
 export function engineResources(): string {
@@ -14,6 +16,15 @@ export function engineResources(): string {
 /** Where the world runs and the saves live. */
 export function singlePlayerHome(): string {
     return join(app.getPath('userData'), 'singleplayer');
+}
+
+/** The staged list of the content's debug procs, or null when this build has none the kit can read. */
+export function readCommands(): CommandRef[] | null {
+    try {
+        return readCommandsFile(readFileSync(join(engineResources(), 'COMMANDS.json'), 'utf8'));
+    } catch {
+        return null;
+    }
 }
 
 const PORT_REUSE_WINDOW_MS = 10_000;
@@ -97,13 +108,33 @@ function spawnWorld(spec: SpawnSpec): WorldProcess {
     };
 }
 
-export function electronDeps(over: { baseUrl: string; cheats: SinglePlayerDeps['cheats']; log: (msg: string) => void }): SinglePlayerDeps {
+/**
+ * fs.watch on one directory, which is all the saves folder is. A watch that
+ * errors, when the folder is removed, is closed and reported as a change; the
+ * service also reads the folder on every status change, which covers what a
+ * dead or unreliable watch misses.
+ */
+function watchDir(path: string, onChange: () => void): () => void {
+    try {
+        const watcher = watch(path, { persistent: false }, () => onChange());
+        watcher.on('error', () => {
+            watcher.close();
+            onChange();
+        });
+        return () => watcher.close();
+    } catch {
+        return () => {};
+    }
+}
+
+export function electronDeps(over: { baseUrl: string; settings: SinglePlayerDeps['settings']; log: (msg: string) => void }): SinglePlayerDeps {
     return {
         resources: engineResources(),
         home: singlePlayerHome(),
         baseUrl: over.baseUrl,
-        cheats: over.cheats,
+        settings: over.settings,
         join,
+        token: () => randomBytes(16).toString('hex'),
         fs: {
             exists: existsSync,
             readText: path => readFileSync(path, 'utf8'),
@@ -114,7 +145,28 @@ export function electronDeps(over: { baseUrl: string; cheats: SinglePlayerDeps['
             rename: renameSync,
             // Asynchronous on purpose: cpSync here froze the main process for the
             // whole of the first launch's 42 MB.
-            copyDir: (from, to) => cp(from, to, { recursive: true })
+            copyDir: (from, to) => cp(from, to, { recursive: true }),
+            readBytes: path => readFileSync(path),
+            writeBytes: (path, bytes) => writeFileSync(path, bytes),
+            copyFile: (from, to) => copyFileSync(from, to),
+            list: path => {
+                try {
+                    return readdirSync(path);
+                } catch {
+                    return [];
+                }
+            },
+            stat: path => {
+                try {
+                    const stat = statSync(path);
+                    return { size: stat.size, modified: stat.mtimeMs, isFile: stat.isFile() };
+                } catch {
+                    return null;
+                }
+            },
+            // The system's own trash, so a deleted or replaced character can be put back outside the kit.
+            trash: path => shell.trashItem(path),
+            watchDir
         },
         freePort,
         spawn: spawnWorld,
