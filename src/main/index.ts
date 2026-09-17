@@ -25,8 +25,9 @@ import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
-import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
+import { electronDeps, engineResources, readCommands, singlePlayerHome } from './singleplayer/electron';
 import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/singleplayer';
+import type { CommandRef } from '../shared/commands';
 import type { Confirm, Confirmation } from './singleplayer/confirm';
 import { changesSettings, readSettingChange, restartConfirmation } from './singleplayer/settings';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
@@ -935,6 +936,14 @@ ipcMain.handle(IPC.singlePlayerExport, async (event, name: unknown): Promise<Cha
     });
     if (canceled || !filePath) return { kind: 'cancelled' };
     return singlePlayer.exportCharacter(name, filePath);
+});
+
+/** Read once and kept. A missing list is asked for again, so a stage run while the app is open is picked up. */
+let commands: CommandRef[] | null = null;
+ipcMain.handle(IPC.singlePlayerCommands, (event): CommandRef[] | null => {
+    if (!singlePlayerWindow(event.sender)) return null;
+    commands ??= readCommands();
+    return commands;
 });
 
 ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {

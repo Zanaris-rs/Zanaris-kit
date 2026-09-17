@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import type { SinglePlayerView } from '../../shared/singleplayer';
 import Tab from '../tab';
 import Characters from './singleplayer/Characters';
+import Commands from './singleplayer/Commands';
 import World from './singleplayer/World';
 
 const STATUS: Record<SinglePlayerView['status'], string> = {
@@ -13,11 +14,12 @@ const STATUS: Record<SinglePlayerView['status'], string> = {
     failed: 'Failed'
 };
 
-type Section = 'world' | 'characters';
+type Section = 'world' | 'characters' | 'commands';
 
 const SECTIONS: readonly { id: Section; label: string }[] = [
     { id: 'world', label: 'World' },
-    { id: 'characters', label: 'Characters' }
+    { id: 'characters', label: 'Characters' },
+    { id: 'commands', label: 'Commands' }
 ];
 
 /** The Single player tool. What the world is doing sits above the sections, since it is true of all of them. Which section is open belongs to this pane and is not kept. */
@@ -66,6 +68,7 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
 
             {open === 'world' && <World view={view} />}
             {open === 'characters' && <Characters view={view} />}
+            {open === 'commands' && <Commands cheats={view.settings.cheats} />}
         </div>
     );
 }

@@ -7,6 +7,7 @@ import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
 import type { CharacterOutcome, ImportPick, SinglePlayerSettings, SinglePlayerView } from './singleplayer';
+import type { CommandRef } from './commands';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 
 export const IPC = {
@@ -53,6 +54,7 @@ export const IPC = {
     singlePlayerRename: 'zanaris:singleplayer-rename',
     singlePlayerDuplicate: 'zanaris:singleplayer-duplicate',
     singlePlayerDelete: 'zanaris:singleplayer-delete',
+    singlePlayerCommands: 'zanaris:singleplayer-commands',
     timersStart: 'zanaris:timers-start',
     timersPause: 'zanaris:timers-pause',
     timersReset: 'zanaris:timers-reset',
@@ -278,6 +280,13 @@ export interface ZanarisApi {
         duplicate(from: string, to: string): Promise<CharacterOutcome>;
         /** Moves a character's save to the system trash, after asking. */
         remove(name: string): Promise<CharacterOutcome>;
+        /**
+         * The content's debug procs, from the staged COMMANDS.json. Null when
+         * this build has none. Asked for once by the Commands section rather
+         * than carried in ShellState: some 250 entries that never change,
+         * which the shell state would push to every window on every layout.
+         */
+        commands(): Promise<CommandRef[] | null>;
     };
     timers: {
         start(id: string): Promise<void>;

@@ -6,6 +6,7 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { SinglePlayerDeps, SpawnSpec, WorldProcess } from './service.ts';
+import { readCommandsFile, type CommandRef } from '../../shared/commands.ts';
 
 /** The staged engine: beside the app's asar when packaged, engine-dist/ in dev. */
 export function engineResources(): string {
@@ -15,6 +16,15 @@ export function engineResources(): string {
 /** Where the world runs and the saves live. */
 export function singlePlayerHome(): string {
     return join(app.getPath('userData'), 'singleplayer');
+}
+
+/** The staged list of the content's debug procs, or null when this build has none the kit can read. */
+export function readCommands(): CommandRef[] | null {
+    try {
+        return readCommandsFile(readFileSync(join(engineResources(), 'COMMANDS.json'), 'utf8'));
+    } catch {
+        return null;
+    }
 }
 
 const PORT_REUSE_WINDOW_MS = 10_000;

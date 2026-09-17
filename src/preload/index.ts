@@ -67,7 +67,8 @@ const api: ZanarisApi = {
         exportCharacter: name => ipcRenderer.invoke(IPC.singlePlayerExport, name),
         rename: (from, to) => ipcRenderer.invoke(IPC.singlePlayerRename, from, to),
         duplicate: (from, to) => ipcRenderer.invoke(IPC.singlePlayerDuplicate, from, to),
-        remove: name => ipcRenderer.invoke(IPC.singlePlayerDelete, name)
+        remove: name => ipcRenderer.invoke(IPC.singlePlayerDelete, name),
+        commands: () => ipcRenderer.invoke(IPC.singlePlayerCommands)
     },
     timers: {
         start: id => ipcRenderer.invoke(IPC.timersStart, id),
