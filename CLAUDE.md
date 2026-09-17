@@ -159,7 +159,10 @@ system another way, and the renderer never sends a path: an import is a
 dialog in main and a token.
 
 **Nothing there is destroyed.** A delete, and a character another is about to
-replace, go to the system trash first, and if that fails nothing changes.
+replace, go to the system trash first. If the trash refuses, nothing changes;
+if a later step fails, the old save is already in the trash and the refusal
+says so. Changes to the folder run one at a time, after their question is
+answered, and check again what the question was about.
 
 `engine-dist/COMMANDS.json` is written by `stage-engine.mjs` from the content
 checkout, since the kit ships no `.rs2`. The `::` table in
