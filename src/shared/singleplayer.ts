@@ -67,3 +67,51 @@ export interface SaveSummary {
 
 /** Which of the engine's checks a file fails: not a save at all, a newer format, or a checksum that does not match. */
 export type SaveProblem = 'not-a-save' | 'too-new' | 'corrupt';
+
+/** A save problem, or a file the kit could not read at all. */
+export type FileProblem = SaveProblem | 'unreadable';
+
+/** What the Characters section says about a file it cannot use, as a sentence. */
+export const PROBLEM_TEXT: Readonly<Record<FileProblem, string>> = {
+    'not-a-save': "That file isn't a character save.",
+    'too-new': 'That save comes from a newer game than this kit runs.',
+    corrupt: 'That save is damaged or cut short.',
+    unreadable: "That file couldn't be read."
+};
+
+/** The same, short enough for a row of the list. */
+export const PROBLEM_LABEL: Readonly<Record<FileProblem, string>> = {
+    'not-a-save': 'Not a save',
+    'too-new': 'From a newer game',
+    corrupt: 'Damaged',
+    unreadable: "Can't be read"
+};
+
+/** One file in the saves folder. */
+export interface CharacterInfo {
+    /** The file's name less `.sav`, which is the name to log in with. Always a safe name. */
+    name: string;
+    /** The name as the game writes it. */
+    displayName: string;
+    /** When the file was last written, in ms since the epoch. */
+    modified: number;
+    /** Null when `problem` says why the file cannot be read as a save. */
+    summary: SaveSummary | null;
+    problem: FileProblem | null;
+}
+
+/** The first half of an import: the picked file, read, and a token to name it by. */
+export type ImportPick = { ok: true; token: string; suggestedName: string; summary: SaveSummary } | { ok: false; problem: FileProblem };
+
+/** How a change to a character ended. */
+export type CharacterOutcome = { kind: 'done'; name: string } | { kind: 'cancelled' } | { kind: 'refused'; message: string };
+
+/** Play time as the list shows it. The engine counts it in ticks of 600 ms. */
+export function formatPlaytime(ticks: number): string {
+    const minutes = Math.floor((ticks * 600) / 60_000);
+    if (minutes < 1) return 'under a minute';
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+    return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
