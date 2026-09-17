@@ -7,10 +7,10 @@ import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { connect, createServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transform } from 'esbuild';
-import { assertPack, classify, findNativeModules, hasTsUrl, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { assertPack, classify, commandsJson, findNativeModules, hasTsUrl, parseDebugprocs, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lock = JSON.parse(readFileSync(join(root, 'engine.lock.json'), 'utf8'));
@@ -198,6 +198,21 @@ const version = {
     built: new Date().toISOString()
 };
 writeFileSync(join(dist, 'VERSION.json'), JSON.stringify(version, null, 4) + '\n');
+
+// ── 7b. COMMANDS.json ────────────────────────────────────────────────────
+//
+// The Single player tool's Commands section lists the content's debug procs,
+// and the kit ships none of the .rs2 scripts that declare them, so the list is
+// read here, from the content checkout, and travels beside VERSION.json.
+const scriptsDir = join(content, 'scripts');
+const procs = [];
+for (const abs of walk(scriptsDir)) {
+    if (!abs.endsWith('.rs2')) continue;
+    procs.push(...parseDebugprocs(readFileSync(abs, 'utf8'), relative(scriptsDir, abs).split(sep).join('/')));
+}
+if (procs.length === 0) throw new Error(`no [debugproc,...] declarations under ${relative(root, scriptsDir)}: the content's layout has changed`);
+writeFileSync(join(dist, 'COMMANDS.json'), commandsJson(procs));
+log(`COMMANDS.json: ${procs.length} debug procs`);
 
 // ── 8. boot check ────────────────────────────────────────────────────────
 
