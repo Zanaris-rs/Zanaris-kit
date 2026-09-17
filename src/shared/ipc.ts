@@ -6,7 +6,7 @@ import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
-import type { SinglePlayerView } from './singleplayer';
+import type { SinglePlayerSettings, SinglePlayerView } from './singleplayer';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 
 export const IPC = {
@@ -43,7 +43,7 @@ export const IPC = {
     chatSaveSettings: 'zanaris:chat-save-settings',
     chatConnect: 'zanaris:chat-connect',
     chatDisconnect: 'zanaris:chat-disconnect',
-    singlePlayerSetCheats: 'zanaris:singleplayer-set-cheats',
+    singlePlayerSetSetting: 'zanaris:singleplayer-set-setting',
     singlePlayerRetry: 'zanaris:singleplayer-retry',
     singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
     singlePlayerShowLog: 'zanaris:singleplayer-show-log',
@@ -251,8 +251,8 @@ export interface ZanarisApi {
         openExternal(url: string): Promise<void>;
     };
     singlePlayer: {
-        /** Asks first when the world is running, since it restarts. */
-        setCheats(on: boolean): Promise<void>;
+        /** Changes one of the world's settings. Asks first when the world is running, since the change restarts it. */
+        setSetting<K extends keyof SinglePlayerSettings>(key: K, value: SinglePlayerSettings[K]): Promise<void>;
         retry(): Promise<void>;
         openSaves(): Promise<void>;
         showLog(): Promise<void>;

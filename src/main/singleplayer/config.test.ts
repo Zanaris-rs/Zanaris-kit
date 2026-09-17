@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DEFAULT_SINGLE_PLAYER_SETTINGS, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
 import { gameUrl, parseVersion, stampMatches, worldJson } from './config.ts';
 
 const ports = { web: 40001, management: 40002, tcp: 40003 };
+const settings = (patch: Partial<SinglePlayerSettings> = {}): SinglePlayerSettings => ({ ...DEFAULT_SINGLE_PLAYER_SETTINGS, ...patch });
 
 test('worldJson binds loopback, disables the servers, and sets the staff level from cheats', () => {
-    const off = JSON.parse(worldJson({ ports, cheats: false, revision: 274 }));
+    const off = JSON.parse(worldJson({ ports, settings: settings(), revision: 274 }));
     assert.equal(off.web.port, 40001);
     assert.equal(off.web.managementPort, 40002);
     assert.equal(off.web.host, '127.0.0.1');
@@ -15,6 +17,8 @@ test('worldJson binds loopback, disables the servers, and sets the staff level f
     assert.equal(off.node.localStaffLevel, 0);
     assert.equal(off.node.id, 1);
     assert.equal(off.node.members, true);
+    assert.equal(off.node.xpRate, 1);
+    assert.equal(off.node.debug, false);
     assert.equal(off.node.maxConnected, 10);
     assert.equal(off.engine.revision, 274);
     assert.equal(off.login.enabled, false);
@@ -28,9 +32,18 @@ test('worldJson binds loopback, disables the servers, and sets the staff level f
     assert.equal(off.build.srcDir, 'content');
     assert.equal(off.easyStartup, false);
     assert.equal(off.account.autoCreate, false);
-    const on = JSON.parse(worldJson({ ports, cheats: true, revision: 274 }));
+    const on = JSON.parse(worldJson({ ports, settings: settings({ cheats: true }), revision: 274 }));
     assert.equal(on.node.localStaffLevel, 4);
     assert.equal(on.node.production, false);
+});
+
+test('worldJson takes the XP rate and members from the settings, and never turns debug on', () => {
+    const world = JSON.parse(worldJson({ ports, settings: settings({ xpRate: 5, members: false }), revision: 274 }));
+    assert.equal(world.node.xpRate, 5);
+    assert.equal(world.node.members, false);
+    assert.equal(world.node.localStaffLevel, 0);
+    assert.equal(world.node.debug, false);
+    assert.equal(world.node.production, false);
 });
 
 test('gameUrl puts the port on the catalog url and keeps its query', () => {

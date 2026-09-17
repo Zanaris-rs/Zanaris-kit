@@ -1,4 +1,4 @@
-import type { SinglePlayerVersion } from '../../shared/singleplayer.ts';
+import type { SinglePlayerSettings, SinglePlayerVersion } from '../../shared/singleplayer.ts';
 
 export interface WorldPorts {
     web: number;
@@ -14,8 +14,9 @@ export const CONTENT_DIR = 'content';
 /**
  * The world.json the kit writes before every start. Everything the engine
  * needs to be a private world: loopback binds, no login, friend or logger
- * server, live reload off. Production stays off; cheats is the staff level and
- * nothing else. The engine fills any key omitted here.
+ * server, live reload off. Production and debug stay off whatever the player
+ * chooses; the settings give the staff level (cheats), the XP rate and
+ * members, and nothing else. The engine fills any key omitted here.
  *
  * srcDir names the trimmed content directory the kit ships and copies into the
  * working directory - the maps CSVs and nothing else. It cannot be a path that
@@ -24,7 +25,7 @@ export const CONTENT_DIR = 'content';
  * still boots and reports itself ready. Live reload is off, so nothing watches
  * it; the /content route serves those two files on loopback.
  */
-export function worldJson(opts: { ports: WorldPorts; cheats: boolean; revision: number }): string {
+export function worldJson(opts: { ports: WorldPorts; settings: SinglePlayerSettings; revision: number }): string {
     const config = {
         easyStartup: false,
         account: { autoCreate: false },
@@ -34,11 +35,11 @@ export function worldJson(opts: { ports: WorldPorts; cheats: boolean; revision: 
             id: 1,
             port: opts.ports.tcp,
             host: '127.0.0.1',
-            members: true,
+            members: opts.settings.members,
             autoSubscribeMembers: true,
-            xpRate: 1,
+            xpRate: opts.settings.xpRate,
             production: false,
-            localStaffLevel: opts.cheats ? 4 : 0,
+            localStaffLevel: opts.settings.cheats ? 4 : 0,
             debug: false,
             profile: 'main',
             maxConnected: 10

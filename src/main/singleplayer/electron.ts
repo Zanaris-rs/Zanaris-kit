@@ -97,12 +97,12 @@ function spawnWorld(spec: SpawnSpec): WorldProcess {
     };
 }
 
-export function electronDeps(over: { baseUrl: string; cheats: SinglePlayerDeps['cheats']; log: (msg: string) => void }): SinglePlayerDeps {
+export function electronDeps(over: { baseUrl: string; settings: SinglePlayerDeps['settings']; log: (msg: string) => void }): SinglePlayerDeps {
     return {
         resources: engineResources(),
         home: singlePlayerHome(),
         baseUrl: over.baseUrl,
-        cheats: over.cheats,
+        settings: over.settings,
         join,
         fs: {
             exists: existsSync,

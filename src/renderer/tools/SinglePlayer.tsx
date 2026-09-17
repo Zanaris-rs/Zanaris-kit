@@ -1,5 +1,6 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { SinglePlayerView } from '../../shared/singleplayer';
+import World from './singleplayer/World';
 
 const STATUS: Record<SinglePlayerView['status'], string> = {
     stopped: 'Stopped',
@@ -10,18 +11,8 @@ const STATUS: Record<SinglePlayerView['status'], string> = {
     failed: 'Failed'
 };
 
-/*
- * .btn is hand-written CSS carrying the gold label, so a button that wants a
- * quieter colour overrides it inline. A utility class of equal specificity
- * would be settled by stylesheet order rather than by intent.
- */
-const MUTED: CSSProperties = { color: 'var(--color-dim)' };
-/* A control the world is currently busy with: spent, since .btn:disabled paints nothing of its own. */
-const SPENT: CSSProperties = { color: 'var(--color-faint)' };
-
-/** The Single player tool: what the world is doing, the cheats switch, and where its files are. */
+/** The Single player tool. What the world is doing sits at the top, above the World section. */
 export default function SinglePlayer({ view }: { view: SinglePlayerView }): ReactNode {
-    const busy = view.status === 'preparing' || view.status === 'starting' || view.status === 'stopping';
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -37,52 +28,22 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
                 )}
             </div>
 
-            {view.status === 'failed' && view.logTail.length > 0 && (
-                <pre className="sunk mx-2.5 mt-2 max-h-[9em] overflow-auto px-2 py-1 font-mono text-[11px] whitespace-pre-wrap text-dim">
-                    {view.logTail.slice(-20).join('\n')}
-                </pre>
+            {view.status === 'failed' && (
+                <>
+                    {view.logTail.length > 0 && (
+                        <pre className="sunk mx-2.5 mt-2 max-h-[9em] overflow-auto px-2 py-1 font-mono text-[11px] whitespace-pre-wrap text-dim">
+                            {view.logTail.slice(-20).join('\n')}
+                        </pre>
+                    )}
+                    <div className="px-2.5 pt-2">
+                        <button type="button" onClick={() => void window.zanaris.singlePlayer.retry()} className="btn btn-red">
+                            Try again
+                        </button>
+                    </div>
+                </>
             )}
 
-            <div className="mt-3 px-2.5">
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        role="switch"
-                        aria-checked={view.cheats}
-                        aria-describedby="cheats-note"
-                        disabled={busy}
-                        onClick={() => void window.zanaris.singlePlayer.setCheats(!view.cheats)}
-                        style={busy ? SPENT : view.cheats ? undefined : MUTED}
-                        className={`btn shrink-0${view.cheats && !busy ? ' btn-red' : ''}`}
-                    >
-                        Cheats {view.cheats ? 'on' : 'off'}
-                    </button>
-                    <span id="cheats-note" className="text-[12px] text-dim">Developer commands such as ::tele and ::give. Off, they are refused.</span>
-                </div>
-                {/*
-                 * Not a caveat about the cheats switch, which is why it does not hang off it:
-                 * the world is yours whatever the switch says, and content asks map_live -
-                 * node.production, which single player never turns on. The guide is where a
-                 * player meets that first, and on a second character it is the point.
-                 */}
-                <p className="mt-2 text-[12px] text-dim">Your own world, not a live one. The guide will offer to skip the tutorial, however many characters you start.</p>
-            </div>
-
-            {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
-            <div className="mt-auto flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-1.5">
-                {view.status === 'failed' && (
-                    <button type="button" onClick={() => void window.zanaris.singlePlayer.retry()} className="btn btn-red">
-                        Try again
-                    </button>
-                )}
-                <button type="button" onClick={() => void window.zanaris.singlePlayer.openSaves()} className="btn">
-                    Open saves folder
-                </button>
-                <button type="button" onClick={() => void window.zanaris.singlePlayer.showLog()} className="btn">
-                    Show log
-                </button>
-            </div>
-            <p className="px-2.5 pb-2 text-[12px] text-dim">Changing cheats restarts the world and logs you out.</p>
+            <World view={view} />
         </div>
     );
 }

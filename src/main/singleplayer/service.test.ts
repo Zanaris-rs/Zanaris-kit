@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DEFAULT_SINGLE_PLAYER_SETTINGS, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
 import { SinglePlayerService, type SinglePlayerDeps, type SpawnSpec, type WorldProcess } from './service.ts';
 
 const VERSION = JSON.stringify({ engine: { repo: 'r', commit: 'e1' }, content: { repo: 'c', commit: 'c1' }, revision: 274, built: '2026-09-06T00:00:00.000Z' });
@@ -36,7 +37,7 @@ interface Harness {
     posts: string[];
     statusQueue: (number | null)[];
     clock: { now: number };
-    cheats: { value: boolean };
+    settings: { value: SinglePlayerSettings };
 }
 
 function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } = {}): Harness {
@@ -47,7 +48,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
     const posts: string[] = [];
     const statusQueue: (number | null)[] = [];
     const clock = { now: 1_000_000 };
-    const cheats = { value: false };
+    const settings = { value: { ...DEFAULT_SINGLE_PLAYER_SETTINGS } };
     if (over.staged !== false) {
         files.set('/res/VERSION.json', VERSION);
         for (const tree of ['/res/data/pack', '/res/data/raw', '/res/public', '/res/view']) dirs.add(tree);
@@ -59,7 +60,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
         resources: '/res',
         home: '/home',
         baseUrl: over.baseUrl ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
-        cheats: { get: () => cheats.value, set: v => void (cheats.value = v) },
+        settings: { get: () => ({ ...settings.value }), set: patch => void (settings.value = { ...settings.value, ...patch }) },
         join: (...parts) => parts.join('/'),
         fs: {
             exists: p => files.has(p) || dirs.has(p),
@@ -108,7 +109,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
         now: () => clock.now,
         log: () => {}
     };
-    return { deps, files, dirs, copies, processes, posts, statusQueue, clock, cheats };
+    return { deps, files, dirs, copies, processes, posts, statusQueue, clock, settings };
 }
 
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
@@ -221,24 +222,32 @@ test('retry from failed starts again without changing the window count', async (
     assert.equal(service.view().status, 'stopping');
 });
 
-test('setCheats persists, and restarts a running world with the new staff level', async () => {
+test('setSettings persists, and restarts a running world with the new staff level, xp rate and members', async () => {
     const h = harness({ stamp: true });
     const service = new SinglePlayerService(h.deps);
-    await service.setCheats(true);
-    assert.equal(h.cheats.value, true);
-    assert.equal(h.processes.length, 0);
+    await service.setSettings({ cheats: true });
+    assert.equal(h.settings.value.cheats, true);
+    assert.equal(h.processes.length, 0, 'a stopped world is not started by a setting');
     h.statusQueue.push(200);
     await service.acquire();
-    assert.equal(JSON.parse(h.files.get('/home/data/config/world.json')!).node.localStaffLevel, 4);
-    h.statusQueue.push(200);
-    const restart = service.setCheats(false);
-    await tick();
-    h.processes[0]!.exit(0);
-    await restart;
-    assert.equal(h.processes.length, 2);
-    assert.equal(JSON.parse(h.files.get('/home/data/config/world.json')!).node.localStaffLevel, 0);
+    const first = JSON.parse(h.files.get('/home/data/config/world.json')!);
+    assert.equal(first.node.localStaffLevel, 4);
+    assert.equal(first.node.xpRate, 1);
+    assert.equal(first.node.members, true);
+    for (const patch of [{ cheats: false }, { xpRate: 5 as const }, { members: false }]) {
+        h.statusQueue.push(200);
+        const restart = service.setSettings(patch);
+        await tick();
+        h.processes.at(-1)!.exit(0);
+        await restart;
+    }
+    assert.equal(h.processes.length, 4);
+    const last = JSON.parse(h.files.get('/home/data/config/world.json')!);
+    assert.equal(last.node.localStaffLevel, 0);
+    assert.equal(last.node.xpRate, 5);
+    assert.equal(last.node.members, false);
     assert.equal(service.view().status, 'ready');
-    assert.equal(service.view().cheats, false);
+    assert.deepEqual(service.view().settings, { cheats: false, xpRate: 5, members: false });
 });
 
 test('a crash while ready is reported as failed and subscribers hear about it', async () => {

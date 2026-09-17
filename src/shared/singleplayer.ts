@@ -50,7 +50,8 @@ export interface SinglePlayerView {
     /** The last lines the world printed. */
     logTail: string[];
     version: SinglePlayerVersion | null;
-    cheats: boolean;
+    /** What the player chose for the world; see SinglePlayerSettings. */
+    settings: SinglePlayerSettings;
 }
 
 /** What the kit reads from the head of a save. */

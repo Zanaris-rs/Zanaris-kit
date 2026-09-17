@@ -1,4 +1,4 @@
-import type { SinglePlayerStatus, SinglePlayerVersion, SinglePlayerView } from '../../shared/singleplayer.ts';
+import type { SinglePlayerSettings, SinglePlayerStatus, SinglePlayerVersion, SinglePlayerView } from '../../shared/singleplayer.ts';
 import { CONTENT_DIR, gameUrl, LOG_TAIL_LINES, parseVersion, stampMatches, worldJson, type WorldPorts } from './config.ts';
 
 export interface WorldProcess {
@@ -20,7 +20,8 @@ export interface SinglePlayerDeps {
     home: string;
     /** The catalog entry's url; the port is applied at start. */
     baseUrl: string;
-    cheats: { get(): boolean; set(on: boolean): void };
+    /** The player's choices for the world, kept by appState. */
+    settings: { get(): SinglePlayerSettings; set(patch: Partial<SinglePlayerSettings>): void };
     join(...parts: string[]): string;
     fs: {
         exists(path: string): boolean;
@@ -86,7 +87,7 @@ export class SinglePlayerService {
             reason: this.status === 'failed' ? this.reason : null,
             logTail: [...this.logTail],
             version: this.version,
-            cheats: this.deps.cheats.get()
+            settings: this.deps.settings.get()
         };
     }
 
@@ -112,8 +113,9 @@ export class SinglePlayerService {
         return this.ensure();
     }
 
-    async setCheats(on: boolean): Promise<void> {
-        this.deps.cheats.set(on);
+    /** Stores a change to the world's settings, and restarts a running world so the change takes effect. */
+    async setSettings(patch: Partial<SinglePlayerSettings>): Promise<void> {
+        this.deps.settings.set(patch);
         this.notify();
         if (this.status === 'ready' || this.status === 'starting' || this.status === 'preparing') {
             await this.stop();
@@ -208,7 +210,7 @@ export class SinglePlayerService {
             this.ports = ports;
             const url = gameUrl(deps.baseUrl, ports.web);
             fs.mkdir(join(deps.home, 'data', 'config'));
-            fs.writeText(join(deps.home, 'data', 'config', 'world.json'), worldJson({ ports, cheats: deps.cheats.get(), revision: version.revision }));
+            fs.writeText(join(deps.home, 'data', 'config', 'world.json'), worldJson({ ports, settings: deps.settings.get(), revision: version.revision }));
             const logPath = join(deps.home, 'world.log');
             fs.writeText(logPath, '');
             const process = deps.spawn({

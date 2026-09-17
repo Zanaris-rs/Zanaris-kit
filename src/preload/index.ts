@@ -58,7 +58,7 @@ const api: ZanarisApi = {
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
     },
     singlePlayer: {
-        setCheats: on => ipcRenderer.invoke(IPC.singlePlayerSetCheats, on),
+        setSetting: (key, value) => ipcRenderer.invoke(IPC.singlePlayerSetSetting, key, value),
         retry: () => ipcRenderer.invoke(IPC.singlePlayerRetry),
         openSaves: () => ipcRenderer.invoke(IPC.singlePlayerOpenSaves),
         showLog: () => ipcRenderer.invoke(IPC.singlePlayerShowLog)

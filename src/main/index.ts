@@ -25,6 +25,9 @@ import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
 import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
+import { worldRunning } from '../shared/singleplayer';
+import type { Confirm, Confirmation } from './singleplayer/confirm';
+import { changesSettings, readSettingChange, restartConfirmation } from './singleplayer/settings';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 
@@ -340,6 +343,12 @@ function openServer(server: ServerDef): ServerWindow {
 
 function windowFor(sender: WebContents): ServerWindow | undefined {
     return byShell.get(sender.id);
+}
+
+/** The shell of a single-player window, or undefined for any other sender. */
+function singlePlayerWindow(sender: WebContents): ServerWindow | undefined {
+    const sw = windowFor(sender);
+    return sw?.state().server.kind === 'singleplayer' ? sw : undefined;
 }
 
 // ── the server list ───────────────────────────────────────────────────────
@@ -837,31 +846,37 @@ async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'layout'
     return response === 0;
 }
 
-async function confirmCheats(sw: ServerWindow, on: boolean): Promise<boolean> {
-    const { response } = await dialog.showMessageBox(sw.window, {
-        type: 'question',
-        buttons: ['Restart', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-        message: `Turning cheats ${on ? 'on' : 'off'} restarts your world and logs you out.`,
-        detail: on ? 'Developer commands such as ::tele and ::give will work.' : 'The world will play as the servers do.'
-    });
-    return response === 0;
+/**
+ * Asks on the window, as a sheet, so other windows keep running. Every
+ * question single player asks goes through here; the words are written by
+ * `singleplayer/settings.ts` and `singleplayer/characters.ts`, where they are
+ * tested.
+ */
+function confirmOn(sw: ServerWindow): Confirm {
+    return async (question: Confirmation) => {
+        const { response } = await dialog.showMessageBox(sw.window, {
+            type: 'question',
+            buttons: [question.button, 'Cancel'],
+            defaultId: question.destructive ? 1 : 0,
+            cancelId: 1,
+            message: question.message,
+            detail: question.detail
+        });
+        return response === 0;
+    };
 }
 
-ipcMain.handle(IPC.singlePlayerSetCheats, async (event, on: unknown) => {
-    if (typeof on !== 'boolean' || !singlePlayer) return;
-    const sw = windowFor(event.sender);
-    if (!sw || sw.state().server.kind !== 'singleplayer') return;
-    if (singlePlayer.view().cheats === on) return;
-    const running = singlePlayer.view().status !== 'stopped' && singlePlayer.view().status !== 'failed';
-    if (running && !(await confirmCheats(sw, on))) return;
-    await singlePlayer.setCheats(on);
+ipcMain.handle(IPC.singlePlayerSetSetting, async (event, key: unknown, value: unknown) => {
+    const sw = singlePlayerWindow(event.sender);
+    const patch = readSettingChange(key, value);
+    if (!sw || !singlePlayer || !patch) return;
+    if (!changesSettings(singlePlayer.view().settings, patch)) return;
+    if (worldRunning(singlePlayer.view().status) && !(await confirmOn(sw)(restartConfirmation(patch)))) return;
+    await singlePlayer.setSettings(patch);
 });
 
 ipcMain.handle(IPC.singlePlayerRetry, async event => {
-    const sw = windowFor(event.sender);
-    if (!sw || sw.state().server.kind !== 'singleplayer' || !singlePlayer) return;
+    if (!singlePlayerWindow(event.sender) || !singlePlayer) return;
     await singlePlayer.retry().catch(() => undefined);
 });
 
@@ -1246,7 +1261,7 @@ async function captureAndExit(dir: string): Promise<void> {
         }
 
         // The Single player tool: the world is up by the time the game loaded,
-        // so this is the panel as a player finds it — status, port and cheats.
+        // so this is the panel as a player finds it — status, port and the World section.
         const single = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.kind === 'singleplayer');
         if (single) {
             // Fronted before the tool opens, as the Worlds tool is: the panel's
@@ -1424,7 +1439,7 @@ app.whenReady().then(async () => {
     singlePlayer = new SinglePlayerService(
         electronDeps({
             baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
-            cheats: { get: () => appState.singlePlayerCheats(), set: on => appState.setSinglePlayerCheats(on) },
+            settings: { get: () => appState.singlePlayerSettings(), set: patch => appState.setSinglePlayerSettings(patch) },
             log
         })
     );
