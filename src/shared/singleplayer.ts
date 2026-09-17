@@ -52,6 +52,8 @@ export interface SinglePlayerView {
     version: SinglePlayerVersion | null;
     /** What the player chose for the world; see SinglePlayerSettings. */
     settings: SinglePlayerSettings;
+    /** The saves folder, newest first, as last read. A character being played shows its last save. */
+    characters: CharacterInfo[];
 }
 
 /** What the kit reads from the head of a save. */

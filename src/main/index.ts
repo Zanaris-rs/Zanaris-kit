@@ -1494,6 +1494,7 @@ app.on('before-quit', event => {
     quitting = true;
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
+    singlePlayer?.dispose();
     // The world writes the player's saves as it shuts down, so the quit waits for
     // it — bounded by the service's own ten-second grace before it kills the world.
     const status = singlePlayer?.view().status;
