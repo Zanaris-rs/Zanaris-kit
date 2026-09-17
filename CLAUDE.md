@@ -174,6 +174,33 @@ leaves out what single player can never run: the production-only commands,
 random events for staff, in-game developer messages, and loopback map-editor
 routes that write content. The owner cut it as a setting on 2026-09-16.
 
+## Sharing the single-player world
+
+A share is a Cloudflare quick tunnel to a loopback relay in main, which
+forwards to the world's web port (`src/main/share/`). The link is the only
+access control — a world with no login server checks no passwords — so what
+the link reaches is the whole security story. Keep these true:
+
+- **Only the web port is ever a relay target.** The management port answers
+  `POST /shutdown` with no authentication.
+- **The relay forwards `GET`, `HEAD` and the websocket upgrade, nothing else.**
+- **`worldJson` keeps `node.debug: false` and loopback hosts.** Debug on makes
+  the engine serve `/data/` (the RSA key, `world.json`, every save) and accept
+  writes under `/content/`. `share/invariants.test.ts` pins both; if either has
+  to change, sharing changes first.
+- **The share never follows the world's status.** A restart passes through
+  `stopped`, and ending the share there would cost the link on every change in
+  World. It ends on Stop, on the last single-player window's release, or at quit.
+- **cloudflared is the pinned build, checked by digest before every share**, and
+  runs with `--no-autoupdate`, an empty `--config` and no `TUNNEL_*` variables.
+  Bumping `CLOUDFLARED_VERSION` means new sizes and digests from GitHub's asset
+  API — for the macOS archives, the release notes list the binary's digest, not
+  the archive's.
+
+The engine's own login server was ruled out for passwords: upstream binds it,
+and the friend and logger servers, to `0.0.0.0` in code. Turning it on would put
+an unauthenticated service that reads and writes saves on the host's network.
+
 ## No migrations needed — for now
 
 **Nobody has installed this client yet.** `state.json` and `servers.json` have no

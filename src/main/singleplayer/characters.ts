@@ -55,7 +55,7 @@ const done = (name: string): CharacterOutcome => ({ kind: 'done', name });
 const refused = (message: string): CharacterOutcome => ({ kind: 'refused', message });
 const GONE = 'That character is not in the saves folder any more.';
 const NOT_WAITING = 'That file is no longer waiting to be imported. Choose it again.';
-const PLAYING = "You're playing right now.";
+const PLAYING = 'Your world is running.';
 const replaced = (who: string): string => `The ${who} you have now goes to the trash.`;
 
 /** A typed name as a character's name, or why it cannot be one. */
@@ -89,7 +89,7 @@ export function importQuestion(name: string, replacing: boolean, running: boolea
     const who = toDisplayName(name);
     return {
         message: replacing ? `Replace ${who} with the imported save?` : `Import this save as ${who}?`,
-        detail: sentences(replacing ? replaced(who) : null, running ? `${PLAYING} If you are logged in as ${who}, logging out will write over the import.` : null),
+        detail: sentences(replacing ? replaced(who) : null, running ? `${PLAYING} If anyone is logged in as ${who}, logging out will write over the import.` : null),
         button: replacing ? 'Replace' : 'Import',
         destructive: replacing
     };
@@ -100,7 +100,7 @@ export function renameQuestion(from: string, to: string, replacing: boolean, run
     const becomes = toDisplayName(to);
     return {
         message: replacing ? `Rename ${was} to ${becomes}, replacing the ${becomes} you have?` : `Rename ${was} to ${becomes}?`,
-        detail: sentences(replacing ? replaced(becomes) : null, running ? `${PLAYING} If you are logged in as ${was}, logging out will save ${was} again under the old name.` : null),
+        detail: sentences(replacing ? replaced(becomes) : null, running ? `${PLAYING} If anyone is logged in as ${was}, logging out will save ${was} again under the old name.` : null),
         button: 'Rename',
         destructive: replacing
     };
@@ -111,7 +111,7 @@ export function duplicateQuestion(from: string, to: string, replacing: boolean, 
     const copy = toDisplayName(to);
     return {
         message: replacing ? `Copy ${source} over ${copy}?` : `Copy ${source} as ${copy}?`,
-        detail: sentences(replacing ? replaced(copy) : null, running ? `${PLAYING} The copy is ${source} as last saved, and if you are logged in as ${copy}, logging out will write over it.` : null),
+        detail: sentences(replacing ? replaced(copy) : null, running ? `${PLAYING} The copy is ${source} as last saved, and if anyone is logged in as ${copy}, logging out will write over it.` : null),
         button: 'Copy',
         destructive: replacing
     };
@@ -121,7 +121,7 @@ export function deleteQuestion(name: string, running: boolean): Confirmation {
     const who = toDisplayName(name);
     return {
         message: `Move ${who} to the trash?`,
-        detail: sentences('You can put the save back from there.', running ? `${PLAYING} If you are logged in as ${who}, logging out will save ${who} again.` : null),
+        detail: sentences('You can put the save back from there.', running ? `${PLAYING} If anyone is logged in as ${who}, logging out will save ${who} again.` : null),
         button: 'Move to Trash',
         destructive: true
     };
@@ -140,7 +140,7 @@ export function deleteQuestion(name: string, running: boolean): Confirmation {
  * there changes nothing. A change that fails after that step says the old save
  * is in the trash.
  *
- * Changes are allowed while the world runs, and ask first: a player logged in
+ * Changes are allowed while the world runs, and ask first: anyone logged in
  * as one of these writes it again on logout, and the kit cannot tell who is
  * logged in.
  *

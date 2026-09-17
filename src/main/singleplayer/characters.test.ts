@@ -231,7 +231,7 @@ test('while the world runs, even a free name asks, and says why', async () => {
     const ctx = answering(true, true);
     await d.characters.importAs(pickOk(d.characters, '/downloads/x.sav'), 'Zezima', ctx);
     assert.equal(ctx.asked[0]!.message, 'Import this save as Zezima?');
-    assert.match(ctx.asked[0]!.detail, /playing right now.*logging out will write over the import/);
+    assert.match(ctx.asked[0]!.detail, /world is running\. If anyone is logged in as .*logging out will write over the import/);
     assert.equal(ctx.asked[0]!.destructive, false);
 });
 
@@ -290,7 +290,7 @@ test('rename onto a character asks, trashes that one, then moves', async () => {
     const ctx = answering(true, true);
     assert.deepEqual(await d.characters.rename('zezima', 'bob', ctx), { kind: 'done', name: 'bob' });
     assert.equal(ctx.asked[0]!.message, 'Rename Zezima to Bob, replacing the Bob you have?');
-    assert.match(ctx.asked[0]!.detail, /Bob you have now goes to the trash.*logged in as Zezima.*under the old name/);
+    assert.match(ctx.asked[0]!.detail, /Bob you have now goes to the trash.*anyone is logged in as Zezima.*under the old name/);
     assert.deepEqual(d.calls, [`trash ${DIR}/bob.sav`, `rename ${DIR}/zezima.sav ${DIR}/bob.sav`]);
 });
 

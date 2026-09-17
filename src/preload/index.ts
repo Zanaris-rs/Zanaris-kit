@@ -70,6 +70,12 @@ const api: ZanarisApi = {
         remove: name => ipcRenderer.invoke(IPC.singlePlayerDelete, name),
         commands: () => ipcRenderer.invoke(IPC.singlePlayerCommands)
     },
+    share: {
+        start: () => ipcRenderer.invoke(IPC.shareStart),
+        stop: () => ipcRenderer.invoke(IPC.shareStop),
+        copyLink: () => ipcRenderer.invoke(IPC.shareCopy),
+        openLink: () => ipcRenderer.invoke(IPC.shareOpen)
+    },
     timers: {
         start: id => ipcRenderer.invoke(IPC.timersStart, id),
         pause: id => ipcRenderer.invoke(IPC.timersPause, id),

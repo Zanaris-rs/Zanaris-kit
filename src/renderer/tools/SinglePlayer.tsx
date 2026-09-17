@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import type { SinglePlayerView } from '../../shared/singleplayer';
+import type { ShareView } from '../../shared/share';
 import Tab from '../tab';
 import Characters from './singleplayer/Characters';
 import Commands from './singleplayer/Commands';
+import Friends from './singleplayer/Friends';
 import World from './singleplayer/World';
 
 const STATUS: Record<SinglePlayerView['status'], string> = {
@@ -14,16 +16,21 @@ const STATUS: Record<SinglePlayerView['status'], string> = {
     failed: 'Failed'
 };
 
-type Section = 'world' | 'characters' | 'commands';
+type Section = 'world' | 'characters' | 'commands' | 'friends';
 
 const SECTIONS: readonly { id: Section; label: string }[] = [
     { id: 'world', label: 'World' },
     { id: 'characters', label: 'Characters' },
-    { id: 'commands', label: 'Commands' }
+    { id: 'commands', label: 'Commands' },
+    { id: 'friends', label: 'Friends' }
 ];
 
-/** The Single player tool. What the world is doing sits above the sections, since it is true of all of them. Which section is open belongs to this pane and is not kept. */
-export default function SinglePlayer({ view }: { view: SinglePlayerView }): ReactNode {
+/**
+ * The Single player tool. What the world is doing sits above the sections, since it is true of all of them,
+ * and so does a live share's warning: Friends says it too, and nothing else would while another section is open.
+ * Which section is open belongs to this pane and is not kept. Friends is offered only when main sends a share.
+ */
+export default function SinglePlayer({ view, share }: { view: SinglePlayerView; share: ShareView | null }): ReactNode {
     const [open, setOpen] = useState<Section>('world');
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
     return (
@@ -38,6 +45,7 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
                         engine {view.version.engine.slice(0, 8)} · content {view.version.content.slice(0, 8)} · rev {view.version.revision}
                     </p>
                 )}
+                {share?.status === 'live' && open !== 'friends' && <p className="text-[12px] text-warn">Shared with a link: anyone who has it can log in as any character, yours included.</p>}
             </div>
 
             {view.status === 'failed' && (
@@ -61,7 +69,7 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
              * tablist could point at.
              */}
             <div role="group" aria-label="Single player" className="mt-2.5 flex flex-wrap items-center gap-[5px] px-2.5">
-                {SECTIONS.map(section => (
+                {SECTIONS.filter(section => section.id !== 'friends' || share).map(section => (
                     <Tab key={section.id} role="button" label={section.label} open={open === section.id} onSelect={() => setOpen(section.id)} />
                 ))}
             </div>
@@ -69,6 +77,7 @@ export default function SinglePlayer({ view }: { view: SinglePlayerView }): Reac
             {open === 'world' && <World view={view} />}
             {open === 'characters' && <Characters view={view} />}
             {open === 'commands' && <Commands cheats={view.settings.cheats} />}
+            {open === 'friends' && share && <Friends view={share} worldReady={view.status === 'ready'} />}
         </div>
     );
 }
