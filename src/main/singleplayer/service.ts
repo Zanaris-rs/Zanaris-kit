@@ -79,7 +79,7 @@ export class SinglePlayerService {
     private readonly listeners = new Set<() => void>();
     private readonly deps: SinglePlayerDeps;
     /** <home>/data/players/main: the folder the characters live in, and the one watched. */
-    private readonly savesDir: string;
+    readonly savesDir: string;
     private readonly characters: Characters;
     private characterList: CharacterInfo[] = [];
     /** Set by the first acquire. Until then no window has shown a character, and the folder is not read. */
@@ -258,10 +258,10 @@ export class SinglePlayerService {
         }
     }
 
-    /** Runs a change to the characters with the world's state, and pushes the list when it went through. */
+    /** Runs a change to the characters with the world's state, and pushes the list unless the change was cancelled: a refusal can come after a save went to the trash. */
     private async change(run: (ctx: ChangeContext) => Promise<CharacterOutcome>, confirm: Confirm): Promise<CharacterOutcome> {
         const outcome = await run({ running: worldRunning(this.status), confirm });
-        if (outcome.kind === 'done') {
+        if (outcome.kind !== 'cancelled') {
             this.refreshCharacters();
             this.notify();
         }

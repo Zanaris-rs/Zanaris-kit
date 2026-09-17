@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMMAND_FILTERS, ENGINE_COMMANDS, inFilter, matchesQuery, readCommandsFile, typedForm, usage, type CommandRef } from './commands.ts';
+import { COMMAND_FILTERS, ENGINE_COMMANDS, inFilter, matchesQuery, readCommandsFile, typedForm, usage, visibleCommands, type CommandRef } from './commands.ts';
 
 const proc = (name: string, group: string, note: string | null = null): CommandRef => ({ kind: 'debugproc', name, params: [], note, group });
 const engineCommand = (name: string): CommandRef => ENGINE_COMMANDS.find(ref => ref.name === name)!;
@@ -61,6 +61,16 @@ test('inFilter sorts commands into cheats, engine, test scripts and all', () => 
     assert.deepEqual([maxme, cannon, tele].map(ref => inFilter(ref, 'engine')), [false, false, true]);
     assert.deepEqual([maxme, cannon, tele].map(ref => inFilter(ref, 'scripts')), [false, true, false]);
     assert.deepEqual([maxme, cannon, tele].map(ref => inFilter(ref, 'all')), [true, true, true]);
+});
+
+test('visibleCommands lists the procs then the engine commands, and only the engine commands without procs', () => {
+    const maxme = proc('maxme', 'cheats');
+    const cannon = proc('cannon', 'debug');
+    assert.deepEqual(visibleCommands([maxme, cannon], 'cheats', ''), [maxme]);
+    assert.deepEqual(visibleCommands([maxme, cannon], 'all', 'cannon'), [cannon]);
+    assert.equal(visibleCommands([maxme, cannon], 'all', '').length, 2 + ENGINE_COMMANDS.length);
+    assert.deepEqual(visibleCommands(null, 'cheats', ''), [...ENGINE_COMMANDS]);
+    assert.deepEqual(visibleCommands(null, 'scripts', 'tele').map(ref => ref.name), ['tele']);
 });
 
 test('readCommandsFile takes what the stage script writes and drops what it could not have written', () => {

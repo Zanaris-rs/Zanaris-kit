@@ -165,6 +165,7 @@ export function commandsJson(procs) {
         const at = GROUP_ORDER.indexOf(group);
         return at === -1 ? GROUP_ORDER.length : at;
     };
-    const sorted = [...procs].sort((a, b) => rank(a.group) - rank(b.group) || a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
+    const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    const sorted = [...procs].sort((a, b) => rank(a.group) - rank(b.group) || byCode(a.group, b.group) || byCode(a.name, b.name));
     return `${JSON.stringify({ version: 1, debugprocs: sorted }, null, 4)}\n`;
 }

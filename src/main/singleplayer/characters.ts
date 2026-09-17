@@ -73,6 +73,11 @@ function afterTrash(message: string, name: string, trashed: Trashed): string {
     return trashed === 'trashed' ? `${message} The old ${toDisplayName(name)} is in the trash.` : message;
 }
 
+/** A name that was free when the question was asked, and holds a save now. */
+function savedMeanwhile(name: string): string {
+    return `${toDisplayName(name)} was saved while you were answering, so nothing was changed. Try again to replace it.`;
+}
+
 /** The name an imported file suggests: its own, less `.sav`, as the engine would file it. Empty when that is no name. */
 export function suggestName(path: string): string {
     const file = path.split(/[\\/]/).pop() ?? '';
@@ -224,6 +229,7 @@ export class Characters {
         return this.exclusive(async () => {
             // Another import of the same pick may have finished while this one was asking.
             if (this.pending.get(token) !== source) return refused(NOT_WAITING);
+            if (!replacing && this.deps.fs.exists(this.path(target.name))) return refused(savedMeanwhile(target.name));
             const read = this.read(source);
             if (!read.ok) {
                 this.pending.delete(token);
@@ -238,6 +244,7 @@ export class Characters {
     async rename(from: string, typed: string, ctx: ChangeContext): Promise<CharacterOutcome> {
         const source = this.existing(from);
         if (!source.ok) return refused(source.message);
+        if (!this.read(this.path(source.name)).ok) return refused(`${toDisplayName(source.name)}'s save can't be read, so it can't be renamed.`);
         const target = named(typed);
         if (!target.ok) return refused(target.message);
         if (target.name === source.name) return refused(`${toDisplayName(source.name)} already has that name.`);
@@ -245,6 +252,7 @@ export class Characters {
         if ((replacing || ctx.running) && !(await ctx.confirm(renameQuestion(source.name, target.name, replacing, ctx.running)))) return CANCELLED;
         return this.exclusive(async () => {
             if (!this.existing(source.name).ok) return refused(GONE);
+            if (!replacing && this.deps.fs.exists(this.path(target.name))) return refused(savedMeanwhile(target.name));
             const trashed = await this.trash(target.name);
             if (trashed === 'failed') return refused(`Couldn't move the old ${toDisplayName(target.name)} to the trash, so nothing was renamed.`);
             try {
@@ -259,6 +267,7 @@ export class Characters {
     async duplicate(from: string, typed: string, ctx: ChangeContext): Promise<CharacterOutcome> {
         const source = this.existing(from);
         if (!source.ok) return refused(source.message);
+        if (!this.read(this.path(source.name)).ok) return refused(`${toDisplayName(source.name)}'s save can't be read, so it can't be copied.`);
         const target = named(typed);
         if (!target.ok) return refused(target.message);
         if (target.name === source.name) return refused('A copy needs a name of its own.');
@@ -266,6 +275,7 @@ export class Characters {
         if ((replacing || ctx.running) && !(await ctx.confirm(duplicateQuestion(source.name, target.name, replacing, ctx.running)))) return CANCELLED;
         return this.exclusive(async () => {
             if (!this.existing(source.name).ok) return refused(GONE);
+            if (!replacing && this.deps.fs.exists(this.path(target.name))) return refused(savedMeanwhile(target.name));
             let bytes: Uint8Array;
             try {
                 bytes = this.deps.fs.readBytes(this.path(source.name));
@@ -349,7 +359,8 @@ export class Characters {
      * already under the name goes to the trash between those two steps. A
      * crash there leaves the old save in the trash and the new one in the
      * `.part` file, which the list never shows. A rename that fails there
-     * removes the `.part` file and says the old save is in the trash.
+     * removes the `.part` file, and when there was an old save, says it is
+     * in the trash.
      */
     private async write(name: string, bytes: Uint8Array): Promise<CharacterOutcome> {
         const { fs, dir } = this.deps;

@@ -947,9 +947,9 @@ ipcMain.handle(IPC.singlePlayerCommands, (event): CommandRef[] | null => {
 });
 
 ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {
-    const saves = join(singlePlayerHome(), 'data', 'players', 'main');
-    mkdirSync(saves, { recursive: true });
-    await shell.openPath(saves);
+    if (!singlePlayer) return;
+    mkdirSync(singlePlayer.savesDir, { recursive: true });
+    await shell.openPath(singlePlayer.savesDir);
 });
 
 ipcMain.handle(IPC.singlePlayerShowLog, async () => {

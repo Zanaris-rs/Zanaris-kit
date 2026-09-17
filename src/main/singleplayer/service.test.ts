@@ -553,6 +553,21 @@ test('a change while the world runs asks with the reason, and a no changes nothi
     assert.deepEqual(h.trashed, []);
 });
 
+test('a refused change still reads the saves folder again and pushes it', async () => {
+    const h = harness({ stamp: true });
+    const service = new SinglePlayerService(h.deps);
+    h.statusQueue.push(200);
+    await service.acquire();
+    await service.stop();
+    let pushes = 0;
+    service.subscribe(() => pushes++);
+    const before = h.lists.count;
+    const outcome = await service.importCharacter('no-such-token', 'zezima', async () => true);
+    assert.equal(outcome.kind, 'refused');
+    assert.equal(h.lists.count, before + 1);
+    assert.equal(pushes, 1);
+});
+
 test('rename, copy and export go through to the characters', async () => {
     const h = harness({ stamp: true });
     const service = new SinglePlayerService(h.deps);

@@ -48,7 +48,7 @@ function Row({ character, busy, act, ask }: { character: CharacterInfo; busy: bo
                 {character.summary ? summaryLine(character.summary) : PROBLEM_LABEL[character.problem ?? 'unreadable']}
             </span>
             <span className="flex shrink-0 items-center gap-1">
-                {/* A damaged save can still be exported or deleted; renaming or copying one would only spread it. */}
+                {/* A damaged save can still be exported or deleted; main refuses to rename or copy one, which would only spread it. */}
                 <QuietButton size={ROW_BUTTON} disabled={busy || !usable} onClick={() => ask('rename')}>
                     Rename
                 </QuietButton>

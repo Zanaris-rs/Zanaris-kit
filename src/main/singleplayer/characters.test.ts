@@ -445,7 +445,7 @@ test('two imports of one pick answered together import it once', async () => {
     assert.equal(d.files.has(`${DIR}/zezima.sav`), true);
 });
 
-test('two changes to one name answered together run one after the other, and the first save goes to the trash', async () => {
+test('a second change to a name that was free when asked is refused, not a silent replace', async () => {
     const d = setup();
     const older = buildSave({ playtime: 1 });
     const newer = buildSave({ playtime: 2 });
@@ -468,11 +468,30 @@ test('two changes to one name answered together run one after the other, and the
     answer();
     assert.deepEqual(await both, [
         { kind: 'done', name: 'zezima' },
-        { kind: 'done', name: 'zezima' }
+        { kind: 'refused', message: 'Zezima was saved while you were answering, so nothing was changed. Try again to replace it.' }
     ]);
-    assert.equal(d.files.get(`${DIR}/zezima.sav`)!.bytes, newer);
-    assert.deepEqual(d.trashed, [`${DIR}/zezima.sav`]);
+    assert.equal(d.files.get(`${DIR}/zezima.sav`)!.bytes, older);
+    assert.deepEqual(d.trashed, []);
     assert.equal(d.files.has(`${DIR}/zezima.sav.part`), false);
+});
+
+test('a name that gets a save while a rename or copy is asked about is not replaced', async () => {
+    const d = setup();
+    save(d, 'zezima');
+    const appearing = (): ChangeContext => ({
+        running: true,
+        confirm: async () => {
+            save(d, 'bob');
+            return true;
+        }
+    });
+    const meanwhile = { kind: 'refused', message: 'Bob was saved while you were answering, so nothing was changed. Try again to replace it.' };
+    assert.deepEqual(await d.characters.rename('zezima', 'bob', appearing()), meanwhile);
+    assert.deepEqual(d.trashed, []);
+    assert.equal(d.files.has(`${DIR}/zezima.sav`), true);
+    d.files.delete(`${DIR}/bob.sav`);
+    assert.deepEqual(await d.characters.duplicate('zezima', 'bob', appearing()), meanwhile);
+    assert.deepEqual(d.trashed, []);
 });
 
 test('a directory named like a save is not a character', async () => {
@@ -481,4 +500,14 @@ test('a directory named like a save is not a character', async () => {
     assert.equal(d.characters.has('folder'), false);
     assert.deepEqual(await d.characters.remove('folder', answering(true)), { kind: 'refused', message: GONE });
     assert.deepEqual(d.trashed, []);
+});
+
+test('a save that cannot be read is not renamed or copied', async () => {
+    const d = setup();
+    const damaged = buildSave();
+    damaged[30] = damaged[30]! ^ 0xff;
+    save(d, 'broken', damaged);
+    assert.deepEqual(await d.characters.rename('broken', 'fixed', answering(true)), { kind: 'refused', message: "Broken's save can't be read, so it can't be renamed." });
+    assert.deepEqual(await d.characters.duplicate('broken', 'fixed', answering(true)), { kind: 'refused', message: "Broken's save can't be read, so it can't be copied." });
+    assert.deepEqual(d.calls, []);
 });

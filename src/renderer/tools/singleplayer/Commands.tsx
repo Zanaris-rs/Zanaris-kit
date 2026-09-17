@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
-import { COMMAND_FILTERS, ENGINE_COMMANDS, inFilter, matchesQuery, usage, type CommandFilter, type CommandRef } from '../../../shared/commands';
+import { COMMAND_FILTERS, usage, visibleCommands, type CommandFilter, type CommandRef } from '../../../shared/commands';
 import Tab from '../../tab';
 
 const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
@@ -27,9 +27,8 @@ export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
         };
     }, []);
 
-    /* Without the procs there is only the engine's list, whatever the filter was. */
-    const effective: CommandFilter = procs === null ? 'engine' : filter;
-    const shown = [...(procs ?? []), ...ENGINE_COMMANDS].filter(ref => inFilter(ref, effective) && matchesQuery(ref, query));
+    /* While main is asked there is nothing to list yet; the Loading line shows instead. */
+    const shown = visibleCommands(procs === undefined ? [] : procs, filter, query);
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">

@@ -117,6 +117,16 @@ export function matchesQuery(ref: CommandRef, query: string): boolean {
     return ref.name.includes(q) || (ref.note?.toLowerCase().includes(q) ?? false);
 }
 
+/**
+ * What the Commands section lists: the debug procs and then the engine's
+ * commands, through the filter and the search. Without the procs (null)
+ * there is only the engine's list, whatever the filter says.
+ */
+export function visibleCommands(procs: readonly CommandRef[] | null, filter: CommandFilter, query: string): CommandRef[] {
+    const effective: CommandFilter = procs === null ? 'engine' : filter;
+    return [...(procs ?? []), ...ENGINE_COMMANDS].filter(ref => inFilter(ref, effective) && matchesQuery(ref, query));
+}
+
 /** COMMANDS.json, as scripts/stage-engine.mjs writes it. Null for anything else; an entry it could not have written is dropped. */
 export function readCommandsFile(text: string): CommandRef[] | null {
     let parsed: unknown;

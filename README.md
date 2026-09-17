@@ -177,24 +177,27 @@ on this computer. There is no account and nothing to sign up for — any name
 typed at the login screen becomes a character, and its saves live in the app's
 own data folder: `Application Support/zanaris-kit/singleplayer/data/players/main`
 on macOS, `%APPDATA%\zanaris-kit\singleplayer\...` on Windows,
-`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player tool says what the world is doing, and has three sections.
-**World** holds what the kit writes into the world's configuration: Cheats,
-which turns the engine's developer commands on for the whole world; an XP rate
-of 1×, 2×, 5× or 10×; and Members, which off makes it a free world. Each change
-restarts the world, so it logs you out and asks first. **Characters** lists
-every save with its combat level, total level and play time, and imports,
-exports, renames, copies and deletes them; a deleted character, or one another
-replaces, goes to the system trash. The game writes a save when you log out and
-every 15 minutes. **Commands** lists what cheats unlock: the content's debug
-procs, typed `::~name` in the chat box, and the engine's own `::` commands. The
-game cannot paste, so the list is there to read and type from.
+`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player tool says
+what the world is doing, and has three sections. **World** holds what the kit
+writes into the world's configuration: Cheats, which turns the engine's
+developer commands on for the whole world; an XP rate of 1×, 2×, 5× or 10×; and
+Members, which off makes it a free world. Each change restarts a running world,
+so it logs you out and asks first. **Characters** lists every save with its
+combat level, total level and play time, and imports, exports, renames, copies
+and deletes them; a deleted character, or one another replaces, goes to the
+system trash. The game writes a save when you log out and every 15 minutes.
+**Commands** lists what cheats unlock: the content's debug procs, typed
+`::~name` in the chat box, and the engine's own `::` commands. The game cannot
+paste, so the list is there to read and type from.
 
 Your world is not a live one, and it does not pretend to be: the RuneScape
 Guide will offer to skip the tutorial, whether cheats are on or off and however
 many characters you start. That is deliberate. Nobody should have to redo the
 tutorial on their own machine to get to the game, and a world that only you can
 reach has nothing to protect by making them. What the Cheats switch controls is
-the developer commands, and only those.
+the staff level the world gives you: it turns the developer commands on, and
+with them the few things the game does differently for staff — random events,
+for one, stop.
 
 Nothing is injected into a game page: no preload, no main-world code. The page
 that runs is byte-for-byte the page the server served. A modified client is
