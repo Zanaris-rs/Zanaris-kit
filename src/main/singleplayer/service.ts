@@ -78,6 +78,8 @@ export class SinglePlayerService {
     private generation = 0;
     private readonly listeners = new Set<() => void>();
     private readonly deps: SinglePlayerDeps;
+    /** <home>/data/players/main: the folder the characters live in, and the one watched. */
+    private readonly savesDir: string;
     private readonly characters: Characters;
     private characterList: CharacterInfo[] = [];
     /** Set by the first acquire. Until then no window has shown a character, and the folder is not read. */
@@ -87,7 +89,8 @@ export class SinglePlayerService {
 
     constructor(deps: SinglePlayerDeps) {
         this.deps = deps;
-        this.characters = new Characters({ fs: deps.fs, join: deps.join, dir: deps.join(deps.home, 'data', 'players', 'main'), token: () => deps.token() });
+        this.savesDir = deps.join(deps.home, 'data', 'players', 'main');
+        this.characters = new Characters({ fs: deps.fs, join: deps.join, dir: this.savesDir, token: () => deps.token() });
     }
 
     view(): SinglePlayerView {
@@ -227,13 +230,12 @@ export class SinglePlayerService {
     private watchSaves(): void {
         if (this.watching) return;
         this.watching = true;
-        const dir = this.deps.join(this.deps.home, 'data', 'players', 'main');
         try {
-            this.deps.fs.mkdir(dir);
+            this.deps.fs.mkdir(this.savesDir);
         } catch (err) {
             this.deps.log(`[singleplayer] could not make the saves folder: ${String(err)}`);
         }
-        this.stopWatching = this.deps.fs.watchDir(dir, () => void this.queueRefresh());
+        this.stopWatching = this.deps.fs.watchDir(this.savesDir, () => void this.queueRefresh());
         this.refreshCharacters();
     }
 
