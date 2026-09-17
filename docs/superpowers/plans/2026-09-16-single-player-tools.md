@@ -36,7 +36,7 @@ These override the design text wherever the two disagree.
 3. **Debug procs are typed `::~name`.**
    - `ClientCheatHandler.ts:57-65` runs `[debugproc,<cmd minus first char>]` only when `cmd[0] === '~'`. There is no fallback.
    - The content's own `::~help` menu prints the forms without the `~`, and the panel says so.
-   - Debug procs need `staffModLevel >= 4 && !production`. The `::` commands listed need staff 2 or 3. The kit gives staff 4 with cheats on and 0 with them off, and at 0 the world ignores all of them without saying anything (`ClientCheatHandler.ts:57,189,550`).
+   - Debug procs, and the `::` commands `reload`, `speed`, `fly` and `naive`, need `staffModLevel >= 4 && !production`. The other `::` commands listed need staff 2 or 3. The kit gives staff 4 with cheats on and 0 with them off, and at 0 the world ignores all of them without saying anything (`ClientCheatHandler.ts:57,189,550`).
 4. **The `::` table is 21 entries** (listed in Task 8):
    - `::track` does not exist in the pinned upstream engine.
    - `::rebuild` does nothing with `build.liveReload: false`, because `devThread` is null (`World.ts:315-322`).
@@ -3395,10 +3395,10 @@ Expected: FAIL, `Cannot find module` for `commands.ts`.
  *   them, so scripts/stage-engine.mjs lists them into COMMANDS.json.
  * - The engine's own commands, typed `::name`, written out by hand below.
  *
- * Debug procs need staff level 4 and a world that is not production; the
- * engine commands below need staff level 2 or 3. The kit gives level 4 with
- * cheats on and 0 with them off, and at 0 the world ignores every one of them
- * without a word.
+ * Debug procs, and the engine's reload, speed, fly and naive, need staff
+ * level 4 and a world that is not production; the other engine commands below
+ * need staff level 2 or 3. The kit gives level 4 with cheats on and 0 with them
+ * off, and at 0 the world ignores every one of them without a word.
  */
 
 export interface CommandParam {

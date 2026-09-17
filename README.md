@@ -177,11 +177,17 @@ on this computer. There is no account and nothing to sign up for — any name
 typed at the login screen becomes a character, and its saves live in the app's
 own data folder: `Application Support/zanaris-kit/singleplayer/data/players/main`
 on macOS, `%APPDATA%\zanaris-kit\singleplayer\...` on Windows,
-`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player
-tool says what the world is doing, and opens that saves folder or the world's
-log. Its Cheats switch turns the engine's developer commands, `::tele` and
-`::give`, on for the whole world; that takes a restart of the world, so it
-logs you out and asks first.
+`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player tool says what the world is doing, and has three sections.
+**World** holds what the kit writes into the world's configuration: Cheats,
+which turns the engine's developer commands on for the whole world; an XP rate
+of 1×, 2×, 5× or 10×; and Members, which off makes it a free world. Each change
+restarts the world, so it logs you out and asks first. **Characters** lists
+every save with its combat level, total level and play time, and imports,
+exports, renames, copies and deletes them; a deleted character, or one another
+replaces, goes to the system trash. The game writes a save when you log out and
+every 15 minutes. **Commands** lists what cheats unlock: the content's debug
+procs, typed `::~name` in the chat box, and the engine's own `::` commands. The
+game cannot paste, so the list is there to read and type from.
 
 Your world is not a live one, and it does not pretend to be: the RuneScape
 Guide will offer to skip the tutorial, whether cheats are on or off and however

@@ -27,8 +27,9 @@ passages in the design are the ones they remove.
      only when `cmd[0] === '~'`, and has no fallback.
    - The content's own `::~help` menu prints the forms without the `~`, and
      the panel says so.
-   - Debug procs need `staffModLevel >= 4 && !production`, and the `::`
-     commands listed need staff level 2 or 3. The kit gives staff 4 with cheats
+   - Debug procs, and the `::` commands `reload`, `speed`, `fly` and `naive`,
+     need `staffModLevel >= 4 && !production`; the other `::` commands listed
+     need staff level 2 or 3. The kit gives staff 4 with cheats
      on and 0 with them off; at 0 the world ignores all of them without saying
      anything (`ClientCheatHandler.ts:57,189,550`).
 4. **The `::` table is 21 entries.** Four kinds of command are left out:
