@@ -7,6 +7,7 @@ import type { ChatView } from '../shared/chat';
 import { passwordProblem, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
+import { NAME_INPUT_MAX } from '../shared/names';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
@@ -24,7 +25,11 @@ import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
-import { electronDeps, engineResources, singlePlayerHome } from './singleplayer/electron';
+import { electronDeps, engineResources, readCommands, singlePlayerHome } from './singleplayer/electron';
+import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/singleplayer';
+import type { CommandRef } from '../shared/commands';
+import type { Confirm, Confirmation } from './singleplayer/confirm';
+import { changesSettings, readSettingChange, restartConfirmation } from './singleplayer/settings';
 import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
@@ -344,6 +349,12 @@ function openServer(server: ServerDef): ServerWindow {
 
 function windowFor(sender: WebContents): ServerWindow | undefined {
     return byShell.get(sender.id);
+}
+
+/** The shell of a single-player window, or undefined for any other sender. */
+function singlePlayerWindow(sender: WebContents): ServerWindow | undefined {
+    const sw = windowFor(sender);
+    return sw?.state().server.kind === 'singleplayer' ? sw : undefined;
 }
 
 // ── the server list ───────────────────────────────────────────────────────
@@ -841,38 +852,108 @@ async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'layout'
     return response === 0;
 }
 
-async function confirmCheats(sw: ServerWindow, on: boolean): Promise<boolean> {
-    const { response } = await dialog.showMessageBox(sw.window, {
-        type: 'question',
-        buttons: ['Restart', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-        message: `Turning cheats ${on ? 'on' : 'off'} restarts your world and logs you out.`,
-        detail: on ? 'Developer commands such as ::tele and ::give will work.' : 'The world will play as the servers do.'
-    });
-    return response === 0;
+/**
+ * Asks on the window, as a sheet, so other windows keep running. Every
+ * question single player asks goes through here; the words are written by
+ * `singleplayer/settings.ts` and `singleplayer/characters.ts`, where they are
+ * tested.
+ */
+function confirmOn(sw: ServerWindow): Confirm {
+    return async (question: Confirmation) => {
+        const { response } = await dialog.showMessageBox(sw.window, {
+            type: 'question',
+            buttons: [question.button, 'Cancel'],
+            defaultId: question.destructive ? 1 : 0,
+            cancelId: 1,
+            message: question.message,
+            detail: question.detail
+        });
+        return response === 0;
+    };
 }
 
-ipcMain.handle(IPC.singlePlayerSetCheats, async (event, on: unknown) => {
-    if (typeof on !== 'boolean' || !singlePlayer) return;
-    const sw = windowFor(event.sender);
-    if (!sw || sw.state().server.kind !== 'singleplayer') return;
-    if (singlePlayer.view().cheats === on) return;
-    const running = singlePlayer.view().status !== 'stopped' && singlePlayer.view().status !== 'failed';
-    if (running && !(await confirmCheats(sw, on))) return;
-    await singlePlayer.setCheats(on);
+ipcMain.handle(IPC.singlePlayerSetSetting, async (event, key: unknown, value: unknown) => {
+    const sw = singlePlayerWindow(event.sender);
+    const patch = readSettingChange(key, value);
+    if (!sw || !singlePlayer || !patch) return;
+    if (!changesSettings(singlePlayer.view().settings, patch)) return;
+    if (worldRunning(singlePlayer.view().status) && !(await confirmOn(sw)(restartConfirmation(patch)))) return;
+    await singlePlayer.setSettings(patch);
 });
 
 ipcMain.handle(IPC.singlePlayerRetry, async event => {
-    const sw = windowFor(event.sender);
-    if (!sw || sw.state().server.kind !== 'singleplayer' || !singlePlayer) return;
+    if (!singlePlayerWindow(event.sender) || !singlePlayer) return;
     await singlePlayer.retry().catch(() => undefined);
 });
 
+/** What a character handler answers for a payload that is not a change. */
+const NOT_A_CHANGE: CharacterOutcome = { kind: 'refused', message: 'That is not a change the kit can make.' };
+/** A name as typed. Its rules are `shared/names.ts`'s; this only bounds what crosses the bridge. */
+const isTyped = (x: unknown): x is string => typeof x === 'string' && x.length <= NAME_INPUT_MAX;
+
+ipcMain.handle(IPC.singlePlayerPickImport, async (event): Promise<ImportPick | null> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(sw.window, {
+        title: 'Import a character',
+        buttonLabel: 'Import',
+        filters: [{ name: 'Character saves', extensions: ['sav'] }],
+        properties: ['openFile']
+    });
+    const path = filePaths[0];
+    return canceled || path === undefined ? null : singlePlayer.pickCharacter(path);
+});
+
+ipcMain.handle(IPC.singlePlayerImport, async (event, token: unknown, name: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof token !== 'string' || !isTyped(name)) return NOT_A_CHANGE;
+    return singlePlayer.importCharacter(token, name, confirmOn(sw));
+});
+
+ipcMain.handle(IPC.singlePlayerRename, async (event, from: unknown, to: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof from !== 'string' || !isTyped(to)) return NOT_A_CHANGE;
+    return singlePlayer.renameCharacter(from, to, confirmOn(sw));
+});
+
+ipcMain.handle(IPC.singlePlayerDuplicate, async (event, from: unknown, to: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof from !== 'string' || !isTyped(to)) return NOT_A_CHANGE;
+    return singlePlayer.duplicateCharacter(from, to, confirmOn(sw));
+});
+
+ipcMain.handle(IPC.singlePlayerDelete, async (event, name: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof name !== 'string') return NOT_A_CHANGE;
+    return singlePlayer.deleteCharacter(name, confirmOn(sw));
+});
+
+/** Where to is the save dialog's question, and so is whether to write over a file already there. */
+ipcMain.handle(IPC.singlePlayerExport, async (event, name: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof name !== 'string' || !singlePlayer.hasCharacter(name)) return NOT_A_CHANGE;
+    const { canceled, filePath } = await dialog.showSaveDialog(sw.window, {
+        title: 'Export a character',
+        buttonLabel: 'Export',
+        defaultPath: join(app.getPath('documents'), `${name}.sav`),
+        filters: [{ name: 'Character saves', extensions: ['sav'] }]
+    });
+    if (canceled || !filePath) return { kind: 'cancelled' };
+    return singlePlayer.exportCharacter(name, filePath);
+});
+
+/** Read once and kept. A missing list is asked for again, so a stage run while the app is open is picked up. */
+let commands: CommandRef[] | null = null;
+ipcMain.handle(IPC.singlePlayerCommands, (event): CommandRef[] | null => {
+    if (!singlePlayerWindow(event.sender)) return null;
+    commands ??= readCommands();
+    return commands;
+});
+
 ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {
-    const saves = join(singlePlayerHome(), 'data', 'players', 'main');
-    mkdirSync(saves, { recursive: true });
-    await shell.openPath(saves);
+    if (!singlePlayer) return;
+    mkdirSync(singlePlayer.savesDir, { recursive: true });
+    await shell.openPath(singlePlayer.savesDir);
 });
 
 ipcMain.handle(IPC.singlePlayerShowLog, async () => {
@@ -882,19 +963,14 @@ ipcMain.handle(IPC.singlePlayerShowLog, async () => {
 });
 
 // ── sharing the single-player world ──────────────────────────────────────
-
-/** Sharing is asked for from a single-player window's panel and nowhere else. */
-function singlePlayerWindow(sender: WebContents): ServerWindow | undefined {
-    const sw = windowFor(sender);
-    return sw?.state().server.kind === 'singleplayer' ? sw : undefined;
-}
+// Asked for from a single-player window's Friends section and nowhere else.
 
 ipcMain.handle(IPC.shareStart, async event => {
     const sw = singlePlayerWindow(event.sender);
     if (!sw || !share || !singlePlayer || !shareAsset) return;
     const { status } = share.view();
     if (status !== 'off' && status !== 'failed') return;
-    const dialogs = shareDialogs({ asset: shareAsset, installed: await cloudflaredInstalled(), cheats: singlePlayer.view().cheats });
+    const dialogs = shareDialogs({ asset: shareAsset, installed: await cloudflaredInstalled(), cheats: singlePlayer.view().settings.cheats });
     for (const ask of dialogs) {
         const { response } = await dialog.showMessageBox(sw.window, {
             type: ask.kind === 'share' ? 'warning' : 'question',
@@ -1294,7 +1370,7 @@ async function captureAndExit(dir: string): Promise<void> {
         }
 
         // The Single player tool: the world is up by the time the game loaded,
-        // so this is the panel as a player finds it — status, port and cheats.
+        // so this is the panel as a player finds it — status, port and the World section.
         const single = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.kind === 'singleplayer');
         if (single) {
             // Fronted before the tool opens, as the Worlds tool is: the panel's
@@ -1472,7 +1548,7 @@ app.whenReady().then(async () => {
     singlePlayer = new SinglePlayerService(
         electronDeps({
             baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
-            cheats: { get: () => appState.singlePlayerCheats(), set: on => appState.setSinglePlayerCheats(on) },
+            settings: { get: () => appState.singlePlayerSettings(), set: patch => appState.setSinglePlayerSettings(patch) },
             log
         })
     );
@@ -1540,6 +1616,7 @@ app.on('before-quit', event => {
     quitting = true;
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
+    singlePlayer?.dispose();
     if (worldStoppedForQuit) return;
     // The world writes the player's saves as it shuts down, so the quit waits for
     // it — bounded by the service's own ten-second grace before it kills the world.

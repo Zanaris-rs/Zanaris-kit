@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { worldJson } from '../singleplayer/config.ts';
+import { DEFAULT_SINGLE_PLAYER_SETTINGS } from '../../shared/singleplayer.ts';
 
 /*
  * Sharing tunnels the world's web port and nothing else. That is only safe
@@ -9,7 +10,7 @@ import { worldJson } from '../singleplayer/config.ts';
  * writes into it, to anyone the port is reachable from. If one of these has to
  * change, sharing has to change first.
  */
-const world = JSON.parse(worldJson({ ports: { web: 40001, management: 40002, tcp: 40003 }, cheats: true, revision: 274 }));
+const world = JSON.parse(worldJson({ ports: { web: 40001, management: 40002, tcp: 40003 }, settings: { ...DEFAULT_SINGLE_PLAYER_SETTINGS, cheats: true }, revision: 274 }));
 
 test('a shared world never runs in debug mode, which would serve its saves and key over the link', () => {
     assert.equal(world.node.debug, false);

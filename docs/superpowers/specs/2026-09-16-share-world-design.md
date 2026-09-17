@@ -76,9 +76,11 @@ friend's browser ──https──▶ Cloudflare ◀──outbound── cloudfl
   and `failed`. Counted like the world: every single-player window acquires
   it, and the last window to close stops sharing. A world restart passes
   through `stopped`, so the world's status is never the signal to stop.
-- **Panel** (`renderer/tools/ShareWorld.tsx`), at the foot of the Single
-  player tool: Share with friends; the link with Copy link, Open in browser
-  and Stop sharing; the warning; and the failure with Try again.
+- **Panel** (`renderer/tools/singleplayer/Friends.tsx`), the Single player
+  tool's Friends section since single player gained sections: Share with
+  friends; the link with Copy link, Open in browser and Stop sharing; the
+  warning, which also shows above the other sections while the link is live;
+  and the failure with Try again.
 
 ## Out of scope
 

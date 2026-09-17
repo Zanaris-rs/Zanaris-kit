@@ -20,6 +20,8 @@ const log = msg => console.log(`[dist] ${msg}`);
 // existence alone.
 function stageReason() {
     if (!existsSync('engine-dist/VERSION.json')) return 'engine-dist/VERSION.json is missing';
+    // Written by the same stage; a stage from before it existed is re-staged rather than shipped without one.
+    if (!existsSync('engine-dist/COMMANDS.json')) return 'engine-dist/COMMANDS.json is missing';
     let version;
     try {
         version = JSON.parse(readFileSync('engine-dist/VERSION.json', 'utf8'));
@@ -73,7 +75,9 @@ const required = [
     join('data', 'pack', '.cache', 'maps-server.zip'),
     // Without this the world boots, serves the game and is empty: GameMap.init()
     // returns before loading a single map square when <srcDir>/maps is missing.
-    join('content', 'maps', 'multiway.csv')
+    join('content', 'maps', 'multiway.csv'),
+    // The Commands section's list of debug procs; without it the section shows only the engine's commands.
+    'COMMANDS.json'
 ].map(path => join(engine, path));
 const missing = required.filter(path => !existsSync(path));
 if (missing.length > 0) {

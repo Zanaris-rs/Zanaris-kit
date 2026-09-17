@@ -1,16 +1,16 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import type { ShareView } from '../../shared/share';
+import type { ShareView } from '../../../shared/share';
 
-/* .btn carries the gold label; a quieter button overrides it inline, as the Single player panel does. */
+/* .btn carries the gold label; a quieter button overrides it inline, as World does. */
 const MUTED: CSSProperties = { color: 'var(--color-dim)' };
 const COPIED_MS = 1_500;
 
 /**
- * Sharing the world with a link, inside the Single player tool. Every rule is
- * in main — what to ask first, when the share ends — so this only draws the
- * view and forwards four clicks.
+ * The Friends section: sharing the world with a link. Every rule is in main —
+ * what to ask first, when the share ends — so this only draws the view and
+ * forwards four clicks.
  */
-export default function ShareWorld({ view, worldReady }: { view: ShareView; worldReady: boolean }): ReactNode {
+export default function Friends({ view, worldReady }: { view: ShareView; worldReady: boolean }): ReactNode {
     const [copied, setCopied] = useState(false);
     useEffect(() => {
         if (!copied) return;
@@ -20,9 +20,8 @@ export default function ShareWorld({ view, worldReady }: { view: ShareView; worl
 
     if (!view.available) {
         return (
-            <section className="mt-3 px-2.5">
-                <h3 className="font-pixel text-cream">Play with friends</h3>
-                <p className="text-[12px] text-dim">Not on this computer: Cloudflare makes no tunnel program for it.</p>
+            <section aria-label="Play with friends" className="px-2.5 pt-2.5">
+                <p className="text-[12px] text-dim">Playing with friends is not available on this computer: Cloudflare makes no tunnel program for it.</p>
             </section>
         );
     }
@@ -34,10 +33,7 @@ export default function ShareWorld({ view, worldReady }: { view: ShareView; worl
     );
 
     return (
-        <section className="mt-3 px-2.5" aria-labelledby="share-heading">
-            <h3 id="share-heading" className="font-pixel text-cream">
-                Play with friends
-            </h3>
+        <section aria-label="Play with friends" className="min-h-0 flex-1 overflow-y-auto px-2.5 pt-2.5">
             {view.status === 'off' && (
                 <div className="flex items-center gap-2">
                     <button type="button" onClick={() => void window.zanaris.share.start()} className="btn shrink-0">

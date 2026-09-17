@@ -144,6 +144,36 @@ LostHQ's actual community is.
 - LostHQ's NickServ pass is **optional**, so those rooms are not
   registered-only.
 
+## Single player's characters and commands
+
+A character is `data/players/main/<name>.sav`, and the engine finds it by
+`toSafeName(typed)`. `src/shared/names.ts` and `src/main/singleplayer/save.ts`
+are ports of the pinned engine: `JString.ts`, `Packet.getcrc`, `Player.ts`'s
+level table and combat formula, and the checks in `PlayerLoading.load`. A change
+to the engine's names or to its save format before the varps has to be made
+there too. The fixture tests are what catch a slip.
+
+**Every path in the saves folder is built by `Characters.path`**, which refuses
+any name `toSafeName` would change. Nothing typed or picked reaches the file
+system another way, and the renderer never sends a path: an import is a
+dialog in main and a token.
+
+**Nothing there is destroyed.** A delete, and a character another is about to
+replace, go to the system trash first. If the trash refuses, nothing changes;
+if a later step fails, the old save is already in the trash and the refusal
+says so. Changes to the folder run one at a time, after their question is
+answered, and check again what the question was about.
+
+`engine-dist/COMMANDS.json` is written by `stage-engine.mjs` from the content
+checkout, since the kit ships no `.rs2`. The `::` table in
+`src/shared/commands.ts` is written by hand from `ClientCheatHandler.ts`. It
+leaves out what single player can never run: the production-only commands,
+`::rebuild` and `::random`.
+
+`node.debug` stays off. It does more than keep a player logged in: it enables
+random events for staff, in-game developer messages, and loopback map-editor
+routes that write content. The owner cut it as a setting on 2026-09-16.
+
 ## Sharing the single-player world
 
 A share is a Cloudflare quick tunnel to a loopback relay in main, which
@@ -159,8 +189,8 @@ the link reaches is the whole security story. Keep these true:
   writes under `/content/`. `share/invariants.test.ts` pins both; if either has
   to change, sharing changes first.
 - **The share never follows the world's status.** A restart passes through
-  `stopped`, and ending the share there would cost the link on every cheats
-  toggle. It ends on Stop, on the last single-player window's release, or at quit.
+  `stopped`, and ending the share there would cost the link on every change in
+  World. It ends on Stop, on the last single-player window's release, or at quit.
 - **cloudflared is the pinned build, checked by digest before every share**, and
   runs with `--no-autoupdate`, an empty `--config` and no `TUNNEL_*` variables.
   Bumping `CLOUDFLARED_VERSION` means new sizes and digests from GitHub's asset

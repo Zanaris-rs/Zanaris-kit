@@ -333,25 +333,50 @@ test('stageChat applies in memory and writes nothing until save is called', () =
     assert.deepEqual(b.chat(), { ...DEFAULT_CHAT, nick: 'lumbridge', autoJoin: ['#rscape'] }, 'the save writes the staged value alongside everything else');
 });
 
-test('single-player cheats are off by default, persist, and survive a file without the key', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'state-'));
-    const file = join(dir, 'state.json');
+test('single-player settings default to cheats off, xp 1x and members on, persist, and survive a file without the key', () => {
+    const file = tempFile();
     const state = new AppState(file);
     state.load();
-    assert.equal(state.singlePlayerCheats(), false);
-    state.setSinglePlayerCheats(true);
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).singlePlayer.cheats, true);
+    assert.deepEqual(state.singlePlayerSettings(), { cheats: false, xpRate: 1, members: true });
+    state.setSinglePlayerSettings({ cheats: true, xpRate: 5 });
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).singlePlayer, { cheats: true, xpRate: 5, members: true });
     const again = new AppState(file);
     again.load();
-    assert.equal(again.singlePlayerCheats(), true);
+    assert.deepEqual(again.singlePlayerSettings(), { cheats: true, xpRate: 5, members: true });
     writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, warnOnSwitch: true }));
     const older = new AppState(file);
     older.load();
-    assert.equal(older.singlePlayerCheats(), false);
-    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, singlePlayer: { cheats: 'yes' } }));
+    assert.deepEqual(older.singlePlayerSettings(), { cheats: false, xpRate: 1, members: true });
+});
+
+test('a stored single-player block is read one field at a time, and a bad one costs nothing else', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, singlePlayer: { cheats: 'yes', xpRate: 3, members: false } }));
     const odd = new AppState(file);
     odd.load();
-    assert.equal(odd.singlePlayerCheats(), false);
+    assert.deepEqual(odd.singlePlayerSettings(), { cheats: false, xpRate: 1, members: false });
+    // What the kit wrote before XP rate and members existed.
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, singlePlayer: { cheats: true } }));
+    const before = new AppState(file);
+    before.load();
+    assert.deepEqual(before.singlePlayerSettings(), { cheats: true, xpRate: 1, members: true });
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, singlePlayer: 'junk' }));
+    const junk = new AppState(file);
+    junk.load();
+    assert.deepEqual(junk.singlePlayerSettings(), { cheats: false, xpRate: 1, members: true });
+    assert.deepEqual(junk.world('lostcity'), REMEMBERED);
+});
+
+test('setSinglePlayerSettings stores only what a load would keep, and hands out copies', () => {
+    const state = new AppState(tempFile());
+    state.load();
+    state.setSinglePlayerSettings({ xpRate: 5 });
+    // An invalid value falls back to the default, exactly as reading it from the file would.
+    state.setSinglePlayerSettings({ xpRate: 7 as never, members: false });
+    assert.deepEqual(state.singlePlayerSettings(), { cheats: false, xpRate: 1, members: false });
+    const copy = state.singlePlayerSettings();
+    copy.cheats = true;
+    assert.equal(state.singlePlayerSettings().cheats, false);
 });
 
 test('a stored hiscores block round-trips', () => {

@@ -177,36 +177,47 @@ on this computer. There is no account and nothing to sign up for — any name
 typed at the login screen becomes a character, and its saves live in the app's
 own data folder: `Application Support/zanaris-kit/singleplayer/data/players/main`
 on macOS, `%APPDATA%\zanaris-kit\singleplayer\...` on Windows,
-`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player
-tool says what the world is doing, and opens that saves folder or the world's
-log. Its Cheats switch turns the engine's developer commands, `::tele` and
-`::give`, on for the whole world; that takes a restart of the world, so it
-logs you out and asks first.
+`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player tool says
+what the world is doing, and has four sections. **World** holds what the kit
+writes into the world's configuration: Cheats, which turns the engine's
+developer commands on for the whole world; an XP rate of 1×, 2×, 5× or 10×; and
+Members, which off makes it a free world. Each change restarts a running world,
+so it logs you out and asks first. **Characters** lists every save with its
+combat level, total level and play time, and imports, exports, renames, copies
+and deletes them; a deleted character, or one another replaces, goes to the
+system trash. The game writes a save when you log out and every 15 minutes.
+**Commands** lists what cheats unlock: the content's debug procs, typed
+`::~name` in the chat box, and the engine's own `::` commands. The game cannot
+paste, so the list is there to read and type from. **Friends** shares the world
+with a link; see Playing with friends below.
 
 Your world is not a live one, and it does not pretend to be: the RuneScape
 Guide will offer to skip the tutorial, whether cheats are on or off and however
 many characters you start. That is deliberate. Nobody should have to redo the
 tutorial on their own machine to get to the game, and a world that only you, and
 whoever you share it with, can reach has nothing to protect by making them. What
-the Cheats switch controls is the developer commands, and only those.
+the Cheats switch controls is the staff level the world gives you and everyone
+you share it with: it turns the developer commands on, and with them the few
+things the game does differently for staff — random events, for one, stop.
 
-**Playing with friends.** The Single player tool's Play with friends section
-lets friends join that world from a browser. Share with friends downloads
-Cloudflare's tunnel program the first time — 19 to 55 MB depending on the
-system, from Cloudflare's own GitHub release, checked against a digest pinned in
-the kit — then opens a free Cloudflare quick tunnel, which needs no Cloudflare
-account, and shows a `https://<words>.trycloudflare.com/rs2.cgi` link to copy.
-The kit asks before the download and before every share. The link lasts until
-you stop sharing, close the last Single player window, or quit. Restarting the
-world, which turning cheats on or off does, keeps it: friends reload once the
-world is back. Each new share gets a new link.
+**Playing with friends.** The Single player tool's Friends section lets friends
+join that world from a browser. Share with friends downloads Cloudflare's tunnel
+program the first time — 19 to 55 MB depending on the system, from Cloudflare's
+own GitHub release, checked against a digest pinned in the kit — then opens a
+free Cloudflare quick tunnel, which needs no Cloudflare account, and shows a
+`https://<words>.trycloudflare.com/rs2.cgi` link to copy. The kit asks before
+the download and before every share. The link lasts until you stop sharing,
+close the last Single player window, or quit. Restarting the world, which any
+change in World does, keeps it: friends reload once the world is back. Each new
+share gets a new link.
 
 The link is the only lock. A world on this computer checks no passwords, so
 anyone holding the link can log in as any character, yours included, and has
-cheats whenever you have them on. The kit says so before it shares and for as
-long as it does. Friends join with the web client only. Cloudflare offers quick
-tunnels for testing, with no uptime promise and a cap of 200 requests in flight
-at once, which a ten-player world stays well under.
+cheats whenever you have them on. The kit says so before it shares and, above
+whichever section is open, for as long as it does. Friends join with the web
+client only. Cloudflare offers quick tunnels for testing, with no uptime promise
+and a cap of 200 requests in flight at once, which a ten-player world stays well
+under.
 
 Nothing is injected into a game page: no preload, no main-world code. The page
 that runs is byte-for-byte the page the server served. A modified client is
@@ -782,7 +793,7 @@ src/renderer/tools/Worlds.tsx
 src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
 src/renderer/tools/ChatUsers.tsx     a channel's users by rank, and its modes and age
-src/renderer/tools/ShareWorld.tsx    Play with friends: share, the link, stop
+src/renderer/tools/singleplayer/Friends.tsx  Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
 static/offline.html         shown when a server can't be reached
 static/sounds/alert.wav     every timer's alert: Kenney's confirmation_002 (CC0), louder
