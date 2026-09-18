@@ -445,6 +445,20 @@ moving exactly the two panes either side of it. Repeated splitting halves each
 time, as it does in iTerm and tmux, and **Even Out** in the View menu is what
 answers "make these the same size".
 
+Resizing the window leaves the game alone. On every split between the tab's edge
+and the game, the game's side keeps its pixels and the panes beside it take the
+difference, in proportion to their size — a game sized tight stays tight while
+the window changes around it. Shrinking takes the other panes to their floor
+before the game gives anything up, and growing back returns the game to the size
+it was left at, because each resize is worked out from the arrangement as the
+player left it rather than from the frame before. The game still grows along an
+axis where nothing sits beside it: the game over chat a window opens with widens
+with the window. **Reset Game Size**, in the game pane's dropdown and its
+right-click menu, moves the seams around the game until it is back at the size a
+window opens it at, taking the room from the panes beside it down to their floor.
+It never resizes the window, so along an axis the game spans alone it has nothing
+to trade, and it is greyed when it would not move the game.
+
 **Add pane**, at the right end of the tab bar, adds a pane without splitting one
 by hand. It lists what a pane's own dropdown does — the tools, the game, this
 server's links — and whatever you pick opens as a new column down the tab's
@@ -551,8 +565,9 @@ not rescale to follow unless the player picked **Auto Sizing** from the controls
 under the game, so the canvas clips rather than shrinking — still reachable by
 scrolling, though with no bar to hint at it, since the injected stylesheet hides
 them. 765x503 plus the client page's controls strip plus the pane header — 765
-by 567 — is what a game pane *asks for* when it is first placed, and what the
-window opens at, not a floor anything protects.
+by 567 — is what a game pane *asks for* when it is first placed, what the
+window opens at and what Reset Game Size goes back to, not a floor anything
+protects.
 
 Below that the client page is not ours: every server serves the same template,
 and its own `overflow: auto` around a `100vh` centring column can put up a

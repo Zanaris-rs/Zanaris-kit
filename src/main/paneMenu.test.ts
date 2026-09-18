@@ -1,72 +1,102 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaf, split } from './paneTree.ts';
-import { addPaneItems, canClosePane, paneContentItems, paneHolding, paneMenuItems, paneName, paneSplitItems } from './paneMenu.ts';
+import { addPaneItems, canClosePane, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, paneName } from './paneMenu.ts';
 
 const roomy = { width: 800, height: 600 };
+/** A tab the size of the one pane in it, and the size the game opens at. */
+const sizes = { tab: roomy, game: { width: 765, height: 567 } };
 const byId = (items: ReturnType<typeof paneMenuItems>, id: string): (typeof items)[number] => items.find(i => i.id === id)!;
 
 test('a roomy pane offers both splits', () => {
-    const items = paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy);
+    const items = paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy, sizes);
     assert.equal(byId(items, 'split-x').enabled, true);
     assert.equal(byId(items, 'split-y').enabled, true);
 });
 
 test('a pane too narrow to halve cannot be split across, but can still be split down', () => {
     // 243 is one pixel short of two 120s and the 4px seam between them.
-    const items = paneMenuItems(leaf('a', { kind: 'empty' }), 'a', { width: 243, height: 600 });
+    const items = paneMenuItems(leaf('a', { kind: 'empty' }), 'a', { width: 243, height: 600 }, sizes);
     assert.equal(byId(items, 'split-x').enabled, false, 'neither half could be drawn');
     assert.equal(byId(items, 'split-y').enabled, true, 'the other axis is unaffected');
 });
 
 test('a pane too short to halve cannot be split down', () => {
-    const items = paneMenuItems(leaf('a', { kind: 'empty' }), 'a', { width: 800, height: 163 });
+    const items = paneMenuItems(leaf('a', { kind: 'empty' }), 'a', { width: 800, height: 163 }, sizes);
     assert.equal(byId(items, 'split-y').enabled, false);
 });
 
 test("the header's dropdown offers the right-click menu's two splits, greyed under the same floor", () => {
-    const tree = leaf('a', { kind: 'game' });
+    const tree = leaf('a', { kind: 'empty' });
     const narrow = { width: 243, height: 600 };
-    const splits = paneSplitItems(tree, 'a', narrow);
+    const splits = paneHeaderItems(tree, 'a', narrow, sizes);
     assert.deepEqual(
         splits.map(i => i.id),
         ['split-x', 'split-y']
     );
-    assert.deepEqual(splits, paneMenuItems(tree, 'a', narrow).slice(0, 2), 'the same items, not a second opinion about them');
+    assert.deepEqual(splits, paneMenuItems(tree, 'a', narrow, sizes).slice(0, 2), 'the same items, not a second opinion about them');
     assert.equal(byId(splits, 'split-x').enabled, false, 'a pane too narrow to halve is greyed here as well');
 });
 
-test('every gesture shows the View menu shortcut for the same act', () => {
-    const items = paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy);
+test("the game's header dropdown offers Reset Game Size too, the same item the right-click menu does", () => {
+    const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
+    const tab = { tab: { width: 765, height: 1003 }, game: sizes.game };
+    const items = paneHeaderItems(tree, 'a', { width: 765, height: 500 }, tab);
+    assert.deepEqual(
+        items.map(i => i.id),
+        ['split-x', 'split-y', 'reset-game']
+    );
+    assert.deepEqual(byId(items, 'reset-game'), byId(paneMenuItems(tree, 'a', { width: 765, height: 500 }, tab), 'reset-game'));
+});
+
+test('every gesture the View menu carries shows its shortcut there', () => {
+    const items = paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy, sizes);
     assert.deepEqual(
         items.map(i => [i.id, i.accelerator]),
         [
             ['split-x', 'CmdOrCtrl+D'],
             ['split-y', 'CmdOrCtrl+Shift+D'],
             ['even-out', 'CmdOrCtrl+Alt+='],
+            ['reset-game', undefined],
             ['close', 'CmdOrCtrl+W']
         ]
     );
 });
 
+test('only the game pane offers Reset Game Size', () => {
+    const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
+    const tab = { tab: { width: 765, height: 1003 }, game: sizes.game };
+    assert.equal(byId(paneMenuItems(tree, 'a', { width: 765, height: 500 }, tab), 'reset-game').label, 'Reset Game Size');
+    assert.equal(byId(paneMenuItems(tree, 'b', { width: 765, height: 499 }, tab), 'reset-game'), undefined, 'chat has no game to reset');
+});
+
+test('Reset Game Size is offered only when it would move the game', () => {
+    const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
+    const tall = { tab: { width: 765, height: 1003 }, game: sizes.game };
+    assert.equal(byId(paneMenuItems(tree, 'a', { width: 765, height: 500 }, tall), 'reset-game').enabled, true, 'half of a tall window is not the size the game opens at');
+    const tight = { tab: { width: 765, height: 1138 }, game: sizes.game };
+    assert.equal(byId(paneMenuItems(tree, 'a', { width: 765, height: 567 }, tight), 'reset-game').enabled, false, 'already at its size');
+    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy, sizes), 'reset-game').enabled, false, 'alone in its tab, with nothing to trade space with');
+});
+
 test('even out is offered only to a pane that has siblings to even out with', () => {
-    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy), 'even-out').enabled, false);
+    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy, sizes), 'even-out').enabled, false);
     const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
-    assert.equal(byId(paneMenuItems(tree, 'a', roomy), 'even-out').enabled, true);
+    assert.equal(byId(paneMenuItems(tree, 'a', roomy, sizes), 'even-out').enabled, true);
 });
 
 test("the game's close says what it costs, and every other pane's does not", () => {
-    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy), 'close').label, 'Close Game');
-    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy), 'close').label, 'Close Pane');
+    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy, sizes), 'close').label, 'Close Game');
+    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy, sizes), 'close').label, 'Close Pane');
 });
 
 test('the only pane in a tab can still be closed — it empties rather than vanishing', () => {
-    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy), 'close').enabled, true);
+    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy, sizes), 'close').enabled, true);
 });
 
 test('the only pane in a tab, already empty, has nothing to close', () => {
     assert.equal(canClosePane(leaf('a', { kind: 'empty' }), 'a'), false, 'closing it would empty an empty pane');
-    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy), 'close').enabled, false, 'the menu and the header agree');
+    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'empty' }), 'a', roomy, sizes), 'close').enabled, false, 'the menu and the header agree');
 });
 
 test('an empty pane beside another can be closed, and so can a lone pane holding anything', () => {
