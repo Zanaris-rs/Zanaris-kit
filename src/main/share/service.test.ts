@@ -26,9 +26,11 @@ class FakeRelay implements ShareRelay {
     closed = 0;
     readonly port: number;
     readonly target: () => number | null;
+    readonly probe: { path: string; token: string };
     constructor(port: number, target: () => number | null) {
         this.port = port;
         this.target = target;
+        this.probe = { path: `/.zanaris-kit/reachable/t${port}`, token: `t${port}` };
     }
     async close(): Promise<void> {
         this.closed++;
@@ -60,6 +62,7 @@ interface Harness {
     downloads: { onProgress: (p: number) => void; done: Deferred<string> }[];
     relays: FakeRelay[];
     tunnels: { binary: string; port: number; signal: AbortSignal; done: Deferred<ShareTunnel> }[];
+    waits: { url: string; probe: { path: string; token: string }; signal: AbortSignal; done: Deferred<void> }[];
     world: { port: number | null };
 }
 
@@ -67,6 +70,7 @@ function harness(over: { asset?: CloudflaredAsset | null } = {}): Harness {
     const downloads: Harness['downloads'] = [];
     const relays: FakeRelay[] = [];
     const tunnels: Harness['tunnels'] = [];
+    const waits: Harness['waits'] = [];
     const world = { port: 40001 as number | null };
     const deps: ShareDeps = {
         asset: over.asset === undefined ? ASSET : over.asset,
@@ -85,13 +89,25 @@ function harness(over: { asset?: CloudflaredAsset | null } = {}): Harness {
             tunnels.push({ binary, port, signal, done });
             return done.promise;
         },
+        waitReachable: (url, probe, signal) => {
+            const done = deferred<void>();
+            waits.push({ url, probe, signal, done });
+            return done.promise;
+        },
         worldPort: () => world.port,
         log: () => {}
     };
-    return { deps, downloads, relays, tunnels, world };
+    return { deps, downloads, relays, tunnels, waits, world };
 }
 
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
+
+/** Opens the tunnel the latest start is waiting for, and answers the check that follows it. */
+async function connect(h: Harness, tunnel: FakeTunnel): Promise<void> {
+    h.tunnels.at(-1)!.done.resolve(tunnel);
+    await tick();
+    h.waits.at(-1)!.done.resolve();
+}
 
 async function goLive(h: Harness, service: ShareService, url = 'https://calm-river.trycloudflare.com'): Promise<FakeTunnel> {
     const started = service.start();
@@ -99,9 +115,21 @@ async function goLive(h: Harness, service: ShareService, url = 'https://calm-riv
     h.downloads.at(-1)!.done.resolve('/cf/cloudflared');
     await tick();
     const tunnel = new FakeTunnel(url);
-    h.tunnels.at(-1)!.done.resolve(tunnel);
+    await connect(h, tunnel);
     await started;
     return tunnel;
+}
+
+/** A share whose tunnel is up and whose link is being checked. */
+async function goChecking(h: Harness, service: ShareService): Promise<{ started: Promise<void>; tunnel: FakeTunnel }> {
+    const started = service.start();
+    await tick();
+    h.downloads.at(-1)!.done.resolve('/cf/cloudflared');
+    await tick();
+    const tunnel = new FakeTunnel('https://calm-river.trycloudflare.com');
+    h.tunnels.at(-1)!.done.resolve(tunnel);
+    await tick();
+    return { started, tunnel };
 }
 
 test('sharing starts off, and says whether this platform can share at all', () => {
@@ -117,7 +145,7 @@ test('on a platform with no cloudflared, starting does nothing', async () => {
     assert.equal(h.downloads.length, 0);
 });
 
-test('a share downloads, then opens the relay and the tunnel to it, then goes live on the game page', async () => {
+test('a share downloads, then opens the relay and the tunnel to it, checks the link, then goes live on the game page', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
     const seen: ShareStatus[] = [];
@@ -126,7 +154,7 @@ test('a share downloads, then opens the relay and the tunnel to it, then goes li
         if (seen.at(-1) !== status) seen.push(status);
     });
     const tunnel = await goLive(h, service);
-    assert.deepEqual(seen, ['downloading', 'connecting', 'live']);
+    assert.deepEqual(seen, ['downloading', 'connecting', 'checking', 'live']);
     assert.equal(h.relays.length, 1);
     assert.equal(h.tunnels[0]!.binary, '/cf/cloudflared');
     assert.equal(h.tunnels[0]!.port, h.relays[0]!.port);
@@ -174,7 +202,7 @@ test('starting again while a share is on its way is the same share', async () =>
     assert.equal(h.downloads.length, 1);
     h.downloads[0]!.done.resolve('/cf/cloudflared');
     await tick();
-    h.tunnels[0]!.done.resolve(new FakeTunnel('https://x.trycloudflare.com'));
+    await connect(h, new FakeTunnel('https://x.trycloudflare.com'));
     await Promise.all([a, b]);
     assert.equal(h.relays.length, 1);
     await service.start();
@@ -221,6 +249,84 @@ test('a tunnel that dies while live ends the share, says why, and closes the rel
     assert.equal(h.relays[0]!.closed, 1);
 });
 
+test('while the link is checked no link is shown, and the check is of this tunnel through this relay', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const { tunnel } = await goChecking(h, service);
+    assert.deepEqual(service.view(), { status: 'checking', url: null, progress: null, reason: null, available: true });
+    assert.equal(h.waits.length, 1);
+    assert.equal(h.waits[0]!.url, tunnel.url);
+    assert.deepEqual(h.waits[0]!.probe, h.relays[0]!.probe);
+    assert.equal(h.waits[0]!.signal.aborted, false);
+});
+
+test('a link that never starts working fails the share, stops cloudflared and closes the relay', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const { started, tunnel } = await goChecking(h, service);
+    h.waits[0]!.done.reject(new Error("The link did not start working within 2 minutes: Cloudflare's edge still answered 530"));
+    await started;
+    assert.equal(service.view().status, 'failed');
+    assert.equal(service.view().reason, "The link did not start working within 2 minutes: Cloudflare's edge still answered 530");
+    assert.equal(tunnel.stopped, 1);
+    assert.equal(h.relays[0]!.closed, 1);
+    await tick();
+    assert.match(service.view().reason!, /did not start working/, 'the exit the failure caused is not a second failure');
+});
+
+test('a share whose link never worked can be tried again, afresh', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const { started } = await goChecking(h, service);
+    h.waits[0]!.done.reject(new Error('The link did not start working within 2 minutes'));
+    await started;
+    await goLive(h, service, 'https://second.trycloudflare.com');
+    assert.equal(service.view().status, 'live');
+    assert.equal(service.view().url, 'https://second.trycloudflare.com/rs2.cgi');
+    assert.equal(h.relays.length, 2);
+    assert.deepEqual(h.waits[1]!.probe, h.relays[1]!.probe);
+});
+
+test('stopping while the link is checked cancels the check, stops cloudflared and closes the relay', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const { started, tunnel } = await goChecking(h, service);
+    const stopped = service.stop();
+    assert.equal(h.waits[0]!.signal.aborted, true);
+    assert.equal(service.view().status, 'off');
+    h.waits[0]!.done.reject(new Error('Sharing was cancelled'));
+    await Promise.all([started, stopped]);
+    assert.equal(tunnel.stopped, 1);
+    assert.equal(h.relays[0]!.closed, 1);
+    assert.deepEqual(service.view(), { status: 'off', url: null, progress: null, reason: null, available: true });
+});
+
+test('a check that passes after its share was stopped does not bring the link back', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const { started } = await goChecking(h, service);
+    await service.stop();
+    h.waits[0]!.done.resolve();
+    await started;
+    await tick();
+    assert.deepEqual(service.view(), { status: 'off', url: null, progress: null, reason: null, available: true });
+});
+
+test('cloudflared dying while the link is checked fails the share at once and cancels the check', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const { started, tunnel } = await goChecking(h, service);
+    tunnel.die(1);
+    await tick();
+    assert.equal(service.view().status, 'failed');
+    assert.match(service.view().reason!, /code 1/);
+    assert.equal(h.waits[0]!.signal.aborted, true);
+    assert.equal(h.relays[0]!.closed, 1);
+    h.waits[0]!.done.reject(new Error('Sharing was cancelled'));
+    await started;
+    assert.match(service.view().reason!, /code 1/, 'the cancelled check is not reported over the reason');
+});
+
 test('stopping a live share stops the tunnel, closes the relay, and is not then reported as a failure', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
@@ -257,7 +363,7 @@ test('sharing again while an abandoned download is still running waits for that 
     assert.equal(h.downloads.length, 1);
     h.downloads[0]!.done.resolve('/cf/cloudflared');
     await tick();
-    h.tunnels[0]!.done.resolve(new FakeTunnel('https://again.trycloudflare.com'));
+    await connect(h, new FakeTunnel('https://again.trycloudflare.com'));
     await again;
     assert.equal(service.view().status, 'live');
 });
@@ -387,7 +493,7 @@ test('sharing again while a stop is finishing waits for it, then starts afresh',
     assert.equal(h.downloads.length, 2);
     h.downloads[1]!.done.resolve('/cf/cloudflared');
     await tick();
-    h.tunnels[1]!.done.resolve(new FakeTunnel('https://second.trycloudflare.com'));
+    await connect(h, new FakeTunnel('https://second.trycloudflare.com'));
     await again;
     assert.equal(service.view().url, 'https://second.trycloudflare.com/rs2.cgi');
 });

@@ -3,6 +3,8 @@ import type { CloudflaredAsset } from './cloudflared.ts';
 
 export interface ShareRelay {
     readonly port: number;
+    /** The path the relay answers itself, and its answer: how the check knows a request came through. */
+    readonly probe: { path: string; token: string };
     close(): Promise<void>;
 }
 
@@ -19,8 +21,10 @@ export interface ShareDeps {
     /** The checked binary's path, downloading it first if it is not on disk. */
     ensureBinary(onProgress: (fraction: number) => void): Promise<string>;
     startRelay(target: () => number | null): Promise<ShareRelay>;
-    /** Rejects when `signal` aborts before the tunnel is live. */
+    /** Rejects when `signal` aborts before the tunnel has connected. */
     startTunnel(binary: string, port: number, signal: AbortSignal): Promise<ShareTunnel>;
+    /** Resolves once the tunnel's link reaches the relay from the internet. Rejects when it does not in time, or when `signal` aborts. */
+    waitReachable(url: string, probe: ShareRelay['probe'], signal: AbortSignal): Promise<void>;
     /** The world's web port while it is ready, otherwise null. */
     worldPort(): number | null;
     log(msg: string): void;
@@ -30,6 +34,9 @@ export interface ShareDeps {
  * Sharing the single-player world: a relay in front of it and a quick tunnel
  * in front of that. One share for every single-player window, counted like
  * the world is — each window acquires it, and the last release stops it.
+ * The link is shown only once it works: a tunnel registers some time before
+ * its link reaches it, and a link opened early can stay broken for the
+ * person who opened it long after it works.
  *
  * It never watches the world's status. A restart passes through `stopped` on
  * its way back to `ready`, and ending the share there would cost the link on
@@ -155,16 +162,26 @@ export class ShareService {
                 await tunnel.stop();
                 return;
             }
+            // From here a stop owns the tunnel too, and its exit ends the share.
             this.tunnel = tunnel;
+            void tunnel.exited.then(code => this.onTunnelExit(tunnel, code));
+
+            this.set('checking');
+            await deps.waitReachable(tunnel.url, relay.probe, controller.signal);
+            if (!current()) return;
             this.url = `${tunnel.url}/rs2.cgi`;
             this.set('live');
             deps.log(`[share] live at ${this.url}`);
-            void tunnel.exited.then(code => this.onTunnelExit(tunnel, code));
         } catch (err) {
             if (!current()) return;
-            if (this.relay === relay) this.relay = null;
-            await relay?.close().catch(() => undefined);
+            // Nothing is left running behind a failure. The tunnel is let go of
+            // first, so the exit this causes is not reported as a second one.
+            const tunnel = this.tunnel;
+            this.tunnel = null;
+            this.relay = null;
             this.fail(err instanceof Error ? err.message : String(err));
+            void tunnel?.stop().catch(stopErr => deps.log(`[share] stopping the tunnel: ${String(stopErr)}`));
+            void relay?.close().catch(() => undefined);
         } finally {
             if (this.controller === controller) this.controller = null;
         }
@@ -201,6 +218,9 @@ export class ShareService {
         const relay = this.relay;
         this.relay = null;
         this.generation++;
+        // A link still being checked has nothing left to check.
+        this.controller?.abort();
+        this.controller = null;
         const last = lastLine(tunnel.logs());
         this.fail(`The link closed unexpectedly (cloudflared exited with code ${code})${last ? `: ${last}` : ''}`);
         void relay?.close().catch(() => undefined);

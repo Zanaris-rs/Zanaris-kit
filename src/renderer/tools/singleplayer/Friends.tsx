@@ -54,6 +54,12 @@ export default function Friends({ view, worldReady }: { view: ShareView; worldRe
                     {cancel}
                 </div>
             )}
+            {view.status === 'checking' && (
+                <div className="flex items-center gap-2" aria-live="polite">
+                    <span className="text-cream">Link made. Waiting for it to work from the internet, which can take a minute…</span>
+                    {cancel}
+                </div>
+            )}
             {view.status === 'live' && view.url && (
                 <>
                     <p className="sunk mt-1 cursor-text px-2 py-1 font-mono text-[12px] break-all text-cream select-text">{view.url}</p>
