@@ -199,6 +199,39 @@ test('closing the relay ends the connections it holds open', async t => {
     await assert.rejects(send(relay.port, 'GET', '/rs2.cgi'));
 });
 
+test('the readiness path is answered by the relay itself with its token, and never reaches the world', async t => {
+    const w = await world('w1');
+    t.after(() => w.close());
+    const relay = await relayTo(t, () => w.port);
+    assert.match(relay.probe.token, /^[0-9a-f]{32}$/);
+    assert.equal(relay.probe.path, `/.zanaris-kit/reachable/${relay.probe.token}`);
+    const res = await send(relay.port, 'GET', relay.probe.path);
+    assert.equal(res.status, 200);
+    assert.equal(res.body, relay.probe.token);
+    assert.equal(res.headers['cache-control'], 'no-store');
+    assert.equal((await send(relay.port, 'HEAD', relay.probe.path)).status, 200);
+    assert.deepEqual(w.hits, []);
+});
+
+test('the readiness path answers while the world is down, since a share outlives a restart', async t => {
+    const relay = await relayTo(t, () => null);
+    const res = await send(relay.port, 'GET', relay.probe.path);
+    assert.equal(res.status, 200);
+    assert.equal(res.body, relay.probe.token);
+});
+
+test('only this relay\'s own token is answered: any other path is the world\'s, and other methods are still refused', async t => {
+    const w = await world('w1');
+    t.after(() => w.close());
+    const relay = await relayTo(t, () => w.port);
+    const other = await send(relay.port, 'GET', `/.zanaris-kit/reachable/${'0'.repeat(32)}`);
+    assert.notEqual(other.body, relay.probe.token);
+    assert.equal((await send(relay.port, 'GET', `${relay.probe.path}?x=1`)).body, `w1 ${relay.probe.path}?x=1`);
+    assert.equal((await send(relay.port, 'POST', relay.probe.path)).status, 405);
+    const second = await relayTo(t, () => w.port);
+    assert.notEqual(second.probe.token, relay.probe.token);
+});
+
 test('the relay listens on loopback only', async t => {
     const relay = await relayTo(t, () => null);
     const lan = Object.values(networkInterfaces())
