@@ -1,6 +1,11 @@
 /** Sharing the single-player world through a Cloudflare quick tunnel, as the shell draws it. */
 
-export type ShareStatus = 'off' | 'downloading' | 'connecting' | 'live' | 'failed';
+/**
+ * `connecting` until cloudflared registers, then `checking` until the link
+ * reaches the kit from the internet, which takes from a few seconds to over
+ * half a minute more, and only then `live`.
+ */
+export type ShareStatus = 'off' | 'downloading' | 'connecting' | 'checking' | 'live' | 'failed';
 
 export interface ShareView {
     status: ShareStatus;

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assetFor, CLOUDFLARED_VERSION, ensureCloudflared, isInstalled, type CloudflaredAsset } from './cloudflared.ts';
 import { spawnProcess, startQuickTunnel, type TunnelProcess, type TunnelSpawnSpec } from './quickTunnel.ts';
+import { nodeReachableIo, waitUntilReachable } from './reachable.ts';
 import { startRelay } from './relay.ts';
 import type { ShareDeps } from './service.ts';
 
@@ -51,6 +52,7 @@ export function shareDeps(over: { worldPort: () => number | null; log: (msg: str
             if (!existsSync(configPath)) writeFileSync(configPath, '{}\n');
             return startQuickTunnel({ env: process.env, spawn: spawnTracked }, { binary, port, configPath, signal });
         },
+        waitReachable: (url, probe, signal) => waitUntilReachable(nodeReachableIo(), { url, probe, signal, log: over.log }),
         worldPort: over.worldPort,
         log: over.log
     };

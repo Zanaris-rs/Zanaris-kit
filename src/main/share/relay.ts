@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders } from 'node:http';
 import { connect, type Socket } from 'node:net';
 
@@ -12,6 +13,11 @@ import { connect, type Socket } from 'node:net';
  * websocket upgrade the client plays over, piped through unread. Everything
  * else is refused before the world sees it. The management port is never a
  * target, since `target` only ever names the web port.
+ *
+ * One path it answers itself: `probe.path`, with `probe.token` as the body, so
+ * the kit can tell that a request to the link came through the tunnel to this
+ * relay rather than stopping at a Cloudflare error page. Both are random per
+ * relay, and the answer tells a caller nothing it did not already send.
  */
 
 export interface RelayOptions {
@@ -23,12 +29,15 @@ export interface RelayOptions {
 
 export interface Relay {
     readonly port: number;
+    /** The one path the relay answers itself, and what it answers. */
+    readonly probe: { path: string; token: string };
     /** Stops listening and ends every connection, relayed or not. */
     close(): Promise<void>;
 }
 
 const MAX_SOCKETS = 64;
 const ALLOWED = new Set(['GET', 'HEAD']);
+const PROBE_PREFIX = '/.zanaris-kit/reachable/';
 /** Headers that describe one hop, which the relay is, and so are not passed on. */
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 
@@ -59,6 +68,8 @@ function refuseRaw(socket: Socket, status: string): void {
 }
 
 export async function startRelay(opts: RelayOptions): Promise<Relay> {
+    const token = randomBytes(16).toString('hex');
+    const probe = { path: `${PROBE_PREFIX}${token}`, token };
     const sockets = new Set<Socket>();
     const track = (socket: Socket): void => {
         sockets.add(socket);
@@ -70,6 +81,12 @@ export async function startRelay(opts: RelayOptions): Promise<Relay> {
         if (!ALLOWED.has(method)) {
             res.writeHead(405, { allow: 'GET, HEAD', 'content-length': 0 });
             res.end();
+            return;
+        }
+        // Before the world is asked for: the link works while the world restarts.
+        if (req.url === probe.path) {
+            res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-length': Buffer.byteLength(token) });
+            res.end(method === 'HEAD' ? undefined : token);
             return;
         }
         const port = opts.target();
@@ -133,6 +150,7 @@ export async function startRelay(opts: RelayOptions): Promise<Relay> {
     let closing: Promise<void> | null = null;
     return {
         port,
+        probe,
         close: () => {
             closing ??= new Promise<void>(resolve => {
                 server.close(() => resolve());
