@@ -184,6 +184,8 @@ the link reaches is the whole security story. Keep these true:
 - **Only the web port is ever a relay target.** The management port answers
   `POST /shutdown` with no authentication.
 - **The relay forwards `GET`, `HEAD` and the websocket upgrade, nothing else.**
+  The one path it answers itself is its readiness path, random per relay, which
+  echoes back its own token.
 - **`worldJson` keeps `node.debug: false` and loopback hosts.** Debug on makes
   the engine serve `/data/` (the RSA key, `world.json`, every save) and accept
   writes under `/content/`. `share/invariants.test.ts` pins both; if either has
@@ -196,6 +198,17 @@ the link reaches is the whole security story. Keep these true:
   Bumping `CLOUDFLARED_VERSION` means new sizes and digests from GitHub's asset
   API — for the macOS archives, the release notes list the binary's digest, not
   the archive's.
+- **Live means the link works, and nothing asks a caching resolver about its
+  name.** cloudflared registers before the link works: Cloudflare publishes
+  the name, and its edge stops answering 530, anywhere from a few seconds to
+  over half a minute later. `share/reachable.ts` waits for both — the name on
+  every authoritative nameserver that answers, then the relay's token back
+  through the link — and after two minutes the share fails. trycloudflare.com
+  caches "no such name" for 1800 s, so a resolver asked too early keeps whoever
+  uses it out for half an hour. The name goes only to Cloudflare's own
+  nameservers, over the kit's own UDP query with recursion off, and to a probe
+  pinned to the address they gave: never through `dns.lookup`, `net.fetch` or a
+  public resolver.
 
 The engine's own login server was ruled out for passwords: upstream binds it,
 and the friend and logger servers, to `0.0.0.0` in code. Turning it on would put

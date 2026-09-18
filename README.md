@@ -204,8 +204,13 @@ things the game does differently for staff — random events, for one, stop.
 join that world from a browser. Share with friends downloads Cloudflare's tunnel
 program the first time — 19 to 55 MB depending on the system, from Cloudflare's
 own GitHub release, checked against a digest pinned in the kit — then opens a
-free Cloudflare quick tunnel, which needs no Cloudflare account, and shows a
-`https://<words>.trycloudflare.com/rs2.cgi` link to copy. The kit asks before
+free Cloudflare quick tunnel, which needs no Cloudflare account. Once the link
+works from the internet, which takes from a few seconds to about a minute, the
+kit shows it: a `https://<words>.trycloudflare.com/rs2.cgi` link to copy. A link
+that has not worked within two minutes ends the share, with Try again. Until
+then the kit asks only Cloudflare's own nameservers about the link: an ordinary
+resolver that asks too early can go on saying it does not exist for half an
+hour. The kit asks before
 the download and before every share. The link lasts until you stop sharing,
 close the last Single player window, or quit. Restarting the world, which any
 change in World does, keeps it: friends reload once the world is back. Each new
@@ -724,7 +729,9 @@ from `event.sender`, never from a value the renderer supplies.
 
 **Sharing** exposes one thing: a loopback relay in the main process, which
 forwards `GET`, `HEAD` and the game's websocket upgrade to the world's web port
-and refuses every other method. The world still binds loopback only, and its
+and refuses every other method. It answers one path itself: a random one, new
+with every share, that echoes its own token back, so the kit can tell the link
+reaches it. The world still binds loopback only, and its
 management port, which answers `POST /shutdown`, is never the relay's target.
 What makes the web port safe to expose is the `node.debug: false` the kit
 writes into `world.json`: with debug on, the engine would also serve `/data/` —
@@ -775,6 +782,7 @@ src/main/migrate.ts         pure: what a pre-rename profile carries across      
 src/main/share/cloudflared.ts  the pinned cloudflared: download, check, unpack       (tested)
 src/main/share/quickTunnel.ts  a quick tunnel: its arguments, its log, the retry     (tested)
 src/main/share/relay.ts     loopback relay: GET, HEAD and the websocket to the world (tested)
+src/main/share/reachable.ts whether the link works yet, asking no caching resolver  (tested)
 src/main/share/service.ts   the one share, and what to ask before it                (tested)
 src/main/share/electron.ts  cloudflared's folder, net.fetch, killing it at exit
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
