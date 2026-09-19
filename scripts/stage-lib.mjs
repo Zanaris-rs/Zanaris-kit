@@ -102,6 +102,11 @@ export function patchStamp(patches) {
     return patches.map(({ name, sha256 }) => `${name} ${sha256}`).join('\n');
 }
 
+/** The patch set in eight hex digits, for a build's tag: the start of the stamp's sha-256. */
+export function patchHash(patches) {
+    return createHash('sha256').update(patchStamp(patches)).digest('hex').slice(0, 8);
+}
+
 /**
  * A debug proc declaration: `[debugproc,name]` at the start of a line, then
  * perhaps `(type $name, ...)`, then the rest of the line. A few procs are one
