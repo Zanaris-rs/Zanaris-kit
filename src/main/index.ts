@@ -25,7 +25,7 @@ import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
-import { BuildStore } from './singleplayer/buildStore';
+import { BuildStore, LOCAL_BUILD } from './singleplayer/buildStore';
 import { buildStoreDeps, electronDeps, readCommands } from './singleplayer/electron';
 import { recipeRevision } from './singleplayer/recipes';
 import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/singleplayer';
@@ -1598,6 +1598,9 @@ app.whenReady().then(async () => {
     });
     loadCatalog();
     builds = new BuildStore(buildStoreDeps(log));
+    // A capture photographs single player running, and its profile of its own
+    // has downloaded nothing: it runs the developer's stage when there is one.
+    if (CAPTURE_DIR && builds.installed(LOCAL_BUILD)) appState.setSinglePlayerBuild(LOCAL_BUILD);
     const world = new SinglePlayerService(
         electronDeps({
             baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',

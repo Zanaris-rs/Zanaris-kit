@@ -25,12 +25,9 @@
     const available = q.get('available') === '1';
 
     const copy = {
-        missing: [
-            "Your world isn't downloaded yet",
-            available
-                ? `${build} · ${size} MB. Single player downloads it once, from the kit's releases on GitHub, and checks it before it runs.`
-                : `${build} has nothing to download in this version of the kit. Pick another build in the Single player tool's Builds section.`
-        ],
+        missing: available
+            ? ["Your world isn't downloaded yet", `${build} · ${size} MB. Single player downloads it once, from the kit's releases on GitHub, and checks it before it runs.`]
+            : ["This build isn't in this version of the kit", `${build} has nothing to download here. Pick another build in the Single player tool's Builds section.`],
         downloading: ['Downloading your world', `${build} · ${q.get('progress') || 0}%`],
         preparing: ['Getting the world ready', 'The first start copies the game files. This takes a moment.'],
         starting: ['Starting your world', 'Loading the map and everyone in it.'],
