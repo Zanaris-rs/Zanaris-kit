@@ -66,6 +66,24 @@ export function findNativeModules(dir) {
 }
 
 /**
+ * Every symbolic link under dir, as forward-slash paths relative to dir, none
+ * of them followed. Empty means the tree can be archived and unpacked the same
+ * everywhere: Windows' tar cannot make a link without the privilege to.
+ */
+export function findSymlinks(dir) {
+    const found = [];
+    const walk = current => {
+        for (const entry of readdirSync(current, { withFileTypes: true })) {
+            const path = join(current, entry.name);
+            if (entry.isSymbolicLink()) found.push(relative(dir, path).split(sep).join('/'));
+            else if (entry.isDirectory()) walk(path);
+        }
+    };
+    walk(dir);
+    return found;
+}
+
+/**
  * The static NPC count from a booted world's output, or null when the world never
  * loaded a game map. GameMap.init() prints "<added>/<max> static NPCs added" as its
  * last act; when `<build.srcDir>/maps` is missing it returns before any of that, and

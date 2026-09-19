@@ -10,9 +10,10 @@ captures/
 # the seeded design canvas: 2.5MB of editor payload, rebuilt by design/build.mjs + seed-canvas
 design/swiftkit-interface.html
 
-# the staged engine and its working checkouts (npm run stage:engine)
+# the staged engine, its working checkouts and its archive (npm run stage:engine)
 engine-dist/
 .engine-work/
+engine-*.tar.gz
 
 # electron-builder output (npm run dist)
 release/
