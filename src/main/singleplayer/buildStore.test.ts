@@ -200,7 +200,8 @@ test('a failed download leaves what was installed alone, keeps the reason, and c
     await assert.rejects(install, /checksum/);
     const line = store.lines()[0]!;
     assert.equal(line.state, 'outdated');
-    assert.equal(line.error, "The download didn't finish: engine-lostcity-274.tar.gz failed its checksum");
+    // The download's own words name the file, and say enough.
+    assert.equal(line.error, 'engine-lostcity-274.tar.gz failed its checksum');
     assert.equal(h.files.get('/builds/lostcity-274/src/app.js'), 'old engine');
     assert.equal([...h.dirs].some(k => k.includes('.incoming')), false);
 });
@@ -223,9 +224,9 @@ test('a second install of the same line joins the first, and a new attempt clear
     const store = new BuildStore(h.deps);
     const first = store.install('lostcity-274');
     await flush();
-    h.downloads[0]!.reject(new Error('HTTP 502'));
+    h.downloads[0]!.reject(new Error('net::ERR_INTERNET_DISCONNECTED'));
     await assert.rejects(first);
-    assert.ok(store.lines()[0]!.error);
+    assert.equal(store.lines()[0]!.error, "The download didn't finish: net::ERR_INTERNET_DISCONNECTED", 'a bare network error gets the context it lacks');
     const again = store.install('lostcity-274');
     const joined = store.install('lostcity-274');
     await flush();

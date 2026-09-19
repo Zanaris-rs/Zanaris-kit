@@ -155,7 +155,10 @@ export class BuildStore {
             try {
                 await this.deps.download(artifact, archive, fraction => this.progress(flight, fraction));
             } catch (err) {
-                throw new Error(`The download didn't finish: ${message(err)}`);
+                // The download's own refusals name the file and say enough; a bare
+                // network error does not say what it interrupted.
+                const said = message(err);
+                throw new Error(said.includes(artifact.file) ? said : `The download didn't finish: ${said}`);
             }
             try {
                 await this.deps.extract(archive, unpacked);
