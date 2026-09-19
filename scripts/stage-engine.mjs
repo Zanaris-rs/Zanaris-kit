@@ -14,7 +14,7 @@ import { networkInterfaces } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transform } from 'esbuild';
-import { assertPack, classify, commandsJson, findNativeModules, findSymlinks, hasTsUrl, parseDebugprocs, patchHash, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { assertPack, classify, commandsJson, findLongPaths, findNativeModules, findSymlinks, hasTsUrl, parseDebugprocs, patchHash, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
 import { artifactFile, DEFAULT_BUILD, readRecipe, recipeTag } from '../src/shared/engines.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -195,6 +195,26 @@ log('no native modules in node_modules');
 const links = findSymlinks(dist);
 if (links.length > 0) throw new Error(`symbolic links in engine-dist: ${links.join(', ')}`);
 log('no symbolic links in engine-dist');
+// The kit unpacks this under <userData>\singleplayer\builds\.incoming\<id>\build,
+// about a hundred characters on Windows before the tree's own paths start, and
+// a path past 260 there is one the system tar may not write. The deepest files
+// in the dependencies are test fixtures - jimp's image snapshots run to 177
+// characters - which the engine never loads, so they go, and anything still
+// past the budget stops the stage rather than failing on a player's machine.
+const TEST_FIXTURES = new Set(['__image_snapshots__', '__snapshots__', '__tests__']);
+const pruneFixtures = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const path = join(dir, entry.name);
+        if (TEST_FIXTURES.has(entry.name)) rmSync(path, { recursive: true, force: true });
+        else pruneFixtures(path);
+    }
+};
+pruneFixtures(join(dist, 'node_modules'));
+const PATH_BUDGET = 150;
+const long = findLongPaths(dist, PATH_BUDGET);
+if (long.length > 0) throw new Error(`paths in engine-dist longer than ${PATH_BUDGET} characters, which may not unpack on Windows: ${long.slice(0, 5).join(', ')}`);
+log(`no path in engine-dist is longer than ${PATH_BUDGET} characters`);
 
 // ── 7. VERSION.json ──────────────────────────────────────────────────────
 

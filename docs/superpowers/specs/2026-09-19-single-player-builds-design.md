@@ -182,6 +182,11 @@ stages `lostcity-274`.
 - `node_modules/.bin` is removed whole, and the stage fails on any symbolic
   link left in the tree: Windows' `tar` cannot make one without a privilege
   players do not have.
+- Test fixtures in the dependencies (`__image_snapshots__`, `__snapshots__`,
+  `__tests__`) are removed, and the stage fails on any path in the tree longer
+  than 150 characters. The kit unpacks a build about a hundred characters deep
+  in a Windows player's data folder, and jimp's image snapshots alone ran to
+  177, past the 260 a Windows path may be.
 - A last step writes `engine-<id>.tar.gz` at the repository root with the
   system `tar`, from inside `engine-dist/`, so the archive has no top-level
   folder.

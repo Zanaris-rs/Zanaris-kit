@@ -84,6 +84,28 @@ export function findSymlinks(dir) {
 }
 
 /**
+ * Every file under dir whose forward-slash path relative to dir is longer than
+ * `max` characters, longest first. The kit unpacks a build several folders
+ * deep in the player's data folder, and on Windows a path past 260 characters
+ * is one the system tar may not be able to write.
+ */
+export function findLongPaths(dir, max) {
+    const found = [];
+    const walk = current => {
+        for (const entry of readdirSync(current, { withFileTypes: true })) {
+            const path = join(current, entry.name);
+            if (entry.isDirectory()) walk(path);
+            else {
+                const rel = relative(dir, path).split(sep).join('/');
+                if (rel.length > max) found.push(rel);
+            }
+        }
+    };
+    walk(dir);
+    return found.sort((a, b) => b.length - a.length);
+}
+
+/**
  * The static NPC count from a booted world's output, or null when the world never
  * loaded a game map. GameMap.init() prints "<added>/<max> static NPCs added" as its
  * last act; when `<build.srcDir>/maps` is missing it returns before any of that, and
