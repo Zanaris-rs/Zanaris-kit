@@ -1,14 +1,18 @@
 /** The single-player world, as the shell draws it. */
 
-export type SinglePlayerStatus = 'stopped' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
+/**
+ * - missing: a window wants the world, and the selected build is not downloaded.
+ * - downloading: the same, while that build is on its way down.
+ */
+export type SinglePlayerStatus = 'stopped' | 'missing' | 'downloading' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
 
 /**
  * True while a world may be running or on its way up or down: every status
- * but stopped and failed. A change that costs a restart, or that a logout
- * could write over, asks first while this holds.
+ * but stopped, failed, and the two that wait for a build. A change that costs
+ * a restart, or that a logout could write over, asks first while this holds.
  */
 export function worldRunning(status: SinglePlayerStatus): boolean {
-    return status !== 'stopped' && status !== 'failed';
+    return status !== 'stopped' && status !== 'failed' && status !== 'missing' && status !== 'downloading';
 }
 
 /** The XP multipliers the World section offers. The engine multiplies the xp content gives by `node.xpRate` (Player.addXp). */
@@ -81,7 +85,7 @@ export interface SinglePlayerView {
     port: number | null;
     /** The game URL while ready. */
     url: string | null;
-    /** Why it failed, while failed. */
+    /** Why it failed, while failed; why the last download failed, while missing. */
     reason: string | null;
     /** The last lines the world printed. */
     logTail: string[];
@@ -90,6 +94,12 @@ export interface SinglePlayerView {
     settings: SinglePlayerSettings;
     /** The saves folder, newest first, as last read. A character being played shows its last save. */
     characters: CharacterInfo[];
+    /** The id of the line the world runs. */
+    selected: string;
+    /** That line's revision: world.json's, and the world folder the characters above live in. */
+    revision: number;
+    /** Every line, and where its build stands on this computer. */
+    builds: BuildLine[];
 }
 
 /** What the kit reads from the head of a save. */

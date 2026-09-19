@@ -117,6 +117,29 @@ export function duplicateQuestion(from: string, to: string, replacing: boolean, 
     };
 }
 
+/**
+ * Copying to another revision always asks: a save holds item ids, varps and
+ * quest progress that belong to the content that wrote it, so the other game
+ * may read it differently. The copy is of the file, so a character being
+ * played is copied as last saved.
+ */
+export function copyToQuestion(name: string, from: number, to: number): Confirmation {
+    const who = toDisplayName(name);
+    return {
+        message: `Copy ${who} to rev ${to}?`,
+        detail: `The copy is ${who} as last saved in rev ${from}. A save holds items and progress from the game that wrote it, so rev ${to} may read it differently. ${who} stays in rev ${from} as well.`,
+        button: 'Copy',
+        destructive: false
+    };
+}
+
+/** Where copying to another revision is going: the revisions, for the question. */
+export interface CopyContext {
+    from: number;
+    to: number;
+    confirm: Confirm;
+}
+
 export function deleteQuestion(name: string, running: boolean): Confirmation {
     const who = toDisplayName(name);
     return {
@@ -295,6 +318,34 @@ export class Characters {
             if (!this.existing(source.name).ok) return refused(GONE);
             if ((await this.trash(source.name)) === 'failed') return refused(`Couldn't move ${toDisplayName(source.name)} to the trash, so it was not deleted.`);
             return done(source.name);
+        });
+    }
+
+    /**
+     * Copies a character into another revision's folder, as `target` keeps it.
+     * It never replaces a character there: two saves of one name from two
+     * games are not a choice the kit can make for the player. The file work
+     * runs in this store's queue, since the source is what another change here
+     * could move; the target's folder is not the one the world is using.
+     */
+    async copyInto(from: string, target: Characters, ctx: CopyContext): Promise<CharacterOutcome> {
+        const source = this.existing(from);
+        if (!source.ok) return refused(source.message);
+        const who = toDisplayName(source.name);
+        if (!this.read(this.path(source.name)).ok) return refused(`${who}'s save can't be read, so it can't be copied.`);
+        const taken = `Rev ${ctx.to} already has a ${who}. Rename one of them first.`;
+        if (target.deps.fs.exists(target.path(source.name))) return refused(taken);
+        if (!(await ctx.confirm(copyToQuestion(source.name, ctx.from, ctx.to)))) return CANCELLED;
+        return this.exclusive(async () => {
+            if (!this.existing(source.name).ok) return refused(GONE);
+            if (target.deps.fs.exists(target.path(source.name))) return refused(taken);
+            let bytes: Uint8Array;
+            try {
+                bytes = this.deps.fs.readBytes(this.path(source.name));
+            } catch {
+                return refused("The save couldn't be read.");
+            }
+            return target.write(source.name, bytes);
         });
     }
 

@@ -1,4 +1,4 @@
-import { DEFAULT_SINGLE_PLAYER_SETTINGS, isXpRate, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
+import { DEFAULT_SINGLE_PLAYER_SETTINGS, isXpRate, type BuildLine, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
 import type { Confirmation } from './confirm.ts';
 
 /**
@@ -52,4 +52,36 @@ export function restartConfirmation(patch: Partial<SinglePlayerSettings>): Confi
     return patch.members
         ? ask('Turning members on', 'Your world becomes a members world again.')
         : ask('Turning members off', 'Your world becomes a free one, as the free-to-play game was.');
+}
+
+/** A download's size as a player reads it: whole megabytes. */
+function megabytes(bytes: number): string {
+    return `${Math.round(bytes / 1_000_000)} MB`;
+}
+
+/**
+ * Switching builds while the world runs, asked on the window. A line that is
+ * not downloaded yet downloads first, and the world keeps running on the old
+ * build until it lands. Characters live per revision, so the question says
+ * whether they come along.
+ */
+export function switchConfirmation(to: BuildLine, fromRevision: number): Confirmation {
+    const download = to.state !== 'installed' && to.size !== null ? `It downloads first (${megabytes(to.size)}), and your world keeps running until then.` : null;
+    const characters = to.revision === fromRevision ? 'Your characters come with you.' : `Your rev ${fromRevision} characters stay where they are, and rev ${to.revision} has its own. Characters can copy one across.`;
+    return {
+        message: `Switching to ${to.name} restarts your world and logs you out.`,
+        detail: download === null ? characters : `${download} ${characters}`,
+        button: 'Switch',
+        destructive: false
+    };
+}
+
+/** Removing a build frees its folder and nothing else: the characters are in the revision's world folder. */
+export function removeBuildConfirmation(line: BuildLine): Confirmation {
+    return {
+        message: `Remove ${line.name}?`,
+        detail: line.size === null ? 'Your characters stay.' : `Your characters stay, and it can be downloaded again (${megabytes(line.size)}).`,
+        button: 'Remove',
+        destructive: false
+    };
 }

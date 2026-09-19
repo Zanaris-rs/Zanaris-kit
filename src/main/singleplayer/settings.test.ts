@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SINGLE_PLAYER_SETTINGS, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
-import { changesSettings, readSettingChange, readSinglePlayerSettings, restartConfirmation } from './settings.ts';
+import { DEFAULT_SINGLE_PLAYER_SETTINGS, type BuildLine, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
+import { changesSettings, readSettingChange, readSinglePlayerSettings, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './settings.ts';
 
 const DEFAULTS: SinglePlayerSettings = { cheats: false, xpRate: 1, members: true };
 
@@ -63,4 +63,39 @@ test('each restart question names the change, the restart and the logout, with R
 
 test('turning cheats off no longer claims the world plays as the servers do', () => {
     assert.doesNotMatch(restartConfirmation({ cheats: false }).detail, /servers/);
+});
+
+const LINE: BuildLine = {
+    id: 'lostcity-289',
+    name: 'Lost City 289',
+    revision: 289,
+    note: null,
+    engine: 'e',
+    content: 'c',
+    size: 54_166_007,
+    state: 'installed',
+    progress: null,
+    error: null,
+    local: false
+};
+
+test('switching builds asks as a restart, and says where the characters are', () => {
+    const across = switchConfirmation(LINE, 274);
+    assert.equal(across.message, 'Switching to Lost City 289 restarts your world and logs you out.');
+    assert.match(across.detail, /Your rev 274 characters stay where they are, and rev 289 has its own/);
+    assert.equal(across.button, 'Switch');
+    assert.equal(across.destructive, false);
+    assert.match(switchConfirmation({ ...LINE, revision: 274 }, 274).detail, /Your characters come with you/);
+});
+
+test('switching to a build not downloaded yet says it downloads first, and the world runs until then', () => {
+    assert.match(switchConfirmation({ ...LINE, state: 'absent' }, 274).detail, /^It downloads first \(54 MB\), and your world keeps running until then\./);
+    assert.doesNotMatch(switchConfirmation(LINE, 274).detail, /downloads first/);
+});
+
+test('removing a build says the characters stay and it can come back', () => {
+    const ask = removeBuildConfirmation(LINE);
+    assert.equal(ask.message, 'Remove Lost City 289?');
+    assert.equal(ask.detail, 'Your characters stay, and it can be downloaded again (54 MB).');
+    assert.equal(ask.button, 'Remove');
 });
