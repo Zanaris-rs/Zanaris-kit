@@ -171,14 +171,17 @@ browser instead. Every seam drags, on both axes, and the pane before a seam —
 the one to its left, or above it — is the one that grows as you push the seam
 away from it.
 
-**Single player** needs no server at all: the kit carries the Lost City engine
-and the game's files, and File > New Window For > Single player starts a world
-on this computer. There is no account and nothing to sign up for — any name
-typed at the login screen becomes a character, and its saves live in the app's
-own data folder: `Application Support/zanaris-kit/singleplayer/data/players/main`
-on macOS, `%APPDATA%\zanaris-kit\singleplayer\...` on Windows,
-`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player tool says
-what the world is doing, and has four sections. **World** holds what the kit
+**Single player** needs no server at all: File > New Window For > Single player
+starts a world on this computer. The kit does not carry the server itself. The
+first time, the window offers to download it — a build of Lost City, about
+50 MB, from the kit's own releases on GitHub, checked against a digest this
+version of the kit carries before anything runs. There is no account and
+nothing to sign up for — any name typed at the login screen becomes a
+character, and its saves live in the app's own data folder, one world per game
+revision: `Application Support/zanaris-kit/singleplayer/worlds/274/data/players/main`
+on macOS, `%APPDATA%\zanaris-kit\singleplayer\worlds\274\...` on Windows,
+`~/.config/zanaris-kit/singleplayer/worlds/274/...` on Linux. The Single player
+tool says what the world is doing, and has five sections. **World** holds what the kit
 writes into the world's configuration: Cheats, which turns the engine's
 developer commands on for the whole world; an XP rate of 1×, 2×, 5× or 10×; and
 Members, which off makes it a free world. Each change restarts a running world,
@@ -188,8 +191,14 @@ and deletes them; a deleted character, or one another replaces, goes to the
 system trash. The game writes a save when you log out and every 15 minutes.
 **Commands** lists what cheats unlock: the content's debug procs, typed
 `::~name` in the chat box, and the engine's own `::` commands. The game cannot
-paste, so the list is there to read and type from. **Friends** shares the world
-with a link; see Playing with friends below.
+paste, so the list is there to read and type from. **Builds** lists the builds
+this kit knows — Lost City 274, and Lost City 289, which Lost City itself marks
+as for developers — and downloads, switches between and removes them. Each
+revision keeps its own characters: switching from 274 to 289 starts with none,
+and switching back finds them again. Characters' Copy to… copies one across,
+after saying the other game may read it differently, since a save holds items
+and progress from the game that wrote it. **Friends** shares the world with a
+link; see Playing with friends below.
 
 Your world is not a live one, and it does not pretend to be: the RuneScape
 Guide will offer to skip the tutorial, whether cheats are on or off and however
@@ -379,7 +388,7 @@ seeded on first run, one entry per server, now at file version 5:
 | `lostcity` | 274 | LostHQ's world API (`2004.losthq.rs/pages/api/worlds.php`), which carries players and both detail URLs | yes | losthq |
 | `zanaris` | 274 | `zanaris.rs/worlds.json`, players from each world's `world.json` | yes | losthq |
 | `lostcitylabs` | unknown, "May 2005 per Lost City Labs" | a static list, worlds 1 to 4 | no parameter found | none |
-| `singleplayer` | 274, the bundled engine | none | | losthq |
+| `singleplayer` | the build line it runs, 274 until another is picked | none | | losthq |
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 `{url}` and `{lowmem}`, whether detail is switchable, the default world),
@@ -612,24 +621,34 @@ npm start            # build + launch
 npm test             # the pure modules, no Electron
 npm run typecheck
 npm run capture      # open every server, screenshot every view, hop a world, exit
-npm run stage:engine # fetch the pinned engine and content, pack, precompile into engine-dist/
-npm run dist         # package this platform into release/ (stages first if needed)
+npm run stage:engine -- <id>  # stage engines/<id>.json into engine-dist/ and engine-<id>.tar.gz (default lostcity-274)
+npm run pin:engine -- <id>    # write a published build's size and digest into its recipe
+npm run dist         # package this platform into release/
 ```
 
-`engine.lock.json` pins the engine and content commits the kit carries — Lost
-City upstream, `LostCityRS/Engine-TS` and `LostCityRS/Content`, at the latest
-revision Lost City has adopted. Single player is that game, not a fork of it.
-The one exception is `patches/engine/`, which the stage script applies to the
-engine checkout: three backwards-compatible changes a world running on a
-player's own machine needs, on their way upstream. `patches/engine/README.md`
-says what they are and why. See `RELEASE.md` for how a release is cut.
-Everything under `engine-dist/`, `.engine-work/` and `release/` is build
-output.
+Single player's builds are recipes, one file per line under `engines/`: the
+engine and content commits of Lost City upstream (`LostCityRS/Engine-TS` and
+`LostCityRS/Content`) at one of its revisions, the patches the stage script lays
+over the engine, and the published archive's size and sha-256. Single player is
+that game, not a fork of it. The one exception is `patches/engine/`: three
+backwards-compatible changes a world running on a player's own machine needs,
+on their way upstream. `patches/engine/README.md` says what they are and why.
+Any server shaped like Lost City 274 — its layout, `world.json`, Node — can be a
+recipe, as long as that patch applies and the stage script's boot check passes.
 
-Single player runs from `engine-dist/` in dev, so `npm run stage:engine` has
-to have run once before it works: without it the window says "Engine not
-staged: run npm run stage:engine", and a capture run skips the entry rather
-than failing on it. A packaged build stages the engine for you.
+CI builds them. The Engines workflow stages every recipe on a pull request that
+touches one, and on a manual dispatch stages one and publishes it as a
+prerelease of this repository, under a tag naming both commits and the patch
+set. `npm run pin:engine -- <id>` then writes GitHub's size and digest for it into
+the recipe, and the kit, which carries every recipe, runs no build whose digest
+it did not ship with. `RELEASE.md` says how to move a build and how a release is
+cut. Everything under `engine-dist/`, `.engine-work/`, `engine-*.tar.gz` and
+`release/` is build output.
+
+In dev, a staged `engine-dist/` is also listed in Builds as "Local build
+(engine-dist)", so a stage can be played without publishing it; a packaged kit
+never offers it. Capture mode runs it when it is there, and skips single player
+when it is not.
 
 Capture mode (`ZANARIS_CAPTURE=<dir>`, settle time `ZANARIS_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,
@@ -639,7 +658,7 @@ waits for the list, switches to another world and captures that, opens the
 Hiscores tool on each server that has one and looks a single name up there —
 one request per server and no retry, since Lost City rate-limits after a
 handful inside a minute — opens the Single player tool on the window running
-the bundled world, then opens a second instance of that server. It keeps its
+the local build, then opens a second instance of that server. It keeps its
 own `state.json` beside the screenshots so a test switch never changes what
 the next real launch opens. A view that has no frame yet is retried, then
 skipped.
@@ -742,6 +761,18 @@ and none of its `TUNNEL_*` environment, so nothing else on the machine can
 point the tunnel somewhere else or swap the checked binary. The link itself
 is the only access control; see Playing with friends.
 
+**Single player's builds** are the one thing the kit downloads and then runs
+as a program. It downloads only the archive a recipe it shipped with pins, from
+this repository's releases, and refuses one whose size or sha-256 differs. The
+archive is unpacked beside the builds, not among them, and moved into place only
+once the VERSION.json it unpacked to names the pinned line, commits and tag;
+nothing half-downloaded or unexpected sits where the world could run it. Every
+build was staged with `patches/engine/` applied and passed the stage script's
+boot check — loopback-only binds, `POST /shutdown`, a populated map — so the
+sharing guarantees above hold for each of them, not only for one. The one build
+the kit runs unpinned is the developer's own `engine-dist/`, and only while the
+kit runs from source.
+
 ## Layout of the source
 
 ```
@@ -754,6 +785,7 @@ src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/shared/timers.ts        pure: clocks, their limits, digits and the edit form    (tested)
 src/shared/chatSettings.ts  pure: the chat Settings form, line times, rank tones    (tested)
 src/shared/share.ts         ShareView — what Play with friends draws
+src/shared/engines.ts       pure: a build recipe, its tag and its download url      (tested)
 src/main/paneTree.ts        pure: the split tree, its solver, splits, moves, swaps  (tested)
 src/main/paneDrop.ts        pure: what a header drop does and where the pane lands  (tested)
 src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
@@ -779,7 +811,10 @@ src/main/chat/client.ts     one IRC conversation over an injected send          
 src/main/chat/service.ts    the app's one connection: socket, backoff, settings     (tested)
 src/main/chat/secret.ts     sealing the NickServ password with the OS store         (tested)
 src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
-src/main/share/cloudflared.ts  the pinned cloudflared: download, check, unpack       (tested)
+src/main/download.ts        a pinned download: size, sha-256, the system tar        (tested)
+src/main/singleplayer/buildStore.ts  single player's builds: install, check, remove  (tested)
+src/main/singleplayer/recipes.ts     the recipes the kit carries                     (tested)
+src/main/share/cloudflared.ts  the pinned cloudflared: which build, where, checked   (tested)
 src/main/share/quickTunnel.ts  a quick tunnel: its arguments, its log, the retry     (tested)
 src/main/share/relay.ts     loopback relay: GET, HEAD and the websocket to the world (tested)
 src/main/share/reachable.ts whether the link works yet, asking no caching resolver  (tested)
@@ -801,9 +836,12 @@ src/renderer/tools/Worlds.tsx
 src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
 src/renderer/tools/ChatUsers.tsx     a channel's users by rank, and its modes and age
+src/renderer/tools/singleplayer/Builds.tsx   the build lines: use, download, remove
 src/renderer/tools/singleplayer/Friends.tsx  Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
 static/offline.html         shown when a server can't be reached
+static/starting.html        single player's world starting, failed, or not downloaded yet
+engines/*.json              single player's build lines, pinned by digest
 static/sounds/alert.wav     every timer's alert: Kenney's confirmation_002 (CC0), louder
 ```
 

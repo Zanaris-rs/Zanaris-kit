@@ -2,8 +2,15 @@
 
 The kit builds the engine from Lost City upstream, unmodified except for what
 is here. Each `*.patch` is applied by `scripts/stage-engine.mjs` to the engine
-checkout named in `engine.lock.json`, in sorted order, with `git apply`. A patch
-that no longer applies stops the build rather than being skipped.
+checkout a recipe in `engines/` names, when the recipe's `patches` is this
+directory, in sorted order, with `git apply`. A patch that no longer applies
+stops the build rather than being skipped. The patch set is part of every
+build's tag, so editing a patch here needs every recipe that names this
+directory built and pinned again; `scripts/engines.test.mjs` fails until it is.
+
+Lost City 274 and 289 both take these patches unchanged: the five files they
+touch differ between the two heads only in `WorldConfig.ts`'s default
+revision, which falls between the hunks.
 
 Keep this directory as close to empty as it can be. A patch belongs here only
 while it is on its way upstream: when Lost City merges one, move the pin to the
@@ -11,7 +18,7 @@ merge commit and delete the file.
 
 ## 0001-single-player-hosts-staff-level-and-shutdown.patch
 
-Three changes single player needs and upstream `274` does not have. Every
+Three changes single player needs and upstream `274` and `289` do not have. Every
 default is upstream's behaviour, so a world that sets none of these runs exactly
 as it does today.
 
@@ -33,8 +40,9 @@ as it does today.
   The patch also binds the management server to loopback, which upstream leaves
   on `0.0.0.0` - it has no authentication and can now stop the world.
 
-Upstream has no `test/` directory or test script at `274`, so the patch carries
-no tests. What covers it instead is `scripts/stage-engine.mjs`: its boot check
-starts the staged engine bound to loopback, asserts the world is not reachable
-on a routable address, and stops it through `POST /shutdown` rather than a
-signal. `localStaffLevel` is covered by the manual cheats check in RELEASE.md.
+Upstream has no `test/` directory or test script at `274` or `289`, so the
+patch carries no tests. What covers it instead is `scripts/stage-engine.mjs`:
+its boot check starts the staged engine bound to loopback, asserts the world is
+not reachable on a routable address, and stops it through `POST /shutdown`
+rather than a signal, for every recipe on every pull request that touches one.
+`localStaffLevel` is covered by the manual cheats check in RELEASE.md.

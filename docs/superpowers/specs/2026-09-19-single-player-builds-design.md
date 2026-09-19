@@ -1,7 +1,7 @@
 # Single-player builds: built by CI, pinned in the kit, picked by the player
 
 **Date:** 2026-09-19
-**Status:** design approved; not yet implemented
+**Status:** implemented on branch `claude/single-player-server-build-ce77f4`
 
 ## Why
 
@@ -38,8 +38,8 @@ Checked on 2026-09-19 against the public repositories. Items marked
   invariants in CLAUDE.md rest on it.
   - Of the five files the patch touches, four are byte-identical between the 274
     and 289 heads. The fifth, `WorldConfig.ts`, differs only in its default
-    revision, which lies between the patch's hunks. It should apply to 289
-    (*unverified*).
+    revision, which lies between the patch's hunks. It applies to 289: checked
+    with `git apply --check`, and the 289 stage's boot check passed.
   - It cannot apply to 225 to 254: `WorldConfig.ts` does not exist there, and
     the web server is different code.
 - **Upstream changes shape often.** Within 2026, the 274 branch replaced `.env`
@@ -56,9 +56,10 @@ Checked on 2026-09-19 against the public repositories. Items marked
     client.
 
   "Any 04-like server" in practice means any fork shaped like Lost City 274.
-- **Size.** A staged 274 build is 193 MB on disk (147 MB of it `node_modules`)
-  and 49.8 MB as a gzipped tarball. On GitHub's Ubuntu runners, Content's own CI
-  runs `npm ci` and `npm run build` in about 40 s.
+- **Size.** A staged 274 build is about 150 MB on disk (about 100 MB of it
+  `node_modules`) and 52 MB as a gzipped tarball; 289's is 54 MB. A stage takes
+  about 70 s on an Apple Silicon Mac. On GitHub's Ubuntu runners, Content's own
+  CI runs `npm ci` and `npm run build` in about 40 s.
 
 ## The owner's calls
 
@@ -178,8 +179,12 @@ stages `lostcity-274`.
   apply the patches, pack, assert the pack, transpile, prune `node_modules`,
   write VERSION.json and COMMANDS.json, boot check.
 - VERSION.json gains `id` and `name`.
-- A last step writes `engine-dist.tar.gz` with the system `tar`, from inside
-  `engine-dist/`, so the archive has no top-level folder.
+- `node_modules/.bin` is removed whole, and the stage fails on any symbolic
+  link left in the tree: Windows' `tar` cannot make one without a privilege
+  players do not have.
+- A last step writes `engine-<id>.tar.gz` at the repository root with the
+  system `tar`, from inside `engine-dist/`, so the archive has no top-level
+  folder.
 
 `npm run dist` no longer stages or checks an engine. `release.yml` loses its
 `engine` job and the packaged-engine checks. `electron-builder.yml` loses both
@@ -364,7 +369,10 @@ list.
 
 ## To check before 289 is pinned
 
-Both are about 289's engine, not the kit, and neither is known yet:
+Both are about 289's engine, not the kit. Checked on 2026-09-19 against Engine-TS
+289 at `0c7cf655`: `PlayerLoading.ts` and `ClientCheatHandler.ts` are
+byte-identical to 274's, and `Player.ts` differs by one comment, so neither
+applies yet. They stay here for the next line:
 
 - **The save format.** Is 289's `SAV_VERSION` still 7, and is the save header
   the one `save.ts` reads? If not, reading a character's levels becomes
