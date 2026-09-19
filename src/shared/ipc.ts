@@ -303,10 +303,11 @@ export interface ZanarisApi {
         /** Deletes a line's build after asking. Resolves with why not when it could not, else null. */
         removeBuild(id: string): Promise<string | null>;
         /**
-         * The content's debug procs, from the staged COMMANDS.json. Null when
-         * this build has none. Asked for once by the Commands section rather
-         * than carried in ShellState: some 250 entries that never change,
-         * which the shell state would push to every window on every layout.
+         * The content's debug procs, from the selected build's COMMANDS.json.
+         * Null when that build has none, or is not downloaded. Asked for by the
+         * Commands section once per build rather than carried in ShellState:
+         * some 250 entries that change only with the build, which the shell
+         * state would push to every window on every layout.
          */
         commands(): Promise<CommandRef[] | null>;
     };
