@@ -31,8 +31,44 @@ export interface SinglePlayerSettings {
 
 export const DEFAULT_SINGLE_PLAYER_SETTINGS: Readonly<SinglePlayerSettings> = Object.freeze({ cheats: false, xpRate: 1, members: true });
 
-/** What the bundled engine is, from resources/engine/VERSION.json. */
+/**
+ * Where a line's build stands on this computer.
+ * - absent: not downloaded.
+ * - downloading: being downloaded and checked now.
+ * - installed: on disk, and the build this kit pins.
+ * - outdated: on disk, but not the build this kit pins; it does not run until updated.
+ * - unavailable: this kit pins no build for the line, so there is nothing to download.
+ */
+export type BuildState = 'absent' | 'downloading' | 'installed' | 'outdated' | 'unavailable';
+
+/** One build line, as the Builds section and the starting page show it. */
+export interface BuildLine {
+    id: string;
+    name: string;
+    revision: number;
+    /** Something to read before choosing the line. */
+    note: string | null;
+    /** The engine and content commits the line pins, or, for the local build, the ones it was staged from. */
+    engine: string;
+    content: string;
+    /** The download's size in bytes; null when there is nothing to download. */
+    size: number | null;
+    state: BuildState;
+    /** 0 to 1 while downloading. */
+    progress: number | null;
+    /** Why the last download failed, until the next one starts. */
+    error: string | null;
+    /** The developer's own stage, engine-dist/, offered only in an unpackaged run. */
+    local: boolean;
+}
+
+/** What the build the world runs is, from its VERSION.json. */
 export interface SinglePlayerVersion {
+    /** The line it was staged from; null in a stage from before builds had recipes. */
+    id: string | null;
+    name: string | null;
+    /** The release tag naming both commits and the patch set; null likewise. */
+    tag: string | null;
     engine: string;
     content: string;
     revision: number;
