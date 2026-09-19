@@ -5,7 +5,9 @@
 <div class="slab">
     <h1 id="title">Starting your world<span class="dots"></span></h1>
     <p id="text"></p>
+    <p id="why" class="reason" hidden></p>
     <pre id="log" hidden></pre>
+    <button type="button" id="download" hidden>Download</button>
     <button type="button" id="retry" hidden>Try again</button>
     <p class="version" id="version"></p>
 </div>
@@ -14,10 +16,22 @@
     const state = q.get('state') || 'starting';
     const title = document.getElementById('title');
     const text = document.getElementById('text');
+    const why = document.getElementById('why');
     const log = document.getElementById('log');
     const retry = document.getElementById('retry');
+    const download = document.getElementById('download');
+    const build = q.get('build') || 'This build';
+    const size = q.get('size');
+    const available = q.get('available') === '1';
 
     const copy = {
+        missing: [
+            "Your world isn't downloaded yet",
+            available
+                ? `${build} · ${size} MB. Single player downloads it once, from the kit's releases on GitHub, and checks it before it runs.`
+                : `${build} has nothing to download in this version of the kit. Pick another build in the Single player tool's Builds section.`
+        ],
+        downloading: ['Downloading your world', `${build} · ${q.get('progress') || 0}%`],
         preparing: ['Getting the world ready', 'The first start copies the game files. This takes a moment.'],
         starting: ['Starting your world', 'Loading the map and everyone in it.'],
         stopping: ['Stopping the world', 'Saving and shutting down.'],
@@ -27,13 +41,24 @@
     };
     const [heading, detail] = copy[state] || copy.starting;
     title.textContent = heading;
-    if (state === 'preparing' || state === 'starting' || state === 'stopping') {
+    if (state === 'downloading' || state === 'preparing' || state === 'starting' || state === 'stopping') {
         const dots = document.createElement('span');
         dots.className = 'dots';
         title.appendChild(dots);
     }
     text.textContent = detail;
     if (q.get('version')) document.getElementById('version').textContent = q.get('version');
+
+    if (state === 'missing' && available) {
+        // Why the last download failed, until the next attempt.
+        if (q.get('reason')) {
+            why.textContent = q.get('reason');
+            why.hidden = false;
+        }
+        download.hidden = false;
+        // A navigation to ourselves with ?download=1: main sees it and downloads the build.
+        download.addEventListener('click', () => location.replace('starting.html?download=1'));
+    }
 
     if (state === 'failed' || state === 'pagefailed') {
         const lines = q.get('log') || '';

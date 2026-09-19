@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import type { SinglePlayerView } from '../../shared/singleplayer';
 import type { ShareView } from '../../shared/share';
 import Tab from '../tab';
+import Builds from './singleplayer/Builds';
 import Characters from './singleplayer/Characters';
 import Commands from './singleplayer/Commands';
 import Friends from './singleplayer/Friends';
@@ -9,6 +10,8 @@ import World from './singleplayer/World';
 
 const STATUS: Record<SinglePlayerView['status'], string> = {
     stopped: 'Stopped',
+    missing: 'Not downloaded yet',
+    downloading: 'Downloading',
     preparing: 'Getting the world ready',
     starting: 'Starting',
     ready: 'Running',
@@ -16,12 +19,13 @@ const STATUS: Record<SinglePlayerView['status'], string> = {
     failed: 'Failed'
 };
 
-type Section = 'world' | 'characters' | 'commands' | 'friends';
+type Section = 'world' | 'characters' | 'commands' | 'builds' | 'friends';
 
 const SECTIONS: readonly { id: Section; label: string }[] = [
     { id: 'world', label: 'World' },
     { id: 'characters', label: 'Characters' },
     { id: 'commands', label: 'Commands' },
+    { id: 'builds', label: 'Builds' },
     { id: 'friends', label: 'Friends' }
 ];
 
@@ -33,6 +37,7 @@ const SECTIONS: readonly { id: Section; label: string }[] = [
 export default function SinglePlayer({ view, share }: { view: SinglePlayerView; share: ShareView | null }): ReactNode {
     const [open, setOpen] = useState<Section>('world');
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
+    const line = view.builds.find(l => l.id === view.selected);
     return (
         <div className="flex min-h-0 flex-1 flex-col">
             <div className="px-2.5">
@@ -40,6 +45,11 @@ export default function SinglePlayer({ view, share }: { view: SinglePlayerView; 
                     {status}
                     {view.status === 'failed' && view.reason && <span className="block text-[12px] text-dim">{view.reason}</span>}
                 </p>
+                {line && (
+                    <p className="text-[12px] text-dim">
+                        {line.name} · rev {line.revision}
+                    </p>
+                )}
                 {view.version && (
                     <p className="text-[12px] text-faint">
                         engine {view.version.engine.slice(0, 8)} · content {view.version.content.slice(0, 8)} · rev {view.version.revision}
@@ -76,7 +86,9 @@ export default function SinglePlayer({ view, share }: { view: SinglePlayerView; 
 
             {open === 'world' && <World view={view} />}
             {open === 'characters' && <Characters view={view} />}
-            {open === 'commands' && <Commands cheats={view.settings.cheats} />}
+            {/* Keyed by the build, so a switch or a finished download reads that build's list. */}
+            {open === 'commands' && <Commands key={`${view.selected}:${line?.state ?? ''}`} cheats={view.settings.cheats} />}
+            {open === 'builds' && <Builds view={view} />}
             {open === 'friends' && share && <Friends view={share} worldReady={view.status === 'ready'} />}
         </div>
     );

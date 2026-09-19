@@ -9,7 +9,7 @@ import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterInfo, type C
  */
 const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 const SPENT: CSSProperties = { ...BUTTON_SIZE, color: 'var(--color-faint)' };
-/* A row's own actions, a size down so four fit beside a name. */
+/* A row's own actions, a size down so they fit beside a name. */
 const ROW_BUTTON: CSSProperties = { fontSize: 12, padding: '0 6px' };
 
 const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
@@ -38,7 +38,20 @@ function promptLabel(prompt: Prompt): string {
 }
 
 /** One character: its name and levels, or what is wrong with its file, and what can be done with it. */
-function Row({ character, busy, act, ask }: { character: CharacterInfo; busy: boolean; act: (change: () => Promise<CharacterOutcome>) => void; ask: (kind: 'rename' | 'duplicate') => void }): ReactNode {
+function Row({
+    character,
+    busy,
+    act,
+    ask,
+    copyTo
+}: {
+    character: CharacterInfo;
+    busy: boolean;
+    act: (change: () => Promise<CharacterOutcome>) => void;
+    ask: (kind: 'rename' | 'duplicate') => void;
+    /** Offers the character to another revision; null where no other revision is listed. */
+    copyTo: (() => void) | null;
+}): ReactNode {
     const api = window.zanaris.singlePlayer;
     const usable = character.summary !== null;
     return (
@@ -55,6 +68,11 @@ function Row({ character, busy, act, ask }: { character: CharacterInfo; busy: bo
                 <QuietButton size={ROW_BUTTON} disabled={busy || !usable} onClick={() => ask('duplicate')}>
                     Copy
                 </QuietButton>
+                {copyTo && (
+                    <QuietButton size={ROW_BUTTON} disabled={busy || !usable} onClick={copyTo}>
+                        Copy to…
+                    </QuietButton>
+                )}
                 <QuietButton size={ROW_BUTTON} disabled={busy} onClick={() => act(() => api.exportCharacter(character.name))}>
                     Export
                 </QuietButton>
@@ -79,6 +97,10 @@ export default function Characters({ view }: { view: SinglePlayerView }): ReactN
     const [prompt, setPrompt] = useState<Prompt | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    /** The character being offered to another revision, while the revisions are asked for. */
+    const [copying, setCopying] = useState<string | null>(null);
+    /** The revisions another listed build runs: each keeps its own characters. Main refuses any other. */
+    const others = [...new Set(view.builds.map(line => line.revision))].filter(revision => revision !== view.revision).sort((a, b) => a - b);
 
     /** Runs a change, shows a refusal, and calls `after` when the change went through. */
     const act = (change: () => Promise<CharacterOutcome>, after?: () => void): void => {
@@ -139,7 +161,25 @@ export default function Characters({ view }: { view: SinglePlayerView }): ReactN
                 ) : (
                     <ul>
                         {view.characters.map(character => (
-                            <Row key={character.name} character={character} busy={busy} act={act} ask={kind => ask(kind, character.name)} />
+                            <Row
+                                key={character.name}
+                                character={character}
+                                busy={busy}
+                                act={act}
+                                ask={kind => {
+                                    setCopying(null);
+                                    ask(kind, character.name);
+                                }}
+                                copyTo={
+                                    others.length === 0
+                                        ? null
+                                        : () => {
+                                              setPrompt(null);
+                                              setNotice(null);
+                                              setCopying(character.name);
+                                          }
+                                }
+                            />
                         ))}
                     </ul>
                 )}
@@ -184,6 +224,30 @@ export default function Characters({ view }: { view: SinglePlayerView }): ReactN
                             ))}
                     </span>
                 </form>
+            )}
+
+            {copying !== null && (
+                <div className="mx-2.5 mt-2 flex flex-col gap-0.5">
+                    <span className="text-[12px] text-dim">
+                        Copy {toDisplayName(copying)} from rev {view.revision} to
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        {others.map(revision => (
+                            <button
+                                key={revision}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => act(() => api.copyTo(copying, revision), () => setCopying(null))}
+                                style={busy ? SPENT : BUTTON_SIZE}
+                                className="btn shrink-0"
+                            >
+                                rev {revision}
+                            </button>
+                        ))}
+                        <QuietButton onClick={() => setCopying(null)}>Cancel</QuietButton>
+                    </div>
+                    <span className="text-[12px] text-dim">The copy is made in the other revision's world. Nothing here changes.</span>
+                </div>
             )}
 
             {notice !== null && (

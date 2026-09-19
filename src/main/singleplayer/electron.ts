@@ -6,25 +6,55 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { SinglePlayerDeps, SpawnSpec, WorldProcess } from './service.ts';
+import type { BuildStoreDeps } from './buildStore.ts';
+import { bundledRecipes } from './recipes.ts';
 import { readCommandsFile, type CommandRef } from '../../shared/commands.ts';
+import { artifactUrl } from '../../shared/engines.ts';
+import { downloadChecked, extractTgz } from '../download.ts';
 
-/** The staged engine: beside the app's asar when packaged, engine-dist/ in dev. */
-export function engineResources(): string {
-    return app.isPackaged ? join(process.resourcesPath, 'engine') : join(app.getAppPath(), 'engine-dist');
-}
-
-/** Where the world runs and the saves live. */
+/** Single player's folder: the builds, and one world folder per revision holding its characters. */
 export function singlePlayerHome(): string {
     return join(app.getPath('userData'), 'singleplayer');
 }
 
-/** The staged list of the content's debug procs, or null when this build has none the kit can read. */
-export function readCommands(): CommandRef[] | null {
+/**
+ * The developer's own stage, offered as a build only while the kit runs from
+ * source. A packaged kit runs nothing it did not download and check.
+ */
+function localBuild(): string | null {
+    if (app.isPackaged) return null;
+    const dir = join(app.getAppPath(), 'engine-dist');
+    return existsSync(join(dir, 'VERSION.json')) ? dir : null;
+}
+
+/** A build's list of the content's debug procs, or null when it has none the kit can read. */
+export function readCommands(resources: string): CommandRef[] | null {
     try {
-        return readCommandsFile(readFileSync(join(engineResources(), 'COMMANDS.json'), 'utf8'));
+        return readCommandsFile(readFileSync(join(resources, 'COMMANDS.json'), 'utf8'));
     } catch {
         return null;
     }
+}
+
+export function buildStoreDeps(log: (msg: string) => void): BuildStoreDeps {
+    return {
+        dir: join(singlePlayerHome(), 'builds'),
+        recipes: bundledRecipes(),
+        local: localBuild(),
+        join,
+        fs: {
+            exists: existsSync,
+            readText: path => readFileSync(path, 'utf8'),
+            mkdir: path => mkdirSync(path, { recursive: true }),
+            rm: path => rmSync(path, { recursive: true, force: true }),
+            rename: renameSync
+        },
+        // net.fetch rather than Node's: it follows the system proxy, as the rest of the kit's requests do.
+        download: (artifact, to, onProgress) =>
+            downloadChecked({ url: artifactUrl(artifact), file: artifact.file, size: artifact.size, sha256: artifact.sha256, to, fetch: (url, init) => net.fetch(url, init), onProgress }),
+        extract: extractTgz,
+        log
+    };
 }
 
 const PORT_REUSE_WINDOW_MS = 10_000;
@@ -127,10 +157,11 @@ function watchDir(path: string, onChange: () => void): () => void {
     }
 }
 
-export function electronDeps(over: { baseUrl: string; settings: SinglePlayerDeps['settings']; log: (msg: string) => void }): SinglePlayerDeps {
+export function electronDeps(over: Pick<SinglePlayerDeps, 'baseUrl' | 'settings' | 'builds' | 'selection' | 'log'>): SinglePlayerDeps {
     return {
-        resources: engineResources(),
-        home: singlePlayerHome(),
+        worlds: join(singlePlayerHome(), 'worlds'),
+        builds: over.builds,
+        selection: over.selection,
         baseUrl: over.baseUrl,
         settings: over.settings,
         join,

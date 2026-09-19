@@ -56,6 +56,10 @@ export const IPC = {
     singlePlayerDuplicate: 'zanaris:singleplayer-duplicate',
     singlePlayerDelete: 'zanaris:singleplayer-delete',
     singlePlayerCommands: 'zanaris:singleplayer-commands',
+    singlePlayerCopyTo: 'zanaris:singleplayer-copy-to',
+    singlePlayerUseBuild: 'zanaris:singleplayer-use-build',
+    singlePlayerDownloadBuild: 'zanaris:singleplayer-download-build',
+    singlePlayerRemoveBuild: 'zanaris:singleplayer-remove-build',
     shareStart: 'zanaris:share-start',
     shareStop: 'zanaris:share-stop',
     shareCopy: 'zanaris:share-copy',
@@ -287,6 +291,17 @@ export interface ZanarisApi {
         duplicate(from: string, to: string): Promise<CharacterOutcome>;
         /** Moves a character's save to the system trash, after asking. */
         remove(name: string): Promise<CharacterOutcome>;
+        /** Copies a character into another revision's world, after asking. Never replaces one there. */
+        copyTo(name: string, revision: number): Promise<CharacterOutcome>;
+        /**
+         * Makes a build line the one the world runs, downloading it first if it
+         * is not here. Asks first when the world is running, since it restarts.
+         */
+        useBuild(id: string): Promise<void>;
+        /** Downloads a line's build. The button that calls this says what and how big. */
+        downloadBuild(id: string): Promise<void>;
+        /** Deletes a line's build after asking. Resolves with why not when it could not, else null. */
+        removeBuild(id: string): Promise<string | null>;
         /**
          * The content's debug procs, from the staged COMMANDS.json. Null when
          * this build has none. Asked for once by the Commands section rather
