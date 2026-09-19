@@ -14,7 +14,6 @@ import {
     isServerDef,
     serverMenuLabel,
     migrateCatalog,
-    engineRevision,
     Catalog
 } from './catalog.ts';
 import { isWorldsDef } from './worlds/sources.ts';
@@ -43,23 +42,17 @@ test('the built-in list is per server, Lost City first, with the settled revisio
     assert.equal(byId['lostcitylabs']!.wiki, null);
 });
 
-test('the single-player entry runs on this computer and carries the engine revision', () => {
+test('the single-player entry runs on this computer and carries the default line\'s revision', () => {
     const sp = DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!;
     assert.equal(sp.kind, 'singleplayer');
     assert.equal(sp.name, 'Single player');
     assert.equal(sp.url, 'http://127.0.0.1/rs2.cgi?lowmem=1');
-    assert.equal(sp.revision, engineRevision());
-    assert.equal(typeof sp.revision, 'number');
+    assert.equal(sp.revision, 274);
     assert.equal(sp.worlds, null);
     assert.equal(sp.wiki?.home, 'https://2004.losthq.rs/');
     assert.deepEqual(sp.bookmarks, [], 'the reference links are for the live servers, not a development world');
     assert.deepEqual(sp.hosts, ['127.0.0.1', '2004.losthq.rs', 'tools.losthq.rs']);
     for (const server of DEFAULT_SERVERS) assert.equal(server.kind, server.id === 'singleplayer' ? 'singleplayer' : 'remote');
-});
-
-test('engineRevision reads engine.lock.json when nothing was stamped at build time', () => {
-    const lock = JSON.parse(readFileSync('engine.lock.json', 'utf8')) as { revision: number };
-    assert.equal(engineRevision(), lock.revision);
 });
 
 test('a version 2 file gains kind and the single-player entry, and loses local', () => {
@@ -654,22 +647,45 @@ test('Catalog.load migrates a v1 file in place and rewrites it as v5', () => {
     assert.equal(written.servers[0].id, 'lostcity');
 });
 
-test('a stored single-player entry follows the pinned engine, keeping the rest of the entry', () => {
+test('a stored single-player entry follows the revision of the line the world runs, keeping the rest of the entry', () => {
     const file = tempFile();
     const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
     const stored = servers.find(s => s.id === 'singleplayer')!;
     stored.revision = 1;
     stored.bookmarks = [{ name: 'Mine', url: 'https://example.com/' }];
-    writeFileSync(file, JSON.stringify({ version: 4, servers }));
-    const catalog = new Catalog(file);
+    writeFileSync(file, JSON.stringify({ version: 5, servers }));
+    const catalog = new Catalog(file, { singlePlayerRevision: () => 289 });
     catalog.load();
     assert.equal(catalog.recovered, false);
     const loaded = catalog.get('singleplayer')!;
-    assert.equal(loaded.revision, engineRevision());
+    assert.equal(loaded.revision, 289);
     assert.deepEqual(loaded.bookmarks, [{ name: 'Mine', url: 'https://example.com/' }]);
     // and the file was rewritten, so the menu agrees on the next launch too
     const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
-    assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, engineRevision());
+    assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, 289);
+});
+
+test('without a line to follow, the stored single-player entry takes the default line\'s revision', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    servers.find(s => s.id === 'singleplayer')!.revision = 1;
+    writeFileSync(file, JSON.stringify({ version: 5, servers }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.get('singleplayer')!.revision, 274);
+});
+
+test('followSinglePlayer takes the revision again after a switch, and writes only when it changed', () => {
+    const file = tempFile();
+    let revision = 274;
+    const catalog = new Catalog(file, { singlePlayerRevision: () => revision });
+    catalog.load();
+    assert.equal(catalog.followSinglePlayer(), false);
+    revision = 289;
+    assert.equal(catalog.followSinglePlayer(), true);
+    assert.equal(catalog.get('singleplayer')!.revision, 289);
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
+    assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, 289);
 });
 
 test('list returns deep copies of the worlds block', () => {

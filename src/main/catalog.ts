@@ -4,8 +4,10 @@ import type { NewServerInput, ServerDef, WikiDef } from '../shared/catalog.ts';
 import type { HiscoresDef } from '../shared/hiscores.ts';
 import { CUSTOM_ID_PREFIX, isTimerDef, type TimerDef } from '../shared/timers.ts';
 import type { Bookmark } from '../shared/worlds.ts';
+import { DEFAULT_BUILD } from '../shared/engines.ts';
 import { isWorldsDef } from './worlds/sources.ts';
 import { newServerTimers } from './timers/defs.ts';
+import { recipeRevision } from './singleplayer/recipes.ts';
 
 /** LostHQ has no discoverable search endpoint (its index.php?search= returns the homepage). */
 const LOSTHQ: WikiDef = { home: 'https://2004.losthq.rs/', search: null };
@@ -50,23 +52,6 @@ const LOSTCITY_HISCORES: HiscoresDef = {
     source: { kind: 'lostcity', url: 'https://2004.lostcity.rs/api/hiscores/player/{name}' },
     site: 'https://2004.lostcity.rs/hiscores'
 };
-
-/** What the engine was pinned to when this line was written; used only when neither source can be read. */
-const LAST_KNOWN_REVISION = 274;
-
-/** The game revision the bundled engine is, from the pin file at build time or, under tests, on disk. */
-export function engineRevision(): number {
-    if (typeof __ENGINE_REVISION__ === 'number') return __ENGINE_REVISION__;
-    // DEFAULT_SERVERS calls this at module scope, so a throw here would take the
-    // main process down before there is a window to say so in — and the path is
-    // relative, so any cwd but the repo root misses it. The number is only ever
-    // a label; being one revision stale beats not launching.
-    try {
-        return (JSON.parse(readFileSync('engine.lock.json', 'utf8')) as { revision: number }).revision;
-    } catch {
-        return LAST_KNOWN_REVISION;
-    }
-}
 
 export const DEFAULT_SERVERS: readonly ServerDef[] = [
     {
@@ -159,7 +144,8 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         name: 'Single player',
         // The port is applied at runtime: the world is started on a free one.
         url: 'http://127.0.0.1/rs2.cgi?lowmem=1',
-        revision: engineRevision(),
+        // The default line's; a stored entry follows whichever line the world runs.
+        revision: recipeRevision(DEFAULT_BUILD),
         wiki: LOSTHQ,
         map: 'https://tools.losthq.rs/map',
         hosts: ['127.0.0.1', '2004.losthq.rs', 'tools.losthq.rs'],
@@ -460,14 +446,21 @@ function withSinglePlayer(servers: ServerDef[]): ServerDef[] {
  * and replaced with the defaults, with `recovered` set so the launcher can say
  * so.
  */
+export interface CatalogOptions {
+    /** The revision of the build line the single-player world runs. Without it, the default line's. */
+    singlePlayerRevision?: () => number;
+}
+
 export class Catalog {
     readonly file: string;
     /** True when the file on disk could not be used and the defaults were written in its place. */
     recovered = false;
     private servers: ServerDef[] = [];
+    private readonly options: CatalogOptions;
 
-    constructor(file: string) {
+    constructor(file: string, options: CatalogOptions = {}) {
         this.file = file;
+        this.options = options;
     }
 
     load(): void {
@@ -616,27 +609,35 @@ export class Catalog {
     }
 
     /**
-     * The world this computer runs is whatever engine ships with the kit, so the
-     * stored entry must not freeze the revision the file was written under: the
-     * File menu, the window strip and the tab would keep naming the old one while
-     * the panel and the starting page read the new one out of VERSION.json. The
-     * revision and the url come back from the built-in; everything else the entry
-     * carries, the user's own bookmarks included, is left as they left it.
-     * Answers whether anything changed, so the file is only rewritten when it did.
+     * Single player runs whichever build line the player picked, so the stored
+     * entry must not freeze the revision the file was written under: the File
+     * menu would keep naming the old one while the window and the panel name
+     * the new. The revision comes from the line the world runs, and the url
+     * back from the built-in; everything else the entry carries, the user's own
+     * bookmarks included, is left as they left it. Answers whether anything
+     * changed, so the file is only rewritten when it did.
      */
     private refreshSinglePlayer(): boolean {
         const builtIn = DEFAULT_SERVERS.find(s => s.id === 'singleplayer');
         const stored = this.servers.find(s => s.id === 'singleplayer' && s.kind === 'singleplayer');
         if (!builtIn || !stored) return false;
+        const revision = this.options.singlePlayerRevision?.() ?? builtIn.revision;
         let changed = false;
-        if (stored.revision !== builtIn.revision) {
-            stored.revision = builtIn.revision;
+        if (stored.revision !== revision) {
+            stored.revision = revision;
             changed = true;
         }
         if (stored.url !== builtIn.url) {
             stored.url = builtIn.url;
             changed = true;
         }
+        return changed;
+    }
+
+    /** After a switch of build line: takes the new revision, and writes the file when it changed. */
+    followSinglePlayer(): boolean {
+        const changed = this.refreshSinglePlayer();
+        if (changed) this.save();
         return changed;
     }
 

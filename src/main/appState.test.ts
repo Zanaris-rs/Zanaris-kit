@@ -511,3 +511,24 @@ test('one bad custom clock costs only itself, and a file without timers keeps it
     assert.deepEqual(b.timers(), { custom: [], edits: {} });
     assert.deepEqual(b.world('lostcity'), REMEMBERED);
 });
+
+test('the chosen build line is kept beside the settings, and read back as a line id or nothing', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.singlePlayerBuild(), null, 'nobody has chosen yet');
+    state.setSinglePlayerBuild('lostcity-289');
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).singlePlayer, { cheats: false, xpRate: 1, members: true, build: 'lostcity-289' });
+    const again = new AppState(file);
+    again.load();
+    assert.equal(again.singlePlayerBuild(), 'lostcity-289');
+    again.setSinglePlayerSettings({ cheats: true });
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).singlePlayer.build, 'lostcity-289', 'a settings change keeps it');
+    for (const bad of [7, '', '../x', 'Lost City', 'x'.repeat(65)]) {
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, singlePlayer: { cheats: true, build: bad } }));
+        const odd = new AppState(file);
+        odd.load();
+        assert.equal(odd.singlePlayerBuild(), null, JSON.stringify(bad));
+        assert.equal(odd.singlePlayerSettings().cheats, true, 'a bad build costs nothing else');
+    }
+});

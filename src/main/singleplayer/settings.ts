@@ -17,6 +17,14 @@ export function readSinglePlayerSettings(x: unknown): SinglePlayerSettings {
     return settings;
 }
 
+/** A line id as recipes spell them. Anything else reads as nothing chosen, and the default line runs. */
+const BUILD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** The stored choice of build line: an id, or null. Whether that line still exists is the service's question. */
+export function readSinglePlayerBuild(x: unknown): string | null {
+    return typeof x === 'string' && BUILD_ID.test(x) ? x : null;
+}
+
 /**
  * One change as the shell sent it, checked. Null for a key that is not a
  * setting, or a value that setting cannot take: an XP rate is one of
