@@ -1,4 +1,6 @@
-import { worldRunning, type CharacterInfo, type CharacterOutcome, type ImportPick, type SinglePlayerSettings, type SinglePlayerStatus, type SinglePlayerVersion, type SinglePlayerView } from '../../shared/singleplayer.ts';
+import { DEFAULT_BUILD } from '../../shared/engines.ts';
+import { worldRunning, type BuildLine, type CharacterInfo, type CharacterOutcome, type ImportPick, type SinglePlayerSettings, type SinglePlayerStatus, type SinglePlayerVersion, type SinglePlayerView } from '../../shared/singleplayer.ts';
+import type { InstalledBuild } from './buildStore.ts';
 import { Characters, type ChangeContext, type CharacterFs } from './characters.ts';
 import { CONTENT_DIR, gameUrl, LOG_TAIL_LINES, parseVersion, stampMatches, worldJson, type WorldPorts } from './config.ts';
 import type { Confirm } from './confirm.ts';
@@ -15,11 +17,21 @@ export interface SpawnSpec {
     onLine: (line: string) => void;
 }
 
+/** What the world needs of the build store; `BuildStore` satisfies it. */
+export interface BuildsHandle {
+    lines(): BuildLine[];
+    installed(id: string): InstalledBuild | null;
+    install(id: string): Promise<void>;
+    remove(id: string): void;
+    subscribe(fn: () => void): () => void;
+}
+
 export interface SinglePlayerDeps {
-    /** resources/engine, or engine-dist in dev. */
-    resources: string;
-    /** <userData>/singleplayer */
-    home: string;
+    /** <userData>/singleplayer/worlds: one working directory per revision, each holding that revision's characters. */
+    worlds: string;
+    builds: BuildsHandle;
+    /** The line the player last chose, kept by appState; null before they have chosen one. */
+    selection: { get(): string | null; set(id: string): void };
     /** The catalog entry's url; the port is applied at start. */
     baseUrl: string;
     /** The player's choices for the world, kept by appState. */
@@ -53,6 +65,8 @@ const PEMS = ['data/config/private.pem', 'data/config/public.pem'];
 const READY_TIMEOUT_MS = 60_000;
 const POLL_MS = 250;
 const STOP_GRACE_MS = 10_000;
+/** The revision a world folder is named for when no line is listed at all, which a kit with recipes never is. */
+const FALLBACK_REVISION = 274;
 /** Watch events come in bursts for one write; one read after this long answers them all. */
 const REFRESH_WAIT_MS = 400;
 
@@ -62,6 +76,11 @@ class Failure extends Error {}
  * One world for every single-player window. Windows acquire and release;
  * the first acquire starts the world, the last release stops it. Pure over
  * the deps so the whole lifecycle runs under node:test with fakes.
+ *
+ * The world runs the selected line's build, from that build's folder, in the
+ * line's revision's world folder, where that revision's characters live. With
+ * the build not downloaded, a window waits in `missing` until someone asks for
+ * the download; the world starts on its own once the build lands.
  */
 export class SinglePlayerService {
     private status: SinglePlayerStatus = 'stopped';
@@ -78,9 +97,12 @@ export class SinglePlayerService {
     private generation = 0;
     private readonly listeners = new Set<() => void>();
     private readonly deps: SinglePlayerDeps;
-    /** <home>/data/players/main: the folder the characters live in, and the one watched. */
-    readonly savesDir: string;
-    private readonly characters: Characters;
+    /** The line the world runs, and its revision, which names the world folder. */
+    private selected: string;
+    private revision: number;
+    private characters: Characters;
+    /** Switches run one at a time: each may download, stop and start. */
+    private switching: Promise<void> = Promise.resolve();
     private characterList: CharacterInfo[] = [];
     /** Set by the first acquire. Until then no window has shown a character, and the folder is not read. */
     private watching = false;
@@ -89,20 +111,37 @@ export class SinglePlayerService {
 
     constructor(deps: SinglePlayerDeps) {
         this.deps = deps;
-        this.savesDir = deps.join(deps.home, 'data', 'players', 'main');
-        this.characters = new Characters({ fs: deps.fs, join: deps.join, dir: this.savesDir, token: () => deps.token() });
+        this.selected = this.pick(deps.selection.get());
+        this.revision = this.line()?.revision ?? FALLBACK_REVISION;
+        this.characters = this.charactersIn(this.savesDir);
+        deps.builds.subscribe(() => this.onBuilds());
+    }
+
+    /** <worlds>/<revision>: the world's working directory. */
+    get home(): string {
+        return this.deps.join(this.deps.worlds, String(this.revision));
+    }
+
+    /** <home>/data/players/main: the folder the characters live in, and the one watched. */
+    get savesDir(): string {
+        return this.savesDirOf(this.revision);
     }
 
     view(): SinglePlayerView {
+        const builds = this.deps.builds.lines();
+        const line = builds.find(l => l.id === this.selected);
         return {
             status: this.status,
             port: this.ports?.web ?? null,
             url: this.status === 'ready' ? this.url : null,
-            reason: this.status === 'failed' ? this.reason : null,
+            reason: this.status === 'failed' ? this.reason : this.status === 'missing' ? (line?.error ?? null) : null,
             logTail: [...this.logTail],
             version: this.version,
             settings: this.deps.settings.get(),
-            characters: [...this.characterList]
+            characters: [...this.characterList],
+            selected: this.selected,
+            revision: this.revision,
+            builds
         };
     }
 
@@ -127,6 +166,59 @@ export class SinglePlayerService {
     /** From failed: try again for the windows already counted. */
     retry(): Promise<string> {
         return this.ensure();
+    }
+
+    /**
+     * Downloads a line's build, the selected one unless told otherwise. A
+     * failure stays on the line, where the panel and the starting page show
+     * it. Windows waiting on the selected line are started by `onBuilds` once
+     * the build lands.
+     */
+    async download(id: string = this.selected): Promise<void> {
+        try {
+            await this.deps.builds.install(id);
+        } catch (err) {
+            this.deps.log(`[singleplayer] the download of ${id} failed: ${String(err)}`);
+        }
+    }
+
+    /**
+     * Makes another line the one the world runs. A line not downloaded yet is
+     * downloaded first, while the world keeps running on the old one; a
+     * download that fails leaves everything as it was. Then the world stops,
+     * follows the line to its revision's folder and characters, and starts
+     * again for the windows that want it. Main asks before calling this while
+     * the world runs.
+     */
+    useBuild(id: string): Promise<void> {
+        const run = this.switching.then(() => this.switchTo(id));
+        this.switching = run.catch(() => undefined);
+        return run;
+    }
+
+    /** Deletes a line's build. Null when it went, or why not: the world may not lose the build it is running. */
+    removeBuild(id: string): string | null {
+        if (id === this.selected && worldRunning(this.status)) return 'Your world is running on that build. Switch to another first.';
+        try {
+            this.deps.builds.remove(id);
+        } catch (err) {
+            return err instanceof Error ? err.message : String(err);
+        }
+        return null;
+    }
+
+    /** The revisions other than this one that a listed line runs: where a character can be copied to. */
+    otherRevisions(): number[] {
+        const revisions = new Set(this.deps.builds.lines().map(line => line.revision));
+        revisions.delete(this.revision);
+        return [...revisions].sort((a, b) => a - b);
+    }
+
+    /** Copies a character into another revision's folder, after asking. */
+    async copyCharacterTo(name: string, revision: number, confirm: Confirm): Promise<CharacterOutcome> {
+        if (!this.otherRevisions().includes(revision)) return { kind: 'refused', message: 'That is not another revision this kit runs.' };
+        const target = this.charactersIn(this.savesDirOf(revision));
+        return this.characters.copyInto(name, target, { from: this.revision, to: revision, confirm });
     }
 
     /** Stores a change to the world's settings, and restarts a running world so the change takes effect. */
@@ -188,6 +280,82 @@ export class SinglePlayerService {
     }
 
     // ── internals ────────────────────────────────────────────────────────
+
+    /** The line the player chose when it is listed; otherwise the default line, or the first. */
+    private pick(id: string | null): string {
+        const lines = this.deps.builds.lines();
+        if (id !== null && lines.some(line => line.id === id)) return id;
+        if (lines.some(line => line.id === DEFAULT_BUILD)) return DEFAULT_BUILD;
+        return lines[0]?.id ?? DEFAULT_BUILD;
+    }
+
+    private line(): BuildLine | undefined {
+        return this.deps.builds.lines().find(line => line.id === this.selected);
+    }
+
+    private savesDirOf(revision: number): string {
+        return this.deps.join(this.deps.worlds, String(revision), 'data', 'players', 'main');
+    }
+
+    private charactersIn(dir: string): Characters {
+        return new Characters({ fs: this.deps.fs, join: this.deps.join, dir, token: () => this.deps.token() });
+    }
+
+    /**
+     * The store changed: a download started, moved on, finished or failed. A
+     * world waiting on the selected build follows it, and starts for the
+     * windows that want it once the build is installed.
+     */
+    private onBuilds(): void {
+        if (this.status === 'missing' || this.status === 'downloading') {
+            if (this.deps.builds.installed(this.selected)) {
+                this.status = 'stopped';
+                if (this.windows > 0) {
+                    // ensure() notifies as it moves through preparing.
+                    void this.ensure().catch(() => undefined);
+                    return;
+                }
+            } else {
+                this.status = this.line()?.state === 'downloading' ? 'downloading' : 'missing';
+            }
+        }
+        this.notify();
+    }
+
+    private async switchTo(id: string): Promise<void> {
+        const line = this.deps.builds.lines().find(l => l.id === id);
+        if (!line || id === this.selected) return;
+        if (!this.deps.builds.installed(id)) {
+            try {
+                await this.deps.builds.install(id);
+            } catch (err) {
+                this.deps.log(`[singleplayer] not switching to ${id}: ${String(err)}`);
+                return;
+            }
+            if (!this.deps.builds.installed(id)) return;
+        }
+        if (this.status !== 'stopped') await this.stop();
+        this.selected = id;
+        this.revision = line.revision;
+        this.deps.selection.set(id);
+        this.version = null;
+        this.reason = null;
+        this.logTail = [];
+        this.followSaves();
+        this.notify();
+        if (this.windows > 0) await this.ensure().catch(() => undefined);
+    }
+
+    /** The saves folder moved with the revision: a new store for it, and the watch and the list follow. */
+    private followSaves(): void {
+        this.characters = this.charactersIn(this.savesDir);
+        this.characterList = [];
+        if (!this.watching) return;
+        this.stopWatching?.();
+        this.stopWatching = null;
+        this.watching = false;
+        this.watchSaves();
+    }
 
     private ensure(): Promise<string> {
         if (this.status === 'ready' && this.url) return Promise.resolve(this.url);
@@ -289,18 +457,26 @@ export class SinglePlayerService {
             this.reason = null;
             this.logTail = [];
 
+            const build = deps.builds.installed(this.selected);
+            if (!build) {
+                // Not a failure: the window waits for the player to download the build.
+                this.set(this.line()?.state === 'downloading' ? 'downloading' : 'missing');
+                throw new Failure('The build is not downloaded');
+            }
+            const { resources } = build;
+            const home = this.home;
             this.set('preparing');
-            const versionPath = join(deps.resources, 'VERSION.json');
-            if (!fs.exists(versionPath)) this.fail('Engine not staged: run npm run stage:engine');
+            const versionPath = join(resources, 'VERSION.json');
+            if (!fs.exists(versionPath)) this.fail("The build's files are missing. Remove it in Builds and download it again.");
             const versionText = fs.readText(versionPath);
             const version = parseVersion(versionText);
             if (!version) this.fail(`${versionPath} is not a VERSION.json the kit understands`);
             this.version = version;
-            const stampPath = join(deps.home, 'engine.stamp');
+            const stampPath = join(home, 'engine.stamp');
             const stamp = fs.exists(stampPath) ? fs.readText(stampPath) : null;
             if (!stampMatches(stamp, versionText)) {
                 try {
-                    await this.copyAssets(versionText);
+                    await this.copyAssets(versionText, resources, home);
                 } catch (err) {
                     this.fail(`Could not copy the engine's files: ${String(err)}`);
                 }
@@ -311,13 +487,13 @@ export class SinglePlayerService {
             const ports: WorldPorts = { web: await deps.freePort(), management: await deps.freePort(), tcp: await deps.freePort() };
             this.ports = ports;
             const url = gameUrl(deps.baseUrl, ports.web);
-            fs.mkdir(join(deps.home, 'data', 'config'));
-            fs.writeText(join(deps.home, 'data', 'config', 'world.json'), worldJson({ ports, settings: deps.settings.get(), revision: version.revision }));
-            const logPath = join(deps.home, 'world.log');
+            fs.mkdir(join(home, 'data', 'config'));
+            fs.writeText(join(home, 'data', 'config', 'world.json'), worldJson({ ports, settings: deps.settings.get(), revision: version.revision }));
+            const logPath = join(home, 'world.log');
             fs.writeText(logPath, '');
             const process = deps.spawn({
-                entry: join(deps.resources, 'src', 'app.js'),
-                cwd: deps.home,
+                entry: join(resources, 'src', 'app.js'),
+                cwd: home,
                 onLine: line => {
                     this.logTail.push(line);
                     if (this.logTail.length > LOG_TAIL_LINES) this.logTail.shift();
@@ -382,8 +558,8 @@ export class SinglePlayerService {
      * otherwise freeze the main process. The swap stays synchronous: it is a handful
      * of renames, and nothing may interleave between them.
      */
-    private async copyAssets(versionText: string): Promise<void> {
-        const { fs, join, home, resources } = this.deps;
+    private async copyAssets(versionText: string, resources: string, home: string): Promise<void> {
+        const { fs, join } = this.deps;
         const staging = join(home, STAGING_DIR);
         fs.rm(staging);
         for (const tree of ASSET_TREES) await fs.copyDir(join(resources, tree), join(staging, tree));

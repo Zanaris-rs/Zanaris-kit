@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertPack, classify, commandsJson, debugprocGroup, findNativeModules, hasTsUrl, parseDebugprocs, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { assertPack, classify, commandsJson, debugprocGroup, findLongPaths, findNativeModules, findSymlinks, hasTsUrl, parseDebugprocs, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
 import { readCommandsFile } from '../src/shared/commands.ts';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'stage-lib-'));
@@ -74,6 +74,31 @@ test('findNativeModules lists every .node file, relative, and nothing else', () 
     writeFileSync(join(dir, 'fsevents', 'index.js'), '');
     assert.deepEqual(findNativeModules(dir).sort(), ['@prisma/engines/libquery_engine.dylib.node', 'fsevents/fsevents.node']);
     assert.deepEqual(findNativeModules(scratch()), []);
+});
+
+test('findLongPaths lists every file whose path under dir is longer than the budget, longest first', () => {
+    const dir = scratch();
+    const deep = join(dir, 'node_modules', 'a'.repeat(40), 'b'.repeat(40));
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(join(deep, 'short.js'), '');
+    writeFileSync(join(deep, `${'c'.repeat(30)}.js`), '');
+    writeFileSync(join(dir, 'top.js'), '');
+    // 103 characters for short.js, 125 for the other.
+    const long = findLongPaths(dir, 110);
+    assert.deepEqual(long, [`node_modules/${'a'.repeat(40)}/${'b'.repeat(40)}/${'c'.repeat(30)}.js`]);
+    assert.deepEqual(findLongPaths(dir, 200), []);
+});
+
+test('findSymlinks lists every link, relative, and follows none of them', { skip: process.platform === 'win32' }, () => {
+    const dir = scratch();
+    mkdirSync(join(dir, 'node_modules', 'tsx', 'dist'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', 'tsx', 'dist', 'cli.mjs'), '');
+    mkdirSync(join(dir, 'node_modules', '.bin'), { recursive: true });
+    symlinkSync('../tsx/dist/cli.mjs', join(dir, 'node_modules', '.bin', 'tsx'));
+    // A link to a directory is reported, not walked into.
+    symlinkSync('tsx', join(dir, 'node_modules', 'alias'));
+    assert.deepEqual(findSymlinks(dir).sort(), ['node_modules/.bin/tsx', 'node_modules/alias']);
+    assert.deepEqual(findSymlinks(scratch()), []);
 });
 
 test('staticNpcs reads the game map line, and says nothing when the map never loaded', () => {

@@ -6,7 +6,8 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, w
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ASSETS, assetFor, CLOUDFLARED_VERSION, downloadUrl, ensureCloudflared, extractTgz, isInstalled, type CloudflaredAsset } from './cloudflared.ts';
+import { ASSETS, assetFor, CLOUDFLARED_VERSION, downloadUrl, ensureCloudflared, isInstalled, type CloudflaredAsset } from './cloudflared.ts';
+import { extractTgz } from '../download.ts';
 
 const sha = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
 

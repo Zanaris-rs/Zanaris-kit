@@ -18,7 +18,9 @@ import Worlds from './tools/Worlds';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
 
+/** Single player names the revision of the line the world runs, which a switch changes under an open window. */
 function revisionOf(state: ShellState): string {
+    if (state.singlePlayer) return `rev ${state.singlePlayer.revision}`;
     return state.server.revision === null ? 'rev unknown' : `rev ${state.server.revision}`;
 }
 

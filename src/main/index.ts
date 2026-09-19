@@ -25,11 +25,13 @@ import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
-import { electronDeps, engineResources, readCommands, singlePlayerHome } from './singleplayer/electron';
+import { BuildStore, LOCAL_BUILD } from './singleplayer/buildStore';
+import { buildStoreDeps, electronDeps, readCommands } from './singleplayer/electron';
+import { recipeRevision } from './singleplayer/recipes';
 import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/singleplayer';
 import type { CommandRef } from '../shared/commands';
 import type { Confirm, Confirmation } from './singleplayer/confirm';
-import { changesSettings, readSettingChange, restartConfirmation } from './singleplayer/settings';
+import { changesSettings, readSettingChange, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './singleplayer/settings';
 import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
@@ -117,7 +119,9 @@ if (migrated.length > 0) log(`[main] moved ${migrated.join(', ')} from ${legacyU
 const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
 
 let quitting = false;
-const catalog = new Catalog(join(userData, 'servers.json'));
+// The single-player entry names the revision of the line the world runs. Before
+// the service exists, that is the line the player last chose.
+const catalog = new Catalog(join(userData, 'servers.json'), { singlePlayerRevision: () => singlePlayer?.view().revision ?? recipeRevision(appState.singlePlayerBuild()) });
 /** Capture mode keeps its state beside its screenshots, so a test switch never changes what the next real launch opens. */
 // Not `CAPTURE_DIR` any more. Capture mode used to redirect this one file into
 // the screenshots folder so a run could not touch the real profile; it now
@@ -137,6 +141,8 @@ let update: LatestRelease | null = null;
 
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
 let singlePlayer: SinglePlayerService | null = null;
+/** Single player's builds on this computer, which the world runs one of. */
+let builds: BuildStore | null = null;
 let share: ShareService | null = null;
 
 /**
@@ -886,6 +892,34 @@ ipcMain.handle(IPC.singlePlayerRetry, async event => {
     await singlePlayer.retry().catch(() => undefined);
 });
 
+// ── single player's builds ────────────────────────────────────────────────
+
+/** Switching restarts a running world, so it asks first; the words are `switchConfirmation`'s. */
+ipcMain.handle(IPC.singlePlayerUseBuild, async (event, id: unknown) => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof id !== 'string') return;
+    const view = singlePlayer.view();
+    const line = view.builds.find(l => l.id === id);
+    if (!line || id === view.selected) return;
+    if (worldRunning(view.status) && !(await confirmOn(sw)(switchConfirmation(line, view.revision)))) return;
+    await singlePlayer.useBuild(id);
+});
+
+/** The button is the ask: the page and the panel say what downloads and how big it is. */
+ipcMain.handle(IPC.singlePlayerDownloadBuild, async (event, id: unknown) => {
+    if (!singlePlayerWindow(event.sender) || !singlePlayer || typeof id !== 'string') return;
+    await singlePlayer.download(id);
+});
+
+/** Null when the build went, or was not asked to; otherwise why not. */
+ipcMain.handle(IPC.singlePlayerRemoveBuild, async (event, id: unknown): Promise<string | null> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof id !== 'string') return null;
+    const line = singlePlayer.view().builds.find(l => l.id === id);
+    if (!line || !(await confirmOn(sw)(removeBuildConfirmation(line)))) return null;
+    return singlePlayer.removeBuild(id);
+});
+
 /** What a character handler answers for a payload that is not a change. */
 const NOT_A_CHANGE: CharacterOutcome = { kind: 'refused', message: 'That is not a change the kit can make.' };
 /** A name as typed. Its rules are `shared/names.ts`'s; this only bounds what crosses the bridge. */
@@ -922,6 +956,12 @@ ipcMain.handle(IPC.singlePlayerDuplicate, async (event, from: unknown, to: unkno
     return singlePlayer.duplicateCharacter(from, to, confirmOn(sw));
 });
 
+ipcMain.handle(IPC.singlePlayerCopyTo, async (event, name: unknown, revision: unknown): Promise<CharacterOutcome> => {
+    const sw = singlePlayerWindow(event.sender);
+    if (!sw || !singlePlayer || typeof name !== 'string' || typeof revision !== 'number') return NOT_A_CHANGE;
+    return singlePlayer.copyCharacterTo(name, revision, confirmOn(sw));
+});
+
 ipcMain.handle(IPC.singlePlayerDelete, async (event, name: unknown): Promise<CharacterOutcome> => {
     const sw = singlePlayerWindow(event.sender);
     if (!sw || !singlePlayer || typeof name !== 'string') return NOT_A_CHANGE;
@@ -942,12 +982,19 @@ ipcMain.handle(IPC.singlePlayerExport, async (event, name: unknown): Promise<Cha
     return singlePlayer.exportCharacter(name, filePath);
 });
 
-/** Read once and kept. A missing list is asked for again, so a stage run while the app is open is picked up. */
-let commands: CommandRef[] | null = null;
+/**
+ * Read once per build and kept, since a switch changes the build and so the
+ * list. A missing list is asked for again, so a stage run while the app is
+ * open is picked up.
+ */
+let commands: { build: string; list: CommandRef[] | null } | null = null;
 ipcMain.handle(IPC.singlePlayerCommands, (event): CommandRef[] | null => {
-    if (!singlePlayerWindow(event.sender)) return null;
-    commands ??= readCommands();
-    return commands;
+    if (!singlePlayerWindow(event.sender) || !singlePlayer || !builds) return null;
+    const build = builds.installed(singlePlayer.view().selected);
+    if (!build) return null;
+    const key = `${build.resources}\0${build.tag ?? ''}`;
+    if (commands?.build !== key || commands.list === null) commands = { build: key, list: readCommands(build.resources) };
+    return commands.list;
 });
 
 ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {
@@ -957,7 +1004,10 @@ ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {
 });
 
 ipcMain.handle(IPC.singlePlayerShowLog, async () => {
-    const logPath = join(singlePlayerHome(), 'world.log');
+    if (!singlePlayer) return;
+    // The log of the world the selected line runs, in that revision's folder.
+    mkdirSync(singlePlayer.home, { recursive: true });
+    const logPath = join(singlePlayer.home, 'world.log');
     if (!existsSync(logPath)) writeFileSync(logPath, '');
     await shell.openPath(logPath);
 });
@@ -1121,10 +1171,12 @@ async function captureAndExit(dir: string): Promise<void> {
 
     try {
         const started = Date.now();
-        // Single player needs the engine staged; on a machine where it is not,
-        // the entry is dropped rather than left to fail the run.
-        const servers = catalog.list().filter(s => s.kind !== 'singleplayer' || existsSync(join(engineResources(), 'VERSION.json')));
-        if (servers.length < catalog.list().length) log('[capture] singleplayer skipped: engine not staged');
+        // Single player needs its build on disk: in a run from source, engine-dist/
+        // when staged. Where there is none the entry is dropped rather than left
+        // to wait on a download.
+        const playable = singlePlayer !== null && builds?.installed(singlePlayer.view().selected) != null;
+        const servers = catalog.list().filter(s => s.kind !== 'singleplayer' || playable);
+        if (servers.length < catalog.list().length) log('[capture] singleplayer skipped: its build is not on disk');
         const opened = servers.map(openServer);
         const results = await Promise.all(
             opened.map(async sw => {
@@ -1545,16 +1597,35 @@ app.whenReady().then(async () => {
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();
-    singlePlayer = new SinglePlayerService(
+    builds = new BuildStore(buildStoreDeps(log));
+    // A capture photographs single player running, and its profile of its own
+    // has downloaded nothing: it runs the developer's stage when there is one.
+    if (CAPTURE_DIR && builds.installed(LOCAL_BUILD)) appState.setSinglePlayerBuild(LOCAL_BUILD);
+    const world = new SinglePlayerService(
         electronDeps({
             baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
             settings: { get: () => appState.singlePlayerSettings(), set: patch => appState.setSinglePlayerSettings(patch) },
+            builds,
+            selection: { get: () => appState.singlePlayerBuild(), set: id => appState.setSinglePlayerBuild(id) },
             log
         })
     );
-    singlePlayer.subscribe(() => {
+    singlePlayer = world;
+    // The File menu names the revision of the line the world runs; a switch changes it.
+    const followRevision = (): void => {
+        if (!catalog.followSinglePlayer()) return;
+        catalogSeen = catalogMtime();
+        installAppMenu();
+    };
+    let revision = world.view().revision;
+    world.subscribe(() => {
         for (const sw of serverWindows.values()) if (sw.state().server.kind === 'singleplayer') sw.pushState();
+        if (world.view().revision === revision) return;
+        revision = world.view().revision;
+        followRevision();
     });
+    // The catalog loaded before the service could say what the local build's revision is.
+    followRevision();
     share = new ShareService(
         shareDeps({
             // Asked per request by the relay, so a restarted world is found on its new port.

@@ -37,7 +37,7 @@ export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
                 <p className="text-[12px] text-dim">
                     Type them into the game's chat box. Debug procs start with <code className="font-mono text-cream">::~</code>, and <code className="font-mono text-cream">::~help</code> opens the game's own menu of the common ones, which leaves the ~ out.
                 </p>
-                {procs === null && <p className="text-[12px] text-dim">This build has no list of debug procs (npm run stage:engine writes one), so only the engine's commands are here.</p>}
+                {procs === null && <p className="text-[12px] text-dim">This build has no list of debug procs the kit can read, or is not downloaded yet, so only the engine's commands are here.</p>}
                 <input
                     type="search"
                     value={query}

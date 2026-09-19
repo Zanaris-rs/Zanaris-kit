@@ -1,10 +1,14 @@
-export type NavigationDecision = 'allow' | 'open-external' | 'block' | 'retry';
+export type NavigationDecision = 'allow' | 'open-external' | 'block' | 'retry' | 'download';
 
-/** The starting page's Retry button navigates to itself with ?retry=1; main answers it. */
-function isRetry(target: string): boolean {
+/**
+ * The starting page's buttons navigate to the page itself with a request in
+ * the query — ?retry=1 for Try again, ?download=1 for Download — and main
+ * answers the request instead of letting the page load.
+ */
+function isStartingRequest(target: string, request: 'retry' | 'download'): boolean {
     try {
         const url = new URL(target);
-        return url.protocol === 'file:' && url.pathname.endsWith('/starting.html') && url.searchParams.get('retry') === '1';
+        return url.protocol === 'file:' && url.pathname.endsWith('/starting.html') && url.searchParams.get(request) === '1';
     } catch {
         return false;
     }
@@ -16,15 +20,16 @@ function isRetry(target: string): boolean {
  * The page may never replace the game: the only way the game view changes
  * page is main calling loadURL. The one exception is the offline page, which
  * is ours, returning to the page main last asked for. The other exception is
- * the starting page asking for a retry, which is a request to main, not a
- * navigation. Targets on the game's own origin are dropped rather than sent
- * to the browser, since opening the game outside the client is never what
- * anyone wants; other web links go to the system browser; anything else is
- * dropped.
+ * the starting page asking for a retry or a download, each a request to main,
+ * not a navigation. Targets on the game's own origin are dropped rather than
+ * sent to the browser, since opening the game outside the client is never
+ * what anyone wants; other web links go to the system browser; anything else
+ * is dropped.
  */
 export function decideNavigation(nav: { current: string; target: string; expected: string }): NavigationDecision {
     if (nav.current.startsWith('file:') && nav.target === nav.expected) return 'allow';
-    if (nav.current.startsWith('file:') && isRetry(nav.target)) return 'retry';
+    if (nav.current.startsWith('file:') && isStartingRequest(nav.target, 'retry')) return 'retry';
+    if (nav.current.startsWith('file:') && isStartingRequest(nav.target, 'download')) return 'download';
 
     let target: URL;
     try {

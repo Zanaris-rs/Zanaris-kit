@@ -1,2 +1,2 @@
-/** Stamped by electron-vite's `define` from engine.lock.json; undefined under node --test. */
-declare const __ENGINE_REVISION__: number | undefined;
+/** Every engines/*.json, sorted by file name, stamped by electron-vite's `define`; undefined under node --test. */
+declare const __ENGINE_RECIPES__: unknown[] | undefined;

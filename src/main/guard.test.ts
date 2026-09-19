@@ -62,3 +62,12 @@ test('a page may not navigate to anything that is not the web', () => {
 test('an empty allowlist sends everything to the browser, and nothing to the pane', () => {
     assert.equal(page('https://2004.losthq.rs/', []), 'open-external');
 });
+
+test("the starting page's download is a kit navigation too, and only from a kit page", () => {
+    const current = 'file:///app/static/starting.html?state=missing';
+    const expected = 'http://127.0.0.1:40001/rs2.cgi?lowmem=1';
+    assert.equal(decideNavigation({ current, target: 'file:///app/static/starting.html?download=1', expected }), 'download');
+    assert.equal(decideNavigation({ current: 'http://127.0.0.1:40001/rs2.cgi', target: 'file:///app/static/starting.html?download=1', expected }), 'block');
+    assert.equal(decideNavigation({ current, target: 'file:///app/static/starting.html?download=yes', expected }), 'block');
+    assert.equal(decideNavigation({ current, target: 'file:///app/static/other.html?download=1', expected }), 'block');
+});

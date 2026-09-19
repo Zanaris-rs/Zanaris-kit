@@ -88,6 +88,8 @@ export interface SinglePlayerHandle {
     acquire(): Promise<string>;
     release(): void;
     retry(): Promise<string>;
+    /** The selected line's build, asked for from the starting page. */
+    download(): Promise<void>;
 }
 
 /** What a single-player window needs of sharing: a view to draw, and a count of the windows that can stop it. */
@@ -99,6 +101,8 @@ export interface ShareHandle {
 
 const STATUS_WORD: Record<SinglePlayerView['status'], string> = {
     stopped: 'stopped',
+    missing: 'not downloaded',
+    downloading: 'downloading',
     preparing: 'getting ready',
     starting: 'starting',
     ready: 'running',
@@ -439,7 +443,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     // ── labels ───────────────────────────────────────────────────────────
 
     function gameLabel(): string {
-        if (single) return `${server.name} · rev ${server.revision ?? '?'} · ${statusWord(single.view().status)}`;
+        // The revision of the line the world runs, which a switch changes under an open window.
+        if (single) return `${server.name} · rev ${single.view().revision} · ${statusWord(single.view().status)}`;
         return worldSwitch ? worldSwitch.label(server.name, currentLatency) : server.name;
     }
 
@@ -999,22 +1004,36 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function showStarting(override?: { state: SinglePlayerView['status'] | 'pagefailed'; reason: string }): void {
         if (!single || win.isDestroyed()) return;
         const view = single.view();
+        const line = view.builds.find(l => l.id === view.selected);
         const version = view.version ? `engine ${view.version.engine.slice(0, 8)} · content ${view.version.content.slice(0, 8)} · rev ${view.version.revision}` : '';
+        const query = {
+            state: override?.state ?? view.status,
+            version,
+            reason: override?.reason ?? view.reason ?? '',
+            log: view.logTail.slice(-20).join('\n'),
+            // What a missing world would download, and how far it has got, in tens
+            // of percent: finer, and a 50 MB download would reload this page a
+            // hundred times.
+            build: line ? `${line.name} · rev ${line.revision}` : '',
+            size: line?.size != null ? String(Math.round(line.size / 1_000_000)) : '',
+            available: line && line.size !== null && line.state !== 'unavailable' ? '1' : '',
+            progress: line?.progress != null ? String(Math.floor(line.progress * 10) * 10) : ''
+        };
+        // Every change to the service lands here while the world is not ready,
+        // the store's progress included. The same page already showing is left alone.
+        const key = JSON.stringify(query);
+        if (key === shownStarting && gameView?.webContents.getURL().includes('starting.html')) return;
+        shownStarting = key;
         // This page supersedes a game load still in flight — the world died between
         // becoming ready and the page finishing. Chromium reports the superseded load
         // as ERR_ABORTED, which did-fail-load ignores, and this page's own
         // did-finish-load settles nothing, so the waiter would wait forever.
         if (gameLoadPending) settleLoad('failed');
         failedOver = true;
-        void gameView?.webContents.loadFile(STARTING_PAGE, {
-            query: {
-                state: override?.state ?? view.status,
-                version,
-                reason: override?.reason ?? view.reason ?? '',
-                log: view.logTail.slice(-20).join('\n')
-            }
-        });
+        void gameView?.webContents.loadFile(STARTING_PAGE, { query });
     }
+    /** The query of the starting page last loaded, so an identical one is not loaded again. */
+    let shownStarting: string | null = null;
 
     /** The world changed state: load the game when it is ready, show the page otherwise. */
     let loadedGameUrl: string | null = null;
@@ -1059,6 +1078,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             const decision = decideNavigation({ current: wc.getURL(), target: url, expected });
             if (decision === 'allow') return;
             event.preventDefault();
+            if (decision === 'download') {
+                deps.log(`${tag} downloading the world's build`);
+                void single?.download();
+                return;
+            }
             if (decision === 'retry') {
                 deps.log(`${tag} retrying the world`);
                 // Forgetting the url is what lets the same one be loaded again: when the

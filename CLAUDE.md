@@ -144,14 +144,46 @@ LostHQ's actual community is.
 - LostHQ's NickServ pass is **optional**, so those rooms are not
   registered-only.
 
+## Single player's builds
+
+The kit ships no engine. Each build line is a recipe, `engines/<id>.json`: the
+upstream engine and content commits, the patches, and the published archive's
+tag, size and sha-256. The design is
+`docs/superpowers/specs/2026-09-19-single-player-builds-design.md`.
+
+- **Pins move by hand, in a pull request.** Nothing follows a branch head:
+  upstream changed its config, runtime and web server within 2026, and any of
+  those can break the patch. The `engines.yml` pull-request run stages every
+  recipe; a dispatch publishes one as a prerelease; `npm run pin:engine -- <id>`
+  writes its size and digest. `scripts/engines.test.mjs` fails a recipe whose
+  tag was not built from its own commits and patches.
+- **The kit runs only what it pins.** `BuildStore` downloads into `.incoming`,
+  checks size and digest, unpacks, checks the VERSION.json it unpacked to, and
+  only then renames into place. A build on disk that is not this kit's pin is
+  *outdated* and does not start: a newer kit may rely on something it lacks.
+  The one exception is `engine-dist/`, listed as the local build only while
+  `!app.isPackaged`. Never offer it, or anything unpinned, in a packaged kit.
+- **A recipe must take `patches/engine/` and pass the boot check**, or it
+  cannot be a line: the sharing invariants below depend on both. That is what
+  "any 04-like server" means here — shaped like Lost City 274 (its layout,
+  `world.json`, Node). Bun-era revisions need their own patch and a pinned
+  Bun, and are not lines yet.
+- **Characters live per revision**, in `<userData>/singleplayer/worlds/<rev>/`,
+  which is also the world's working directory. A switch never moves a save;
+  Copy to… copies one after asking, and never replaces one there.
+- The old `<userData>/singleplayer/data/players/main` is not migrated, under
+  the no-migrations licence below.
+
 ## Single player's characters and commands
 
-A character is `data/players/main/<name>.sav`, and the engine finds it by
-`toSafeName(typed)`. `src/shared/names.ts` and `src/main/singleplayer/save.ts`
-are ports of the pinned engine: `JString.ts`, `Packet.getcrc`, `Player.ts`'s
-level table and combat formula, and the checks in `PlayerLoading.load`. A change
-to the engine's names or to its save format before the varps has to be made
-there too. The fixture tests are what catch a slip.
+A character is `worlds/<rev>/data/players/main/<name>.sav`, and the engine finds
+it by `toSafeName(typed)`. `src/shared/names.ts` and `src/main/singleplayer/save.ts`
+are ports of the pinned engines: `JString.ts`, `Packet.getcrc`, `Player.ts`'s
+level table and combat formula, and the checks in `PlayerLoading.load`, which
+274 and 289 share byte for byte as of 2026-09-19. A change to the engine's names
+or to its save format before the varps has to be made there too, and a line
+whose engine differs there makes those per-revision. The fixture tests are what
+catch a slip.
 
 **Every path in the saves folder is built by `Characters.path`**, which refuses
 any name `toSafeName` would change. Nothing typed or picked reaches the file
@@ -164,11 +196,11 @@ if a later step fails, the old save is already in the trash and the refusal
 says so. Changes to the folder run one at a time, after their question is
 answered, and check again what the question was about.
 
-`engine-dist/COMMANDS.json` is written by `stage-engine.mjs` from the content
+Each build's `COMMANDS.json` is written by `stage-engine.mjs` from its content
 checkout, since the kit ships no `.rs2`. The `::` table in
-`src/shared/commands.ts` is written by hand from `ClientCheatHandler.ts`. It
-leaves out what single player can never run: the production-only commands,
-`::rebuild` and `::random`.
+`src/shared/commands.ts` is written by hand from `ClientCheatHandler.ts`, the
+same in 274 and 289. It leaves out what single player can never run: the
+production-only commands, `::rebuild` and `::random`.
 
 `node.debug` stays off. It does more than keep a player logged in: it enables
 random events for staff, in-game developer messages, and loopback map-editor
@@ -189,10 +221,14 @@ the link reaches is the whole security story. Keep these true:
 - **`worldJson` keeps `node.debug: false` and loopback hosts.** Debug on makes
   the engine serve `/data/` (the RSA key, `world.json`, every save) and accept
   writes under `/content/`. `share/invariants.test.ts` pins both; if either has
-  to change, sharing changes first.
+  to change, sharing changes first. The host keys mean something only because
+  every build carries `patches/engine/`: upstream binds `0.0.0.0` in code, so
+  a build without the patch would ignore them. The stage script's boot check
+  refuses a build that answers on a routable address.
 - **The share never follows the world's status.** A restart passes through
   `stopped`, and ending the share there would cost the link on every change in
-  World. It ends on Stop, on the last single-player window's release, or at quit.
+  World, and on every switch of build. It ends on Stop, on the last
+  single-player window's release, or at quit.
 - **cloudflared is the pinned build, checked by digest before every share**, and
   runs with `--no-autoupdate`, an empty `--config` and no `TUNNEL_*` variables.
   Bumping `CLOUDFLARED_VERSION` means new sizes and digests from GitHub's asset
@@ -247,7 +283,8 @@ behaviour, re-read the comments around it before you commit.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev` / `npm start` | run it |
 | `npm run capture` | screenshot every view — see the hazard below |
-| `npm run stage:engine` | fetch and pack the pinned engine |
+| `npm run stage:engine -- <id>` | stage a recipe into `engine-dist/` and `engine-<id>.tar.gz` |
+| `npm run pin:engine -- <id>` | write a published build's size and digest into its recipe |
 | `npm run dist` | electron-builder output |
 
 **The capture hazard.** `npm run capture` opens real windows and makes real

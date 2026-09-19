@@ -1,14 +1,18 @@
 /** The single-player world, as the shell draws it. */
 
-export type SinglePlayerStatus = 'stopped' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
+/**
+ * - missing: a window wants the world, and the selected build is not downloaded.
+ * - downloading: the same, while that build is on its way down.
+ */
+export type SinglePlayerStatus = 'stopped' | 'missing' | 'downloading' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
 
 /**
  * True while a world may be running or on its way up or down: every status
- * but stopped and failed. A change that costs a restart, or that a logout
- * could write over, asks first while this holds.
+ * but stopped, failed, and the two that wait for a build. A change that costs
+ * a restart, or that a logout could write over, asks first while this holds.
  */
 export function worldRunning(status: SinglePlayerStatus): boolean {
-    return status !== 'stopped' && status !== 'failed';
+    return status !== 'stopped' && status !== 'failed' && status !== 'missing' && status !== 'downloading';
 }
 
 /** The XP multipliers the World section offers. The engine multiplies the xp content gives by `node.xpRate` (Player.addXp). */
@@ -31,8 +35,44 @@ export interface SinglePlayerSettings {
 
 export const DEFAULT_SINGLE_PLAYER_SETTINGS: Readonly<SinglePlayerSettings> = Object.freeze({ cheats: false, xpRate: 1, members: true });
 
-/** What the bundled engine is, from resources/engine/VERSION.json. */
+/**
+ * Where a line's build stands on this computer.
+ * - absent: not downloaded.
+ * - downloading: being downloaded and checked now.
+ * - installed: on disk, and the build this kit pins.
+ * - outdated: on disk, but not the build this kit pins; it does not run until updated.
+ * - unavailable: this kit pins no build for the line, so there is nothing to download.
+ */
+export type BuildState = 'absent' | 'downloading' | 'installed' | 'outdated' | 'unavailable';
+
+/** One build line, as the Builds section and the starting page show it. */
+export interface BuildLine {
+    id: string;
+    name: string;
+    revision: number;
+    /** Something to read before choosing the line. */
+    note: string | null;
+    /** The engine and content commits the line pins, or, for the local build, the ones it was staged from. */
+    engine: string;
+    content: string;
+    /** The download's size in bytes; null when there is nothing to download. */
+    size: number | null;
+    state: BuildState;
+    /** 0 to 1 while downloading. */
+    progress: number | null;
+    /** Why the last download failed, until the next one starts. */
+    error: string | null;
+    /** The developer's own stage, engine-dist/, offered only in an unpackaged run. */
+    local: boolean;
+}
+
+/** What the build the world runs is, from its VERSION.json. */
 export interface SinglePlayerVersion {
+    /** The line it was staged from; null in a stage from before builds had recipes. */
+    id: string | null;
+    name: string | null;
+    /** The release tag naming both commits and the patch set; null likewise. */
+    tag: string | null;
     engine: string;
     content: string;
     revision: number;
@@ -45,7 +85,7 @@ export interface SinglePlayerView {
     port: number | null;
     /** The game URL while ready. */
     url: string | null;
-    /** Why it failed, while failed. */
+    /** Why it failed, while failed; why the last download failed, while missing. */
     reason: string | null;
     /** The last lines the world printed. */
     logTail: string[];
@@ -54,6 +94,12 @@ export interface SinglePlayerView {
     settings: SinglePlayerSettings;
     /** The saves folder, newest first, as last read. A character being played shows its last save. */
     characters: CharacterInfo[];
+    /** The id of the line the world runs. */
+    selected: string;
+    /** That line's revision: world.json's, and the world folder the characters above live in. */
+    revision: number;
+    /** Every line, and where its build stands on this computer. */
+    builds: BuildLine[];
 }
 
 /** What the kit reads from the head of a save. */
