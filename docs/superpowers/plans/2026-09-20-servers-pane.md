@@ -533,10 +533,10 @@ git commit -m "feat: every window offers a servers pane"
 - [ ] **Step 1: Add the channels.** `src/shared/ipc.ts`, in the flat `IPC` object, every value prefixed `zanaris:`:
 
 ```ts
-serversOpen: 'zanaris:servers:open',
-serversStartup: 'zanaris:servers:startup',
-serversAdd: 'zanaris:servers:add',
-serversRemove: 'zanaris:servers:remove',
+serversOpen: 'zanaris:servers-open',
+serversStartup: 'zanaris:servers-startup',
+serversAdd: 'zanaris:servers-add',
+serversRemove: 'zanaris:servers-remove',
 ```
 
 No `servers:list` channel — the view rides `ShellState`, as chat's does. (`IPC.chatState` is a dead constant for exactly this reason; do not copy it.)
@@ -568,8 +568,10 @@ servers: {
 
 ```ts
 /**
- * Everything that must happen after the catalog or the startup set changes
- * from inside a pane. The menu is rebuilt so File > New Window For agrees,
+ * Everything that must happen after the catalog changes from inside a pane.
+ * The startup set does not come through here — it touches no file and no menu,
+ * so its handler does the smaller push itself. The menu is rebuilt so File >
+ * New Window For agrees,
  * every window is pushed because this one's change is app-wide, and
  * `catalogSeen` is refreshed so the on-focus reload does not mistake our own
  * write for somebody editing servers.json underneath us.
