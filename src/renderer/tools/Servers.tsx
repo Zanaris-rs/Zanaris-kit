@@ -17,7 +17,7 @@ const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
 const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
 
 /** A secondary action: stone, a dim 13px label that lights on hover, and spent when it cannot be used. Same shape as `Timers.tsx`'s. */
-function QuietButton({ onClick, disabled = false, children }: { onClick: () => void; disabled?: boolean; children: ReactNode }): ReactNode {
+function QuietButton({ onClick, disabled = false, children }: { onClick?: () => void; disabled?: boolean; children: ReactNode }): ReactNode {
     return (
         <button type="button" disabled={disabled} onClick={onClick} style={BUTTON_SIZE} className="btn group shrink-0">
             <span className={disabled ? 'text-faint' : 'text-dim group-hover:text-cream'}>{children}</span>
@@ -25,8 +25,31 @@ function QuietButton({ onClick, disabled = false, children }: { onClick: () => v
     );
 }
 
+/**
+ * Runs an IPC request that answers null or a refusal: marks it busy while in
+ * flight, and on an answer either runs `onDone` (nothing to say — the caller
+ * decides what "worked" means, since a removed row's own answer is to
+ * disappear when the pane's next state arrives, where a saved form's is to
+ * clear itself) or shows the refusal. Shared by the row's Remove and the add
+ * form's Save so a refusal — a built-in guard, or a race with another
+ * window's own Remove — is never silently dropped.
+ */
+async function send(request: Promise<string | null>, setBusy: (busy: boolean) => void, setRefusal: (refusal: string | null) => void, onDone?: () => void): Promise<void> {
+    setBusy(true);
+    try {
+        const refused = await request;
+        if (refused === null) onDone?.();
+        else setRefusal(refused);
+    } finally {
+        setBusy(false);
+    }
+}
+
 /** One line of the catalog: its name, revision if it has one, notes if any, how many windows have it open, an Open button, a startup checkbox, and Remove where the row allows it. */
 function Row({ row }: { row: ServerRow }): ReactNode {
+    const [busy, setBusy] = useState(false);
+    const [refusal, setRefusal] = useState<string | null>(null);
+
     return (
         <li className="border-b border-edge-dark px-2 py-1.5 last:border-b-0">
             <div className="flex min-w-0 items-center gap-1">
@@ -46,12 +69,22 @@ function Row({ row }: { row: ServerRow }): ReactNode {
                     Open at startup
                 </label>
                 {row.removable && (
-                    /* Text, not a button: removing is rare, and a red slab beside Save is the loudest thing in the pane. Same shape as `Timers.tsx`'s Delete. */
-                    <button type="button" className="group ml-auto" onClick={() => void window.zanaris.servers.remove(row.id)}>
+                    /* Text, not a button: removing is rare, and a red slab beside Save is the loudest thing in the pane. Routed through the same `send` round-trip as `Timers.tsx`'s Delete, so the built-in guard and a race with another window's own Remove both surface here rather than vanishing silently. */
+                    <button
+                        type="button"
+                        disabled={busy}
+                        className="group ml-auto"
+                        onClick={() => void send(window.zanaris.servers.remove(row.id), setBusy, setRefusal)}
+                    >
                         <span className="text-[12px] text-dim underline-offset-2 group-hover:text-alarm group-hover:underline">Remove</span>
                     </button>
                 )}
             </div>
+            {refusal && (
+                <p role="alert" className="text-[12px] text-warn">
+                    {refusal}
+                </p>
+            )}
         </li>
     );
 }
@@ -119,20 +152,9 @@ function AddServerForm({ onDone }: { onDone: () => void }): ReactNode {
         setRefusal(null);
     };
 
-    const send = async (request: Promise<string | null>): Promise<void> => {
-        setBusy(true);
-        try {
-            const refused = await request;
-            if (refused === null) setDraft(EMPTY_DRAFT);
-            else setRefusal(refused);
-        } finally {
-            setBusy(false);
-        }
-    };
-
     const submit = (event: FormEvent): void => {
         event.preventDefault();
-        void send(window.zanaris.servers.add(toInput(draft)));
+        void send(window.zanaris.servers.add(toInput(draft)), setBusy, setRefusal, () => setDraft(EMPTY_DRAFT));
     };
 
     return (
@@ -185,9 +207,7 @@ export default function Servers({ view }: { view: ServersView }): ReactNode {
                         Add a server
                     </button>
                 ) : (
-                    <QuietButton disabled onClick={() => setAdding(true)}>
-                        Add a server
-                    </QuietButton>
+                    <QuietButton disabled>Add a server</QuietButton>
                 )}
             </div>
         </div>
