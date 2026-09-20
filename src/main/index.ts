@@ -1762,11 +1762,14 @@ app.whenReady().then(async () => {
         await captureAndExit(CAPTURE_DIR);
         return;
     }
-    // The servers ticked in the pane, resolved against the catalog by the pure,
-    // tested `startupServers` — never a condition worked out here. Its own
-    // fallback to the catalog's first entry is what makes a launch into zero
-    // windows impossible, so there is nothing to guard here either.
-    for (const server of startupServers(appState.startupIds(), catalog.list())) openServer(server);
+    // `startupServers` falls back to the catalog's first entry, so an empty answer
+    // means the catalog itself is empty — the one case a launch cannot open a
+    // window for. `actions.newWindow` already says so, and says it the same way
+    // the File menu does, so the empty list is handed back to it rather than
+    // given a second dialog of its own.
+    const opening = startupServers(appState.startupIds(), catalog.list());
+    if (opening.length === 0) actions.newWindow();
+    else for (const server of opening) openServer(server);
 });
 
 app.on('activate', () => {
