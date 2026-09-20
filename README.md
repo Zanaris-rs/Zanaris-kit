@@ -47,10 +47,21 @@ a newer version, adds Help > Update Available, which opens that page. Set
 
 There is no launcher or management window; there are only game windows. New
 ones come from the **File menu**: New Window (Cmd/Ctrl+N) opens another window
-of the focused window's server, and New Window For lists the catalog. At
-startup the app opens the first server in the catalog, Lost City. On macOS the
-app keeps running with no windows and the dock menu opens one; elsewhere
+of the focused window's server, and New Window For lists the catalog. On macOS
+the app keeps running with no windows and the dock menu opens one; elsewhere
 closing the last window quits, since the menu lives in the window.
+
+The catalog itself is also a pane, **Servers**, offered from **Add pane** in
+every window like any other tool. Each row shows how many windows of that
+server are open, an Open button that starts one, and a checkbox for whether a
+launch opens it: tick two servers and relaunching opens both, untick every row
+and a launch falls back to the catalog's first entry, exactly what an empty
+list has always done. The same pane adds a server through a short form and
+removes one — except the handful the kit ships with, which nothing in the app
+can put back once gone, so the pane does not offer to take them out. The first
+window on a fresh profile shows Servers under the game instead of chat, since
+there is nothing to choose from until the catalog has been seen; every window
+after that opens on chat as before.
 
 A **server window** is bound to one catalog entry for its whole life. The game
 pane's own header reads "Lost City · W5 · low · 43 ms": the server, the world,
@@ -284,8 +295,10 @@ date it was created.
 Chat is a pane like anything else: drag its header to wherever you want it, drag
 its seams, close it. A new window opens with it already there, in a pane below the game —
 chat is the kit's own reason to be open instead of a browser tab, and a pane
-nobody knows is there is a pane nobody opens. Closed, it comes back from **Add
-pane** in the tab bar, as a column down the tab's right edge.
+nobody knows is there is a pane nobody opens. The one exception is a fresh
+profile's first window, which opens on the Servers pane instead (see What it
+does, above). Closed, chat comes back from **Add pane** in the tab bar, as a
+column down the tab's right edge.
 
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short

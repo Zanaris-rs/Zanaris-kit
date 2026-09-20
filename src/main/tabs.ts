@@ -53,9 +53,9 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  * unless the server's client page needs more (`LOSTCITY_GAME_PREFERRED_HEIGHT`).
  *
  * The game keeps its preferred height whenever the window has room for that
- * and a chat pane above the floor: a canvas cut off at the bottom is the one
- * cost here a player cannot scroll or read past. On a display too short for
- * that, chat gives way down to the floor first and the game takes the rest;
+ * and the bottom pane above the floor: a canvas cut off at the bottom is the
+ * one cost here a player cannot scroll or read past. On a display too short
+ * for that, it gives way down to the floor first and the game takes the rest;
  * only below two floors are they shared in proportion, and there the solver's
  * own minimums decide. Nothing remembers these numbers — they are the shares
  * the split starts with, and the fractions carry them from there.

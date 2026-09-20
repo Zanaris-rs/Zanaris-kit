@@ -60,6 +60,31 @@ Two properties in there are load-bearing and easy to break —
   so that one is merged into the parent (`absorb`). Every edge drop goes through
   a close, so without it an ordinary drag nests columns in columns.
 
+`TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved layout file
+carries tool ids between people — that is the whole point of saving one — and
+`readContent` checks every leaf's id against `TOOL_IDS` before the tree is
+trusted at all. One leaf naming an id the array no longer holds sinks the
+whole read: `readLayout` refuses the entire file rather than that one pane,
+and whoever tried to open it sees "That file isn't a Zanaris Kit layout" over
+a tab left exactly as it was. `instantiateLayout`'s own empty-pane fallback
+is a different, narrower thing — a tool `TOOL_IDS` still recognises but this
+particular window does not currently offer, Hiscores on a server with none or
+Your world outside its own window, which is meant to happen and costs only
+that pane. So an id, once shipped, is never removed or renamed: a kit that
+stopped knowing one would cost someone their whole saved arrangement, not just
+the pane that used it, the day they tried to open it here.
+
+A catalog entry the kit ships with cannot be removed from the Servers pane,
+for a plain reason: `Catalog.load` never puts a missing built-in back. At file
+version 5 `migrateCatalog` only validates what is already there, and the four
+refresh functions (`refreshYourWorld`, `refreshHiscores`, `refreshBookmarks`,
+`refreshTimers`) touch only entries already present — none of them re-adds one
+that is gone. So removing a built-in is permanent short of deleting
+`servers.json` by hand. The guard is `isRemovable`, in `src/main/servers.ts`;
+`Catalog.remove` itself is deliberately left as a general primitive, free to
+remove anything a caller hands it, because the rule about which callers may
+belongs at the one place that decides, not inside the primitive.
+
 > The old invariant said the opposite: opening chrome must never resize the
 > game, because resizing cost the login. The second half was never true —
 > `setBounds` does not reload a `WebContentsView`, only `loadURL` does — and the

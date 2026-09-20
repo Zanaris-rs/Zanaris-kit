@@ -1541,6 +1541,21 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] your world: ${single.state().yourWorld?.status} on port ${single.state().yourWorld?.port}`);
         }
 
+        // The Servers pane: the catalog as a newcomer meets it, with Lost City's
+        // row showing an open window and the add form below the list.
+        {
+            const first = opened[0];
+            if (first) {
+                first.window.moveTop();
+                first.focus();
+                await wait(500);
+                showTool(first, 'servers');
+                await wait(500);
+                await shoot(`${first.state().server.id}-servers`, first);
+                log(`[capture] servers pane lists ${first.state().servers.rows.length} servers`);
+            }
+        }
+
         // The reference pane. Last, because it is the one thing here that
         // changes the window's width as well as its chrome, and every shot
         // above is of a window whose game rect the pane has not touched.
