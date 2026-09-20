@@ -1542,18 +1542,23 @@ async function captureAndExit(dir: string): Promise<void> {
         }
 
         // The Servers pane: the catalog as a newcomer meets it, with Lost City's
-        // row showing an open window and the add form below the list.
+        // row showing an open window and the Add a server button below the list.
+        //
+        // A window of its own rather than `first` or `hopper`: both have been
+        // split and grown by every pass above and, by now, carry too many panes
+        // at 765px for `canAppendColumn` to fit one more — Add pane would grey
+        // Servers out rather than open it. A freshly opened window is just game
+        // and chat, with the width to spare.
         {
-            const first = opened[0];
-            if (first) {
-                first.window.moveTop();
-                first.focus();
-                await wait(500);
-                showTool(first, 'servers');
-                await wait(500);
-                await shoot(`${first.state().server.id}-servers`, first);
-                log(`[capture] servers pane lists ${first.state().servers.rows.length} servers`);
-            }
+            const serversWindow = openServer(first.state().server);
+            log(`[capture] ${serversWindow.state().title}: ${await loaded(serversWindow)}`);
+            serversWindow.window.moveTop();
+            serversWindow.focus();
+            await wait(500);
+            showTool(serversWindow, 'servers');
+            await wait(500);
+            await shoot(`${serversWindow.state().server.id}-servers`, serversWindow);
+            log(`[capture] servers pane lists ${serversWindow.state().servers.rows.length} servers`);
         }
 
         // The reference pane. Last, because it is the one thing here that

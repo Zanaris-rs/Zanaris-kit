@@ -59,9 +59,11 @@ and a launch falls back to the catalog's first entry, exactly what an empty
 list has always done. The same pane adds a server through a short form and
 removes one — except the handful the kit ships with, which nothing in the app
 can put back once gone, so the pane does not offer to take them out. The first
-window on a fresh profile shows Servers under the game instead of chat, since
-there is nothing to choose from until the catalog has been seen; every window
-after that opens on chat as before.
+window on a fresh profile shows Servers under the game instead of chat,
+because nothing else on screen ever says the kit runs more than Lost City:
+New Window For lists the rest of the catalog, but that is a menu nobody opens
+without already suspecting there is something behind it. Every window after
+that opens on chat as before.
 
 A **server window** is bound to one catalog entry for its whole life. The game
 pane's own header reads "Lost City · W5 · low · 43 ms": the server, the world,
@@ -438,9 +440,10 @@ of the three only if the new directory has not got it already, since Chromium
 builds that directory during startup before any of our code runs. See the note
 at the top of `src/main/index.ts`.
 
-Until the settings panel arrives, the list is edited as a file: File > Edit
-Server List… opens it in your editor, and the app re-reads it when it regains
-focus, or from File > Reload Server List. A file that cannot be read is renamed
+The Servers pane adds and removes whole entries; changing one already there —
+its address, its revision, its worlds source — is still done as a file:
+File > Edit Server List… opens it in your editor, and the app re-reads it when
+it regains focus, or from File > Reload Server List. A file that cannot be read is renamed
 to `servers.json.broken-<timestamp>` and the defaults are written in its
 place; a message box says so. A version 1 file from the launcher-era build
 (one entry per world) is migrated in place: its built-in entries become the
