@@ -165,7 +165,11 @@ export interface ServerWindowDeps {
      * app-wide definitions move, and the window reads them again.
      */
     timers: () => { listed: ListedTimer[]; customsFull: boolean };
-    /** The Servers pane's rows: the catalog, which servers a launch opens and how many windows each has open. A getter for the same reason as `chat` and `timers` — the window only ever reads it. */
+    /**
+     * The Servers pane's rows: the catalog, which servers a launch opens and
+     * how many windows each has open. A getter for the same reason as `chat`
+     * and `timers` — the window only ever reads it.
+     */
     servers: () => ServersView;
 }
 

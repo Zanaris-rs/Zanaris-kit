@@ -293,13 +293,17 @@ function focusedServerWindow(): ServerWindow | undefined {
     return [...serverWindows.values()].find(sw => sw.window === focused);
 }
 
-/** How many windows each server has open, for the Servers pane's rows. */
+/**
+ * How many windows each server has open, for the Servers pane's rows.
+ *
+ * Counted from `windows.list()`, which reads each window's spec, and never
+ * from `sw.state()`. `state()` now carries the Servers view, the view is built
+ * with these counts, so a count taken through `state()` would call the very
+ * function that called it — one window is enough to recurse forever.
+ */
 function windowCounts(): Map<string, number> {
     const counts = new Map<string, number>();
-    for (const sw of serverWindows.values()) {
-        const id = sw.state().server.id;
-        counts.set(id, (counts.get(id) ?? 0) + 1);
-    }
+    for (const open of windows.list()) counts.set(open.serverId, (counts.get(open.serverId) ?? 0) + 1);
     return counts;
 }
 
