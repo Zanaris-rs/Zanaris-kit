@@ -283,7 +283,7 @@ export function shareDialogs(opts: { asset: CloudflaredAsset; installed: boolean
         detail: [
             'Anyone who has the link can join your world and log in as any character, yours included: a world on this computer checks no passwords. Only give it to people you trust.',
             ...(opts.cheats ? ['Cheats are on, so everyone who joins can use them too.'] : []),
-            'The link changes every time you share. It closes when you stop sharing, close the last Single player window, or quit.'
+            'The link changes every time you share. It closes when you stop sharing, close the last window for your world, or quit.'
         ].join('\n\n'),
         confirm: 'Share'
     });

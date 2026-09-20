@@ -45,7 +45,7 @@ test('the built-in list is per server, Lost City first, with the settled revisio
 test('the single-player entry runs on this computer and carries the default line\'s revision', () => {
     const sp = DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!;
     assert.equal(sp.kind, 'singleplayer');
-    assert.equal(sp.name, 'Single player');
+    assert.equal(sp.name, 'Your world');
     assert.equal(sp.url, 'http://127.0.0.1/rs2.cgi?lowmem=1');
     assert.equal(sp.revision, 274);
     assert.equal(sp.worlds, null);

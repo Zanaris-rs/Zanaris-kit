@@ -78,7 +78,7 @@ export default function SinglePlayer({ view, share }: { view: SinglePlayerView; 
              * buttons with aria-current, since there is no tabpanel here that a
              * tablist could point at.
              */}
-            <div role="group" aria-label="Single player" className="mt-2.5 flex flex-wrap items-center gap-[5px] px-2.5">
+            <div role="group" aria-label="Your world" className="mt-2.5 flex flex-wrap items-center gap-[5px] px-2.5">
                 {SECTIONS.filter(section => section.id !== 'friends' || share).map(section => (
                     <Tab key={section.id} role="button" label={section.label} open={open === section.id} onSelect={() => setOpen(section.id)} />
                 ))}

@@ -98,7 +98,7 @@ jobs:
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "$name build $tag" \
-            --notes "Single player's $name build, staged from $RECIPE: engine $engine, content $content. Pin it with \`npm run pin:engine -- $RECIPE\`."
+            --notes "Your world's $name build, staged from $RECIPE: engine $engine, content $content. Pin it with \`npm run pin:engine -- $RECIPE\`."
           size=$(stat -c %s "$file")
           sha=$(sha256sum "$file" | cut -d' ' -f1)
           {

@@ -141,7 +141,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
     {
         id: 'singleplayer',
         kind: 'singleplayer',
-        name: 'Single player',
+        name: 'Your world',
         // The port is applied at runtime: the world is started on a free one.
         url: 'http://127.0.0.1/rs2.cgi?lowmem=1',
         // The default line's; a stored entry follows whichever line the world runs.
