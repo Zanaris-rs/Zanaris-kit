@@ -741,7 +741,14 @@ bottomTool: () => {
 - [ ] **Step 3: Open the set.** Replace the lone `actions.newWindow();` at `:1662`:
 
 ```ts
-for (const server of startupServers(appState.startupIds(), catalog.list())) openServer(server);
+// `startupServers` falls back to the catalog's first entry, so an empty answer
+// means the catalog itself is empty — the one case a launch cannot open a
+// window for. `actions.newWindow` already says so, and says it the same way
+// the File menu does, so the empty list is handed back to it rather than
+// given a second dialog of its own.
+const opening = startupServers(appState.startupIds(), catalog.list());
+if (opening.length === 0) actions.newWindow();
+else for (const server of opening) openServer(server);
 ```
 
 Leave `app.on('activate')` and `second-instance` calling `actions.newWindow()` — those are "give me a window", not "start the app".
