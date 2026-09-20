@@ -12,7 +12,7 @@ const VERSION_289 = JSON.stringify({ id: 'lostcity-289', name: 'Lost City 289', 
 const HOME = '/worlds/274';
 
 function line(id: string, revision: number): BuildLine {
-    return { id, name: `Lost City ${revision}`, revision, note: null, engine: 'e', content: 'c', size: 50_000_000, state: 'absent', progress: null, error: null, local: false };
+    return { id, name: `Lost City ${revision}`, revision, note: null, engine: 'e', content: 'c', size: 50_000_000, state: 'absent', progress: null, error: null };
 }
 
 /**
@@ -46,7 +46,7 @@ class FakeBuilds implements BuildsHandle {
                 land: () => {
                     this.pending.delete(id);
                     const revision = this.lineList.find(l => l.id === id)!.revision;
-                    this.installs.set(id, { id, resources: `/res${revision === 274 ? '' : revision}`, revision, tag: null });
+                    this.installs.set(id, { id, resources: `/res${revision === 274 ? '' : revision}`, revision, tag: `engine-${id}` });
                     this.onLand(id);
                     this.notify();
                     resolve();
@@ -141,7 +141,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
     };
     if (over.staged !== false) {
         stage('/res', VERSION);
-        builds.installs.set('lostcity-274', { id: 'lostcity-274', resources: '/res', revision: 274, tag: null });
+        builds.installs.set('lostcity-274', { id: 'lostcity-274', resources: '/res', revision: 274, tag: 'engine-lostcity-274' });
     }
     builds.onLand = id => stage(id === 'lostcity-274' ? '/res' : '/res289', id === 'lostcity-274' ? VERSION : VERSION_289);
     if (over.stamp) files.set(`${HOME}/engine.stamp`, VERSION);

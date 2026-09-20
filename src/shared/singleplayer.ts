@@ -52,7 +52,7 @@ export interface BuildLine {
     revision: number;
     /** Something to read before choosing the line. */
     note: string | null;
-    /** The engine and content commits the line pins, or, for the local build, the ones it was staged from. */
+    /** The engine and content commits the line pins. */
     engine: string;
     content: string;
     /** The download's size in bytes; null when there is nothing to download. */
@@ -62,8 +62,6 @@ export interface BuildLine {
     progress: number | null;
     /** Why the last download failed, until the next one starts. */
     error: string | null;
-    /** The developer's own stage, engine-dist/, offered only in an unpackaged run. */
-    local: boolean;
 }
 
 /** What the build the world runs is, from its VERSION.json. */

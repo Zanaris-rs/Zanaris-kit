@@ -69,7 +69,7 @@ function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: bool
                     </QuietButton>
                 )}
                 {/* Text, not a button, as Delete is in Characters: rare, and main asks first. The running build is refused by main too. */}
-                {onDisk && !line.local && !(inUse && running) && (
+                {onDisk && !(inUse && running) && (
                     <button type="button" disabled={busy} onClick={() => act(() => api.removeBuild(line.id))} className="group ml-0.5">
                         <span className="text-[12px] text-dim underline-offset-2 group-hover:text-alarm group-hover:underline">Remove</span>
                     </button>

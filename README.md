@@ -645,10 +645,11 @@ it did not ship with. `RELEASE.md` says how to move a build and how a release is
 cut. Everything under `engine-dist/`, `.engine-work/`, `engine-*.tar.gz` and
 `release/` is build output.
 
-In dev, a staged `engine-dist/` is also listed in Builds as "Local build
-(engine-dist)", so a stage can be played without publishing it; a packaged kit
-never offers it. Capture mode runs it when it is there, and skips single player
-when it is not.
+A staged `engine-dist/` is not a build the kit will run. It is what
+`stage:engine` hands to the archive and to CI, and nothing else: playing a
+stage means publishing it as a prerelease and pinning it, which is what
+`engines.yml` and `pin:engine` are for. The kit offers no unpinned build,
+packaged or not.
 
 Capture mode (`ZANARIS_CAPTURE=<dir>`, settle time `ZANARIS_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,
@@ -657,8 +658,10 @@ child views. It opens the panel on a loaded window, opens the Worlds tool,
 waits for the list, switches to another world and captures that, opens the
 Hiscores tool on each server that has one and looks a single name up there —
 one request per server and no retry, since Lost City rate-limits after a
-handful inside a minute — opens the Single player tool on the window running
-the local build, then opens a second instance of that server. It keeps its
+handful inside a minute — opens the Single player tool, then opens a second
+instance of that server. Its own profile has downloaded nothing, so it reads
+the builds from the real one; a line the real profile has not downloaded is
+skipped rather than left waiting. It keeps its
 own `state.json` beside the screenshots so a test switch never changes what
 the next real launch opens. A view that has no frame yet is retried, then
 skipped.
@@ -769,9 +772,8 @@ once the VERSION.json it unpacked to names the pinned line, commits and tag;
 nothing half-downloaded or unexpected sits where the world could run it. Every
 build was staged with `patches/engine/` applied and passed the stage script's
 boot check — loopback-only binds, `POST /shutdown`, a populated map — so the
-sharing guarantees above hold for each of them, not only for one. The one build
-the kit runs unpinned is the developer's own `engine-dist/`, and only while the
-kit runs from source.
+sharing guarantees above hold for each of them, not only for one. There is no
+build the kit runs unpinned: `engine-dist/` is staging output, never a line.
 
 ## Layout of the source
 

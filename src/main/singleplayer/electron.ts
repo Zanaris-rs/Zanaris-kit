@@ -12,19 +12,13 @@ import { readCommandsFile, type CommandRef } from '../../shared/commands.ts';
 import { artifactUrl } from '../../shared/engines.ts';
 import { downloadChecked, extractTgz } from '../download.ts';
 
-/** Single player's folder: the builds, and one world folder per revision holding its characters. */
-export function singlePlayerHome(): string {
-    return join(app.getPath('userData'), 'singleplayer');
-}
-
 /**
- * The developer's own stage, offered as a build only while the kit runs from
- * source. A packaged kit runs nothing it did not download and check.
+ * Single player's folder: the builds, and one world folder per revision holding
+ * its characters. In a profile of its own when one is named — see the builds
+ * folder a capture asks for in index.ts.
  */
-function localBuild(): string | null {
-    if (app.isPackaged) return null;
-    const dir = join(app.getAppPath(), 'engine-dist');
-    return existsSync(join(dir, 'VERSION.json')) ? dir : null;
+export function singlePlayerHome(userData: string = app.getPath('userData')): string {
+    return join(userData, 'singleplayer');
 }
 
 /** A build's list of the content's debug procs, or null when it has none the kit can read. */
@@ -36,11 +30,14 @@ export function readCommands(resources: string): CommandRef[] | null {
     }
 }
 
-export function buildStoreDeps(log: (msg: string) => void): BuildStoreDeps {
+/**
+ * `dir` is where the builds live. It is normally `singlePlayerHome()/builds`;
+ * a capture passes the real profile's, since its own has downloaded nothing.
+ */
+export function buildStoreDeps(dir: string, log: (msg: string) => void): BuildStoreDeps {
     return {
-        dir: join(singlePlayerHome(), 'builds'),
+        dir,
         recipes: bundledRecipes(),
-        local: localBuild(),
         join,
         fs: {
             exists: existsSync,

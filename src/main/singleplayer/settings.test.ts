@@ -75,8 +75,7 @@ const LINE: BuildLine = {
     size: 54_166_007,
     state: 'installed',
     progress: null,
-    error: null,
-    local: false
+    error: null
 };
 
 test('switching builds asks as a restart, and says where the characters are', () => {

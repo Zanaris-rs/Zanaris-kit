@@ -161,8 +161,11 @@ tag, size and sha-256. The design is
   checks size and digest, unpacks, checks the VERSION.json it unpacked to, and
   only then renames into place. A build on disk that is not this kit's pin is
   *outdated* and does not start: a newer kit may rely on something it lacks.
-  The one exception is `engine-dist/`, listed as the local build only while
-  `!app.isPackaged`. Never offer it, or anything unpinned, in a packaged kit.
+  There is no exception, packaged or not: `engine-dist/` is what `stage:engine`
+  hands to CI and to the archive, never a build the kit offers. Playing a stage
+  means publishing it as a prerelease and pinning it. A capture reads the
+  builds from the real profile, since its own has downloaded nothing, and
+  those are pinned like any other.
 - **A recipe must take `patches/engine/` and pass the boot check**, or it
   cannot be a line: the sharing invariants below depend on both. That is what
   "any 04-like server" means here — shaped like Lost City 274 (its layout,

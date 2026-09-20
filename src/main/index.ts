@@ -25,8 +25,8 @@ import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { SinglePlayerService } from './singleplayer/service';
-import { BuildStore, LOCAL_BUILD } from './singleplayer/buildStore';
-import { buildStoreDeps, electronDeps, readCommands } from './singleplayer/electron';
+import { BuildStore } from './singleplayer/buildStore';
+import { buildStoreDeps, electronDeps, readCommands, singlePlayerHome } from './singleplayer/electron';
 import { recipeRevision } from './singleplayer/recipes';
 import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/singleplayer';
 import type { CommandRef } from '../shared/commands';
@@ -67,7 +67,11 @@ const log = (msg: string): void => console.log(msg);
  * stdout — saying nothing about why. That is a silent no-op with a green exit
  * code, which is exactly the failure the capture hazard in README.md warns
  * about wearing a different face.
+ *
+ * The real profile's path is kept first: builds are the one thing a capture
+ * still reads from it. See REAL_USER_DATA below.
  */
+const REAL_USER_DATA = app.getPath('userData');
 if (process.env.ZANARIS_CAPTURE) app.setPath('userData', join(app.getPath('appData'), 'zanaris-kit-capture'));
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -992,7 +996,7 @@ ipcMain.handle(IPC.singlePlayerCommands, (event): CommandRef[] | null => {
     if (!singlePlayerWindow(event.sender) || !singlePlayer || !builds) return null;
     const build = builds.installed(singlePlayer.view().selected);
     if (!build) return null;
-    const key = `${build.resources}\0${build.tag ?? ''}`;
+    const key = `${build.resources}\0${build.tag}`;
     if (commands?.build !== key || commands.list === null) commands = { build: key, list: readCommands(build.resources) };
     return commands.list;
 });
@@ -1171,9 +1175,9 @@ async function captureAndExit(dir: string): Promise<void> {
 
     try {
         const started = Date.now();
-        // Single player needs its build on disk: in a run from source, engine-dist/
-        // when staged. Where there is none the entry is dropped rather than left
-        // to wait on a download.
+        // Single player needs its build on disk. Where there is none the entry is
+        // dropped rather than left to wait on a download — so a capture wants the
+        // selected build already downloaded in the real profile.
         const playable = singlePlayer !== null && builds?.installed(singlePlayer.view().selected) != null;
         const servers = catalog.list().filter(s => s.kind !== 'singleplayer' || playable);
         if (servers.length < catalog.list().length) log('[capture] singleplayer skipped: its build is not on disk');
@@ -1597,10 +1601,12 @@ app.whenReady().then(async () => {
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();
-    builds = new BuildStore(buildStoreDeps(log));
-    // A capture photographs single player running, and its profile of its own
-    // has downloaded nothing: it runs the developer's stage when there is one.
-    if (CAPTURE_DIR && builds.installed(LOCAL_BUILD)) appState.setSinglePlayerBuild(LOCAL_BUILD);
+    // A capture photographs single player running, and the profile of its own it
+    // keeps its state in has downloaded nothing. So the builds — 50 MB each, and
+    // pinned and checked whichever profile they sit in — are read from the real
+    // one, rather than downloaded again on every run. The characters are not:
+    // they stay in the capture profile, where a fresh world is what is wanted.
+    builds = new BuildStore(buildStoreDeps(join(singlePlayerHome(CAPTURE_DIR ? REAL_USER_DATA : userData), 'builds'), log));
     const world = new SinglePlayerService(
         electronDeps({
             baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
