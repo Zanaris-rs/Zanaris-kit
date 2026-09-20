@@ -672,7 +672,14 @@ Surface `refusal` in `<p role="alert" className="text-[12px] text-warn">`. Exact
 )}
 ```
 
-- [ ] **Step 4: Fix the stale comment.** `src/shared/catalog.ts:44` — `NewServerInput` is documented as "What the launcher's add form collects", naming a launcher that does not exist. Change to: *"What the Servers pane's add form collects. `createServer` turns it into an entry, and runs on both sides — in the form and again in main — so the two cannot refuse differently."*
+- [ ] **Step 4: One authority for validation, and two comments that must say so.**
+
+`main/catalog.ts` imports `node:fs` on its first line, so the renderer cannot import `createServer`, and no renderer file imports runtime code from `main/` today. The form therefore does **not** re-run `createServer`. It submits, and surfaces main's refusal through the `send` round-trip above — which is what `ChatSettings` does with its refusals anyway. Save is disabled only while name or address is blank; that is a blank check, not a second copy of the rules.
+
+Two comments have to match that:
+
+1. `src/shared/catalog.ts:44` — `NewServerInput` is documented as "What the launcher's add form collects", naming a launcher that does not exist. Change to: *"What the Servers pane's add form collects. `createServer`, in main, turns it into an entry or says why it cannot; the form shows that answer rather than deciding for itself, since `catalog.ts` reaches the file system and the renderer cannot import it."*
+2. `src/main/servers.ts` — `readNewServerInput`'s docstring currently claims the form "has already run itself" the same function, "as the chat settings and timer forms do it". That is now false and, by this repo's own rule, a defect. Cut that clause: the docstring should say the reader checks shape only, and that `createServer` in main is the single authority on what the values mean.
 
 - [ ] **Step 5: Verify by hand.** `npm run dev`. Add a server with a bad address and confirm the refusal is the same sentence `createServer` gives. Add a good one, confirm it appears in every open pane and in File > New Window For without changing focus. Confirm built-in rows have no Remove.
 
@@ -806,7 +813,7 @@ End to end, by hand:
 2. **Ticking two servers** and relaunching opens two windows, cascaded. Unticking both opens one, Lost City.
 3. **Removing every startup server** from the catalog and relaunching opens one window rather than none.
 4. **Adding a server** updates every open Servers pane *and* File > New Window For with no focus change.
-5. **A bad address** in the add form gives the same sentence `createServer` returns — not a second, divergent message.
+5. **A bad address** in the add form gives the sentence `createServer` returns, surfaced after Save — there is no second copy of the rules in the renderer to diverge from it.
 6. **Built-in rows offer no Remove**, and `Catalog.remove` is still free to remove anything when called directly.
 7. **A layout file** saved with a Servers pane loads into another window as a Servers pane, not a launcher.
 8. **Your world's window** offers the Servers pane like any other.
