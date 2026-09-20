@@ -36,7 +36,7 @@ import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
-import { serversView } from './servers';
+import { isRemovable, readNewServerInput, serversView } from './servers';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -1165,6 +1165,32 @@ ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {
     if (!catalog.get(id)) return;
     appState.setStartupServer(id, on);
     for (const sw of serverWindows.values()) sw.pushState();
+});
+
+/**
+ * The add form's submit. `readNewServerInput` checks the shape only; what the
+ * values mean is `catalog.add`'s, which runs `createServer` — the one
+ * authority, since the renderer cannot import it.
+ */
+ipcMain.handle(IPC.serversAdd, (event, raw: unknown): string | null => {
+    if (!windowFor(event.sender)) return null;
+    const input = readNewServerInput(raw);
+    if (!input) return 'That is not a server the kit can add.';
+    const result = catalog.add(input);
+    if (!result.ok) return result.error;
+    catalogChanged();
+    return null;
+});
+
+ipcMain.handle(IPC.serversRemove, (event, id: unknown): string | null => {
+    if (!windowFor(event.sender)) return null;
+    if (typeof id !== 'string') return 'That is not a server.';
+    // The guard is here and in the row's `removable`, both from `isRemovable`:
+    // nothing in the app puts a removed built-in back.
+    if (!isRemovable(id)) return 'That server came with the kit and cannot be removed.';
+    if (!catalog.remove(id)) return 'That server is no longer in the list.';
+    catalogChanged();
+    return null;
 });
 
 // ── dev capture ───────────────────────────────────────────────────────────

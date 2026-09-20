@@ -40,7 +40,12 @@ export interface ServerDef {
     timers: TimerDef[];
 }
 
-/** What the launcher's add form collects. */
+/**
+ * What the Servers pane's add form collects. `createServer`, in main, turns
+ * it into an entry or says why it cannot; the form shows that answer rather
+ * than deciding for itself, since `catalog.ts` reaches the file system and
+ * the renderer cannot import it.
+ */
 export interface NewServerInput {
     name: string;
     url: string;

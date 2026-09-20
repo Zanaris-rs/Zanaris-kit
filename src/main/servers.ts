@@ -81,10 +81,10 @@ export function serversView(opts: { catalog: readonly ServerDef[]; startup: read
 /**
  * The add form as it arrives over IPC, or null.
  *
- * Shape only. What the values *mean* is `createServer`'s, which the handler
- * runs next and which the form has already run itself — the same function on
- * both sides, as the chat settings and timer forms do it, so the refusal the
- * user sees and the refusal main gives cannot drift apart.
+ * Shape only. What the values *mean* is `createServer`'s alone: `catalog.ts`
+ * imports `node:fs` on its first line, so the renderer cannot import it, and
+ * the form has no copy of its rules to run. It submits instead, and shows
+ * whatever `createServer`, in main, refuses it for.
  */
 export function readNewServerInput(x: unknown): NewServerInput | null {
     if (typeof x !== 'object' || x === null) return null;
