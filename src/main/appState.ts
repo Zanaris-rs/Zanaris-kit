@@ -350,8 +350,12 @@ export class AppState {
 
     setStartupServer(id: string, on: boolean): void {
         const at = this.startup.indexOf(id);
-        if (on && at < 0) this.startup.push(id);
-        else if (!on && at >= 0) this.startup.splice(at, 1);
+        if (on && at < 0) {
+            // The same cap readStartup enforces on the way in, so a list grown
+            // past it here does not silently lose its tail on the next load.
+            if (this.startup.length >= STARTUP_MAX) return;
+            this.startup.push(id);
+        } else if (!on && at >= 0) this.startup.splice(at, 1);
         else return;
         this.save();
     }

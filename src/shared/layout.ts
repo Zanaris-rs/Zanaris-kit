@@ -98,9 +98,11 @@ export const GAME_PREFERRED_HEIGHT = 503 + PAGE_CONTROLS_HEIGHT + PANE_HEADER_HE
 export const LOSTCITY_GAME_PREFERRED_HEIGHT = 541 + PANE_HEADER_HEIGHT;
 
 /**
- * What the chat pane below the game asks for in the arrangement a new window
+ * What the bottom pane below the game asks for in the arrangement a new window
  * opens with: the old chat dock's default height of 200, plus the header every
  * pane now has. A new window opens tall enough for both, so neither pays for the
- * other at the size nobody chose.
+ * other at the size nobody chose. Chat is what sits there ordinarily, but a fresh
+ * profile's first window gives the same strip to Servers instead — the size asked
+ * for does not change with which tool is in it, so the name stays.
  */
 export const CHAT_PREFERRED_HEIGHT = 200 + PANE_HEADER_HEIGHT;

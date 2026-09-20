@@ -563,6 +563,19 @@ test('a hand-edited startup entry that is not a string costs its own row and not
     assert.deepEqual(state.startupIds(), ['zanaris', 'lostcity']);
 });
 
+test('setStartupServer does not push past the cap readStartup enforces on the way in', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    for (let i = 0; i < 16; i++) state.setStartupServer(`s${i}`, true);
+    state.setStartupServer('s16', true);
+    assert.equal(state.startupIds().length, 16, 'the seventeenth id is dropped rather than pushed');
+    assert.ok(!state.startupIds().includes('s16'));
+    const fresh = new AppState(file);
+    fresh.load();
+    assert.deepEqual(fresh.startupIds(), state.startupIds(), 'the dropped id was never saved either');
+});
+
 test('a profile is fresh only when there was no state file at all', () => {
     const file = tempFile();
     const a = new AppState(file);

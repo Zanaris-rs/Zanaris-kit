@@ -418,6 +418,10 @@ function loadCatalog(): void {
     catalog.load();
     catalogSeen = catalogMtime();
     installAppMenu();
+    // Every window's Servers pane reads the catalog too, and has no poll of its
+    // own — it only ever learns of a change through a push. A no-op at the
+    // `whenReady` call site, where no windows exist yet.
+    for (const sw of serverWindows.values()) sw.pushState();
     if (catalog.recovered) {
         log(`[main] ${catalog.file} could not be read; the defaults were written and the old file kept beside it`);
         void dialog.showMessageBox({
@@ -1200,6 +1204,9 @@ ipcMain.handle(IPC.serversRemove, (event, id: unknown): string | null => {
     // nothing in the app puts a removed built-in back.
     if (!isRemovable(id)) return 'That server came with the kit and cannot be removed.';
     if (!catalog.remove(id)) return 'That server is no longer in the list.';
+    // Otherwise a later add can reuse this id (`uniqueId` only avoids ids that
+    // currently exist) and inherit a tick nobody meant for it.
+    appState.setStartupServer(id, false);
     catalogChanged();
     return null;
 });
@@ -1685,9 +1692,12 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
-    // Captured immediately: nothing between here and the first window may write
-    // state.json, or fresh() would no longer describe the profile this launch found.
-    firstLaunchPane = appState.fresh();
+    // Set right after load(), the only call that gives fresh() an answer, and
+    // before any window exists to read it through the bottomTool closure above.
+    // Capture pins this to false rather than asking fresh(): whether the capture
+    // profile happens to be new is not something its output should depend on, so
+    // every run photographs the same, ordinary arrangement.
+    firstLaunchPane = CAPTURE_DIR ? false : appState.fresh();
     // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
     powerMonitor.on('resume', () => {
         for (const sw of serverWindows.values()) sw.settleTimers();

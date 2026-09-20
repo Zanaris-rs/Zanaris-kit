@@ -31,7 +31,7 @@ const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /**
  * The content area a new window opens with: the game at its preferred size and
- * the chat pane below it at its own, with the seam between them
+ * the bottom pane below it at its own, with the seam between them
  * (`tabs.openWindowTabs`). The tree fills the content area below the bar
  * exactly, so anything short of this would clip the bottom of the
  * canvas at the one size nobody chose. Lost City's page is taller than the
