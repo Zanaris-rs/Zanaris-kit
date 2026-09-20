@@ -1,4 +1,4 @@
-import type { SaveProblem, SaveSummary } from '../../shared/singleplayer.ts';
+import type { SaveProblem, SaveSummary } from '../../shared/yourworld.ts';
 
 /*
  * Reads the head of a character save without the engine. The engine's reader

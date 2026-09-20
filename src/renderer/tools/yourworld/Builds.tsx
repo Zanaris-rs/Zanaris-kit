@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { worldRunning, type BuildLine, type SinglePlayerView } from '../../../shared/singleplayer';
+import { worldRunning, type BuildLine, type YourWorldView } from '../../../shared/yourworld';
 
 /*
  * `.btn` and the base `button` rule are unlayered CSS, which beats a Tailwind
@@ -37,7 +37,7 @@ function stateLabel(line: BuildLine, inUse: boolean): string {
 
 /** One build line: what it is, where it stands here, and what can be done with it. */
 function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: boolean; running: boolean; busy: boolean; act: (change: () => Promise<string | null | void>) => void }): ReactNode {
-    const api = window.zanaris.singlePlayer;
+    const api = window.zanaris.yourWorld;
     const onDisk = line.state === 'installed' || line.state === 'outdated';
     const fetchable = line.state === 'absent' || line.state === 'outdated';
     const warn = line.state === 'outdated' || line.error !== null;
@@ -69,7 +69,7 @@ function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: bool
                     </QuietButton>
                 )}
                 {/* Text, not a button, as Delete is in Characters: rare, and main asks first. The running build is refused by main too. */}
-                {onDisk && !line.local && !(inUse && running) && (
+                {onDisk && !(inUse && running) && (
                     <button type="button" disabled={busy} onClick={() => act(() => api.removeBuild(line.id))} className="group ml-0.5">
                         <span className="text-[12px] text-dim underline-offset-2 group-hover:text-alarm group-hover:underline">Remove</span>
                     </button>
@@ -84,7 +84,7 @@ function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: bool
  * this computer, and the one the world runs. The lines and their states are
  * main's; this only asks for a switch, a download or a removal.
  */
-export default function Builds({ view }: { view: SinglePlayerView }): ReactNode {
+export default function Builds({ view }: { view: YourWorldView }): ReactNode {
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const running = worldRunning(view.status);

@@ -12,15 +12,15 @@ import PaneHeader, { type Grab } from './paneHeader';
 import Tab from './tab';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
-import SinglePlayer from './tools/SinglePlayer';
+import YourWorld from './tools/YourWorld';
 import Timers from './tools/Timers';
 import Worlds from './tools/Worlds';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
 
-/** Single player names the revision of the line the world runs, which a switch changes under an open window. */
+/** Your world's header names the revision of the line it runs, which a switch changes under an open window. */
 function revisionOf(state: ShellState): string {
-    if (state.singlePlayer) return `rev ${state.singlePlayer.revision}`;
+    if (state.yourWorld) return `rev ${state.yourWorld.revision}`;
     return state.server.revision === null ? 'rev unknown' : `rev ${state.server.revision}`;
 }
 
@@ -62,7 +62,7 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
                 case 'hiscores':
                     return state.hiscores ? <Hiscores view={state.hiscores} /> : null;
                 case 'singleplayer':
-                    return state.singlePlayer ? <SinglePlayer view={state.singlePlayer} share={state.share} /> : null;
+                    return state.yourWorld ? <YourWorld view={state.yourWorld} share={state.share} /> : null;
                 case 'timers':
                     return <Timers view={state.timers} />;
             }

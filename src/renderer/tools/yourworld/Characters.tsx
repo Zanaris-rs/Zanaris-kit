@@ -1,6 +1,6 @@
 import { useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { NAME_INPUT_MAX, nameProblem, toDisplayName } from '../../../shared/names';
-import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterInfo, type CharacterOutcome, type SaveSummary, type SinglePlayerView } from '../../../shared/singleplayer';
+import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterInfo, type CharacterOutcome, type SaveSummary, type YourWorldView } from '../../../shared/yourworld';
 
 /*
  * `.btn` and the base `button` rule are unlayered CSS, which beats a Tailwind
@@ -52,7 +52,7 @@ function Row({
     /** Offers the character to another revision; null where no other revision is listed. */
     copyTo: (() => void) | null;
 }): ReactNode {
-    const api = window.zanaris.singlePlayer;
+    const api = window.zanaris.yourWorld;
     const usable = character.summary !== null;
     return (
         <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1">
@@ -91,9 +91,9 @@ function Row({
  * only asks for changes, and main asks the player before any that could lose
  * something.
  */
-export default function Characters({ view }: { view: SinglePlayerView }): ReactNode {
+export default function Characters({ view }: { view: YourWorldView }): ReactNode {
     const id = useId();
-    const api = window.zanaris.singlePlayer;
+    const api = window.zanaris.yourWorld;
     const [prompt, setPrompt] = useState<Prompt | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);

@@ -19,7 +19,7 @@ export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
 
     useEffect(() => {
         let live = true;
-        void window.zanaris.singlePlayer.commands().then(list => {
+        void window.zanaris.yourWorld.commands().then(list => {
             if (live) setProcs(list);
         });
         return () => {

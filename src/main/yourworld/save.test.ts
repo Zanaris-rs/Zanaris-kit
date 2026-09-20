@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { SaveProblem } from '../../shared/singleplayer.ts';
+import type { SaveProblem } from '../../shared/yourworld.ts';
 import { combatLevel, crc32, levelFromXp, readSave, SaveError, totalLevel, xpForLevel } from './save.ts';
 import { buildSave, fixtureSave, withChecksum } from './testSaves.ts';
 

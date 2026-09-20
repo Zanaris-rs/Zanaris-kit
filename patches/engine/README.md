@@ -18,7 +18,7 @@ merge commit and delete the file.
 
 ## 0001-single-player-hosts-staff-level-and-shutdown.patch
 
-Three changes single player needs and upstream `274` and `289` do not have. Every
+Three changes your world needs and upstream `274` and `289` do not have. Every
 default is upstream's behaviour, so a world that sets none of these runs exactly
 as it does today.
 
@@ -30,7 +30,7 @@ as it does today.
 - **`node.localStaffLevel`** (default `-1`, unset, env
   `NODE_LOCAL_STAFF_LEVEL`) and `resolveLocalStaffLevel()`.
   `src/server/login/LoginThread.ts` gives every login staff level 4 when the
-  login server is off and production is off. Single player needs both of those
+  login server is off and production is off. Your world needs both of those
   to be true and still wants cheats off by default, so the level becomes a
   setting; unset, it is the same expression as before.
 - **`POST /shutdown`** on the management port, and `src/util/Shutdown.ts`, which

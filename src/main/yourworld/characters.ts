@@ -1,5 +1,5 @@
 import { NAME_INPUT_MAX, nameProblem, toDisplayName, toSafeName } from '../../shared/names.ts';
-import { PROBLEM_TEXT, type CharacterInfo, type CharacterOutcome, type FileProblem, type ImportPick, type SaveSummary } from '../../shared/singleplayer.ts';
+import { PROBLEM_TEXT, type CharacterInfo, type CharacterOutcome, type FileProblem, type ImportPick, type SaveSummary } from '../../shared/yourworld.ts';
 import type { Confirm, Confirmation } from './confirm.ts';
 import { readSave, SaveError } from './save.ts';
 
@@ -151,7 +151,7 @@ export function deleteQuestion(name: string, running: boolean): Confirmation {
 }
 
 /**
- * The single-player characters: one file each in the saves folder, named for
+ * The characters in your world: one file each in the saves folder, named for
  * the character. Every path this builds for a character goes through `path`,
  * which takes only a name `toSafeName` leaves as it is, so no typed name can
  * reach a file outside the folder, or one the engine would never look for. A

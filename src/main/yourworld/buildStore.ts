@@ -1,9 +1,6 @@
 import type { Artifact, Recipe } from '../../shared/engines.ts';
-import type { BuildLine, BuildState, SinglePlayerVersion } from '../../shared/singleplayer.ts';
+import type { BuildLine, BuildState, YourWorldVersion } from '../../shared/yourworld.ts';
 import { parseVersion } from './config.ts';
-
-/** The id the developer's own stage is listed under. No recipe can take it: recipe ids are the kit's. */
-export const LOCAL_BUILD = 'local';
 
 /** Where downloads land and unpack, beside the builds; cleared at start and after every attempt. */
 const INCOMING = '.incoming';
@@ -14,17 +11,15 @@ export interface InstalledBuild {
     /** Its folder: VERSION.json, src/app.js and the asset trees the world copies. */
     resources: string;
     revision: number;
-    /** Null for the local build, which no release names. */
-    tag: string | null;
+    /** The release its archive came from; a build only reaches disk by being downloaded from one. */
+    tag: string;
 }
 
 export interface BuildStoreDeps {
-    /** <userData>/singleplayer/builds: one folder per line. */
+    /** <userData>/yourworld/builds: one folder per line. */
     dir: string;
     /** The lines this kit knows, in the order they are listed. */
     recipes: readonly Recipe[];
-    /** engine-dist/ in an unpackaged run, listed when it holds a stage; null when packaged. */
-    local: string | null;
     join(...parts: string[]): string;
     fs: {
         exists(path: string): boolean;
@@ -47,31 +42,26 @@ interface Flight {
 }
 
 /**
- * Single player's builds on this computer: one folder per line, each holding
+ * Your world's builds on this computer: one folder per line, each holding
  * the build the kit pins for it or nothing. A build gets there only by being
  * downloaded, checked against its pinned size and digest, unpacked beside the
  * others, checked again by the VERSION.json it unpacked to, and renamed into
  * place, so a half-downloaded or unexpected build never sits where the world
- * could run it.
- *
- * The developer's own stage, engine-dist/, is listed too in an unpackaged run.
- * It is the one build the kit runs without a pin.
+ * could run it. The kit runs no build it did not pin.
  */
 export class BuildStore {
     private readonly deps: BuildStoreDeps;
     private readonly listeners = new Set<() => void>();
     /** What each line's folder holds now, as last read. */
-    private readonly onDisk = new Map<string, SinglePlayerVersion | null>();
+    private readonly onDisk = new Map<string, YourWorldVersion | null>();
     private readonly flights = new Map<string, Flight>();
     private readonly errors = new Map<string, string>();
-    private readonly local: SinglePlayerVersion | null;
 
     constructor(deps: BuildStoreDeps) {
         this.deps = deps;
         // A quit during a download leaves this behind; nothing in it was ever trusted.
         this.clear(deps.join(deps.dir, INCOMING));
         for (const recipe of deps.recipes) this.read(recipe.id);
-        this.local = deps.local === null ? null : this.version(deps.join(deps.local, 'VERSION.json'));
     }
 
     subscribe(fn: () => void): () => void {
@@ -80,33 +70,15 @@ export class BuildStore {
     }
 
     lines(): BuildLine[] {
-        const lines = this.deps.recipes.map(recipe => this.line(recipe));
-        if (this.local) {
-            lines.push({
-                id: LOCAL_BUILD,
-                name: 'Local build (engine-dist)',
-                revision: this.local.revision,
-                note: 'Your own npm run stage:engine. Offered only while the kit runs from source.',
-                engine: this.local.engine,
-                content: this.local.content,
-                size: null,
-                state: 'installed',
-                progress: null,
-                error: null,
-                local: true
-            });
-        }
-        return lines;
+        return this.deps.recipes.map(recipe => this.line(recipe));
     }
 
     /** The build a line runs, when it is on disk and current; null for anything else. */
     installed(id: string): InstalledBuild | null {
-        if (id === LOCAL_BUILD) {
-            return this.local && this.deps.local !== null ? { id, resources: this.deps.local, revision: this.local.revision, tag: null } : null;
-        }
         const recipe = this.recipe(id);
-        if (!recipe || this.state(recipe) !== 'installed') return null;
-        return { id, resources: this.folder(id), revision: recipe.revision, tag: recipe.artifact?.tag ?? null };
+        // 'installed' is only reached through an artifact, so the tag is always there.
+        if (!recipe?.artifact || this.state(recipe) !== 'installed') return null;
+        return { id, resources: this.folder(id), revision: recipe.revision, tag: recipe.artifact.tag };
     }
 
     /**
@@ -134,7 +106,6 @@ export class BuildStore {
 
     /** Deletes a line's build. It can be downloaded again; the characters are elsewhere and untouched. */
     remove(id: string): void {
-        if (id === LOCAL_BUILD) throw new Error('The local build is your own stage, so the kit leaves it alone.');
         if (this.flights.has(id)) throw new Error('That build is downloading.');
         if (!this.recipe(id)) throw new Error(`${id} is not a build this kit knows`);
         this.deps.fs.rm(this.folder(id));
@@ -206,8 +177,7 @@ export class BuildStore {
             size: recipe.artifact?.size ?? null,
             state: this.state(recipe),
             progress: flight ? flight.progress : null,
-            error: this.errors.get(recipe.id) ?? null,
-            local: false
+            error: this.errors.get(recipe.id) ?? null
         };
     }
 
@@ -231,7 +201,7 @@ export class BuildStore {
         this.onDisk.set(id, this.version(this.deps.join(this.folder(id), 'VERSION.json')));
     }
 
-    private version(path: string): SinglePlayerVersion | null {
+    private version(path: string): YourWorldVersion | null {
         try {
             return this.deps.fs.exists(path) ? parseVersion(this.deps.fs.readText(path)) : null;
         } catch {

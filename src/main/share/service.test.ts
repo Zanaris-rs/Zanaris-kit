@@ -408,7 +408,7 @@ test('stops asked for at once share one stop', async () => {
     assert.equal(h.relays[0]!.closed, 1);
 });
 
-test('the last single-player window to close stops sharing, and not before', async () => {
+test('the last window running your world stops sharing as it closes, and not before', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
     service.acquire();

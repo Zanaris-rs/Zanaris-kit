@@ -1,5 +1,5 @@
 /**
- * Character names, as the engine reads them. A single-player character is the
+ * Character names, as the engine reads them. A character in your world is the
  * file `data/players/main/<safe name>.sav`, and the engine finds it by passing
  * whatever was typed at the login screen through `toSafeName`. These are ports
  * of the engine's `src/util/JString.ts` and have to stay in step with it.

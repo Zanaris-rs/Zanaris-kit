@@ -1,4 +1,4 @@
-import { DEFAULT_SINGLE_PLAYER_SETTINGS, isXpRate, type BuildLine, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
+import { DEFAULT_YOUR_WORLD_SETTINGS, isXpRate, type BuildLine, type YourWorldSettings } from '../../shared/yourworld.ts';
 import type { Confirmation } from './confirm.ts';
 
 /**
@@ -7,8 +7,8 @@ import type { Confirmation } from './confirm.ts';
  * block was `{ cheats }` alone, which reads as that with the other two at
  * their defaults.
  */
-export function readSinglePlayerSettings(x: unknown): SinglePlayerSettings {
-    const settings: SinglePlayerSettings = { ...DEFAULT_SINGLE_PLAYER_SETTINGS };
+export function readYourWorldSettings(x: unknown): YourWorldSettings {
+    const settings: YourWorldSettings = { ...DEFAULT_YOUR_WORLD_SETTINGS };
     if (typeof x !== 'object' || x === null) return settings;
     const s = x as Record<string, unknown>;
     if (typeof s.cheats === 'boolean') settings.cheats = s.cheats;
@@ -21,7 +21,7 @@ export function readSinglePlayerSettings(x: unknown): SinglePlayerSettings {
 const BUILD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** The stored choice of build line: an id, or null. Whether that line still exists is the service's question. */
-export function readSinglePlayerBuild(x: unknown): string | null {
+export function readYourWorldBuild(x: unknown): string | null {
     return typeof x === 'string' && BUILD_ID.test(x) ? x : null;
 }
 
@@ -30,7 +30,7 @@ export function readSinglePlayerBuild(x: unknown): string | null {
  * setting, or a value that setting cannot take: an XP rate is one of
  * XP_RATES, not any number.
  */
-export function readSettingChange(key: unknown, value: unknown): Partial<SinglePlayerSettings> | null {
+export function readSettingChange(key: unknown, value: unknown): Partial<YourWorldSettings> | null {
     if (key === 'cheats' && typeof value === 'boolean') return { cheats: value };
     if (key === 'members' && typeof value === 'boolean') return { members: value };
     if (key === 'xpRate' && isXpRate(value)) return { xpRate: value };
@@ -38,7 +38,7 @@ export function readSettingChange(key: unknown, value: unknown): Partial<SingleP
 }
 
 /** True when applying the change would leave any setting different. */
-export function changesSettings(current: SinglePlayerSettings, patch: Partial<SinglePlayerSettings>): boolean {
+export function changesSettings(current: YourWorldSettings, patch: Partial<YourWorldSettings>): boolean {
     return (
         (patch.cheats !== undefined && patch.cheats !== current.cheats) ||
         (patch.xpRate !== undefined && patch.xpRate !== current.xpRate) ||
@@ -47,7 +47,7 @@ export function changesSettings(current: SinglePlayerSettings, patch: Partial<Si
 }
 
 /** The restart a change costs, asked on the window while the world is running. The shell sends one setting at a time. */
-export function restartConfirmation(patch: Partial<SinglePlayerSettings>): Confirmation {
+export function restartConfirmation(patch: Partial<YourWorldSettings>): Confirmation {
     const ask = (message: string, detail: string): Confirmation => ({ message: `${message} restarts your world and logs you out.`, detail, button: 'Restart', destructive: false });
     if (patch.cheats !== undefined) {
         return patch.cheats

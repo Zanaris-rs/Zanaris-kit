@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Artifact, Recipe } from '../../shared/engines.ts';
-import { BuildStore, LOCAL_BUILD, type BuildStoreDeps } from './buildStore.ts';
+import { BuildStore, type BuildStoreDeps } from './buildStore.ts';
 
 const E274 = '1'.repeat(40);
 const C274 = '2'.repeat(40);
@@ -39,7 +39,7 @@ interface Harness {
     logs: string[];
 }
 
-function harness(over: { recipes?: Recipe[]; local?: string | null } = {}): Harness {
+function harness(over: { recipes?: Recipe[] } = {}): Harness {
     const files = new Map<string, string>();
     const dirs = new Set<string>();
     const downloads: Harness['downloads'] = [];
@@ -50,7 +50,6 @@ function harness(over: { recipes?: Recipe[]; local?: string | null } = {}): Harn
     const deps: BuildStoreDeps = {
         dir: '/builds',
         recipes,
-        local: over.local ?? null,
         join: (...parts) => parts.join('/'),
         fs: {
             exists: p => files.has(p) || dirs.has(p),
@@ -115,7 +114,6 @@ test('a line nothing has been downloaded for is absent, and one with no pinned b
     const line = store.lines()[1]!;
     assert.equal(line.note, 'Developers only upstream');
     assert.equal(line.engine, E289);
-    assert.equal(line.local, false);
 });
 
 test('a build on disk is installed when it is the pinned one and outdated when it is not', () => {
@@ -126,27 +124,6 @@ test('a build on disk is installed when it is the pinned one and outdated when i
     assert.deepEqual(store.lines().map(l => l.state), ['installed', 'outdated']);
     assert.deepEqual(store.installed('lostcity-274'), { id: 'lostcity-274', resources: '/builds/lostcity-274', revision: 274, tag: R274.artifact!.tag });
     assert.equal(store.installed('lostcity-289'), null, 'an outdated build does not run');
-});
-
-test('the developer\'s own stage is listed last, installed, with its own revision, and cannot be removed', () => {
-    const h = harness({ local: '/app/engine-dist' });
-    h.files.set('/app/engine-dist/VERSION.json', versionOf(R289, { id: undefined, name: undefined, tag: undefined }));
-    const store = new BuildStore(h.deps);
-    const local = store.lines().at(-1)!;
-    assert.equal(local.id, LOCAL_BUILD);
-    assert.equal(local.state, 'installed');
-    assert.equal(local.revision, 289);
-    assert.equal(local.local, true);
-    assert.equal(local.size, null);
-    assert.deepEqual(store.installed(LOCAL_BUILD), { id: LOCAL_BUILD, resources: '/app/engine-dist', revision: 289, tag: null });
-    assert.throws(() => store.remove(LOCAL_BUILD), /own stage/);
-});
-
-test('a local folder with no VERSION.json the kit understands is not listed', () => {
-    const h = harness({ local: '/app/engine-dist' });
-    const store = new BuildStore(h.deps);
-    assert.equal(store.lines().length, 2);
-    assert.equal(store.installed(LOCAL_BUILD), null);
 });
 
 test('an install downloads into .incoming, checks what it unpacked, moves it into place and cleans up', async () => {
