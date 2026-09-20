@@ -328,46 +328,60 @@ function confirmClose(title: string): boolean {
     return choice === 0;
 }
 
-const windows = new ServerWindows((spec, onClosed) => {
-    const sw = createServerWindow(
-        spec,
-        () => {
-            serverWindows.delete(spec.id);
-            byShell.delete(sw.shellContentsId);
-            log(`[main] closed ${spec.title}`);
-            onClosed();
-            // Focus lands somewhere else, or nowhere, and the menu's panel item
-            // belongs to whoever has it now. Closing the last window on macOS
-            // fires no focus event at all, so it is done here as well.
-            syncMenuWindowItems();
-        },
-        {
-            log,
-            confirmClose,
-            position: nextPosition(),
-            worlds: worldsServiceFor(spec.server),
-            hiscores: hiscoresServiceFor(spec.server),
-            chat: chatView,
-            alwaysOnTop: () => appState.alwaysOnTop(),
-            confirmCloseGame: via => confirmCloseGame(spec, via),
-            layoutsDir: join(userData, 'layouts', slugify(spec.server.id)),
-            remembered: appState.world(spec.server.id),
-            remember: remembered => appState.setWorld(spec.server.id, remembered),
-            probe: probeLatency,
-            yourWorld,
-            share,
-            timers: () => {
-                const state = appState.timers();
-                return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
+const windows = new ServerWindows(
+    (spec, onClosed) => {
+        const sw = createServerWindow(
+            spec,
+            () => {
+                serverWindows.delete(spec.id);
+                byShell.delete(sw.shellContentsId);
+                log(`[main] closed ${spec.title}`);
+                onClosed();
+                // Focus lands somewhere else, or nowhere, and the menu's panel item
+                // belongs to whoever has it now. Closing the last window on macOS
+                // fires no focus event at all, so it is done here as well.
+                syncMenuWindowItems();
             },
-            servers: () => serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() })
-        }
-    );
-    serverWindows.set(spec.id, sw);
-    byShell.set(sw.shellContentsId, sw);
-    log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
-    return sw;
-});
+            {
+                log,
+                confirmClose,
+                position: nextPosition(),
+                worlds: worldsServiceFor(spec.server),
+                hiscores: hiscoresServiceFor(spec.server),
+                chat: chatView,
+                alwaysOnTop: () => appState.alwaysOnTop(),
+                confirmCloseGame: via => confirmCloseGame(spec, via),
+                layoutsDir: join(userData, 'layouts', slugify(spec.server.id)),
+                remembered: appState.world(spec.server.id),
+                remember: remembered => appState.setWorld(spec.server.id, remembered),
+                probe: probeLatency,
+                yourWorld,
+                share,
+                timers: () => {
+                    const state = appState.timers();
+                    return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
+                },
+                servers: () => serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() })
+            }
+        );
+        serverWindows.set(spec.id, sw);
+        byShell.set(sw.shellContentsId, sw);
+        log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
+        return sw;
+    },
+    /**
+     * The Servers pane's rows carry each server's open-window count. That
+     * count only agrees with reality if every window's own Servers pane is
+     * pushed whenever ANY window opens or closes anywhere — so `ServerWindows`
+     * calls this after both: from `open()` once the new window is registered,
+     * and from a closed window's own `onClosed` chain once it has already
+     * deleted that window from every map above, so the count here never
+     * still includes the window that just went away.
+     */
+    () => {
+        for (const sw of serverWindows.values()) sw.pushState();
+    }
+);
 
 function openServer(server: ServerDef): ServerWindow {
     return serverWindows.get(windows.open(server).id)!;
@@ -1123,11 +1137,13 @@ ipcMain.handle(IPC.timersSound, async (event): Promise<Uint8Array | null> => {
 // ── servers ───────────────────────────────────────────────────────────────
 
 /**
- * Everything that must happen after the catalog or the startup set changes
- * from inside a pane. The menu is rebuilt so File > New Window For agrees,
- * every window is pushed because this one's change is app-wide, and
- * `catalogSeen` is refreshed so the on-focus reload does not mistake our own
- * write for somebody editing servers.json underneath us.
+ * Everything that must happen after the catalog changes from inside a pane.
+ * The startup set does not come through here — it touches no file and no
+ * menu, so its handler does the smaller push itself. The menu is rebuilt so
+ * File > New Window For agrees, every window is pushed because this one's
+ * change is app-wide, and `catalogSeen` is refreshed so the on-focus reload
+ * does not mistake our own write for somebody editing servers.json underneath
+ * us.
  */
 function catalogChanged(): void {
     catalogSeen = catalogMtime();
@@ -1139,12 +1155,9 @@ ipcMain.handle(IPC.serversOpen, (event, id: unknown) => {
     if (!windowFor(event.sender) || typeof id !== 'string') return;
     const server = catalog.get(id);
     if (!server) return;
+    // windows.open() (inside openServer) tells ServerWindows' onChange, which
+    // pushes every window's state, so opening does not need its own loop here.
     openServer(server);
-    // Opening does not touch the catalog or the startup set, so this pushes
-    // on its own rather than through catalogChanged: every OTHER open
-    // window's Servers pane counted this server before the new window
-    // existed, and nothing else will tell it the count moved.
-    for (const sw of serverWindows.values()) sw.pushState();
 });
 
 ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {

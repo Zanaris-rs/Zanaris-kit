@@ -73,10 +73,10 @@ export const IPC = {
     timersRestore: 'zanaris:timers-restore',
     timersSound: 'zanaris:timers-sound',
     timersAlert: 'zanaris:timers-alert',
-    serversOpen: 'zanaris:servers:open',
-    serversStartup: 'zanaris:servers:startup',
-    serversAdd: 'zanaris:servers:add',
-    serversRemove: 'zanaris:servers:remove'
+    serversOpen: 'zanaris:servers-open',
+    serversStartup: 'zanaris:servers-startup',
+    serversAdd: 'zanaris:servers-add',
+    serversRemove: 'zanaris:servers-remove'
 } as const;
 
 /**
