@@ -95,6 +95,12 @@ const api: ZanarisApi = {
                 ipcRenderer.off(IPC.timersAlert, handler);
             };
         }
+    },
+    servers: {
+        open: id => ipcRenderer.invoke(IPC.serversOpen, id),
+        setStartup: (id, on) => ipcRenderer.invoke(IPC.serversStartup, id, on),
+        add: input => ipcRenderer.invoke(IPC.serversAdd, input),
+        remove: id => ipcRenderer.invoke(IPC.serversRemove, id)
     }
 };
 

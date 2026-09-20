@@ -1,5 +1,5 @@
 /** Channel names and payload types, shared by main, preload and the renderer so they can't drift. */
-import type { ServerDef } from './catalog';
+import type { NewServerInput, ServerDef } from './catalog';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatView } from './chat';
 import type { SettingsSave } from './chatSettings';
@@ -72,7 +72,11 @@ export const IPC = {
     timersDelete: 'zanaris:timers-delete',
     timersRestore: 'zanaris:timers-restore',
     timersSound: 'zanaris:timers-sound',
-    timersAlert: 'zanaris:timers-alert'
+    timersAlert: 'zanaris:timers-alert',
+    serversOpen: 'zanaris:servers:open',
+    serversStartup: 'zanaris:servers:startup',
+    serversAdd: 'zanaris:servers:add',
+    serversRemove: 'zanaris:servers:remove'
 } as const;
 
 /**
@@ -339,5 +343,14 @@ export interface ZanarisApi {
         sound(): Promise<Uint8Array | null>;
         /** Main asking this window to play the alert. Returns an unsubscribe. */
         onAlert(cb: (alert: TimerAlert) => void): () => void;
+    };
+    servers: {
+        /** Opens a new window on this catalog entry. */
+        open(id: string): Promise<void>;
+        /** Whether a launch opens this entry. */
+        setStartup(id: string, on: boolean): Promise<void>;
+        /** Null when it was added; a sentence saying why not otherwise. */
+        add(input: NewServerInput): Promise<string | null>;
+        remove(id: string): Promise<string | null>;
     };
 }

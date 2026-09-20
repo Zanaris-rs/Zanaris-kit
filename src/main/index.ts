@@ -1120,6 +1120,40 @@ ipcMain.handle(IPC.timersSound, async (event): Promise<Uint8Array | null> => {
     return readAlertSound();
 });
 
+// ── servers ───────────────────────────────────────────────────────────────
+
+/**
+ * Everything that must happen after the catalog or the startup set changes
+ * from inside a pane. The menu is rebuilt so File > New Window For agrees,
+ * every window is pushed because this one's change is app-wide, and
+ * `catalogSeen` is refreshed so the on-focus reload does not mistake our own
+ * write for somebody editing servers.json underneath us.
+ */
+function catalogChanged(): void {
+    catalogSeen = catalogMtime();
+    installAppMenu();
+    for (const sw of serverWindows.values()) sw.pushState();
+}
+
+ipcMain.handle(IPC.serversOpen, (event, id: unknown) => {
+    if (!windowFor(event.sender) || typeof id !== 'string') return;
+    const server = catalog.get(id);
+    if (!server) return;
+    openServer(server);
+    // Opening does not touch the catalog or the startup set, so this pushes
+    // on its own rather than through catalogChanged: every OTHER open
+    // window's Servers pane counted this server before the new window
+    // existed, and nothing else will tell it the count moved.
+    for (const sw of serverWindows.values()) sw.pushState();
+});
+
+ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {
+    if (!windowFor(event.sender) || typeof id !== 'string' || typeof on !== 'boolean') return;
+    if (!catalog.get(id)) return;
+    appState.setStartupServer(id, on);
+    for (const sw of serverWindows.values()) sw.pushState();
+});
+
 // ── dev capture ───────────────────────────────────────────────────────────
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
