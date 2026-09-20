@@ -1,6 +1,7 @@
 import { clearGame, contentOf, leaf, paneIds, setContent, split, type PaneContent, type PaneNode } from './paneTree.ts';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 import { paneName, type PaneLink } from './paneMenu.ts';
+import type { ToolId } from '../shared/ipc.ts';
 
 /**
  * A window's workspace tabs.
@@ -39,10 +40,14 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  *
  * On the game because there is no launcher window in this kit and never has
  * been — the File menu makes windows, and every one of them is a game window.
- * With chat under it because chat is the kit's own reason to be open instead of
- * a browser tab, and a pane nobody knows is there is a pane nobody opens. Below
- * rather than beside, where the 2004 client keeps its own chat box, so the
- * conversation gets the game's full width.
+ * With chat under it by default, because chat is the kit's own reason to be
+ * open instead of a browser tab, and a pane nobody knows is there is a pane
+ * nobody opens. Below rather than beside, where the 2004 client keeps its own
+ * chat box, so the conversation gets the game's full width.
+ *
+ * `bottomTool` is what goes there, and the one caller that passes anything
+ * else is the first launch on a fresh profile, which puts the Servers pane
+ * there instead — for exactly the reason chat is there the rest of the time.
  *
  * `gameHeight` is the game pane's preferred height, which is the stock one
  * unless the server's client page needs more (`LOSTCITY_GAME_PREFERRED_HEIGHT`).
@@ -58,7 +63,7 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  * Focus is on the game, so Cmd/Ctrl+D and a right-click's splits start from the
  * pane the player is looking at rather than from the chat below it.
  */
-export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PREFERRED_HEIGHT): TabSet {
+export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PREFERRED_HEIGHT, bottomTool: ToolId = 'chat'): TabSet {
     const gross = Math.max(0, treeHeight - SEAM);
     const game = Math.min(gameHeight, gross - PANE_MIN_HEIGHT);
     const shares = game >= PANE_MIN_HEIGHT ? [game, gross - game] : [gameHeight, CHAT_PREFERRED_HEIGHT];
@@ -66,7 +71,7 @@ export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PRE
     const tree = split(
         'split-1',
         'y',
-        [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: 'chat' })],
+        [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: bottomTool })],
         shares.map(share => share / total)
     );
     return { tabs: [{ id: 'tab-1', tree, focusedPaneId: 'pane-1' }], activeId: 'tab-1' };

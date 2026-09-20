@@ -85,7 +85,7 @@ export const IPC = {
  * and a fourth copy sitting in a docstring none of them cross-reference is the
  * one that would go stale first and be believed longest.
  */
-export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer', 'timers'] as const;
+export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer', 'timers', 'servers'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
