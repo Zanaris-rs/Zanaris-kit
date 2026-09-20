@@ -75,11 +75,12 @@ export const IPC = {
 } as const;
 
 /**
- * The tools a window can offer. Five: `guides` stopped being one when an empty
+ * The tools a window can offer. Six: `guides` stopped being one when an empty
  * pane started showing a launcher that lists this server's links beside the
- * tools, leaving the Guides panel with no separate job, and `timers` joined. A
- * registry is worth it when the list grows. This is the set, not the menu
- * order — which tools a given window offers and in what order is
+ * tools, leaving the Guides panel with no separate job, `timers` joined, and
+ * `servers` joined for the pane a first launch on a fresh profile shows in
+ * chat's place. A registry is worth it when the list grows. This is the set,
+ * not the menu order — which tools a given window offers and in what order is
  * `serverWindow`'s to say, and it is deliberately not spelled out again here:
  * that order already lives in three places that have to be edited together,
  * and a fourth copy sitting in a docstring none of them cross-reference is the

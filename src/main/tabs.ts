@@ -61,7 +61,7 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  * the split starts with, and the fractions carry them from there.
  *
  * Focus is on the game, so Cmd/Ctrl+D and a right-click's splits start from the
- * pane the player is looking at rather than from the chat below it.
+ * pane the player is looking at rather than from the tool below it.
  */
 export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PREFERRED_HEIGHT, bottomTool: ToolId = 'chat'): TabSet {
     const gross = Math.max(0, treeHeight - SEAM);
