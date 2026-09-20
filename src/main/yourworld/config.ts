@@ -1,4 +1,4 @@
-import type { SinglePlayerSettings, SinglePlayerVersion } from '../../shared/singleplayer.ts';
+import type { YourWorldSettings, YourWorldVersion } from '../../shared/yourworld.ts';
 
 export interface WorldPorts {
     web: number;
@@ -25,7 +25,7 @@ export const CONTENT_DIR = 'content';
  * still boots and reports itself ready. Live reload is off, so nothing watches
  * it; the /content route serves those two files on loopback.
  */
-export function worldJson(opts: { ports: WorldPorts; settings: SinglePlayerSettings; revision: number }): string {
+export function worldJson(opts: { ports: WorldPorts; settings: YourWorldSettings; revision: number }): string {
     const config = {
         easyStartup: false,
         account: { autoCreate: false },
@@ -65,7 +65,7 @@ export function gameUrl(base: string, port: number): string {
  * `tag` are null in a stage from before builds had recipes; a present one of
  * any other type refuses the file.
  */
-export function parseVersion(text: string): SinglePlayerVersion | null {
+export function parseVersion(text: string): YourWorldVersion | null {
     let parsed: unknown;
     try {
         parsed = JSON.parse(text);

@@ -6,7 +6,7 @@ import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
-import type { CharacterOutcome, ImportPick, SinglePlayerSettings, SinglePlayerView } from './singleplayer';
+import type { CharacterOutcome, ImportPick, YourWorldSettings, YourWorldView } from './yourworld';
 import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
@@ -45,21 +45,21 @@ export const IPC = {
     chatSaveSettings: 'zanaris:chat-save-settings',
     chatConnect: 'zanaris:chat-connect',
     chatDisconnect: 'zanaris:chat-disconnect',
-    singlePlayerSetSetting: 'zanaris:singleplayer-set-setting',
-    singlePlayerRetry: 'zanaris:singleplayer-retry',
-    singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
-    singlePlayerShowLog: 'zanaris:singleplayer-show-log',
-    singlePlayerPickImport: 'zanaris:singleplayer-pick-import',
-    singlePlayerImport: 'zanaris:singleplayer-import',
-    singlePlayerExport: 'zanaris:singleplayer-export',
-    singlePlayerRename: 'zanaris:singleplayer-rename',
-    singlePlayerDuplicate: 'zanaris:singleplayer-duplicate',
-    singlePlayerDelete: 'zanaris:singleplayer-delete',
-    singlePlayerCommands: 'zanaris:singleplayer-commands',
-    singlePlayerCopyTo: 'zanaris:singleplayer-copy-to',
-    singlePlayerUseBuild: 'zanaris:singleplayer-use-build',
-    singlePlayerDownloadBuild: 'zanaris:singleplayer-download-build',
-    singlePlayerRemoveBuild: 'zanaris:singleplayer-remove-build',
+    yourWorldSetSetting: 'zanaris:yourworld-set-setting',
+    yourWorldRetry: 'zanaris:yourworld-retry',
+    yourWorldOpenSaves: 'zanaris:yourworld-open-saves',
+    yourWorldShowLog: 'zanaris:yourworld-show-log',
+    yourWorldPickImport: 'zanaris:yourworld-pick-import',
+    yourWorldImport: 'zanaris:yourworld-import',
+    yourWorldExport: 'zanaris:yourworld-export',
+    yourWorldRename: 'zanaris:yourworld-rename',
+    yourWorldDuplicate: 'zanaris:yourworld-duplicate',
+    yourWorldDelete: 'zanaris:yourworld-delete',
+    yourWorldCommands: 'zanaris:yourworld-commands',
+    yourWorldCopyTo: 'zanaris:yourworld-copy-to',
+    yourWorldUseBuild: 'zanaris:yourworld-use-build',
+    yourWorldDownloadBuild: 'zanaris:yourworld-download-build',
+    yourWorldRemoveBuild: 'zanaris:yourworld-remove-build',
     shareStart: 'zanaris:share-start',
     shareStop: 'zanaris:share-stop',
     shareCopy: 'zanaris:share-copy',
@@ -128,13 +128,13 @@ export interface ShellState {
     tools: ToolId[];
     /** Null when the server has one page. */
     worlds: WorldsView | null;
-    /** Null when the server offers no hiscores — single player above all, where a one-player world has nothing to rank. */
+    /** Null when the server offers no hiscores — your world above all, where a one-player world has nothing to rank. */
     hiscores: HiscoresView | null;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
     /** The world this computer runs; null for every other kind of window. */
-    singlePlayer: SinglePlayerView | null;
-    /** Whether that world is shared with a link; null wherever `singlePlayer` is. */
+    yourWorld: YourWorldView | null;
+    /** Whether that world is shared with a link; null wherever `yourWorld` is. */
     share: ShareView | null;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
@@ -269,9 +269,9 @@ export interface ZanarisApi {
         /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */
         openExternal(url: string): Promise<void>;
     };
-    singlePlayer: {
+    yourWorld: {
         /** Changes one of the world's settings. Asks first when the world is running, since the change restarts it. */
-        setSetting<K extends keyof SinglePlayerSettings>(key: K, value: SinglePlayerSettings[K]): Promise<void>;
+        setSetting<K extends keyof YourWorldSettings>(key: K, value: YourWorldSettings[K]): Promise<void>;
         retry(): Promise<void>;
         openSaves(): Promise<void>;
         showLog(): Promise<void>;

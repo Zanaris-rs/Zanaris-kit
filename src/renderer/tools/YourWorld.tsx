@@ -1,14 +1,14 @@
 import { useState, type ReactNode } from 'react';
-import type { SinglePlayerView } from '../../shared/singleplayer';
+import type { YourWorldView } from '../../shared/yourworld';
 import type { ShareView } from '../../shared/share';
 import Tab from '../tab';
-import Builds from './singleplayer/Builds';
-import Characters from './singleplayer/Characters';
-import Commands from './singleplayer/Commands';
-import Friends from './singleplayer/Friends';
-import World from './singleplayer/World';
+import Builds from './yourworld/Builds';
+import Characters from './yourworld/Characters';
+import Commands from './yourworld/Commands';
+import Friends from './yourworld/Friends';
+import World from './yourworld/World';
 
-const STATUS: Record<SinglePlayerView['status'], string> = {
+const STATUS: Record<YourWorldView['status'], string> = {
     stopped: 'Stopped',
     missing: 'Not downloaded yet',
     downloading: 'Downloading',
@@ -30,11 +30,11 @@ const SECTIONS: readonly { id: Section; label: string }[] = [
 ];
 
 /**
- * The Single player tool. What the world is doing sits above the sections, since it is true of all of them,
+ * The Your world tool. What the world is doing sits above the sections, since it is true of all of them,
  * and so does a live share's warning: Friends says it too, and nothing else would while another section is open.
  * Which section is open belongs to this pane and is not kept. Friends is offered only when main sends a share.
  */
-export default function SinglePlayer({ view, share }: { view: SinglePlayerView; share: ShareView | null }): ReactNode {
+export default function YourWorld({ view, share }: { view: YourWorldView; share: ShareView | null }): ReactNode {
     const [open, setOpen] = useState<Section>('world');
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
     const line = view.builds.find(l => l.id === view.selected);
@@ -66,7 +66,7 @@ export default function SinglePlayer({ view, share }: { view: SinglePlayerView; 
                         </pre>
                     )}
                     <div className="px-2.5 pt-2">
-                        <button type="button" onClick={() => void window.zanaris.singlePlayer.retry()} className="btn btn-red">
+                        <button type="button" onClick={() => void window.zanaris.yourWorld.retry()} className="btn btn-red">
                             Try again
                         </button>
                     </div>

@@ -57,22 +57,22 @@ const api: ZanarisApi = {
         addPaneMenu: (x, y) => ipcRenderer.invoke(IPC.tabAddPaneMenu, x, y),
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
     },
-    singlePlayer: {
-        setSetting: (key, value) => ipcRenderer.invoke(IPC.singlePlayerSetSetting, key, value),
-        retry: () => ipcRenderer.invoke(IPC.singlePlayerRetry),
-        openSaves: () => ipcRenderer.invoke(IPC.singlePlayerOpenSaves),
-        showLog: () => ipcRenderer.invoke(IPC.singlePlayerShowLog),
-        pickImport: () => ipcRenderer.invoke(IPC.singlePlayerPickImport),
-        importAs: (token, name) => ipcRenderer.invoke(IPC.singlePlayerImport, token, name),
-        exportCharacter: name => ipcRenderer.invoke(IPC.singlePlayerExport, name),
-        rename: (from, to) => ipcRenderer.invoke(IPC.singlePlayerRename, from, to),
-        duplicate: (from, to) => ipcRenderer.invoke(IPC.singlePlayerDuplicate, from, to),
-        remove: name => ipcRenderer.invoke(IPC.singlePlayerDelete, name),
-        copyTo: (name, revision) => ipcRenderer.invoke(IPC.singlePlayerCopyTo, name, revision),
-        useBuild: id => ipcRenderer.invoke(IPC.singlePlayerUseBuild, id),
-        downloadBuild: id => ipcRenderer.invoke(IPC.singlePlayerDownloadBuild, id),
-        removeBuild: id => ipcRenderer.invoke(IPC.singlePlayerRemoveBuild, id),
-        commands: () => ipcRenderer.invoke(IPC.singlePlayerCommands)
+    yourWorld: {
+        setSetting: (key, value) => ipcRenderer.invoke(IPC.yourWorldSetSetting, key, value),
+        retry: () => ipcRenderer.invoke(IPC.yourWorldRetry),
+        openSaves: () => ipcRenderer.invoke(IPC.yourWorldOpenSaves),
+        showLog: () => ipcRenderer.invoke(IPC.yourWorldShowLog),
+        pickImport: () => ipcRenderer.invoke(IPC.yourWorldPickImport),
+        importAs: (token, name) => ipcRenderer.invoke(IPC.yourWorldImport, token, name),
+        exportCharacter: name => ipcRenderer.invoke(IPC.yourWorldExport, name),
+        rename: (from, to) => ipcRenderer.invoke(IPC.yourWorldRename, from, to),
+        duplicate: (from, to) => ipcRenderer.invoke(IPC.yourWorldDuplicate, from, to),
+        remove: name => ipcRenderer.invoke(IPC.yourWorldDelete, name),
+        copyTo: (name, revision) => ipcRenderer.invoke(IPC.yourWorldCopyTo, name, revision),
+        useBuild: id => ipcRenderer.invoke(IPC.yourWorldUseBuild, id),
+        downloadBuild: id => ipcRenderer.invoke(IPC.yourWorldDownloadBuild, id),
+        removeBuild: id => ipcRenderer.invoke(IPC.yourWorldRemoveBuild, id),
+        commands: () => ipcRenderer.invoke(IPC.yourWorldCommands)
     },
     share: {
         start: () => ipcRenderer.invoke(IPC.shareStart),

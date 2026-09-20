@@ -1,4 +1,4 @@
-/** Sharing the single-player world through a Cloudflare quick tunnel, as the shell draws it. */
+/** Sharing your world through a Cloudflare quick tunnel, as the shell draws it. */
 
 /**
  * `connecting` until cloudflared registers, then `checking` until the link

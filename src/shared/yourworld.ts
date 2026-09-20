@@ -1,17 +1,17 @@
-/** The single-player world, as the shell draws it. */
+/** Your world, as the shell draws it. */
 
 /**
  * - missing: a window wants the world, and the selected build is not downloaded.
  * - downloading: the same, while that build is on its way down.
  */
-export type SinglePlayerStatus = 'stopped' | 'missing' | 'downloading' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
+export type YourWorldStatus = 'stopped' | 'missing' | 'downloading' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
 
 /**
  * True while a world may be running or on its way up or down: every status
  * but stopped, failed, and the two that wait for a build. A change that costs
  * a restart, or that a logout could write over, asks first while this holds.
  */
-export function worldRunning(status: SinglePlayerStatus): boolean {
+export function worldRunning(status: YourWorldStatus): boolean {
     return status !== 'stopped' && status !== 'failed' && status !== 'missing' && status !== 'downloading';
 }
 
@@ -24,7 +24,7 @@ export function isXpRate(value: unknown): value is XpRate {
 }
 
 /** What the player chooses about their world. Each one is written into world.json, so a change takes a restart. */
-export interface SinglePlayerSettings {
+export interface YourWorldSettings {
     /** node.localStaffLevel: 4 on, 0 off. */
     cheats: boolean;
     /** node.xpRate. */
@@ -33,7 +33,7 @@ export interface SinglePlayerSettings {
     members: boolean;
 }
 
-export const DEFAULT_SINGLE_PLAYER_SETTINGS: Readonly<SinglePlayerSettings> = Object.freeze({ cheats: false, xpRate: 1, members: true });
+export const DEFAULT_YOUR_WORLD_SETTINGS: Readonly<YourWorldSettings> = Object.freeze({ cheats: false, xpRate: 1, members: true });
 
 /**
  * Where a line's build stands on this computer.
@@ -65,7 +65,7 @@ export interface BuildLine {
 }
 
 /** What the build the world runs is, from its VERSION.json. */
-export interface SinglePlayerVersion {
+export interface YourWorldVersion {
     /** The line it was staged from; null in a stage from before builds had recipes. */
     id: string | null;
     name: string | null;
@@ -77,8 +77,8 @@ export interface SinglePlayerVersion {
     built: string;
 }
 
-export interface SinglePlayerView {
-    status: SinglePlayerStatus;
+export interface YourWorldView {
+    status: YourWorldStatus;
     /** The web port while starting or ready. */
     port: number | null;
     /** The game URL while ready. */
@@ -87,9 +87,9 @@ export interface SinglePlayerView {
     reason: string | null;
     /** The last lines the world printed. */
     logTail: string[];
-    version: SinglePlayerVersion | null;
-    /** What the player chose for the world; see SinglePlayerSettings. */
-    settings: SinglePlayerSettings;
+    version: YourWorldVersion | null;
+    /** What the player chose for the world; see YourWorldSettings. */
+    settings: YourWorldSettings;
     /** The saves folder, newest first, as last read. A character being played shows its last save. */
     characters: CharacterInfo[];
     /** The id of the line the world runs. */

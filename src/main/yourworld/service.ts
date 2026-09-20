@@ -1,5 +1,5 @@
 import { DEFAULT_BUILD } from '../../shared/engines.ts';
-import { worldRunning, type BuildLine, type CharacterInfo, type CharacterOutcome, type ImportPick, type SinglePlayerSettings, type SinglePlayerStatus, type SinglePlayerVersion, type SinglePlayerView } from '../../shared/singleplayer.ts';
+import { worldRunning, type BuildLine, type CharacterInfo, type CharacterOutcome, type ImportPick, type YourWorldSettings, type YourWorldStatus, type YourWorldVersion, type YourWorldView } from '../../shared/yourworld.ts';
 import type { InstalledBuild } from './buildStore.ts';
 import { Characters, type ChangeContext, type CharacterFs } from './characters.ts';
 import { CONTENT_DIR, gameUrl, LOG_TAIL_LINES, parseVersion, stampMatches, worldJson, type WorldPorts } from './config.ts';
@@ -26,8 +26,8 @@ export interface BuildsHandle {
     subscribe(fn: () => void): () => void;
 }
 
-export interface SinglePlayerDeps {
-    /** <userData>/singleplayer/worlds: one working directory per revision, each holding that revision's characters. */
+export interface YourWorldDeps {
+    /** <userData>/yourworld/worlds: one working directory per revision, each holding that revision's characters. */
     worlds: string;
     builds: BuildsHandle;
     /** The line the player last chose, kept by appState; null before they have chosen one. */
@@ -35,7 +35,7 @@ export interface SinglePlayerDeps {
     /** The catalog entry's url; the port is applied at start. */
     baseUrl: string;
     /** The player's choices for the world, kept by appState. */
-    settings: { get(): SinglePlayerSettings; set(patch: Partial<SinglePlayerSettings>): void };
+    settings: { get(): YourWorldSettings; set(patch: Partial<YourWorldSettings>): void };
     join(...parts: string[]): string;
     /** An unguessable token, for an imported file waiting on its name. */
     token(): string;
@@ -73,7 +73,7 @@ const REFRESH_WAIT_MS = 400;
 class Failure extends Error {}
 
 /**
- * One world for every single-player window. Windows acquire and release;
+ * One world for every window running your world. Windows acquire and release;
  * the first acquire starts the world, the last release stops it. Pure over
  * the deps so the whole lifecycle runs under node:test with fakes.
  *
@@ -82,13 +82,13 @@ class Failure extends Error {}
  * the build not downloaded, a window waits in `missing` until someone asks for
  * the download; the world starts on its own once the build lands.
  */
-export class SinglePlayerService {
-    private status: SinglePlayerStatus = 'stopped';
+export class YourWorldService {
+    private status: YourWorldStatus = 'stopped';
     private ports: WorldPorts | null = null;
     private url: string | null = null;
     private reason: string | null = null;
     private logTail: string[] = [];
-    private version: SinglePlayerVersion | null = null;
+    private version: YourWorldVersion | null = null;
     private process: WorldProcess | null = null;
     private windows = 0;
     private starting: Promise<string> | null = null;
@@ -96,7 +96,7 @@ export class SinglePlayerService {
     /** Bumped by every start, so a stop can tell whether the world is still the one it took. */
     private generation = 0;
     private readonly listeners = new Set<() => void>();
-    private readonly deps: SinglePlayerDeps;
+    private readonly deps: YourWorldDeps;
     /** The line the world runs, and its revision, which names the world folder. */
     private selected: string;
     private revision: number;
@@ -109,7 +109,7 @@ export class SinglePlayerService {
     private stopWatching: (() => void) | null = null;
     private refreshQueued = false;
 
-    constructor(deps: SinglePlayerDeps) {
+    constructor(deps: YourWorldDeps) {
         this.deps = deps;
         this.selected = this.pick(deps.selection.get());
         this.revision = this.line()?.revision ?? FALLBACK_REVISION;
@@ -127,7 +127,7 @@ export class SinglePlayerService {
         return this.savesDirOf(this.revision);
     }
 
-    view(): SinglePlayerView {
+    view(): YourWorldView {
         const builds = this.deps.builds.lines();
         const line = builds.find(l => l.id === this.selected);
         return {
@@ -178,7 +178,7 @@ export class SinglePlayerService {
         try {
             await this.deps.builds.install(id);
         } catch (err) {
-            this.deps.log(`[singleplayer] the download of ${id} failed: ${String(err)}`);
+            this.deps.log(`[yourworld] the download of ${id} failed: ${String(err)}`);
         }
     }
 
@@ -222,7 +222,7 @@ export class SinglePlayerService {
     }
 
     /** Stores a change to the world's settings, and restarts a running world so the change takes effect. */
-    async setSettings(patch: Partial<SinglePlayerSettings>): Promise<void> {
+    async setSettings(patch: Partial<YourWorldSettings>): Promise<void> {
         this.deps.settings.set(patch);
         this.notify();
         if (this.status === 'ready' || this.status === 'starting' || this.status === 'preparing') {
@@ -329,7 +329,7 @@ export class SinglePlayerService {
             try {
                 await this.deps.builds.install(id);
             } catch (err) {
-                this.deps.log(`[singleplayer] not switching to ${id}: ${String(err)}`);
+                this.deps.log(`[yourworld] not switching to ${id}: ${String(err)}`);
                 return;
             }
             if (!this.deps.builds.installed(id)) return;
@@ -371,7 +371,7 @@ export class SinglePlayerService {
         return this.starting;
     }
 
-    private set(status: SinglePlayerStatus): void {
+    private set(status: YourWorldStatus): void {
         this.status = status;
         // A logout writes a save, and a stop logs everyone out; this catches what a watch misses.
         if (this.watching) this.refreshCharacters();
@@ -384,7 +384,7 @@ export class SinglePlayerService {
             try {
                 fn();
             } catch (err) {
-                this.deps.log(`[singleplayer] a status listener threw: ${String(err)}`);
+                this.deps.log(`[yourworld] a status listener threw: ${String(err)}`);
             }
         }
     }
@@ -401,7 +401,7 @@ export class SinglePlayerService {
         try {
             this.deps.fs.mkdir(this.savesDir);
         } catch (err) {
-            this.deps.log(`[singleplayer] could not make the saves folder: ${String(err)}`);
+            this.deps.log(`[yourworld] could not make the saves folder: ${String(err)}`);
         }
         this.stopWatching = this.deps.fs.watchDir(this.savesDir, () => void this.queueRefresh());
         this.refreshCharacters();
@@ -422,7 +422,7 @@ export class SinglePlayerService {
         try {
             this.characterList = this.characters.list();
         } catch (err) {
-            this.deps.log(`[singleplayer] could not read the saves folder: ${String(err)}`);
+            this.deps.log(`[yourworld] could not read the saves folder: ${String(err)}`);
         }
     }
 
@@ -444,7 +444,7 @@ export class SinglePlayerService {
     private fail(reason: string): never {
         this.reason = reason;
         this.set('failed');
-        this.deps.log(`[singleplayer] ${reason}`);
+        this.deps.log(`[yourworld] ${reason}`);
         throw new Failure(reason);
     }
 
@@ -532,7 +532,7 @@ export class SinglePlayerService {
                     guard();
                     this.url = url;
                     this.set('ready');
-                    deps.log(`[singleplayer] ready on port ${ports.web}`);
+                    deps.log(`[yourworld] ready on port ${ports.web}`);
                     return url;
                 }
                 await deps.sleep(POLL_MS);
@@ -583,7 +583,7 @@ export class SinglePlayerService {
         if (this.status === 'ready') {
             this.reason = `The world stopped unexpectedly (code ${code})`;
             this.set('failed');
-            this.deps.log(`[singleplayer] ${this.reason}`);
+            this.deps.log(`[yourworld] ${this.reason}`);
         }
     }
 
@@ -598,7 +598,7 @@ export class SinglePlayerService {
             const grace = this.deps.sleep(STOP_GRACE_MS).then(() => 'timeout' as const);
             const outcome = await Promise.race([process.exited.then(() => 'exited' as const), grace]);
             if (outcome === 'timeout') {
-                this.deps.log('[singleplayer] the world did not stop in time; killing it');
+                this.deps.log('[yourworld] the world did not stop in time; killing it');
                 process.kill();
                 await process.exited;
             }

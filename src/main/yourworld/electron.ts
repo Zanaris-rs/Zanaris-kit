@@ -5,7 +5,7 @@ import { cp } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { SinglePlayerDeps, SpawnSpec, WorldProcess } from './service.ts';
+import type { YourWorldDeps, SpawnSpec, WorldProcess } from './service.ts';
 import type { BuildStoreDeps } from './buildStore.ts';
 import { bundledRecipes } from './recipes.ts';
 import { readCommandsFile, type CommandRef } from '../../shared/commands.ts';
@@ -13,12 +13,12 @@ import { artifactUrl } from '../../shared/engines.ts';
 import { downloadChecked, extractTgz } from '../download.ts';
 
 /**
- * Single player's folder: the builds, and one world folder per revision holding
+ * Your world's folder: the builds, and one world folder per revision holding
  * its characters. In a profile of its own when one is named — see the builds
  * folder a capture asks for in index.ts.
  */
-export function singlePlayerHome(userData: string = app.getPath('userData')): string {
-    return join(userData, 'singleplayer');
+export function yourWorldHome(userData: string = app.getPath('userData')): string {
+    return join(userData, 'yourworld');
 }
 
 /** A build's list of the content's debug procs, or null when it has none the kit can read. */
@@ -31,7 +31,7 @@ export function readCommands(resources: string): CommandRef[] | null {
 }
 
 /**
- * `dir` is where the builds live. It is normally `singlePlayerHome()/builds`;
+ * `dir` is where the builds live. It is normally `yourWorldHome()/builds`;
  * a capture passes the real profile's, since its own has downloaded nothing.
  */
 export function buildStoreDeps(dir: string, log: (msg: string) => void): BuildStoreDeps {
@@ -116,7 +116,7 @@ async function httpPost(url: string): Promise<number | null> {
  * stdout and stderr are split into lines for the log tail and world.log.
  */
 function spawnWorld(spec: SpawnSpec): WorldProcess {
-    const child = utilityProcess.fork(spec.entry, [], { cwd: spec.cwd, stdio: 'pipe', serviceName: 'single-player-world' });
+    const child = utilityProcess.fork(spec.entry, [], { cwd: spec.cwd, stdio: 'pipe', serviceName: 'your-world' });
     // A V8 fault the child cannot continue from; unhandled it would throw in the main process.
     child.on('error', (type, location) => spec.onLine(`[world ${type}] ${location}`));
     for (const stream of [child.stdout, child.stderr]) {
@@ -154,9 +154,9 @@ function watchDir(path: string, onChange: () => void): () => void {
     }
 }
 
-export function electronDeps(over: Pick<SinglePlayerDeps, 'baseUrl' | 'settings' | 'builds' | 'selection' | 'log'>): SinglePlayerDeps {
+export function electronDeps(over: Pick<YourWorldDeps, 'baseUrl' | 'settings' | 'builds' | 'selection' | 'log'>): YourWorldDeps {
     return {
-        worlds: join(singlePlayerHome(), 'worlds'),
+        worlds: join(yourWorldHome(), 'worlds'),
         builds: over.builds,
         selection: over.selection,
         baseUrl: over.baseUrl,

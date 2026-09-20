@@ -24,7 +24,7 @@ test('typedForm and usage write a command as the chat box takes it', () => {
     assert.equal(usage(addxp), '::~addxp <stat> <amount>');
 });
 
-test('the engine table lists no command single player can never run', () => {
+test('the engine table lists no command your world can never run', () => {
     const names = ENGINE_COMMANDS.map(ref => ref.name);
     assert.equal(names.length, 21);
     assert.equal(new Set(names).size, names.length);

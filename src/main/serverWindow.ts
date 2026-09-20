@@ -5,7 +5,7 @@ import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
-import type { SinglePlayerView } from '../shared/singleplayer';
+import type { YourWorldView } from '../shared/yourworld';
 import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
@@ -81,9 +81,9 @@ const GAME_PAGE_CSS = `
 
 export type LoadResult = 'loaded' | 'failed';
 
-/** What a single-player window needs of the service; the service itself satisfies it. */
-export interface SinglePlayerHandle {
-    view(): SinglePlayerView;
+/** What a window running your world needs of the service; the service itself satisfies it. */
+export interface YourWorldHandle {
+    view(): YourWorldView;
     subscribe(fn: () => void): () => void;
     acquire(): Promise<string>;
     release(): void;
@@ -92,14 +92,14 @@ export interface SinglePlayerHandle {
     download(): Promise<void>;
 }
 
-/** What a single-player window needs of sharing: a view to draw, and a count of the windows that can stop it. */
+/** What a window running your world needs of sharing: a view to draw, and a count of the windows that can stop it. */
 export interface ShareHandle {
     view(): ShareView;
     acquire(): void;
     release(): void;
 }
 
-const STATUS_WORD: Record<SinglePlayerView['status'], string> = {
+const STATUS_WORD: Record<YourWorldView['status'], string> = {
     stopped: 'stopped',
     missing: 'not downloaded',
     downloading: 'downloading',
@@ -110,7 +110,7 @@ const STATUS_WORD: Record<SinglePlayerView['status'], string> = {
     failed: 'failed'
 };
 
-function statusWord(status: SinglePlayerView['status']): string {
+function statusWord(status: YourWorldView['status']): string {
     return STATUS_WORD[status];
 }
 
@@ -121,7 +121,7 @@ export interface ServerWindowDeps {
     position: { x: number; y: number } | null;
     /** The server's shared world list and latency, or null when the server has one page. */
     worlds: WorldsService | null;
-    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of a single-player window's menus. */
+    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of the menus of a window running your world. */
     hiscores: HiscoresService | null;
     /**
      * The one conversation, which is the app's rather than this window's: every
@@ -154,8 +154,8 @@ export interface ServerWindowDeps {
     /** Latency of one host, for the current world's readout. */
     probe: (host: string, port: number, timeoutMs: number) => Promise<number | null>;
     /** The world this computer runs, for a window of kind singleplayer; null otherwise. */
-    singlePlayer: SinglePlayerHandle | null;
-    /** Sharing that world. Only a single-player window takes it. */
+    yourWorld: YourWorldHandle | null;
+    /** Sharing that world. Only a window running your world takes it. */
     share: ShareHandle | null;
     /**
      * This window's clock definitions — its server's built-ins with the
@@ -271,7 +271,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const { server } = spec;
     const tag = `[${spec.title}]`;
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
-    const single = server.kind === 'singleplayer' ? deps.singlePlayer : null;
+    const single = server.kind === 'singleplayer' ? deps.yourWorld : null;
     const shared = single ? deps.share : null;
     /**
      * The tools this window offers. Chat is app-scoped, so every window offers
@@ -488,7 +488,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             worlds: worldsView(),
             hiscores: deps.hiscores?.view() ?? null,
             chat: deps.chat(),
-            singlePlayer: single?.view() ?? null,
+            yourWorld: single?.view() ?? null,
             share: shared?.view() ?? null,
             timers: { clocks: clocks.view(), customsFull }
         };
@@ -997,11 +997,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
-     * The starting page in the state the service is in. Only a single-player
-     * window shows it. `pagefailed` is the page's own state, not the world's:
+     * The starting page in the state the service is in. Only a window
+     * running your world shows it. `pagefailed` is the page's own state, not the world's:
      * the world is up and its page is what would not load.
      */
-    function showStarting(override?: { state: SinglePlayerView['status'] | 'pagefailed'; reason: string }): void {
+    function showStarting(override?: { state: YourWorldView['status'] | 'pagefailed'; reason: string }): void {
         if (!single || win.isDestroyed()) return;
         const view = single.view();
         const line = view.builds.find(l => l.id === view.selected);
@@ -1037,7 +1037,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     /** The world changed state: load the game when it is ready, show the page otherwise. */
     let loadedGameUrl: string | null = null;
-    function syncSinglePlayer(): void {
+    function syncYourWorld(): void {
         if (!single) return;
         const view = single.view();
         refreshLabels();
@@ -1087,12 +1087,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 deps.log(`${tag} retrying the world`);
                 // Forgetting the url is what lets the same one be loaded again: when the
                 // world is already up and only its page failed, retry() resolves off the
-                // ready status without changing it, so nothing notifies and syncSinglePlayer
+                // ready status without changing it, so nothing notifies and syncYourWorld
                 // would otherwise see the url it has already loaded and do nothing.
                 loadedGameUrl = null;
                 void single?.retry().then(
-                    () => syncSinglePlayer(),
-                    () => syncSinglePlayer()
+                    () => syncYourWorld(),
+                    () => syncYourWorld()
                 );
                 return;
             }
@@ -1262,12 +1262,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         loadPromise = new Promise<LoadResult>(resolve => {
             loadWaiter = resolve;
         });
-        unsubscribeSingle = single.subscribe(syncSinglePlayer);
+        unsubscribeSingle = single.subscribe(syncYourWorld);
         showStarting();
         void single.acquire().then(
-            () => syncSinglePlayer(),
+            () => syncYourWorld(),
             () => {
-                syncSinglePlayer();
+                syncYourWorld();
                 settleLoad('failed');
             }
         );

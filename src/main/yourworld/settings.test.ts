@@ -1,29 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SINGLE_PLAYER_SETTINGS, type BuildLine, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
-import { changesSettings, readSettingChange, readSinglePlayerSettings, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './settings.ts';
+import { DEFAULT_YOUR_WORLD_SETTINGS, type BuildLine, type YourWorldSettings } from '../../shared/yourworld.ts';
+import { changesSettings, readSettingChange, readYourWorldSettings, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './settings.ts';
 
-const DEFAULTS: SinglePlayerSettings = { cheats: false, xpRate: 1, members: true };
+const DEFAULTS: YourWorldSettings = { cheats: false, xpRate: 1, members: true };
 
 test('the defaults are cheats off, xp as the game gives it, and members on', () => {
-    assert.deepEqual(DEFAULT_SINGLE_PLAYER_SETTINGS, DEFAULTS);
-    assert.deepEqual(readSinglePlayerSettings(undefined), DEFAULTS);
+    assert.deepEqual(DEFAULT_YOUR_WORLD_SETTINGS, DEFAULTS);
+    assert.deepEqual(readYourWorldSettings(undefined), DEFAULTS);
 });
 
-test('readSinglePlayerSettings keeps each good field and defaults each bad one', () => {
-    assert.deepEqual(readSinglePlayerSettings({ cheats: true, xpRate: 10, members: false }), { cheats: true, xpRate: 10, members: false });
-    assert.deepEqual(readSinglePlayerSettings({ cheats: 'yes', xpRate: 3, members: false }), { cheats: false, xpRate: 1, members: false });
-    assert.deepEqual(readSinglePlayerSettings({ xpRate: '5' }), DEFAULTS);
-    assert.deepEqual(readSinglePlayerSettings({ cheats: true }), { ...DEFAULTS, cheats: true }, 'the block as the kit wrote it before xp rate and members');
-    assert.deepEqual(readSinglePlayerSettings('junk'), DEFAULTS);
-    assert.deepEqual(readSinglePlayerSettings(null), DEFAULTS);
+test('readYourWorldSettings keeps each good field and defaults each bad one', () => {
+    assert.deepEqual(readYourWorldSettings({ cheats: true, xpRate: 10, members: false }), { cheats: true, xpRate: 10, members: false });
+    assert.deepEqual(readYourWorldSettings({ cheats: 'yes', xpRate: 3, members: false }), { cheats: false, xpRate: 1, members: false });
+    assert.deepEqual(readYourWorldSettings({ xpRate: '5' }), DEFAULTS);
+    assert.deepEqual(readYourWorldSettings({ cheats: true }), { ...DEFAULTS, cheats: true }, 'the block as the kit wrote it before xp rate and members');
+    assert.deepEqual(readYourWorldSettings('junk'), DEFAULTS);
+    assert.deepEqual(readYourWorldSettings(null), DEFAULTS);
 });
 
-test('readSinglePlayerSettings hands back a fresh object each time', () => {
-    const first = readSinglePlayerSettings(undefined);
+test('readYourWorldSettings hands back a fresh object each time', () => {
+    const first = readYourWorldSettings(undefined);
     first.cheats = true;
-    assert.equal(readSinglePlayerSettings(undefined).cheats, false);
-    assert.equal(DEFAULT_SINGLE_PLAYER_SETTINGS.cheats, false);
+    assert.equal(readYourWorldSettings(undefined).cheats, false);
+    assert.equal(DEFAULT_YOUR_WORLD_SETTINGS.cheats, false);
 });
 
 test('readSettingChange takes one known setting with a value it can have, and nothing else', () => {
@@ -48,7 +48,7 @@ test('changesSettings says whether a change would leave anything different', () 
 });
 
 test('each restart question names the change, the restart and the logout, with Restart as the default', () => {
-    const patches: Partial<SinglePlayerSettings>[] = [{ cheats: true }, { cheats: false }, { xpRate: 5 }, { members: true }, { members: false }];
+    const patches: Partial<YourWorldSettings>[] = [{ cheats: true }, { cheats: false }, { xpRate: 5 }, { members: true }, { members: false }];
     for (const patch of patches) {
         const question = restartConfirmation(patch);
         assert.match(question.message, /restarts your world and logs you out\.$/);

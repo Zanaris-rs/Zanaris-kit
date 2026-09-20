@@ -4,10 +4,10 @@ import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
 import { AUTO_JOIN_MAX, channelProblem, isNick } from '../shared/chatSettings.ts';
-import type { SinglePlayerSettings } from '../shared/singleplayer.ts';
+import type { YourWorldSettings } from '../shared/yourworld.ts';
 import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
-import { readSinglePlayerBuild, readSinglePlayerSettings } from './singleplayer/settings.ts';
+import { readYourWorldBuild, readYourWorldSettings } from './yourworld/settings.ts';
 
 interface StateFile {
     version: 1;
@@ -15,8 +15,12 @@ interface StateFile {
     warnOnSwitch: boolean;
     /** `nickserv` is the NickServ password sealed by the OS store (`chat/secret.ts`), and absent when there is none. */
     chat: ChatSettings & { nickserv?: string };
-    /** `build` is the line the player chose, absent until they choose one. */
-    singlePlayer: SinglePlayerSettings & { build?: string };
+    /**
+     * `build` is the line the player chose, absent until they choose one.
+     * The key is still `singlePlayer`: the tool was renamed, the files people
+     * have were not, and nobody reads this one.
+     */
+    singlePlayer: YourWorldSettings & { build?: string };
     hiscores: Record<string, string>;
     alwaysOnTop: boolean;
     timers: TimersState;
@@ -131,9 +135,9 @@ export class AppState {
     private chatSettings: ChatSettings = defaultChat();
     // Sealed, never the password itself: see `chat/secret.ts`.
     private nickservSealed: string | null = null;
-    // The single-player world's settings: cheats off, xp as the game gives it and members on, until asked otherwise.
-    private singlePlayer: SinglePlayerSettings = readSinglePlayerSettings(undefined);
-    private singlePlayerBuildId: string | null = null;
+    // Your world's settings: cheats off, xp as the game gives it and members on, until asked otherwise.
+    private yourWorld: YourWorldSettings = readYourWorldSettings(undefined);
+    private yourWorldBuildId: string | null = null;
     // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
     private hiscoresNames = new Map<string, string>();
     // Off until asked for: a window that floats over everything else is not
@@ -152,8 +156,8 @@ export class AppState {
         this.warn = true;
         this.chatSettings = defaultChat();
         this.nickservSealed = null;
-        this.singlePlayer = readSinglePlayerSettings(undefined);
-        this.singlePlayerBuildId = null;
+        this.yourWorld = readYourWorldSettings(undefined);
+        this.yourWorldBuildId = null;
         this.hiscoresNames = new Map();
         this.onTop = false;
         this.timersState = emptyTimersState();
@@ -169,8 +173,8 @@ export class AppState {
             if (typeof parsed?.warnOnSwitch === 'boolean') this.warn = parsed.warnOnSwitch;
             this.chatSettings = readChat(parsed?.chat);
             this.nickservSealed = readSealed(parsed?.chat);
-            this.singlePlayer = readSinglePlayerSettings(parsed?.singlePlayer);
-            this.singlePlayerBuildId = readSinglePlayerBuild((parsed?.singlePlayer as { build?: unknown } | undefined)?.build);
+            this.yourWorld = readYourWorldSettings(parsed?.singlePlayer);
+            this.yourWorldBuildId = readYourWorldBuild((parsed?.singlePlayer as { build?: unknown } | undefined)?.build);
             this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
@@ -240,27 +244,27 @@ export class AppState {
         if (patch.autoJoin !== undefined) this.chatSettings.autoJoin = [...patch.autoJoin];
     }
 
-    /** The single-player world's settings. A copy: changes go through setSinglePlayerSettings. */
-    singlePlayerSettings(): SinglePlayerSettings {
-        return { ...this.singlePlayer };
+    /** Your world's settings. A copy: changes go through setYourWorldSettings. */
+    yourWorldSettings(): YourWorldSettings {
+        return { ...this.yourWorld };
     }
 
     /**
-     * Read back through `readSinglePlayerSettings` on the way in, as a file
+     * Read back through `readYourWorldSettings` on the way in, as a file
      * would be, so nothing stored here can be something a later load would drop.
      */
-    setSinglePlayerSettings(patch: Partial<SinglePlayerSettings>): void {
-        this.singlePlayer = readSinglePlayerSettings({ ...this.singlePlayer, ...patch });
+    setYourWorldSettings(patch: Partial<YourWorldSettings>): void {
+        this.yourWorld = readYourWorldSettings({ ...this.yourWorld, ...patch });
         this.save();
     }
 
-    /** The build line the player last chose for single player; null before they have chosen one. */
-    singlePlayerBuild(): string | null {
-        return this.singlePlayerBuildId;
+    /** The build line the player last chose for your world; null before they have chosen one. */
+    yourWorldBuild(): string | null {
+        return this.yourWorldBuildId;
     }
 
-    setSinglePlayerBuild(id: string): void {
-        this.singlePlayerBuildId = readSinglePlayerBuild(id);
+    setYourWorldBuild(id: string): void {
+        this.yourWorldBuildId = readYourWorldBuild(id);
         this.save();
     }
 
@@ -319,7 +323,7 @@ export class AppState {
             worlds: Object.fromEntries(this.worlds),
             warnOnSwitch: this.warn,
             chat: this.nickservSealed === null ? this.chatSettings : { ...this.chatSettings, nickserv: this.nickservSealed },
-            singlePlayer: this.singlePlayerBuildId === null ? this.singlePlayer : { ...this.singlePlayer, build: this.singlePlayerBuildId },
+            singlePlayer: this.yourWorldBuildId === null ? this.yourWorld : { ...this.yourWorld, build: this.yourWorldBuildId },
             hiscores: Object.fromEntries(this.hiscoresNames),
             alwaysOnTop: this.onTop,
             timers: this.timersState

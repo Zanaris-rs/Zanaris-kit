@@ -31,8 +31,8 @@ export interface ShareDeps {
 }
 
 /**
- * Sharing the single-player world: a relay in front of it and a quick tunnel
- * in front of that. One share for every single-player window, counted like
+ * Sharing your world: a relay in front of it and a quick tunnel
+ * in front of that. One share for every window running your world, counted like
  * the world is — each window acquires it, and the last release stops it.
  * The link is shown only once it works: a tunnel registers some time before
  * its link reaches it, and a link opened early can stay broken for the
@@ -83,7 +83,7 @@ export class ShareService {
         this.windows++;
     }
 
-    /** The last single-player window is gone: nobody is left to see the link, or to stop it. */
+    /** The last window running your world is gone: nobody is left to see the link, or to stop it. */
     release(): void {
         this.windows = Math.max(0, this.windows - 1);
         if (this.windows === 0) void this.stop();

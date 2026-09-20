@@ -1,5 +1,5 @@
 /**
- * The builds single player can run. Each line is a recipe, `engines/<id>.json`:
+ * The builds your world can run. Each line is a recipe, `engines/<id>.json`:
  * the upstream engine and content commits the stage script builds from, the
  * patches it lays over the engine, and — once CI has built and published it —
  * the archive the kit downloads, pinned by size and sha-256. The kit runs no
@@ -12,7 +12,7 @@
 /** Where every build is published, as a prerelease of the kit's own repository. */
 export const BUILDS_REPO = 'Zanaris-rs/Zanaris-kit';
 
-/** The line single player runs until the player picks another. */
+/** The line your world runs until the player picks another. */
 export const DEFAULT_BUILD = 'lostcity-274';
 
 export interface EngineSource {

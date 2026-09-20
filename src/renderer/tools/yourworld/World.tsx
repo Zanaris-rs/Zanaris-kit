@@ -1,5 +1,5 @@
 import { useId, type CSSProperties, type ReactNode } from 'react';
-import { worldRunning, XP_RATES, type SinglePlayerSettings, type SinglePlayerView } from '../../../shared/singleplayer';
+import { worldRunning, XP_RATES, type YourWorldSettings, type YourWorldView } from '../../../shared/yourworld';
 
 /*
  * .btn is hand-written CSS carrying the gold label, so a button that wants a
@@ -13,8 +13,8 @@ const SPENT: CSSProperties = { color: 'var(--color-faint)' };
 const RATE: CSSProperties = { fontSize: 13, padding: '1px 6px', minWidth: 38 };
 const QUIET: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 
-function change<K extends keyof SinglePlayerSettings>(key: K, value: SinglePlayerSettings[K]): void {
-    void window.zanaris.singlePlayer.setSetting(key, value);
+function change<K extends keyof YourWorldSettings>(key: K, value: YourWorldSettings[K]): void {
+    void window.zanaris.yourWorld.setSetting(key, value);
 }
 
 /** An on/off setting: the button says which, and the note beside it says what on means. */
@@ -42,7 +42,7 @@ function Switch({ label, on, busy, red = false, note, onChange }: { label: strin
 }
 
 /** The World section: what the kit writes into world.json for the player, and the world's own files. */
-export default function World({ view }: { view: SinglePlayerView }): ReactNode {
+export default function World({ view }: { view: YourWorldView }): ReactNode {
     const id = useId();
     const busy = view.status === 'preparing' || view.status === 'starting' || view.status === 'stopping';
     const { settings } = view;
@@ -79,7 +79,7 @@ export default function World({ view }: { view: SinglePlayerView }): ReactNode {
                 {/*
                  * Not a caveat about the cheats switch, which is why it does not hang off it:
                  * the world is yours whatever the switch says, and content asks map_live -
-                 * node.production, which single player never turns on. The guide is where a
+                 * node.production, which your world never turns on. The guide is where a
                  * player meets that first, and on a second character it is the point.
                  */}
                 <p className="text-[12px] text-dim">Your own world, not a live one. The guide will offer to skip the tutorial, however many characters you start.</p>
@@ -87,7 +87,7 @@ export default function World({ view }: { view: SinglePlayerView }): ReactNode {
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
             <div className="flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-1.5">
-                <button type="button" onClick={() => void window.zanaris.singlePlayer.showLog()} style={QUIET} className="btn group">
+                <button type="button" onClick={() => void window.zanaris.yourWorld.showLog()} style={QUIET} className="btn group">
                     <span className="text-dim group-hover:text-cream">Show log</span>
                 </button>
             </div>

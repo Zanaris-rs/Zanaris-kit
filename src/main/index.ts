@@ -24,14 +24,14 @@ import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
-import { SinglePlayerService } from './singleplayer/service';
-import { BuildStore } from './singleplayer/buildStore';
-import { buildStoreDeps, electronDeps, readCommands, singlePlayerHome } from './singleplayer/electron';
-import { recipeRevision } from './singleplayer/recipes';
-import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/singleplayer';
+import { YourWorldService } from './yourworld/service';
+import { BuildStore } from './yourworld/buildStore';
+import { buildStoreDeps, electronDeps, readCommands, yourWorldHome } from './yourworld/electron';
+import { recipeRevision } from './yourworld/recipes';
+import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/yourworld';
 import type { CommandRef } from '../shared/commands';
-import type { Confirm, Confirmation } from './singleplayer/confirm';
-import { changesSettings, readSettingChange, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './singleplayer/settings';
+import type { Confirm, Confirmation } from './yourworld/confirm';
+import { changesSettings, readSettingChange, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './yourworld/settings';
 import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
@@ -42,7 +42,7 @@ const log = (msg: string): void => console.log(msg);
 // ── one instance ──────────────────────────────────────────────────────────
 //
 // Two instances would share one world. Both resolve the same
-// <userData>/singleplayer, both write data/config/world.json over each other,
+// <userData>/yourworld, both write data/config/world.json over each other,
 // both spawn an engine with that working directory, and both save the same
 // character into data/players/main — two worlds, one set of saves, last
 // logout wins, and nothing tells the player. The userData move below and
@@ -123,9 +123,9 @@ if (migrated.length > 0) log(`[main] moved ${migrated.join(', ')} from ${legacyU
 const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
 
 let quitting = false;
-// The single-player entry names the revision of the line the world runs. Before
+// The entry for your world names the revision of the line the world runs. Before
 // the service exists, that is the line the player last chose.
-const catalog = new Catalog(join(userData, 'servers.json'), { singlePlayerRevision: () => singlePlayer?.view().revision ?? recipeRevision(appState.singlePlayerBuild()) });
+const catalog = new Catalog(join(userData, 'servers.json'), { yourWorldRevision: () => yourWorld?.view().revision ?? recipeRevision(appState.yourWorldBuild()) });
 /** Capture mode keeps its state beside its screenshots, so a test switch never changes what the next real launch opens. */
 // Not `CAPTURE_DIR` any more. Capture mode used to redirect this one file into
 // the screenshots folder so a run could not touch the real profile; it now
@@ -144,8 +144,8 @@ let chat: ChatService | null = null;
 let update: LatestRelease | null = null;
 
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
-let singlePlayer: SinglePlayerService | null = null;
-/** Single player's builds on this computer, which the world runs one of. */
+let yourWorld: YourWorldService | null = null;
+/** Your world's builds on this computer, which the world runs one of. */
 let builds: BuildStore | null = null;
 let share: ShareService | null = null;
 
@@ -339,7 +339,7 @@ const windows = new ServerWindows((spec, onClosed) => {
             remembered: appState.world(spec.server.id),
             remember: remembered => appState.setWorld(spec.server.id, remembered),
             probe: probeLatency,
-            singlePlayer,
+            yourWorld,
             share,
             timers: () => {
                 const state = appState.timers();
@@ -361,8 +361,8 @@ function windowFor(sender: WebContents): ServerWindow | undefined {
     return byShell.get(sender.id);
 }
 
-/** The shell of a single-player window, or undefined for any other sender. */
-function singlePlayerWindow(sender: WebContents): ServerWindow | undefined {
+/** The shell of a window running your world, or undefined for any other sender. */
+function yourWorldWindow(sender: WebContents): ServerWindow | undefined {
     const sw = windowFor(sender);
     return sw?.state().server.kind === 'singleplayer' ? sw : undefined;
 }
@@ -694,7 +694,7 @@ ipcMain.handle(IPC.paneOpenExternal, (event, url: unknown) => {
  * own promise means what the channel name says, settling when the lookup is
  * over rather than the moment the request goes out. It is what the handlers
  * around it that do real work do — `worldsRefresh` hands back
- * `refreshWorlds()`'s promise, the switch and single-player handlers await
+ * `refreshWorlds()`'s promise, the switch and your world's handlers await
  * theirs — and one layer down capture mode leans on that settle directly,
  * awaiting `service.lookup` because it is the only "the lookup has finished"
  * this feature has to offer.
@@ -833,7 +833,7 @@ ipcMain.handle(IPC.chatDisconnect, () => {
     chat?.disconnect();
 });
 
-// ── single player ─────────────────────────────────────────────────────────
+// ── your world ─────────────────────────────────────────────────────────
 
 /**
  * Ask before closing the game — its pane, or a tab holding it — which destroys
@@ -864,8 +864,8 @@ async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'layout'
 
 /**
  * Asks on the window, as a sheet, so other windows keep running. Every
- * question single player asks goes through here; the words are written by
- * `singleplayer/settings.ts` and `singleplayer/characters.ts`, where they are
+ * question your world asks goes through here; the words are written by
+ * `yourworld/settings.ts` and `yourworld/characters.ts`, where they are
  * tested.
  */
 function confirmOn(sw: ServerWindow): Confirm {
@@ -882,46 +882,46 @@ function confirmOn(sw: ServerWindow): Confirm {
     };
 }
 
-ipcMain.handle(IPC.singlePlayerSetSetting, async (event, key: unknown, value: unknown) => {
-    const sw = singlePlayerWindow(event.sender);
+ipcMain.handle(IPC.yourWorldSetSetting, async (event, key: unknown, value: unknown) => {
+    const sw = yourWorldWindow(event.sender);
     const patch = readSettingChange(key, value);
-    if (!sw || !singlePlayer || !patch) return;
-    if (!changesSettings(singlePlayer.view().settings, patch)) return;
-    if (worldRunning(singlePlayer.view().status) && !(await confirmOn(sw)(restartConfirmation(patch)))) return;
-    await singlePlayer.setSettings(patch);
+    if (!sw || !yourWorld || !patch) return;
+    if (!changesSettings(yourWorld.view().settings, patch)) return;
+    if (worldRunning(yourWorld.view().status) && !(await confirmOn(sw)(restartConfirmation(patch)))) return;
+    await yourWorld.setSettings(patch);
 });
 
-ipcMain.handle(IPC.singlePlayerRetry, async event => {
-    if (!singlePlayerWindow(event.sender) || !singlePlayer) return;
-    await singlePlayer.retry().catch(() => undefined);
+ipcMain.handle(IPC.yourWorldRetry, async event => {
+    if (!yourWorldWindow(event.sender) || !yourWorld) return;
+    await yourWorld.retry().catch(() => undefined);
 });
 
-// ── single player's builds ────────────────────────────────────────────────
+// ── your world's builds ────────────────────────────────────────────────
 
 /** Switching restarts a running world, so it asks first; the words are `switchConfirmation`'s. */
-ipcMain.handle(IPC.singlePlayerUseBuild, async (event, id: unknown) => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer || typeof id !== 'string') return;
-    const view = singlePlayer.view();
+ipcMain.handle(IPC.yourWorldUseBuild, async (event, id: unknown) => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof id !== 'string') return;
+    const view = yourWorld.view();
     const line = view.builds.find(l => l.id === id);
     if (!line || id === view.selected) return;
     if (worldRunning(view.status) && !(await confirmOn(sw)(switchConfirmation(line, view.revision)))) return;
-    await singlePlayer.useBuild(id);
+    await yourWorld.useBuild(id);
 });
 
 /** The button is the ask: the page and the panel say what downloads and how big it is. */
-ipcMain.handle(IPC.singlePlayerDownloadBuild, async (event, id: unknown) => {
-    if (!singlePlayerWindow(event.sender) || !singlePlayer || typeof id !== 'string') return;
-    await singlePlayer.download(id);
+ipcMain.handle(IPC.yourWorldDownloadBuild, async (event, id: unknown) => {
+    if (!yourWorldWindow(event.sender) || !yourWorld || typeof id !== 'string') return;
+    await yourWorld.download(id);
 });
 
 /** Null when the build went, or was not asked to; otherwise why not. */
-ipcMain.handle(IPC.singlePlayerRemoveBuild, async (event, id: unknown): Promise<string | null> => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer || typeof id !== 'string') return null;
-    const line = singlePlayer.view().builds.find(l => l.id === id);
+ipcMain.handle(IPC.yourWorldRemoveBuild, async (event, id: unknown): Promise<string | null> => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof id !== 'string') return null;
+    const line = yourWorld.view().builds.find(l => l.id === id);
     if (!line || !(await confirmOn(sw)(removeBuildConfirmation(line)))) return null;
-    return singlePlayer.removeBuild(id);
+    return yourWorld.removeBuild(id);
 });
 
 /** What a character handler answers for a payload that is not a change. */
@@ -929,9 +929,9 @@ const NOT_A_CHANGE: CharacterOutcome = { kind: 'refused', message: 'That is not 
 /** A name as typed. Its rules are `shared/names.ts`'s; this only bounds what crosses the bridge. */
 const isTyped = (x: unknown): x is string => typeof x === 'string' && x.length <= NAME_INPUT_MAX;
 
-ipcMain.handle(IPC.singlePlayerPickImport, async (event): Promise<ImportPick | null> => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer) return null;
+ipcMain.handle(IPC.yourWorldPickImport, async (event): Promise<ImportPick | null> => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld) return null;
     const { canceled, filePaths } = await dialog.showOpenDialog(sw.window, {
         title: 'Import a character',
         buttonLabel: 'Import',
@@ -939,43 +939,43 @@ ipcMain.handle(IPC.singlePlayerPickImport, async (event): Promise<ImportPick | n
         properties: ['openFile']
     });
     const path = filePaths[0];
-    return canceled || path === undefined ? null : singlePlayer.pickCharacter(path);
+    return canceled || path === undefined ? null : yourWorld.pickCharacter(path);
 });
 
-ipcMain.handle(IPC.singlePlayerImport, async (event, token: unknown, name: unknown): Promise<CharacterOutcome> => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer || typeof token !== 'string' || !isTyped(name)) return NOT_A_CHANGE;
-    return singlePlayer.importCharacter(token, name, confirmOn(sw));
+ipcMain.handle(IPC.yourWorldImport, async (event, token: unknown, name: unknown): Promise<CharacterOutcome> => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof token !== 'string' || !isTyped(name)) return NOT_A_CHANGE;
+    return yourWorld.importCharacter(token, name, confirmOn(sw));
 });
 
-ipcMain.handle(IPC.singlePlayerRename, async (event, from: unknown, to: unknown): Promise<CharacterOutcome> => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer || typeof from !== 'string' || !isTyped(to)) return NOT_A_CHANGE;
-    return singlePlayer.renameCharacter(from, to, confirmOn(sw));
+ipcMain.handle(IPC.yourWorldRename, async (event, from: unknown, to: unknown): Promise<CharacterOutcome> => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof from !== 'string' || !isTyped(to)) return NOT_A_CHANGE;
+    return yourWorld.renameCharacter(from, to, confirmOn(sw));
 });
 
-ipcMain.handle(IPC.singlePlayerDuplicate, async (event, from: unknown, to: unknown): Promise<CharacterOutcome> => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer || typeof from !== 'string' || !isTyped(to)) return NOT_A_CHANGE;
-    return singlePlayer.duplicateCharacter(from, to, confirmOn(sw));
+ipcMain.handle(IPC.yourWorldDuplicate, async (event, from: unknown, to: unknown): Promise<CharacterOutcome> => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof from !== 'string' || !isTyped(to)) return NOT_A_CHANGE;
+    return yourWorld.duplicateCharacter(from, to, confirmOn(sw));
 });
 
-ipcMain.handle(IPC.singlePlayerCopyTo, async (event, name: unknown, revision: unknown): Promise<CharacterOutcome> => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer || typeof name !== 'string' || typeof revision !== 'number') return NOT_A_CHANGE;
-    return singlePlayer.copyCharacterTo(name, revision, confirmOn(sw));
+ipcMain.handle(IPC.yourWorldCopyTo, async (event, name: unknown, revision: unknown): Promise<CharacterOutcome> => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof name !== 'string' || typeof revision !== 'number') return NOT_A_CHANGE;
+    return yourWorld.copyCharacterTo(name, revision, confirmOn(sw));
 });
 
-ipcMain.handle(IPC.singlePlayerDelete, async (event, name: unknown): Promise<CharacterOutcome> => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer || typeof name !== 'string') return NOT_A_CHANGE;
-    return singlePlayer.deleteCharacter(name, confirmOn(sw));
+ipcMain.handle(IPC.yourWorldDelete, async (event, name: unknown): Promise<CharacterOutcome> => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof name !== 'string') return NOT_A_CHANGE;
+    return yourWorld.deleteCharacter(name, confirmOn(sw));
 });
 
 /** Where to is the save dialog's question, and so is whether to write over a file already there. */
-ipcMain.handle(IPC.singlePlayerExport, async (event, name: unknown): Promise<CharacterOutcome> => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !singlePlayer || typeof name !== 'string' || !singlePlayer.hasCharacter(name)) return NOT_A_CHANGE;
+ipcMain.handle(IPC.yourWorldExport, async (event, name: unknown): Promise<CharacterOutcome> => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof name !== 'string' || !yourWorld.hasCharacter(name)) return NOT_A_CHANGE;
     const { canceled, filePath } = await dialog.showSaveDialog(sw.window, {
         title: 'Export a character',
         buttonLabel: 'Export',
@@ -983,7 +983,7 @@ ipcMain.handle(IPC.singlePlayerExport, async (event, name: unknown): Promise<Cha
         filters: [{ name: 'Character saves', extensions: ['sav'] }]
     });
     if (canceled || !filePath) return { kind: 'cancelled' };
-    return singlePlayer.exportCharacter(name, filePath);
+    return yourWorld.exportCharacter(name, filePath);
 });
 
 /**
@@ -992,39 +992,39 @@ ipcMain.handle(IPC.singlePlayerExport, async (event, name: unknown): Promise<Cha
  * open is picked up.
  */
 let commands: { build: string; list: CommandRef[] | null } | null = null;
-ipcMain.handle(IPC.singlePlayerCommands, (event): CommandRef[] | null => {
-    if (!singlePlayerWindow(event.sender) || !singlePlayer || !builds) return null;
-    const build = builds.installed(singlePlayer.view().selected);
+ipcMain.handle(IPC.yourWorldCommands, (event): CommandRef[] | null => {
+    if (!yourWorldWindow(event.sender) || !yourWorld || !builds) return null;
+    const build = builds.installed(yourWorld.view().selected);
     if (!build) return null;
     const key = `${build.resources}\0${build.tag}`;
     if (commands?.build !== key || commands.list === null) commands = { build: key, list: readCommands(build.resources) };
     return commands.list;
 });
 
-ipcMain.handle(IPC.singlePlayerOpenSaves, async () => {
-    if (!singlePlayer) return;
-    mkdirSync(singlePlayer.savesDir, { recursive: true });
-    await shell.openPath(singlePlayer.savesDir);
+ipcMain.handle(IPC.yourWorldOpenSaves, async () => {
+    if (!yourWorld) return;
+    mkdirSync(yourWorld.savesDir, { recursive: true });
+    await shell.openPath(yourWorld.savesDir);
 });
 
-ipcMain.handle(IPC.singlePlayerShowLog, async () => {
-    if (!singlePlayer) return;
+ipcMain.handle(IPC.yourWorldShowLog, async () => {
+    if (!yourWorld) return;
     // The log of the world the selected line runs, in that revision's folder.
-    mkdirSync(singlePlayer.home, { recursive: true });
-    const logPath = join(singlePlayer.home, 'world.log');
+    mkdirSync(yourWorld.home, { recursive: true });
+    const logPath = join(yourWorld.home, 'world.log');
     if (!existsSync(logPath)) writeFileSync(logPath, '');
     await shell.openPath(logPath);
 });
 
-// ── sharing the single-player world ──────────────────────────────────────
-// Asked for from a single-player window's Friends section and nowhere else.
+// ── sharing your world ──────────────────────────────────────────
+// Asked for from the Friends section of a window running your world, and nowhere else.
 
 ipcMain.handle(IPC.shareStart, async event => {
-    const sw = singlePlayerWindow(event.sender);
-    if (!sw || !share || !singlePlayer || !shareAsset) return;
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !share || !yourWorld || !shareAsset) return;
     const { status } = share.view();
     if (status !== 'off' && status !== 'failed') return;
-    const dialogs = shareDialogs({ asset: shareAsset, installed: await cloudflaredInstalled(), cheats: singlePlayer.view().settings.cheats });
+    const dialogs = shareDialogs({ asset: shareAsset, installed: await cloudflaredInstalled(), cheats: yourWorld.view().settings.cheats });
     for (const ask of dialogs) {
         const { response } = await dialog.showMessageBox(sw.window, {
             type: ask.kind === 'share' ? 'warning' : 'question',
@@ -1041,17 +1041,17 @@ ipcMain.handle(IPC.shareStart, async event => {
 });
 
 ipcMain.handle(IPC.shareStop, async event => {
-    if (!singlePlayerWindow(event.sender) || !share) return;
+    if (!yourWorldWindow(event.sender) || !share) return;
     await share.stop();
 });
 
 ipcMain.handle(IPC.shareCopy, event => {
-    const url = singlePlayerWindow(event.sender) ? share?.view().url : null;
+    const url = yourWorldWindow(event.sender) ? share?.view().url : null;
     if (url) clipboard.writeText(url);
 });
 
 ipcMain.handle(IPC.shareOpen, async event => {
-    const url = singlePlayerWindow(event.sender) ? share?.view().url : null;
+    const url = yourWorldWindow(event.sender) ? share?.view().url : null;
     if (url?.startsWith('https://')) await shell.openExternal(url);
 });
 
@@ -1175,12 +1175,12 @@ async function captureAndExit(dir: string): Promise<void> {
 
     try {
         const started = Date.now();
-        // Single player needs its build on disk. Where there is none the entry is
+        // Your world needs its build on disk. Where there is none the entry is
         // dropped rather than left to wait on a download — so a capture wants the
         // selected build already downloaded in the real profile.
-        const playable = singlePlayer !== null && builds?.installed(singlePlayer.view().selected) != null;
+        const playable = yourWorld !== null && builds?.installed(yourWorld.view().selected) != null;
         const servers = catalog.list().filter(s => s.kind !== 'singleplayer' || playable);
-        if (servers.length < catalog.list().length) log('[capture] singleplayer skipped: its build is not on disk');
+        if (servers.length < catalog.list().length) log('[capture] your world skipped: its build is not on disk');
         const opened = servers.map(openServer);
         const results = await Promise.all(
             opened.map(async sw => {
@@ -1425,7 +1425,7 @@ async function captureAndExit(dir: string): Promise<void> {
             log('[capture] seam drag skipped: the window had no split to drag');
         }
 
-        // The Single player tool: the world is up by the time the game loaded,
+        // The Your world tool: the world is up by the time the game loaded,
         // so this is the panel as a player finds it — status, port and the World section.
         const single = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.kind === 'singleplayer');
         if (single) {
@@ -1437,8 +1437,8 @@ async function captureAndExit(dir: string): Promise<void> {
             await wait(500);
             showTool(single, 'singleplayer');
             await wait(500);
-            await shoot('singleplayer-tool', single);
-            log(`[capture] singleplayer: ${single.state().singlePlayer?.status} on port ${single.state().singlePlayer?.port}`);
+            await shoot('yourworld-tool', single);
+            log(`[capture] your world: ${single.state().yourWorld?.status} on port ${single.state().yourWorld?.port}`);
         }
 
         // The reference pane. Last, because it is the one thing here that
@@ -1601,25 +1601,25 @@ app.whenReady().then(async () => {
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();
-    // A capture photographs single player running, and the profile of its own it
+    // A capture photographs your world running, and the profile of its own it
     // keeps its state in has downloaded nothing. So the builds — 50 MB each, and
     // pinned and checked whichever profile they sit in — are read from the real
     // one, rather than downloaded again on every run. The characters are not:
     // they stay in the capture profile, where a fresh world is what is wanted.
-    builds = new BuildStore(buildStoreDeps(join(singlePlayerHome(CAPTURE_DIR ? REAL_USER_DATA : userData), 'builds'), log));
-    const world = new SinglePlayerService(
+    builds = new BuildStore(buildStoreDeps(join(yourWorldHome(CAPTURE_DIR ? REAL_USER_DATA : userData), 'builds'), log));
+    const world = new YourWorldService(
         electronDeps({
             baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',
-            settings: { get: () => appState.singlePlayerSettings(), set: patch => appState.setSinglePlayerSettings(patch) },
+            settings: { get: () => appState.yourWorldSettings(), set: patch => appState.setYourWorldSettings(patch) },
             builds,
-            selection: { get: () => appState.singlePlayerBuild(), set: id => appState.setSinglePlayerBuild(id) },
+            selection: { get: () => appState.yourWorldBuild(), set: id => appState.setYourWorldBuild(id) },
             log
         })
     );
-    singlePlayer = world;
+    yourWorld = world;
     // The File menu names the revision of the line the world runs; a switch changes it.
     const followRevision = (): void => {
-        if (!catalog.followSinglePlayer()) return;
+        if (!catalog.followYourWorld()) return;
         catalogSeen = catalogMtime();
         installAppMenu();
     };
@@ -1636,7 +1636,7 @@ app.whenReady().then(async () => {
         shareDeps({
             // Asked per request by the relay, so a restarted world is found on its new port.
             worldPort: () => {
-                const view = singlePlayer?.view();
+                const view = yourWorld?.view();
                 return view?.status === 'ready' ? view.port : null;
             },
             log
@@ -1693,12 +1693,12 @@ app.on('before-quit', event => {
     quitting = true;
     // Our own close, so nothing waits to reconnect a connection the app is leaving.
     chat?.stop();
-    singlePlayer?.dispose();
+    yourWorld?.dispose();
     if (worldStoppedForQuit) return;
     // The world writes the player's saves as it shuts down, so the quit waits for
     // it — bounded by the service's own ten-second grace before it kills the world.
-    const status = singlePlayer?.view().status;
-    const world = singlePlayer && status !== 'stopped' && status !== 'failed' && status !== undefined ? singlePlayer : null;
+    const status = yourWorld?.view().status;
+    const world = yourWorld && status !== 'stopped' && status !== 'failed' && status !== undefined ? yourWorld : null;
     const sharing = share && share.view().status !== 'off' ? share : null;
     if (world || sharing) {
         event.preventDefault();

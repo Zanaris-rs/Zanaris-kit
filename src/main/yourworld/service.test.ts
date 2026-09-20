@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SINGLE_PLAYER_SETTINGS, type BuildLine, type SinglePlayerSettings } from '../../shared/singleplayer.ts';
+import { DEFAULT_YOUR_WORLD_SETTINGS, type BuildLine, type YourWorldSettings } from '../../shared/yourworld.ts';
 import type { InstalledBuild } from './buildStore.ts';
-import { SinglePlayerService, type BuildsHandle, type SinglePlayerDeps, type SpawnSpec, type WorldProcess } from './service.ts';
+import { YourWorldService, type BuildsHandle, type YourWorldDeps, type SpawnSpec, type WorldProcess } from './service.ts';
 import type { Confirmation } from './confirm.ts';
 import { buildSave } from './testSaves.ts';
 
@@ -100,7 +100,7 @@ class FakeProcess implements WorldProcess {
 }
 
 interface Harness {
-    deps: SinglePlayerDeps;
+    deps: YourWorldDeps;
     files: Map<string, string>;
     saves: Map<string, Uint8Array>;
     dirs: Set<string>;
@@ -109,7 +109,7 @@ interface Harness {
     posts: string[];
     statusQueue: (number | null)[];
     clock: { now: number };
-    settings: { value: SinglePlayerSettings };
+    settings: { value: YourWorldSettings };
     watchers: Map<string, () => void>;
     trashed: string[];
     /** How many times a directory has been listed. */
@@ -127,7 +127,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
     const posts: string[] = [];
     const statusQueue: (number | null)[] = [];
     const clock = { now: 1_000_000 };
-    const settings = { value: { ...DEFAULT_SINGLE_PLAYER_SETTINGS } };
+    const settings = { value: { ...DEFAULT_YOUR_WORLD_SETTINGS } };
     const watchers = new Map<string, () => void>();
     const trashed: string[] = [];
     const lists = { count: 0 };
@@ -150,7 +150,7 @@ function harness(over: { staged?: boolean; stamp?: boolean; baseUrl?: string } =
         if (bytes === undefined) throw new Error(`ENOENT ${p}`);
         return bytes;
     };
-    const deps: SinglePlayerDeps = {
+    const deps: YourWorldDeps = {
         worlds: '/worlds',
         builds,
         selection: { get: () => selection.value, set: id => void (selection.value = id) },
@@ -240,7 +240,7 @@ const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
 
 test('the first acquire prepares the working directory, writes world.json, spawns the world and resolves when it answers', async () => {
     const h = harness();
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(null, null, 200);
     const url = await service.acquire();
     assert.equal(url, 'http://127.0.0.1:40001/rs2.cgi?lowmem=1');
@@ -268,7 +268,7 @@ test('the first acquire prepares the working directory, writes world.json, spawn
 
 test('a matching stamp skips the copy', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     assert.equal(h.copies.length, 0);
@@ -277,7 +277,7 @@ test('a matching stamp skips the copy', async () => {
 
 test('a second acquire while ready resolves at once; release to zero asks the world to stop and waits for it', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     const first = await service.acquire();
     const second = await service.acquire();
@@ -298,7 +298,7 @@ test('a second acquire while ready resolves at once; release to zero asks the wo
 
 test('a world that ignores the shutdown request is killed after ten seconds', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     service.release();
@@ -312,7 +312,7 @@ test('a world that ignores the shutdown request is killed after ten seconds', as
 
 test('a world that exits before it is ready fails with its last lines', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     const pending = service.acquire();
     await tick();
     h.processes[0]!.print('Starting world');
@@ -327,7 +327,7 @@ test('a world that exits before it is ready fails with its last lines', async ()
 
 test('a world that never answers fails at the deadline and is killed', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await assert.rejects(service.acquire(), /did not answer within 60 s/);
     assert.equal(service.view().status, 'failed');
     assert.equal(h.processes[0]!.killed, 1);
@@ -335,7 +335,7 @@ test('a world that never answers fails at the deadline and is killed', async () 
 
 test('retry from failed starts again without changing the window count', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await assert.rejects(service.acquire());
     h.statusQueue.push(200);
     const url = await service.retry();
@@ -348,7 +348,7 @@ test('retry from failed starts again without changing the window count', async (
 
 test('setSettings persists, and restarts a running world with the new staff level, xp rate and members', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await service.setSettings({ cheats: true });
     assert.equal(h.settings.value.cheats, true);
     assert.equal(h.processes.length, 0, 'a stopped world is not started by a setting');
@@ -376,7 +376,7 @@ test('setSettings persists, and restarts a running world with the new staff leve
 
 test('a crash while ready is reported as failed and subscribers hear about it', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     let pushes = 0;
     service.subscribe(() => pushes++);
     h.statusQueue.push(200);
@@ -391,7 +391,7 @@ test('a crash while ready is reported as failed and subscribers hear about it', 
 
 test('a build that is not downloaded waits in missing, copying and spawning nothing', async () => {
     const h = harness({ staged: false });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await assert.rejects(service.acquire(), /not downloaded/);
     assert.equal(service.view().status, 'missing');
     assert.equal(service.view().reason, null);
@@ -403,7 +403,7 @@ test('a build that is not downloaded waits in missing, copying and spawning noth
 test('an installed build whose files have gone fails, saying what to do', async () => {
     const h = harness();
     h.files.delete('/res/VERSION.json');
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await assert.rejects(service.acquire(), /Remove it in Builds and download it again/);
     assert.equal(service.view().status, 'failed');
     assert.equal(h.processes.length, 0);
@@ -411,7 +411,7 @@ test('an installed build whose files have gone fails, saying what to do', async 
 
 test('stop while starting kills the world and leaves it stopped', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     const pending = service.acquire();
     await tick();
     const stopped = service.stop();
@@ -423,7 +423,7 @@ test('stop while starting kills the world and leaves it stopped', async () => {
 
 test('a malformed catalog url fails before a world is spawned', async () => {
     const h = harness({ stamp: true, baseUrl: 'not a url' });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await assert.rejects(service.acquire());
     assert.equal(service.view().status, 'failed');
     assert.equal(h.processes.length, 0);
@@ -431,7 +431,7 @@ test('a malformed catalog url fails before a world is spawned', async () => {
 
 test('a window that arrives while the world is stopping gets a world of its own', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     service.release();
@@ -453,7 +453,7 @@ test('a window that arrives while the world is stopping gets a world of its own'
 
 test('a window that closes again during the grace leaves no world behind', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     service.release();
@@ -475,7 +475,7 @@ test('a log write that throws leaves the world running, and the tail keeps the l
     h.deps.fs.appendText = () => {
         throw new Error('ENOSPC: no space left on device');
     };
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     const pending = service.acquire();
     await tick();
     h.processes[0]!.print('Starting world');
@@ -497,7 +497,7 @@ test('a stop while the engine is being copied leaves the service stopped with no
         h.dirs.add(to);
         await gate;
     };
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     const pending = service.acquire();
     await tick();
     assert.equal(service.view().status, 'preparing', 'the copy is in flight');
@@ -511,7 +511,7 @@ test('a stop while the engine is being copied leaves the service stopped with no
 
 test('a world that answers and dies in the same turn fails with the exit, not the stop', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     // The only way to land an exit inside the gap between the probe and its answer.
     h.deps.httpStatus = async () => {
         h.processes[0]!.print('Error: boom');
@@ -526,7 +526,7 @@ test('a world that answers and dies in the same turn fails with the exit, not th
 
 test('a listener that throws is logged and leaves the world alone', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     let others = 0;
     service.subscribe(() => {
         if (service.view().status === 'ready') throw new Error('the window is gone');
@@ -544,7 +544,7 @@ test('a listener that throws is logged and leaves the world alone', async () => 
 
 test('an unexpected failure after the spawn reaps the world, and a later stop settles at stopped', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.deps.httpStatus = async () => {
         throw new Error('probe blew up');
     };
@@ -561,7 +561,7 @@ const SAVES = '/worlds/274/data/players/main';
 test('the first acquire makes the saves folder, reads it and watches it, once; dispose stops the watch', async () => {
     const h = harness({ stamp: true });
     h.saves.set(`${SAVES}/zezima.sav`, buildSave());
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     assert.deepEqual(service.view().characters, [], 'nothing is read before a window wants the world');
     assert.equal(h.lists.count, 0);
     h.statusQueue.push(200);
@@ -577,7 +577,7 @@ test('the first acquire makes the saves folder, reads it and watches it, once; d
 
 test('a burst of changes in the saves folder is read once, after a short wait, and pushed', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     let pushes = 0;
@@ -598,7 +598,7 @@ test('a burst of changes in the saves folder is read once, after a short wait, a
 
 test('a status change reads the saves folder again, for a watch that missed a logout', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     h.saves.set(`${SAVES}/zezima.sav`, buildSave());
@@ -608,7 +608,7 @@ test('a status change reads the saves folder again, for a watch that missed a lo
 
 test('an import through the service writes the save and pushes the new list', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     await service.stop();
@@ -628,7 +628,7 @@ test('an import through the service writes the save and pushes the new list', as
 
 test('a change while the world runs asks with the reason, and a no changes nothing', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     h.saves.set(`${SAVES}/zezima.sav`, buildSave());
@@ -645,7 +645,7 @@ test('a change while the world runs asks with the reason, and a no changes nothi
 
 test('a refused change still reads the saves folder again and pushes it', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     await service.stop();
@@ -660,7 +660,7 @@ test('a refused change still reads the saves folder again and pushes it', async 
 
 test('rename, copy and export go through to the characters', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     await service.stop();
@@ -680,7 +680,7 @@ async function settle(turns = 12): Promise<void> {
 
 test('a download asked for while missing goes through downloading, and the world starts once the build lands', async () => {
     const h = harness({ staged: false });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await assert.rejects(service.acquire());
     assert.equal(service.view().status, 'missing');
     const download = service.download();
@@ -696,7 +696,7 @@ test('a download asked for while missing goes through downloading, and the world
 
 test('a download that fails goes back to missing with the reason, and starts nothing', async () => {
     const h = harness({ staged: false });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await assert.rejects(service.acquire());
     const download = service.download();
     h.builds.pending.get('lostcity-274')!.fail("The download didn't finish: HTTP 502");
@@ -708,7 +708,7 @@ test('a download that fails goes back to missing with the reason, and starts not
 
 test('a window that closes while its build downloads leaves no world behind when the download lands', async () => {
     const h = harness({ staged: false });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await assert.rejects(service.acquire());
     const download = service.download();
     service.release();
@@ -726,7 +726,7 @@ test('switching builds while the world runs stops it, follows the line to its ow
     h.saves.set(`${SAVES}/zezima.sav`, buildSave());
     h.builds.installs.set('lostcity-289', { id: 'lostcity-289', resources: '/res289', revision: 289, tag: 't289' });
     h.builds.onLand('lostcity-289');
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     assert.deepEqual(service.view().characters.map(c => c.name), ['zezima']);
@@ -752,7 +752,7 @@ test('switching builds while the world runs stops it, follows the line to its ow
 
 test('switching to a build not downloaded yet downloads it while the old world keeps running', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     const switching = service.useBuild('lostcity-289');
@@ -770,7 +770,7 @@ test('switching to a build not downloaded yet downloads it while the old world k
 
 test('a switch whose download fails stays on the build it was on', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     const switching = service.useBuild('lostcity-289');
@@ -786,7 +786,7 @@ test('a switch whose download fails stays on the build it was on', async () => {
 test('a switch with no window open only records the choice', async () => {
     const h = harness();
     h.builds.installs.set('lostcity-289', { id: 'lostcity-289', resources: '/res289', revision: 289, tag: 't289' });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     await service.useBuild('lostcity-289');
     assert.equal(service.view().status, 'stopped');
     assert.equal(service.view().selected, 'lostcity-289');
@@ -798,16 +798,16 @@ test('a switch with no window open only records the choice', async () => {
 test('the line chosen last time is the one the world runs, and an unknown one reads as the default', () => {
     const h = harness();
     h.selection.value = 'lostcity-289';
-    assert.equal(new SinglePlayerService(h.deps).home, '/worlds/289');
+    assert.equal(new YourWorldService(h.deps).home, '/worlds/289');
     h.selection.value = 'retired-line';
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     assert.equal(service.view().selected, 'lostcity-274');
     assert.equal(service.home, HOME);
 });
 
 test('the build the world is running cannot be removed; any other can', async () => {
     const h = harness({ stamp: true });
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     h.statusQueue.push(200);
     await service.acquire();
     assert.match(service.removeBuild('lostcity-274')!, /running on that build/);
@@ -819,7 +819,7 @@ test('the build the world is running cannot be removed; any other can', async ()
 test('a character copies into another revision\'s folder, and only into another one', async () => {
     const h = harness();
     h.saves.set(`${SAVES}/zezima.sav`, buildSave());
-    const service = new SinglePlayerService(h.deps);
+    const service = new YourWorldService(h.deps);
     assert.deepEqual(service.otherRevisions(), [289]);
     const asked: Confirmation[] = [];
     const outcome = await service.copyCharacterTo('zezima', 289, async q => {
