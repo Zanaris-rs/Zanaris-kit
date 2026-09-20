@@ -7,7 +7,7 @@ Release; publishing the draft is the last step and is done by hand. The order:
 
 - Every recipe in `engines/` pins a published build: its `artifact` is not
   `null`. A line with none is listed in the kit and cannot be downloaded, and
-  a packaged kit runs no other engine — single player would have nothing to
+  a packaged kit runs no other engine — your world would have nothing to
   play. `npm test` fails a recipe whose tag does not match its commits and
   patches; a null artifact it allows, so look. Moving a build is below.
 - Bump `version` in `package.json`. The tag must be `v` followed by exactly
@@ -22,22 +22,22 @@ Download the three artifacts from the run.
 
 ## 2. Try each artifact on a clean profile
 
-The app carries no engine: the first single-player window downloads one. So
+The app carries no engine: the first window for your world downloads one. So
 each check below also checks the download, from this repository's releases,
 against the pins the artifact was built with.
 
 - macOS, on this Mac: mount the DMG, drag the app to Applications. It has no
   Developer ID: the first launch is refused, then System Settings > Privacy &
   Security > Open Anyway opens it. Open a server window; it should load.
-  Then File > New Window For > Single player: the window says the world is not
+  Then File > New Window For > Your world: the window says the world is not
   downloaded; press Download, watch it count up, and wait for the login
   screen. Log in as a new name, log out, and confirm the `.sav` appeared under
-  `~/Library/Application Support/zanaris-kit/singleplayer/worlds/274/data/players/main/`.
+  `~/Library/Application Support/zanaris-kit/yourworld/worlds/274/data/players/main/`.
   **Look for other characters.** A world with no game map logs in and plays
   exactly like a populated one, minus every NPC, ground item and door; 0.1.0
   shipped that way. The tutorial guide should be standing in front of you, and
   `world.log` should carry `Loading game map` and `N/… static NPCs added`.
-  Turn Cheats on in the Single player tool, accept the restart, log in again
+  Turn Cheats on in the Your world tool, accept the restart, log in again
   and confirm `::tele 0,50,50,22,18` moves the character to 3222, 3218. The
   engine wants one comma-separated argument, `level,mapx,mapz,localx,localz`;
   a space-separated pair parses as one coordinate and silently does nothing.
@@ -46,9 +46,9 @@ against the pins the artifact was built with.
   each. Switch back and your first character is there.
 - Windows, in a VM or on a spare machine: run the installer, pass SmartScreen
   with More info > Run anyway, same checks. Saves live under
-  `%APPDATA%\zanaris-kit\singleplayer\worlds\<rev>\`.
+  `%APPDATA%\zanaris-kit\yourworld\worlds\<rev>\`.
 - Linux, on Ubuntu: `chmod +x` the AppImage and run it, same checks. Saves
-  live under `~/.config/zanaris-kit/singleplayer/worlds/<rev>/`.
+  live under `~/.config/zanaris-kit/yourworld/worlds/<rev>/`.
 
 ## 3. Tag
 

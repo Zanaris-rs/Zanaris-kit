@@ -195,7 +195,7 @@ log('no native modules in node_modules');
 const links = findSymlinks(dist);
 if (links.length > 0) throw new Error(`symbolic links in engine-dist: ${links.join(', ')}`);
 log('no symbolic links in engine-dist');
-// The kit unpacks this under <userData>\singleplayer\builds\.incoming\<id>\build,
+// The kit unpacks this under <userData>\yourworld\builds\.incoming\<id>\build,
 // about a hundred characters on Windows before the tree's own paths start, and
 // a path past 260 there is one the system tar may not write. The deepest files
 // in the dependencies are test fixtures - jimp's image snapshots run to 177
