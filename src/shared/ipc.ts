@@ -10,6 +10,7 @@ import type { CharacterOutcome, ImportPick, YourWorldSettings, YourWorldView } f
 import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
+import type { ServersView } from '../main/servers.ts';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -139,6 +140,8 @@ export interface ShellState {
     share: ShareView | null;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
+    /** Never null: every window offers the catalog, because "what else can I play" is not a question any one server answers. */
+    servers: ServersView;
 }
 
 export interface ZanarisApi {

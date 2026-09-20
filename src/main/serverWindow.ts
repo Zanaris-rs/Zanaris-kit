@@ -25,6 +25,7 @@ import { worldEndpoint } from './worlds/sources';
 import type { WorldsService } from './worlds/service';
 import type { HiscoresService } from './hiscores/service';
 import type { ServerWindowHandle, WindowSpec } from './windows';
+import type { ServersView } from './servers';
 
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
@@ -164,6 +165,8 @@ export interface ServerWindowDeps {
      * app-wide definitions move, and the window reads them again.
      */
     timers: () => { listed: ListedTimer[]; customsFull: boolean };
+    /** The Servers pane's rows: the catalog, which servers a launch opens and how many windows each has open. A getter for the same reason as `chat` and `timers` — the window only ever reads it. */
+    servers: () => ServersView;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -291,12 +294,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * `paneMenu.ts`, which takes it from this.
      *
      * Timers is offered in every window: every server carries the built-in
-     * clocks, and the player's own are app-wide.
+     * clocks, and the player's own are app-wide. Servers is offered in every
+     * window too: "what else can I play" is not a question any one server
+     * answers.
      */
     const tools: ToolId[] = ['chat'];
     if (worldSwitch) tools.push('worlds');
     if (deps.hiscores) tools.push('hiscores');
     tools.push('timers');
+    tools.push('servers');
     if (single) tools.push('singleplayer');
     // Which tools a window came up with is otherwise only visible by opening a
     // menu, and a tool missing from it looks the same as a tool that drew
@@ -490,7 +496,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             chat: deps.chat(),
             yourWorld: single?.view() ?? null,
             share: shared?.view() ?? null,
-            timers: { clocks: clocks.view(), customsFull }
+            timers: { clocks: clocks.view(), customsFull },
+            servers: deps.servers()
         };
     }
 

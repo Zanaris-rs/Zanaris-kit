@@ -36,6 +36,7 @@ import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
+import { serversView } from './servers';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -292,6 +293,16 @@ function focusedServerWindow(): ServerWindow | undefined {
     return [...serverWindows.values()].find(sw => sw.window === focused);
 }
 
+/** How many windows each server has open, for the Servers pane's rows. */
+function windowCounts(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const sw of serverWindows.values()) {
+        const id = sw.state().server.id;
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+}
+
 /** New windows cascade from the focused one, so several can open without stacking exactly. */
 function nextPosition(): { x: number; y: number } | null {
     const anchor = focusedServerWindow() ?? [...serverWindows.values()].at(-1);
@@ -344,7 +355,8 @@ const windows = new ServerWindows((spec, onClosed) => {
             timers: () => {
                 const state = appState.timers();
                 return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
-            }
+            },
+            servers: () => serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() })
         }
     );
     serverWindows.set(spec.id, sw);
