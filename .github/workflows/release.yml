@@ -3,7 +3,8 @@ name: Release
 # A push of tag v<version> builds every platform and drafts a GitHub Release
 # holding the artifacts; the owner publishes it. A manual dispatch is always
 # the dry run, whatever ref it runs on: the same build, the artifacts on the
-# workflow run, no release.
+# workflow run, no release. The kit carries no engine: single player's builds
+# are published by the Engines workflow and pinned in engines/.
 on:
   push:
     tags: ['v*']
@@ -13,8 +14,8 @@ permissions:
   contents: write
 
 jobs:
-  engine:
-    name: Stage the engine
+  check:
+    name: Typecheck and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -23,24 +24,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # Before the stage, which takes minutes: a release that cannot pass its
-      # own checks should fail in the first job, not after three packagings.
+      # Before packaging, which takes three runners: a release that cannot pass
+      # its own checks should fail here, not after them.
       - run: npm run typecheck
       - run: npm test
-      - run: node scripts/stage-engine.mjs
-      - uses: actions/upload-artifact@v7
-        with:
-          name: engine-dist
-          path: engine-dist
-          # The pack's .cache directory is load-bearing engine data, and the action
-          # drops hidden files unless told otherwise.
-          include-hidden-files: true
-          retention-days: 7
-          compression-level: 1
 
   build:
     name: Build (${{ matrix.os }})
-    needs: engine
+    needs: check
     strategy:
       fail-fast: false
       # One draft release, which electron-builder creates when it finds none: the legs must not race.
@@ -55,10 +46,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v8
-        with:
-          name: engine-dist
-          path: engine-dist
       - name: Tag matches package.json
         if: github.event_name == 'push'
         shell: bash
@@ -77,18 +64,6 @@ jobs:
       - name: Package (dry run)
         if: github.event_name != 'push'
         run: npx electron-builder --publish never
-      # npm run dist checks this locally, but the release path calls electron-builder
-      # directly: electron-builder drops the top-level node_modules of a copy root, so
-      # an engine can package with every source file and no dependency at all.
-      - name: Packaged engine is complete
-        shell: bash
-        run: |
-          engine=$(find release -type d -path '*/engine' -name engine | grep -E '(Resources|resources)/engine$' | head -1)
-          [ -n "$engine" ] || { echo "no packaged engine directory under release/"; exit 1; }
-          for f in src/app.js node_modules/fastify/package.json data/pack/.cache/maps-server.zip content/maps/multiway.csv; do
-            [ -f "$engine/$f" ] || { echo "packaged engine is incomplete: missing $f under $engine"; exit 1; }
-          done
-          echo "packaged engine complete at $engine"
       - uses: actions/upload-artifact@v7
         if: github.event_name != 'push'
         with:

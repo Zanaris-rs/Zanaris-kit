@@ -7,7 +7,7 @@ import { AUTO_JOIN_MAX, channelProblem, isNick } from '../shared/chatSettings.ts
 import type { SinglePlayerSettings } from '../shared/singleplayer.ts';
 import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
-import { readSinglePlayerSettings } from './singleplayer/settings.ts';
+import { readSinglePlayerBuild, readSinglePlayerSettings } from './singleplayer/settings.ts';
 
 interface StateFile {
     version: 1;
@@ -15,7 +15,8 @@ interface StateFile {
     warnOnSwitch: boolean;
     /** `nickserv` is the NickServ password sealed by the OS store (`chat/secret.ts`), and absent when there is none. */
     chat: ChatSettings & { nickserv?: string };
-    singlePlayer: SinglePlayerSettings;
+    /** `build` is the line the player chose, absent until they choose one. */
+    singlePlayer: SinglePlayerSettings & { build?: string };
     hiscores: Record<string, string>;
     alwaysOnTop: boolean;
     timers: TimersState;
@@ -132,6 +133,7 @@ export class AppState {
     private nickservSealed: string | null = null;
     // The single-player world's settings: cheats off, xp as the game gives it and members on, until asked otherwise.
     private singlePlayer: SinglePlayerSettings = readSinglePlayerSettings(undefined);
+    private singlePlayerBuildId: string | null = null;
     // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
     private hiscoresNames = new Map<string, string>();
     // Off until asked for: a window that floats over everything else is not
@@ -151,6 +153,7 @@ export class AppState {
         this.chatSettings = defaultChat();
         this.nickservSealed = null;
         this.singlePlayer = readSinglePlayerSettings(undefined);
+        this.singlePlayerBuildId = null;
         this.hiscoresNames = new Map();
         this.onTop = false;
         this.timersState = emptyTimersState();
@@ -167,6 +170,7 @@ export class AppState {
             this.chatSettings = readChat(parsed?.chat);
             this.nickservSealed = readSealed(parsed?.chat);
             this.singlePlayer = readSinglePlayerSettings(parsed?.singlePlayer);
+            this.singlePlayerBuildId = readSinglePlayerBuild((parsed?.singlePlayer as { build?: unknown } | undefined)?.build);
             this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
@@ -250,6 +254,16 @@ export class AppState {
         this.save();
     }
 
+    /** The build line the player last chose for single player; null before they have chosen one. */
+    singlePlayerBuild(): string | null {
+        return this.singlePlayerBuildId;
+    }
+
+    setSinglePlayerBuild(id: string): void {
+        this.singlePlayerBuildId = readSinglePlayerBuild(id);
+        this.save();
+    }
+
     /** The name last looked up on this server, to prefill the box. Null when nothing has been. */
     hiscoresName(serverId: string): string | null {
         return this.hiscoresNames.get(serverId) ?? null;
@@ -305,7 +319,7 @@ export class AppState {
             worlds: Object.fromEntries(this.worlds),
             warnOnSwitch: this.warn,
             chat: this.nickservSealed === null ? this.chatSettings : { ...this.chatSettings, nickserv: this.nickservSealed },
-            singlePlayer: this.singlePlayer,
+            singlePlayer: this.singlePlayerBuildId === null ? this.singlePlayer : { ...this.singlePlayer, build: this.singlePlayerBuildId },
             hiscores: Object.fromEntries(this.hiscoresNames),
             alwaysOnTop: this.onTop,
             timers: this.timersState

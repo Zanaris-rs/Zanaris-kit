@@ -1,0 +1,112 @@
+name: Engines
+
+# Single player's builds. A pull request that touches a recipe, a patch or the
+# stage script stages every recipe and boot-checks it, publishing nothing. A
+# manual dispatch stages one recipe and publishes its archive as a prerelease
+# of this repository, under the tag that names exactly what was built; the
+# update check reads releases/latest, which skips prereleases. The kit trusts
+# nothing until `npm run pin:engine -- <id>` has written the archive's size
+# and digest into the recipe and that has been merged.
+# Spec: docs/superpowers/specs/2026-09-19-single-player-builds-design.md.
+on:
+  pull_request:
+    paths:
+      - 'engines/**'
+      - 'patches/**'
+      - 'scripts/stage-*'
+      - 'src/shared/engines.ts'
+      - '.github/workflows/engines.yml'
+  workflow_dispatch:
+    inputs:
+      recipe:
+        description: 'The line to build and publish, as its file name under engines/ without .json (lostcity-274)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  recipes:
+    name: List the recipes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      ids: ${{ steps.list.outputs.ids }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        run: echo "ids=$(node -e "console.log(JSON.stringify(require('fs').readdirSync('engines').filter(f => f.endsWith('.json')).map(f => f.slice(0, -5)).sort()))")" >> "$GITHUB_OUTPUT"
+
+  check:
+    name: Stage ${{ matrix.recipe }}
+    needs: recipes
+    strategy:
+      fail-fast: false
+      matrix:
+        recipe: ${{ fromJSON(needs.recipes.outputs.ids) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/stage-engine.mjs "$RECIPE"
+        env:
+          RECIPE: ${{ matrix.recipe }}
+
+  publish:
+    name: Publish ${{ inputs.recipe }}
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # The input reaches the shell only through the environment, never pasted
+    # into a script, so no recipe name can be read as a command.
+    env:
+      RECIPE: ${{ inputs.recipe }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: The recipe exists
+        run: |
+          case "$RECIPE" in
+            *[!a-z0-9-]*|'') echo "not a recipe id: $RECIPE"; exit 1 ;;
+          esac
+          test -f "engines/$RECIPE.json" || { echo "no engines/$RECIPE.json"; exit 1; }
+      - run: npm ci
+      - run: node scripts/stage-engine.mjs "$RECIPE"
+      - name: Publish the archive
+        run: |
+          tag=$(node -p "require('./engine-dist/VERSION.json').tag")
+          file="engine-$RECIPE.tar.gz"
+          # A published build is never replaced: the digest the kit pins has to stay true.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag is already published"
+            exit 1
+          fi
+          engine=$(node -p "require('./engine-dist/VERSION.json').engine.commit")
+          content=$(node -p "require('./engine-dist/VERSION.json').content.commit")
+          name=$(node -p "require('./engine-dist/VERSION.json').name")
+          gh release create "$tag" "$file" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "$name build $tag" \
+            --notes "Single player's $name build, staged from $RECIPE: engine $engine, content $content. Pin it with \`npm run pin:engine -- $RECIPE\`."
+          size=$(stat -c %s "$file")
+          sha=$(sha256sum "$file" | cut -d' ' -f1)
+          {
+            echo "### $tag"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| file | \`$file\` |"
+            echo "| size | $size |"
+            echo "| sha-256 | \`$sha\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

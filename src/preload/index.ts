@@ -68,6 +68,10 @@ const api: ZanarisApi = {
         rename: (from, to) => ipcRenderer.invoke(IPC.singlePlayerRename, from, to),
         duplicate: (from, to) => ipcRenderer.invoke(IPC.singlePlayerDuplicate, from, to),
         remove: name => ipcRenderer.invoke(IPC.singlePlayerDelete, name),
+        copyTo: (name, revision) => ipcRenderer.invoke(IPC.singlePlayerCopyTo, name, revision),
+        useBuild: id => ipcRenderer.invoke(IPC.singlePlayerUseBuild, id),
+        downloadBuild: id => ipcRenderer.invoke(IPC.singlePlayerDownloadBuild, id),
+        removeBuild: id => ipcRenderer.invoke(IPC.singlePlayerRemoveBuild, id),
         commands: () => ipcRenderer.invoke(IPC.singlePlayerCommands)
     },
     share: {

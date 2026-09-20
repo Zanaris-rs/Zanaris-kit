@@ -1,4 +1,8 @@
 {
+    "id": "lostcity-274",
+    "name": "Lost City 274",
+    "revision": 274,
+    "note": null,
     "engine": {
         "repo": "https://github.com/LostCityRS/Engine-TS.git",
         "commit": "1d25566cb53e7af1b1cb18ade8af996316c19614"
@@ -8,5 +12,5 @@
         "commit": "32019eb334bda7ad21875484c6be54911563807f"
     },
     "patches": "patches/engine",
-    "revision": 274
+    "artifact": null
 }

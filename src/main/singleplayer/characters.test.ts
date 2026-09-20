@@ -511,3 +511,63 @@ test('a save that cannot be read is not renamed or copied', async () => {
     assert.deepEqual(await d.characters.duplicate('broken', 'fixed', answering(true)), { kind: 'refused', message: "Broken's save can't be read, so it can't be copied." });
     assert.deepEqual(d.calls, []);
 });
+
+const OTHER = '/worlds/289/data/players/main';
+
+/** A second revision's store over the same disk, as the service builds one for a copy. */
+function otherRevision(d: Disk): Characters {
+    return new Characters({ fs: d.fs, join: (...parts) => parts.join('/'), dir: OTHER, token: () => 'other' });
+}
+
+test('a copy to another revision asks first, says the other game may read it differently, and leaves the original', async () => {
+    const d = setup();
+    save(d, 'zezima', fixtureSave());
+    const ctx = answering(true);
+    const outcome = await d.characters.copyInto('zezima', otherRevision(d), { from: 274, to: 289, confirm: ctx.confirm });
+    assert.deepEqual(outcome, { kind: 'done', name: 'zezima' });
+    assert.deepEqual(d.files.get(`${OTHER}/zezima.sav`)!.bytes, fixtureSave());
+    assert.equal(d.files.has(`${DIR}/zezima.sav`), true);
+    assert.equal(ctx.asked.length, 1);
+    assert.equal(ctx.asked[0]!.message, 'Copy Zezima to rev 289?');
+    assert.match(ctx.asked[0]!.detail, /as last saved in rev 274/);
+    assert.match(ctx.asked[0]!.detail, /may read it differently/);
+    assert.equal(ctx.asked[0]!.destructive, false);
+});
+
+test('a copy to another revision that is declined writes nothing', async () => {
+    const d = setup();
+    save(d, 'zezima', fixtureSave());
+    assert.deepEqual(await d.characters.copyInto('zezima', otherRevision(d), { from: 274, to: 289, confirm: answering(false).confirm }), { kind: 'cancelled' });
+    assert.equal(d.files.has(`${OTHER}/zezima.sav`), false);
+});
+
+test('a copy to another revision never replaces a character there, and refuses a save it cannot read', async () => {
+    const d = setup();
+    save(d, 'zezima', fixtureSave());
+    d.put(`${OTHER}/zezima.sav`, buildSave());
+    const ctx = answering(true);
+    assert.deepEqual(await d.characters.copyInto('zezima', otherRevision(d), { from: 274, to: 289, confirm: ctx.confirm }), {
+        kind: 'refused',
+        message: 'Rev 289 already has a Zezima. Rename one of them first.'
+    });
+    assert.equal(ctx.asked.length, 0, 'refused before asking');
+    assert.deepEqual(d.files.get(`${OTHER}/zezima.sav`)!.bytes, buildSave());
+    save(d, 'broken', new Uint8Array([1, 2, 3]));
+    assert.equal((await d.characters.copyInto('broken', otherRevision(d), { from: 274, to: 289, confirm: ctx.confirm })).kind, 'refused');
+    assert.equal((await d.characters.copyInto('nobody', otherRevision(d), { from: 274, to: 289, confirm: ctx.confirm })).kind, 'refused');
+});
+
+test('a name that gets a save in the other revision while the copy is asked about is not replaced', async () => {
+    const d = setup();
+    save(d, 'zezima', fixtureSave());
+    const outcome = await d.characters.copyInto('zezima', otherRevision(d), {
+        from: 274,
+        to: 289,
+        confirm: async () => {
+            d.put(`${OTHER}/zezima.sav`, buildSave());
+            return true;
+        }
+    });
+    assert.equal(outcome.kind, 'refused');
+    assert.deepEqual(d.files.get(`${OTHER}/zezima.sav`)!.bytes, buildSave());
+});

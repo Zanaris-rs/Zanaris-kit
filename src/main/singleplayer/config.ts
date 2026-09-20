@@ -60,7 +60,11 @@ export function gameUrl(base: string, port: number): string {
     return url.href;
 }
 
-/** resources/engine/VERSION.json, as the stage script writes it. */
+/**
+ * A build's VERSION.json, as the stage script writes it. `id`, `name` and
+ * `tag` are null in a stage from before builds had recipes; a present one of
+ * any other type refuses the file.
+ */
 export function parseVersion(text: string): SinglePlayerVersion | null {
     let parsed: unknown;
     try {
@@ -74,7 +78,12 @@ export function parseVersion(text: string): SinglePlayerVersion | null {
     const content = (v.content as Record<string, unknown> | undefined)?.commit;
     if (typeof engine !== 'string' || typeof content !== 'string') return null;
     if (typeof v.revision !== 'number' || !Number.isInteger(v.revision) || typeof v.built !== 'string') return null;
-    return { engine, content, revision: v.revision, built: v.built };
+    const optional = (x: unknown): string | null | undefined => (x === undefined ? null : typeof x === 'string' ? x : undefined);
+    const id = optional(v.id);
+    const name = optional(v.name);
+    const tag = optional(v.tag);
+    if (id === undefined || name === undefined || tag === undefined) return null;
+    return { id, name, tag, engine, content, revision: v.revision, built: v.built };
 }
 
 /** True when the assets in the working directory came from this VERSION.json. */

@@ -1,0 +1,16 @@
+{
+    "id": "lostcity-289",
+    "name": "Lost City 289",
+    "revision": 289,
+    "note": "Developers only upstream",
+    "engine": {
+        "repo": "https://github.com/LostCityRS/Engine-TS.git",
+        "commit": "0c7cf6555d0cf92d2348999b2fd27c6ceff5ffbf"
+    },
+    "content": {
+        "repo": "https://github.com/LostCityRS/Content.git",
+        "commit": "5da837c55ae1c978d2d2b17af20710b7c747906a"
+    },
+    "patches": "patches/engine",
+    "artifact": null
+}

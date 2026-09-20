@@ -53,7 +53,11 @@ test('gameUrl puts the port on the catalog url and keeps its query', () => {
 
 test('parseVersion accepts the stage script output and rejects anything else', () => {
     const text = JSON.stringify({ engine: { repo: 'r', commit: 'abc' }, content: { repo: 'c', commit: 'def' }, revision: 274, built: '2026-09-06T00:00:00.000Z' });
-    assert.deepEqual(parseVersion(text), { engine: 'abc', content: 'def', revision: 274, built: '2026-09-06T00:00:00.000Z' });
+    // A stage from before builds had recipes names no line, and reads with the three left null.
+    assert.deepEqual(parseVersion(text), { id: null, name: null, tag: null, engine: 'abc', content: 'def', revision: 274, built: '2026-09-06T00:00:00.000Z' });
+    const staged = JSON.stringify({ id: 'lostcity-289', name: 'Lost City 289', tag: 'engine-lostcity-289-a-b-c', engine: { commit: 'abc' }, content: { commit: 'def' }, revision: 289, built: 'x' });
+    assert.deepEqual(parseVersion(staged), { id: 'lostcity-289', name: 'Lost City 289', tag: 'engine-lostcity-289-a-b-c', engine: 'abc', content: 'def', revision: 289, built: 'x' });
+    assert.equal(parseVersion(JSON.stringify({ id: 7, engine: { commit: 'a' }, content: { commit: 'b' }, revision: 274, built: 'x' })), null);
     assert.equal(parseVersion('not json'), null);
     assert.equal(parseVersion(JSON.stringify({ engine: {}, content: {}, revision: 274, built: 'x' })), null);
     assert.equal(parseVersion(JSON.stringify({ engine: { commit: 'a' }, content: { commit: 'b' }, revision: 'x', built: 'x' })), null);
