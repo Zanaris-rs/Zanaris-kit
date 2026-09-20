@@ -24,6 +24,8 @@ interface StateFile {
     hiscores: Record<string, string>;
     alwaysOnTop: boolean;
     timers: TimersState;
+    /** Which servers a launch opens, in the order they were ticked. Empty, or absent, means the first catalog entry — what a launch has always done. */
+    startup: string[];
 }
 
 // Well past base37's 12-character limit, so no real player name is ever
@@ -34,6 +36,10 @@ const HISCORES_NAME_MAX = 30;
 // A sealed password is base64 of a few hundred bytes at most; anything far past
 // that is not one, and is not worth handing to the OS store to fail on.
 const SEALED_MAX = 4096;
+
+// The catalog a person curates by hand is small; this only stops a hand-edited
+// file from naming thousands of windows to open at once.
+const STARTUP_MAX = 16;
 
 /**
  * DEFAULT_CHAT, cloned deep enough that autoJoin is never shared: every other
@@ -116,6 +122,22 @@ function readHiscores(x: unknown): Record<string, string> {
 }
 
 /**
+ * Reads a stored startup list one entry at a time, for the same reason as
+ * readChat and readHiscores: one bad entry must not cost the user their
+ * remembered worlds. Ids are not checked against the catalog here — that is
+ * `startupServers`' job at launch, and the catalog is not loaded yet.
+ */
+function readStartup(x: unknown): string[] {
+    if (!Array.isArray(x)) return [];
+    const startup: string[] = [];
+    for (const id of x) {
+        if (startup.length >= STARTUP_MAX) break;
+        if (typeof id === 'string' && id !== '' && !startup.includes(id)) startup.push(id);
+    }
+    return startup;
+}
+
+/**
  * Small per-user state. Mostly choices the user made in passing rather than
  * settings they configured — the last world and detail chosen per server, and
  * whether they still want warning before a switch reloads the game — and, now,
@@ -146,6 +168,8 @@ export class AppState {
     // The player's own countdowns and timers, and their changes to the kit's.
     // App-wide: the same list in every window, whatever its server.
     private timersState: TimersState = emptyTimersState();
+    private startup: string[] = [];
+    private freshProfile = true;
 
     constructor(file: string) {
         this.file = file;
@@ -161,7 +185,9 @@ export class AppState {
         this.hiscoresNames = new Map();
         this.onTop = false;
         this.timersState = emptyTimersState();
-        if (!existsSync(this.file)) return;
+        this.startup = [];
+        this.freshProfile = !existsSync(this.file);
+        if (this.freshProfile) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
             const worlds = parsed?.worlds;
@@ -179,6 +205,7 @@ export class AppState {
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
             this.timersState = readTimers(parsed?.timers);
+            this.startup = readStartup(parsed?.startup);
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
         }
@@ -316,6 +343,29 @@ export class AppState {
         this.save();
     }
 
+    /** The ids a launch opens, in the order ticked. Named for ids, not servers, so it does not read as the pure `startupServers` that resolves them. A copy. */
+    startupIds(): string[] {
+        return [...this.startup];
+    }
+
+    setStartupServer(id: string, on: boolean): void {
+        const at = this.startup.indexOf(id);
+        if (on && at < 0) this.startup.push(id);
+        else if (!on && at >= 0) this.startup.splice(at, 1);
+        else return;
+        this.save();
+    }
+
+    /**
+     * Whether this launch is the first on this profile — no state file existed.
+     * A file that was broken and set aside does not count: somebody who has one
+     * has used the kit before, and showing them the first-launch arrangement
+     * again would be telling them something they already know.
+     */
+    fresh(): boolean {
+        return this.freshProfile;
+    }
+
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
         const data: StateFile = {
@@ -326,7 +376,8 @@ export class AppState {
             singlePlayer: this.yourWorldBuildId === null ? this.yourWorld : { ...this.yourWorld, build: this.yourWorldBuildId },
             hiscores: Object.fromEntries(this.hiscoresNames),
             alwaysOnTop: this.onTop,
-            timers: this.timersState
+            timers: this.timersState,
+            startup: [...this.startup]
         };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }

@@ -532,3 +532,44 @@ test('the chosen build line is kept beside the settings, and read back as a line
         assert.equal(odd.yourWorldSettings().cheats, true, 'a bad build costs nothing else');
     }
 });
+
+test('the startup list saves, and a fresh instance reads it back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setStartupServer('zanaris', true);
+    a.setStartupServer('lostcity', true);
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.startupIds(), ['zanaris', 'lostcity']);
+});
+
+test('setting a server off removes it, and setting one on twice does not duplicate it', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setStartupServer('zanaris', true);
+    a.setStartupServer('zanaris', true);
+    assert.deepEqual(a.startupIds(), ['zanaris']);
+    a.setStartupServer('zanaris', false);
+    assert.deepEqual(a.startupIds(), []);
+});
+
+test('a hand-edited startup entry that is not a string costs its own row and not the file', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, startup: ['zanaris', 7, '', 'lostcity'] }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.startupIds(), ['zanaris', 'lostcity']);
+});
+
+test('a profile is fresh only when there was no state file at all', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    assert.equal(a.fresh(), true);
+    a.setWarnOnSwitch(false);
+    const b = new AppState(file);
+    b.load();
+    assert.equal(b.fresh(), false);
+});
