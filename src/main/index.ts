@@ -36,7 +36,7 @@ import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
-import { isRemovable, readNewServerInput, serversView } from './servers';
+import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -283,6 +283,12 @@ function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
 }
 /** Modification time of servers.json at the last load, so a focus change only re-reads it when it changed. */
 let catalogSeen = 0;
+/**
+ * Consumed by the first window of a first launch, which shows the Servers
+ * pane where chat normally sits. One-shot: the factory runs per window, and
+ * only the first one on a profile that had no state file is meant.
+ */
+let firstLaunchPane = false;
 const serverWindows = new Map<number, ServerWindow>();
 const byShell = new Map<number, ServerWindow>();
 
@@ -361,7 +367,12 @@ const windows = new ServerWindows(
                     const state = appState.timers();
                     return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
                 },
-                servers: () => serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() })
+                servers: () => serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
+                bottomTool: () => {
+                    if (!firstLaunchPane) return 'chat' as const;
+                    firstLaunchPane = false;
+                    return 'servers' as const;
+                }
             }
         );
         serverWindows.set(spec.id, sw);
@@ -1654,6 +1665,9 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // Captured immediately: nothing between here and the first window may write
+    // state.json, or fresh() would no longer describe the profile this launch found.
+    firstLaunchPane = appState.fresh();
     // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
     powerMonitor.on('resume', () => {
         for (const sw of serverWindows.values()) sw.settleTimers();
@@ -1748,7 +1762,11 @@ app.whenReady().then(async () => {
         await captureAndExit(CAPTURE_DIR);
         return;
     }
-    actions.newWindow();
+    // The servers ticked in the pane, resolved against the catalog by the pure,
+    // tested `startupServers` — never a condition worked out here. Its own
+    // fallback to the catalog's first entry is what makes a launch into zero
+    // windows impossible, so there is nothing to guard here either.
+    for (const server of startupServers(appState.startupIds(), catalog.list())) openServer(server);
 });
 
 app.on('activate', () => {

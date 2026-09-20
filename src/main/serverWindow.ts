@@ -171,6 +171,8 @@ export interface ServerWindowDeps {
      * and `timers` — the window only ever reads it.
      */
     servers: () => ServersView;
+    /** Which tool the window's first tab puts under the game. Asked once, at open. */
+    bottomTool: () => ToolId;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -444,7 +446,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         tools: () => tools,
         hosts: () => server.hosts,
         log: line => deps.log(`${tag} ${line}`),
-        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT, content.game),
+        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT, content.game, deps.bottomTool()),
         changed: () => applyLayout(),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState()
