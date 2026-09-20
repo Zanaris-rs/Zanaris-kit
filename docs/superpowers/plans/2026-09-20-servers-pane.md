@@ -814,10 +814,14 @@ End to end, by hand:
 
 ---
 
-## Open decision — not resolved
+## Your world needs no special case
 
-**Should ticking Your world also start the local world at launch?** The plan as written treats Your world as an ordinary row: ticking it opens the window, and the game pane shows the offline page until you press Start in the World tab. That is the conservative reading and matches what File > New Window For does today.
+Ticking Your world opens its window at launch, and **the world starts with it** —
+`serverWindow.ts:1267` calls `single.acquire()` when a Your world window opens,
+and `release()` on close stops the world once the last one goes. A build that is
+not downloaded yet is already handled there: the window shows the starting page,
+and `onBuilds` starts the world once the build lands.
 
-An answer recording *"yes, and start the world too"* came back after the plan was requested, but the system reported that no human input had been received, so it is **not** treated as a decision here. It would also be a materially heavier behaviour — booting the engine at app start, and on a fresh profile the 50 MB build has not been downloaded yet, so launch would either stall or need its own handling.
-
-If it is wanted, it is one additional task after Task 7 and changes nothing above.
+So there is nothing to add. An earlier draft of this plan asked whether ticking
+Your world should "also start the world"; it already does, and the row needs no
+special case, no extra task and no startup-time boot of its own.
