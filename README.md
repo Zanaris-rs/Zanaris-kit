@@ -684,7 +684,11 @@ the builds from the real one; a line the real profile has not downloaded is
 skipped rather than left waiting. It keeps its
 own `state.json` beside the screenshots so a test switch never changes what
 the next real launch opens. A view that has no frame yet is retried, then
-skipped.
+skipped, and a file of that name left by an earlier run is removed. A shell is
+shot only once it has painted, its window fronted again until it does; one that
+has not painted within ten seconds is not written, and a shell shot
+byte-identical to an earlier one is flagged. Either fails the run: it finishes,
+lists what went wrong, and exits 1.
 
 ## Verified
 
@@ -735,22 +739,21 @@ right-click menu's splits.
   would have to come off the websocket.
 - **Capture mode needs a waking display.** macOS refuses `capturePage` on an
   occluded surface, and once the screen sleeps most shots come back "Current
-  display surface not available for capture". The run still completes and skips
-  those frames; rerun it with the display awake.
-- **A successful-looking capture can still be stale.** `capturePage` does not
-  always fail loudly when a window goes occluded — it can also hand back an
-  old frame without an error at all, so the log reports success and the PNG
-  looks plausible while actually being a duplicate of an earlier shot. It
-  happened once on this branch: a Hiscores capture logged a correct `ready
-  "granny_grunt" 20 row(s)` and wrote a shell PNG that was byte-identical to
-  an unrelated capture of the same window taken moments before, catchable
-  only by hashing the two files against each other. It is likeliest on any
-  capture step that awaits a real network round trip between fronting the
-  window and shooting it — fronting is a point-in-time guard, not a held
-  invariant, and both the Hiscores and Worlds passes do exactly that. The fix
-  for the run that hit it was keeping the display awake throughout, per the
-  bullet above; the safeguard for reading the evidence is not trusting a
-  capture's log line over its own pixels.
+  display surface not available for capture". The run still completes, but a
+  shell that cannot paint fails it; rerun it with the display awake.
+- **A capture needs the machine to itself.** `capturePage` does not always
+  fail loudly when a window is covered — it can hand back the last frame the
+  view composited, with no error at all, so the log reports success over a
+  PNG byte-identical to an earlier shot. `caffeinate -d` does not prevent
+  it: two consecutive runs under it each wrote a different stale pair, and an
+  instrumented run caught the cause — another app's window over the kit's,
+  and `moveTop` before each of two shots eight seconds apart not getting it
+  back. Capture now waits for each shell to paint and fails the run rather
+  than write one that did not, or one identical to an earlier shot, so a
+  failed run usually means something covered the windows: rerun it and leave
+  the machine alone. Game and page shots are not compared, since a page
+  brought back unchanged is meant to match, and a log line still reads state
+  rather than pixels, so the PNGs still need opening.
 - **A kit that is killed outright can leave cloudflared running.** A quit, a
   closed window or Stop sharing ends it, and so does any exit that runs Node's
   `exit` handlers. A `kill -9` does not, and the orphan keeps a link that only
