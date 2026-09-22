@@ -1,5 +1,13 @@
 # The server list becomes a pane
 
+> **Superseded in part, 2026-09-22,** by `2026-09-22-settings-window-design.md`.
+> The catalog lives in one Settings window opened from a gear, not in a tool
+> pane. Decision 2 and the sections "The tool", "First launch shows the list
+> once" and "Every window stays honest" no longer describe the code; the
+> `'servers'` tool id was removed before it ever shipped. What carries over
+> unchanged: the pure rules in `servers.ts`, the startup set, adding and
+> removing, and the protection of built-in entries (decisions 1, 3, 4 and 5).
+
 The owner's design of 2026-09-20. The kit opens into Lost City and never
 mentions that it knows about anything else; this makes the catalog a tool pane
 you can reach from any window, gives it add and remove, and lets you say which
