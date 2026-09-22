@@ -102,3 +102,21 @@ test('on a display smaller than settings, it shrinks to the work area', () => {
     const small: Rect = { x: 0, y: 0, width: 400, height: 500 };
     assert.deepEqual(settingsBounds(null, SIZE, small), { x: 0, y: 0, width: 400, height: 500 });
 });
+
+const RIGHT: Rect = { x: 1920, y: 0, width: 1920, height: 1080 };
+
+test('on a second monitor to the right, both beside and centred stay on it', () => {
+    const anchor = { x: 2000, y: 100, width: 765, height: 803 };
+    assert.deepEqual(settingsBounds(anchor, SIZE, RIGHT), { x: 2777, y: 100, width: 520, height: 640 });
+    assert.deepEqual(settingsBounds(null, SIZE, RIGHT), { x: 2620, y: 220, width: 520, height: 640 });
+});
+
+test('beside a window above the work area, settings is lowered to stay on it', () => {
+    const anchor = { x: 100, y: -50, width: 765, height: 803 };
+    assert.deepEqual(settingsBounds(anchor, SIZE, WORK), { x: 877, y: 25, width: 520, height: 640 });
+});
+
+test('settings is centred when the anchor sits off the left edge', () => {
+    const anchor = { x: -1000, y: 80, width: 300, height: 803 };
+    assert.deepEqual(settingsBounds(anchor, SIZE, WORK), { x: 700, y: 233, width: 520, height: 640 });
+});

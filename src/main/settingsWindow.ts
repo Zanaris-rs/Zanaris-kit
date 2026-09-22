@@ -13,7 +13,7 @@ export interface SettingsHandle {
     readonly contentsId: number;
 }
 
-/** Creates the window. Must call `onClosed` once, when the window is gone. */
+/** Creates the window. Must call `onClosed` once, asynchronously, after the window is gone. */
 export type SettingsFactory<H extends SettingsHandle> = (anchor: Rect | null, onClosed: () => void) => H;
 
 /**
@@ -71,7 +71,9 @@ export const SETTINGS_GAP = 12;
  * display has room there, so on a first launch it sits beside the game the
  * player just opened rather than on top of it. Centred on the display when
  * there is no room, or no window asked. Never larger than the display's work
- * area, and never off it.
+ * area, and never off it — including beside a window whose top edge sits too
+ * high or too low for Settings to fit there level, when `y` is clamped to the
+ * work area instead.
  */
 export function settingsBounds(anchor: Rect | null, size: Size, workArea: Rect): Rect {
     const width = Math.min(size.width, workArea.width);
