@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { SettingsState } from '../shared/ipc';
-import Servers from './tools/Servers';
+import Servers from './settings/Servers';
 
 /**
  * The Settings window's page. One window for the whole app, so everything on

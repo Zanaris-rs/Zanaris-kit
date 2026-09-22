@@ -2,12 +2,13 @@ import { DEFAULT_SERVERS } from './catalog.ts';
 import type { NewServerInput, ServerDef } from '../shared/catalog.ts';
 
 /**
- * The rules behind the Servers pane, kept here rather than in the window or
- * the renderer for the reason every rule in this kit is: `node --test` reaches
- * this file without Electron, and reaches neither of those.
+ * The rules behind the Servers section of Settings, kept here rather than in
+ * the window or the renderer for the reason every rule in this kit is:
+ * `node --test` reaches this file without Electron, and reaches neither of
+ * those.
  */
 
-/** One row of the pane, already named and counted so the renderer works nothing out. */
+/** One row of the list, already named and counted so the renderer works nothing out. */
 export interface ServerRow {
     id: string;
     name: string;
@@ -25,7 +26,7 @@ export interface ServersView {
 }
 
 /**
- * Whether the pane may offer Remove.
+ * Whether the Servers section may offer Remove.
  *
  * Never for a built-in. `Catalog.load` does not put a missing built-in back —
  * at version 5 `migrateCatalog` only validates, and the four refresh functions
@@ -62,7 +63,7 @@ export function startupServers(stored: readonly string[], catalog: readonly Serv
     return first ? [first] : [];
 }
 
-/** Every catalog entry as a row. The pane lists them all; only Remove is ever withheld. */
+/** Every catalog entry as a row. The list holds them all; only Remove is ever withheld. */
 export function serversView(opts: { catalog: readonly ServerDef[]; startup: readonly string[]; openCounts: ReadonlyMap<string, number> }): ServersView {
     const wanted = new Set(opts.startup);
     return {

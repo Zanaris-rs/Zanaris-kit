@@ -5,10 +5,11 @@ import type { ServerRow, ServersView } from '../../main/servers.ts';
 /*
  * `.btn` and the base `button` rule are unlayered CSS, which beats a Tailwind
  * utility of equal specificity whatever the order, so Open — one per row, none
- * of them the pane's single primary action — sits on `.btn` for its size and
- * shape but keeps a quiet, dim label on a span inside it (a span has no
+ * of them this section's single primary action — sits on `.btn` for its size
+ * and shape but keeps a quiet, dim label on a span inside it (a span has no
  * unlayered rule to lose to) rather than the gold `.btn` sets by default.
- * Copied from `Timers.tsx` rather than reinvented, so the two panes agree.
+ * Copied from `Timers.tsx` rather than reinvented, so the two agree — one a
+ * game window's pane, the other this section of Settings.
  */
 const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 /* The startup checkbox wears the gold the client's own accents do. */
@@ -29,7 +30,7 @@ function QuietButton({ onClick, disabled = false, children }: { onClick?: () => 
  * Runs an IPC request that answers null or a refusal: marks it busy while in
  * flight, and on an answer either runs `onDone` (nothing to say — the caller
  * decides what "worked" means, since a removed row's own answer is to
- * disappear when the pane's next state arrives, where a saved form's is to
+ * disappear when Settings' next state arrives, where a saved form's is to
  * clear itself) or shows the refusal. Shared by the row's Remove and the add
  * form's Save so a refusal — a built-in guard, or a race with another
  * window's own Remove — is never silently dropped.
@@ -69,7 +70,7 @@ function Row({ row }: { row: ServerRow }): ReactNode {
                     Open at startup
                 </label>
                 {row.removable && (
-                    /* Text, not a button: removing is rare, and a red slab beside Save is the loudest thing in the pane. Routed through the same `send` round-trip as `Timers.tsx`'s Delete, so the built-in guard and a race with another window's own Remove both surface here rather than vanishing silently. */
+                    /* Text, not a button: removing is rare, and a red slab beside Save is the loudest thing in this section. Routed through the same `send` round-trip as `Timers.tsx`'s Delete, so the built-in guard and a race with another window's own Remove both surface here rather than vanishing silently. */
                     <button
                         type="button"
                         disabled={busy}
@@ -182,7 +183,7 @@ function AddServerForm({ onDone }: { onDone: () => void }): ReactNode {
     );
 }
 
-/** The Servers tool: every catalog entry, each with Open, a startup checkbox and — where the row allows it — Remove, plus a form to add one more. */
+/** The Servers section: every catalog entry, each with Open, a startup checkbox and — where the row allows it — Remove, plus a form to add one more. */
 export default function Servers({ view }: { view: ServersView }): ReactNode {
     const [adding, setAdding] = useState(false);
 
@@ -200,7 +201,7 @@ export default function Servers({ view }: { view: ServersView }): ReactNode {
                 )}
             </ul>
 
-            {/* Exactly one gold `.btn` in the pane at a time: this one while the form is closed, Save while it is open. */}
+            {/* Exactly one gold `.btn` in this section at a time: this one while the form is closed, Save while it is open. */}
             <div className="flex items-center gap-2 px-2.5 pt-2 pb-1.5">
                 {!adding ? (
                     <button type="button" onClick={() => setAdding(true)} style={BUTTON_SIZE} className="btn">

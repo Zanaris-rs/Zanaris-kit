@@ -110,9 +110,9 @@ The Settings window has its own channel, built as the shell's is:
 every push. The state is `{ servers: ServersView }`. `settings.open()` is new,
 for the gear.
 
-The four servers handlers accept the Settings window as a sender as well as a
-game window, and refuse anything else as they do now. `settings.get` answers
-only the Settings window.
+The four servers handlers accept only the Settings window as a sender, and
+refuse anything else, since once the pane is gone no game window has a servers
+UI. `settings.get` answers only the Settings window.
 
 Taken out: `'servers'` from `TOOL_IDS` and `TOOL_NAMES`, `tools.push('servers')`
 in `serverWindow.ts`, the `servers` field on `ShellState`, the `servers`

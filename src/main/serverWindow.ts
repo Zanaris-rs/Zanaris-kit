@@ -25,13 +25,12 @@ import { worldEndpoint } from './worlds/sources';
 import type { WorldsService } from './worlds/service';
 import type { HiscoresService } from './hiscores/service';
 import type { ServerWindowHandle, WindowSpec } from './windows';
-import type { ServersView } from './servers';
 
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /**
  * The content area a new window opens with: the game at its preferred size and
- * the bottom pane below it at its own, with the seam between them
+ * the chat pane below it at its own, with the seam between them
  * (`tabs.openWindowTabs`). The tree fills the content area below the bar
  * exactly, so anything short of this would clip the bottom of the
  * canvas at the one size nobody chose. Lost City's page is taller than the
@@ -165,14 +164,6 @@ export interface ServerWindowDeps {
      * app-wide definitions move, and the window reads them again.
      */
     timers: () => { listed: ListedTimer[]; customsFull: boolean };
-    /**
-     * The Servers pane's rows: the catalog, which servers a launch opens and
-     * how many windows each has open. A getter for the same reason as `chat`
-     * and `timers` — the window only ever reads it.
-     */
-    servers: () => ServersView;
-    /** Which tool the window's first tab puts under the game. Asked once, at open. */
-    bottomTool: () => ToolId;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -300,15 +291,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * `paneMenu.ts`, which takes it from this.
      *
      * Timers is offered in every window: every server carries the built-in
-     * clocks, and the player's own are app-wide. Servers is offered in every
-     * window too: "what else can I play" is not a question any one server
-     * answers.
+     * clocks, and the player's own are app-wide.
      */
     const tools: ToolId[] = ['chat'];
     if (worldSwitch) tools.push('worlds');
     if (deps.hiscores) tools.push('hiscores');
     tools.push('timers');
-    tools.push('servers');
     if (single) tools.push('singleplayer');
     // Which tools a window came up with is otherwise only visible by opening a
     // menu, and a tool missing from it looks the same as a tool that drew
@@ -446,7 +434,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         tools: () => tools,
         hosts: () => server.hosts,
         log: line => deps.log(`${tag} ${line}`),
-        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT, content.game, deps.bottomTool()),
+        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT, content.game),
         changed: () => applyLayout(),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState()
@@ -502,8 +490,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             chat: deps.chat(),
             yourWorld: single?.view() ?? null,
             share: shared?.view() ?? null,
-            timers: { clocks: clocks.view(), customsFull },
-            servers: deps.servers()
+            timers: { clocks: clocks.view(), customsFull }
         };
     }
 

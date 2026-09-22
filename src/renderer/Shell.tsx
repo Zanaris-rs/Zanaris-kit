@@ -15,7 +15,6 @@ import Hiscores from './tools/Hiscores';
 import YourWorld from './tools/YourWorld';
 import Timers from './tools/Timers';
 import Worlds from './tools/Worlds';
-import Servers from './tools/Servers';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
 
@@ -68,8 +67,6 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
                     return state.yourWorld ? <YourWorld view={state.yourWorld} share={state.share} /> : null;
                 case 'timers':
                     return <Timers view={state.timers} />;
-                case 'servers':
-                    return <Servers view={state.servers} />;
             }
     }
 }

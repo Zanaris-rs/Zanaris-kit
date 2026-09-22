@@ -12,7 +12,7 @@ import { CUSTOM_ID_PREFIX, CUSTOM_TIMERS_MAX, isCustomId, isTimerDef, timerProbl
 
 /**
  * The pair a server starts with when it is not one of the built-ins: the
- * Servers pane's add form uses this for a server it creates (`createServer`,
+ * Servers section's add form uses this for a server it creates (`createServer`,
  * in `catalog.ts`), and an older file's own entries take the same pair on
  * their way through migration, for the same reason — neither carries timers
  * of its own to keep. The built-in entries in `catalog.ts` write theirs out

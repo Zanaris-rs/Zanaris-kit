@@ -1,7 +1,6 @@
 import { clearGame, contentOf, leaf, paneIds, setContent, split, type PaneContent, type PaneNode } from './paneTree.ts';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 import { paneName, type PaneLink } from './paneMenu.ts';
-import type { ToolId } from '../shared/ipc.ts';
 
 /**
  * A window's workspace tabs.
@@ -40,30 +39,26 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  *
  * On the game because there is no launcher window in this kit and never has
  * been — the File menu makes windows, and every one of them is a game window.
- * With chat under it by default, because chat is the kit's own reason to be
- * open instead of a browser tab, and a pane nobody knows is there is a pane
- * nobody opens. Below rather than beside, where the 2004 client keeps its own
- * chat box, so the conversation gets the game's full width.
- *
- * `bottomTool` is what goes there, and the one caller that passes anything
- * else is the first launch on a fresh profile, which puts the Servers pane
- * there instead — for exactly the reason chat is there the rest of the time.
+ * With chat under it because chat is the kit's own reason to be open instead of
+ * a browser tab, and a pane nobody knows is there is a pane nobody opens. Below
+ * rather than beside, where the 2004 client keeps its own chat box, so the
+ * conversation gets the game's full width.
  *
  * `gameHeight` is the game pane's preferred height, which is the stock one
  * unless the server's client page needs more (`LOSTCITY_GAME_PREFERRED_HEIGHT`).
  *
  * The game keeps its preferred height whenever the window has room for that
- * and the bottom pane above the floor: a canvas cut off at the bottom is the
- * one cost here a player cannot scroll or read past. On a display too short
- * for that, it gives way down to the floor first and the game takes the rest;
+ * and a chat pane above the floor: a canvas cut off at the bottom is the one
+ * cost here a player cannot scroll or read past. On a display too short for
+ * that, chat gives way down to the floor first and the game takes the rest;
  * only below two floors are they shared in proportion, and there the solver's
  * own minimums decide. Nothing remembers these numbers — they are the shares
  * the split starts with, and the fractions carry them from there.
  *
  * Focus is on the game, so Cmd/Ctrl+D and a right-click's splits start from the
- * pane the player is looking at rather than from the tool below it.
+ * pane the player is looking at rather than from the chat below it.
  */
-export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PREFERRED_HEIGHT, bottomTool: ToolId = 'chat'): TabSet {
+export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PREFERRED_HEIGHT): TabSet {
     const gross = Math.max(0, treeHeight - SEAM);
     const game = Math.min(gameHeight, gross - PANE_MIN_HEIGHT);
     const shares = game >= PANE_MIN_HEIGHT ? [game, gross - game] : [gameHeight, CHAT_PREFERRED_HEIGHT];
@@ -71,7 +66,7 @@ export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PRE
     const tree = split(
         'split-1',
         'y',
-        [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: bottomTool })],
+        [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: 'chat' })],
         shares.map(share => share / total)
     );
     return { tabs: [{ id: 'tab-1', tree, focusedPaneId: 'pane-1' }], activeId: 'tab-1' };

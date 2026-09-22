@@ -241,15 +241,3 @@ test('the game leaves only one pane, however many tabs are open', () => {
     const games = moved.tabs.flatMap(tab => paneIds(tab.tree).filter(id => contentOf(tab.tree, id)?.kind === 'game'));
     assert.deepEqual(games, ['pane-3'], 'one game leaf in the whole window, which is all there is a view for');
 });
-
-test('a window opens with chat below the game unless asked otherwise', () => {
-    const set = openWindowTabs(800);
-    assert.deepEqual(contentOf(set.tabs[0]!.tree, 'pane-2'), { kind: 'tool', tool: 'chat' });
-});
-
-test('the bottom pane can be another tool, which is how a first launch shows the servers', () => {
-    const set = openWindowTabs(800, undefined, 'servers');
-    assert.deepEqual(contentOf(set.tabs[0]!.tree, 'pane-2'), { kind: 'tool', tool: 'servers' });
-    assert.deepEqual(contentOf(set.tabs[0]!.tree, 'pane-1'), { kind: 'game' }, 'the game keeps its pane and its focus');
-    assert.equal(set.tabs[0]!.focusedPaneId, 'pane-1');
-});

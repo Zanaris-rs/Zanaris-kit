@@ -83,18 +83,17 @@ export const IPC = {
 } as const;
 
 /**
- * The tools a window can offer. Six: `guides` stopped being one when an empty
+ * The tools a window can offer. Five: `guides` stopped being one when an empty
  * pane started showing a launcher that lists this server's links beside the
- * tools, leaving the Guides panel with no separate job, `timers` joined, and
- * `servers` joined for the pane a first launch on a fresh profile shows in
- * chat's place. A registry is worth it when the list grows. This is the set,
- * not the menu order — which tools a given window offers and in what order is
+ * tools, leaving the Guides panel with no separate job, and `timers` joined. A
+ * registry is worth it when the list grows. This is the set, not the menu
+ * order — which tools a given window offers and in what order is
  * `serverWindow`'s to say, and it is deliberately not spelled out again here:
  * that order already lives in three places that have to be edited together,
  * and a fourth copy sitting in a docstring none of them cross-reference is the
  * one that would go stale first and be believed longest.
  */
-export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer', 'timers', 'servers'] as const;
+export const TOOL_IDS = ['worlds', 'hiscores', 'chat', 'singleplayer', 'timers'] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export interface Rect {
@@ -147,8 +146,6 @@ export interface ShellState {
     share: ShareView | null;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
-    /** Never null: every window offers the catalog, because "what else can I play" is not a question any one server answers. */
-    servers: ServersView;
 }
 
 /**

@@ -281,12 +281,6 @@ function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
 }
 /** Modification time of servers.json at the last load, so a focus change only re-reads it when it changed. */
 let catalogSeen = 0;
-/**
- * Consumed by the first window of a first launch, which shows the Servers
- * pane where chat normally sits. One-shot: the factory runs per window, and
- * only the first one on a profile that had no state file is meant.
- */
-let firstLaunchPane = false;
 const serverWindows = new Map<number, ServerWindow>();
 const byShell = new Map<number, ServerWindow>();
 
@@ -298,12 +292,12 @@ function focusedServerWindow(): ServerWindow | undefined {
 }
 
 /**
- * How many windows each server has open, for the Servers pane's rows.
+ * How many windows each server has open, for Settings' rows.
  *
- * Counted from `windows.list()`, which reads each window's spec, and never
- * from `sw.state()`. `state()` now carries the Servers view, the view is built
- * with these counts, so a count taken through `state()` would call the very
- * function that called it — one window is enough to recurse forever.
+ * Counted from `windows.list()`, which reads each window's spec. That is
+ * cheap and asks nothing of a window itself, which is the reason to keep
+ * reading it from there even though no `ServerWindow`'s own state carries
+ * this count any more.
  */
 function windowCounts(): Map<string, number> {
     const counts = new Map<string, number>();
@@ -364,12 +358,6 @@ const windows = new ServerWindows(
                 timers: () => {
                     const state = appState.timers();
                     return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
-                },
-                servers: () => serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
-                bottomTool: () => {
-                    if (!firstLaunchPane) return 'chat' as const;
-                    firstLaunchPane = false;
-                    return 'servers' as const;
                 }
             }
         );
@@ -379,17 +367,15 @@ const windows = new ServerWindows(
         return sw;
     },
     /**
-     * The Servers pane's rows, and Settings' own copy of them, carry each
-     * server's open-window count. That count only agrees with reality if
-     * every window's own Servers pane — and Settings, when it is open — is
-     * pushed whenever ANY window opens or closes anywhere — so `ServerWindows`
-     * calls this after both: from `open()` once the new window is registered,
-     * and from a closed window's own `onClosed` chain once it has already
-     * deleted that window from every map above, so the count here never
-     * still includes the window that just went away.
+     * Settings' rows carry each server's open-window count. That count only
+     * agrees with reality if Settings, when it is open, is pushed whenever ANY
+     * window opens or closes anywhere — so `ServerWindows` calls this after
+     * both: from `open()` once the new window is registered, and from a
+     * closed window's own `onClosed` chain once it has already deleted that
+     * window from every map above, so the count here never still includes
+     * the window that just went away.
      */
     () => {
-        for (const sw of serverWindows.values()) sw.pushState();
         pushSettings();
     }
 );
@@ -430,9 +416,9 @@ function openSettings(anchor: ServerWindow | undefined = focusedServerWindow()):
     opened.window.setAlwaysOnTop(pinned);
 }
 
-/** Whether an IPC call may manage the catalog: the Settings window, or a game window's Servers pane while that still exists. */
+/** Whether an IPC call may manage the catalog: only the Settings window, the one page that has a servers UI. */
 function mayManageServers(sender: WebContents): boolean {
-    return settings.isSender(sender.id) || windowFor(sender) !== undefined;
+    return settings.isSender(sender.id);
 }
 
 function windowFor(sender: WebContents): ServerWindow | undefined {
@@ -455,11 +441,9 @@ function loadCatalog(): void {
     catalog.load();
     catalogSeen = catalogMtime();
     installAppMenu();
-    // Every window's Servers pane reads the catalog too, and Settings does as
-    // well — neither has a poll of its own, so each only ever learns of a
-    // change through a push. A no-op at the `whenReady` call site, where no
-    // windows exist yet.
-    for (const sw of serverWindows.values()) sw.pushState();
+    // Settings reads the catalog too, and has no poll of its own, so it only
+    // ever learns of a change through a push. A no-op at the `whenReady` call
+    // site, where Settings is never open yet.
     pushSettings();
     if (catalog.recovered) {
         log(`[main] ${catalog.file} could not be read; the defaults were written and the old file kept beside it`);
@@ -1217,19 +1201,17 @@ ipcMain.handle(IPC.timersSound, async (event): Promise<Uint8Array | null> => {
 // ── servers ───────────────────────────────────────────────────────────────
 
 /**
- * Everything that must happen after the catalog changes — from Settings, or
- * from a game window's own Servers pane while that still exists. The startup
- * set does not come through here — it touches no file and no menu, so its
- * handler does the smaller push itself. The menu is rebuilt so File > New
- * Window For agrees, every window is pushed because this one's change is
- * app-wide — Settings too, since it shows the same rows — and `catalogSeen`
- * is refreshed so the on-focus reload does not mistake our own write for
- * somebody editing servers.json underneath us.
+ * Everything that must happen after the catalog changes, from Settings — the
+ * only page that can change it. The startup set does not come through here —
+ * it touches no file and no menu, so its handler does the smaller push
+ * itself. The menu is rebuilt so File > New Window For agrees, Settings is
+ * pushed since it shows these rows, and `catalogSeen` is refreshed so the
+ * on-focus reload does not mistake our own write for somebody editing
+ * servers.json underneath us.
  */
 function catalogChanged(): void {
     catalogSeen = catalogMtime();
     installAppMenu();
-    for (const sw of serverWindows.values()) sw.pushState();
     pushSettings();
 }
 
@@ -1246,7 +1228,6 @@ ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {
     if (!mayManageServers(event.sender) || typeof id !== 'string' || typeof on !== 'boolean') return;
     if (!catalog.get(id)) return;
     appState.setStartupServer(id, on);
-    for (const sw of serverWindows.values()) sw.pushState();
     pushSettings();
 });
 
@@ -1616,26 +1597,6 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] your world: ${single.state().yourWorld?.status} on port ${single.state().yourWorld?.port}`);
         }
 
-        // The Servers pane: the catalog as a newcomer meets it, with Lost City's
-        // row showing an open window and the Add a server button below the list.
-        //
-        // A window of its own rather than `first` or `hopper`: both have been
-        // split and grown by every pass above and, by now, carry too many panes
-        // at 765px for `canAppendColumn` to fit one more — Add pane would grey
-        // Servers out rather than open it. A freshly opened window is just game
-        // and chat, with the width to spare.
-        {
-            const serversWindow = openServer(first.state().server);
-            log(`[capture] ${serversWindow.state().title}: ${await loaded(serversWindow)}`);
-            serversWindow.window.moveTop();
-            serversWindow.focus();
-            await wait(500);
-            showTool(serversWindow, 'servers');
-            await wait(500);
-            await shoot(`${serversWindow.state().server.id}-servers`, serversWindow);
-            log(`[capture] servers pane lists ${serversWindow.state().servers.rows.length} servers`);
-        }
-
         // The reference pane. Last, because it is the one thing here that
         // changes the window's width as well as its chrome, and every shot
         // above is of a window whose game rect the pane has not touched.
@@ -1760,12 +1721,6 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
-    // Set right after load(), the only call that gives fresh() an answer, and
-    // before any window exists to read it through the bottomTool closure above.
-    // Capture pins this to false rather than asking fresh(): whether the capture
-    // profile happens to be new is not something its output should depend on, so
-    // every run photographs the same, ordinary arrangement.
-    firstLaunchPane = CAPTURE_DIR ? false : appState.fresh();
     // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
     powerMonitor.on('resume', () => {
         for (const sw of serverWindows.values()) sw.settleTimers();
