@@ -685,7 +685,7 @@ function mayManageServers(sender: WebContents): boolean {
 
 - [ ] **Step 8: Check nothing of the pane survives.** `grep -rn "'servers'" src/` must match nothing (the IPC channel strings are `servers-…`). `grep -rn "bottomTool\|firstLaunchPane\|Servers pane\|tools/Servers" src/` must match nothing.
 
-- [ ] **Step 9:** `npm test && npm run typecheck && npm run build`. `tabs.test.ts` is back to its fork-point tests, so the total drops by the one test that checked a Servers bottom pane.
+- [ ] **Step 9:** `npm test && npm run typecheck && npm run build`. `tabs.test.ts` is back to its fork-point tests, so the total drops by the two tests the pane added there — one checking chat is under the game "unless asked otherwise", one checking a Servers bottom pane.
 
 - [ ] **Step 10: Commit.**
 
