@@ -261,6 +261,16 @@ export function OpenExternal(): ReactNode {
     );
 }
 
+/** Settings: a gear, stroked in the button's own colour like the other chrome glyphs. */
+export function Gear(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+            <path d="M7.6 2.2h2.8l.4 1.9 1.4.6 1.6-1.1 2 2-1.1 1.6.6 1.4 1.9.4v2.8l-1.9.4-.6 1.4 1.1 1.6-2 2-1.6-1.1-1.4.6-.4 1.9H7.6l-.4-1.9-1.4-.6-1.6 1.1-2-2 1.1-1.6-.6-1.4-1.9-.4V7.6l1.9-.4.6-1.4-1.1-1.6 2-2 1.6 1.1 1.4-.6Z" />
+            <circle cx="9" cy="9" r="2.3" />
+        </svg>
+    );
+}
+
 /*
  * ── the Timers tool's controls ─────────────────────────────────────────────
  *

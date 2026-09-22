@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC, type ShellState, type ZanarisApi } from '../shared/ipc';
+import { IPC, type SettingsState, type ShellState, type ZanarisApi } from '../shared/ipc';
 import type { TimerAlert } from '../shared/timers';
 
 /**
@@ -101,6 +101,17 @@ const api: ZanarisApi = {
         setStartup: (id, on) => ipcRenderer.invoke(IPC.serversStartup, id, on),
         add: input => ipcRenderer.invoke(IPC.serversAdd, input),
         remove: id => ipcRenderer.invoke(IPC.serversRemove, id)
+    },
+    settings: {
+        get: () => ipcRenderer.invoke(IPC.settingsGet),
+        onState: cb => {
+            const handler = (_event: unknown, state: SettingsState): void => cb(state);
+            ipcRenderer.on(IPC.settingsState, handler);
+            return () => {
+                ipcRenderer.off(IPC.settingsState, handler);
+            };
+        },
+        open: () => ipcRenderer.invoke(IPC.settingsOpen)
     }
 };
 

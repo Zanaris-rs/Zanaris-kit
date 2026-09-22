@@ -10,6 +10,8 @@ export interface MenuActions {
     /** Opens servers.json in the system editor. */
     editServers(): void;
     reloadServers(): void;
+    /** Opens the Settings window, or brings the open one forward. */
+    openSettings(): void;
     splitPane(axis: 'x' | 'y'): void;
     closePane(): void;
     evenOut(): void;
@@ -57,8 +59,28 @@ export function installMenu(
             ? [{ label: 'No servers in the list', enabled: false }]
             : servers.map(server => ({ label: serverMenuLabel(server), click: () => actions.newWindowFor(server.id) }));
 
+    const settingsItem: MenuItemConstructorOptions = { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => actions.openSettings() };
+    // Spelled out rather than `role: 'appMenu'`, which cannot take an item of
+    // ours, because Settings belongs in the app menu on macOS.
+    const appMenu: MenuItemConstructorOptions = {
+        label: app.name,
+        submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            settingsItem,
+            { type: 'separator' },
+            { role: 'services' },
+            { type: 'separator' },
+            { role: 'hide' },
+            { role: 'hideOthers' },
+            { role: 'unhide' },
+            { type: 'separator' },
+            { role: 'quit' }
+        ]
+    };
+
     const template: MenuItemConstructorOptions[] = [
-        ...(isMac ? [{ role: 'appMenu' as const }] : []),
+        ...(isMac ? [appMenu] : []),
         {
             label: 'File',
             submenu: [
@@ -67,6 +89,7 @@ export function installMenu(
                 { type: 'separator' },
                 { label: 'Edit Server List…', click: () => actions.editServers() },
                 { label: 'Reload Server List', click: () => actions.reloadServers() },
+                ...(isMac ? [] : [settingsItem]),
                 { type: 'separator' },
                 { role: 'close' }
             ]

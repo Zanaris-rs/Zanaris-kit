@@ -76,7 +76,10 @@ export const IPC = {
     serversOpen: 'zanaris:servers-open',
     serversStartup: 'zanaris:servers-startup',
     serversAdd: 'zanaris:servers-add',
-    serversRemove: 'zanaris:servers-remove'
+    serversRemove: 'zanaris:servers-remove',
+    settingsGet: 'zanaris:settings-get',
+    settingsState: 'zanaris:settings-state',
+    settingsOpen: 'zanaris:settings-open'
 } as const;
 
 /**
@@ -145,6 +148,14 @@ export interface ShellState {
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
     /** Never null: every window offers the catalog, because "what else can I play" is not a question any one server answers. */
+    servers: ServersView;
+}
+
+/**
+ * What the Settings window draws. Its own channel rather than a field on
+ * `ShellState`: it is not a game window, and no game window draws any of it.
+ */
+export interface SettingsState {
     servers: ServersView;
 }
 
@@ -352,5 +363,12 @@ export interface ZanarisApi {
         /** Null when it was added; a sentence saying why not otherwise. */
         add(input: NewServerInput): Promise<string | null>;
         remove(id: string): Promise<string | null>;
+    };
+    settings: {
+        /** Null when the calling page is not the Settings window. */
+        get(): Promise<SettingsState | null>;
+        onState(cb: (state: SettingsState) => void): () => void;
+        /** Opens the Settings window, or brings the open one forward. */
+        open(): Promise<void>;
     };
 }

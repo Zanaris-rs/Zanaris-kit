@@ -6,7 +6,7 @@ import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
 import { passwordProblem, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
 import { normaliseName } from '../shared/hiscores';
-import { IPC, type ShellState, type ToolId } from '../shared/ipc';
+import { IPC, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
 import { NAME_INPUT_MAX } from '../shared/names';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
 import type { PaneContent } from './paneTree';
@@ -15,6 +15,8 @@ import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
+import { SettingsWindowSlot } from './settingsWindow';
+import { createSettingsWindow, type SettingsWindow } from './settingsView';
 import { installMenu, type MenuActions, type MenuWindowState } from './menu';
 import { WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
@@ -381,8 +383,9 @@ const windows = new ServerWindows(
         return sw;
     },
     /**
-     * The Servers pane's rows carry each server's open-window count. That
-     * count only agrees with reality if every window's own Servers pane is
+     * The Servers pane's rows, and Settings' own copy of them, carry each
+     * server's open-window count. That count only agrees with reality if
+     * every window's own Servers pane — and Settings, when it is open — is
      * pushed whenever ANY window opens or closes anywhere — so `ServerWindows`
      * calls this after both: from `open()` once the new window is registered,
      * and from a closed window's own `onClosed` chain once it has already
@@ -391,11 +394,41 @@ const windows = new ServerWindows(
      */
     () => {
         for (const sw of serverWindows.values()) sw.pushState();
+        pushSettings();
     }
 );
 
 function openServer(server: ServerDef): ServerWindow {
     return serverWindows.get(windows.open(server).id)!;
+}
+
+// ── settings ──────────────────────────────────────────────────────────────
+
+/** The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this only builds it. */
+const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) => createSettingsWindow({ anchor, alwaysOnTop: appState.alwaysOnTop(), onClosed }));
+
+/** What Settings draws, built when asked for, like a shell's state. */
+function settingsState(): SettingsState {
+    return { servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }) };
+}
+
+/** Sends Settings its state when it is open. Every change to the catalog, the startup set or which windows are open comes through here. */
+function pushSettings(): void {
+    settings.current()?.push(settingsState());
+}
+
+/**
+ * Opens Settings, or brings it forward. Placed beside `anchor` when there is
+ * room: the window whose gear was pressed, or on a first launch the game
+ * window just opened. With no anchor, beside whichever game window has focus.
+ */
+function openSettings(anchor: ServerWindow | undefined = focusedServerWindow()): void {
+    settings.open(anchor && !anchor.window.isDestroyed() ? anchor.window.getBounds() : null);
+}
+
+/** Whether an IPC call may manage the catalog: the Settings window, or a game window's Servers pane while that still exists. */
+function mayManageServers(sender: WebContents): boolean {
+    return settings.isSender(sender.id) || windowFor(sender) !== undefined;
 }
 
 function windowFor(sender: WebContents): ServerWindow | undefined {
@@ -419,9 +452,10 @@ function loadCatalog(): void {
     catalogSeen = catalogMtime();
     installAppMenu();
     // Every window's Servers pane reads the catalog too, and has no poll of its
-    // own — it only ever learns of a change through a push. A no-op at the
-    // `whenReady` call site, where no windows exist yet.
+    // own — it only ever learns of a change through a push, and neither does
+    // Settings. A no-op at the `whenReady` call site, where no windows exist yet.
     for (const sw of serverWindows.values()) sw.pushState();
+    pushSettings();
     if (catalog.recovered) {
         log(`[main] ${catalog.file} could not be read; the defaults were written and the old file kept beside it`);
         void dialog.showMessageBox({
@@ -483,6 +517,7 @@ const actions: MenuActions = {
         loadCatalog();
         log(`[main] server list reloaded: ${catalog.list().length} servers`);
     },
+    openSettings: () => openSettings(),
     setWarnOnSwitch,
     setAlwaysOnTop,
     splitPane: axis => {
@@ -491,7 +526,14 @@ const actions: MenuActions = {
     },
     closePane: () => {
         const sw = focusedServerWindow();
-        if (sw) void sw.closePane(sw.state().panes.find(p => p.focused)?.paneId ?? '');
+        if (sw) {
+            void sw.closePane(sw.state().panes.find(p => p.focused)?.paneId ?? '');
+            return;
+        }
+        // Cmd/Ctrl+W is Close Pane's. Settings has no panes, so there it closes
+        // the window, as the same keys would anywhere else.
+        const open = settings.current();
+        if (open?.window.isFocused()) open.window.close();
     },
     evenOut: () => focusedServerWindow()?.evenOutFocused(),
     newTab: () => focusedServerWindow()?.newTab(),
@@ -520,6 +562,13 @@ const actions: MenuActions = {
 // ── ipc ───────────────────────────────────────────────────────────────────
 
 ipcMain.handle(IPC.shellGet, (event): ShellState | null => windowFor(event.sender)?.state() ?? null);
+
+ipcMain.handle(IPC.settingsGet, (event): SettingsState | null => (settings.isSender(event.sender.id) ? settingsState() : null));
+
+ipcMain.handle(IPC.settingsOpen, event => {
+    const sw = windowFor(event.sender);
+    if (sw) openSettings(sw);
+});
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
 
@@ -1156,18 +1205,19 @@ ipcMain.handle(IPC.timersSound, async (event): Promise<Uint8Array | null> => {
  * The startup set does not come through here — it touches no file and no
  * menu, so its handler does the smaller push itself. The menu is rebuilt so
  * File > New Window For agrees, every window is pushed because this one's
- * change is app-wide, and `catalogSeen` is refreshed so the on-focus reload
- * does not mistake our own write for somebody editing servers.json underneath
- * us.
+ * change is app-wide — Settings too, since it shows the same rows — and
+ * `catalogSeen` is refreshed so the on-focus reload does not mistake our own
+ * write for somebody editing servers.json underneath us.
  */
 function catalogChanged(): void {
     catalogSeen = catalogMtime();
     installAppMenu();
     for (const sw of serverWindows.values()) sw.pushState();
+    pushSettings();
 }
 
 ipcMain.handle(IPC.serversOpen, (event, id: unknown) => {
-    if (!windowFor(event.sender) || typeof id !== 'string') return;
+    if (!mayManageServers(event.sender) || typeof id !== 'string') return;
     const server = catalog.get(id);
     if (!server) return;
     // windows.open() (inside openServer) tells ServerWindows' onChange, which
@@ -1176,10 +1226,11 @@ ipcMain.handle(IPC.serversOpen, (event, id: unknown) => {
 });
 
 ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {
-    if (!windowFor(event.sender) || typeof id !== 'string' || typeof on !== 'boolean') return;
+    if (!mayManageServers(event.sender) || typeof id !== 'string' || typeof on !== 'boolean') return;
     if (!catalog.get(id)) return;
     appState.setStartupServer(id, on);
     for (const sw of serverWindows.values()) sw.pushState();
+    pushSettings();
 });
 
 /**
@@ -1188,7 +1239,7 @@ ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {
  * authority, since the renderer cannot import it.
  */
 ipcMain.handle(IPC.serversAdd, (event, raw: unknown): string | null => {
-    if (!windowFor(event.sender)) return null;
+    if (!mayManageServers(event.sender)) return null;
     const input = readNewServerInput(raw);
     if (!input) return 'That is not a server the kit can add.';
     const result = catalog.add(input);
@@ -1198,7 +1249,7 @@ ipcMain.handle(IPC.serversAdd, (event, raw: unknown): string | null => {
 });
 
 ipcMain.handle(IPC.serversRemove, (event, id: unknown): string | null => {
-    if (!windowFor(event.sender)) return null;
+    if (!mayManageServers(event.sender)) return null;
     if (typeof id !== 'string') return 'That is not a server.';
     // The guard is here and in the row's `removable`, both from `isRemovable`:
     // nothing in the app puts a removed built-in back.
