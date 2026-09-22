@@ -3,7 +3,8 @@ import { IPC, type SettingsState, type ShellState, type ZanarisApi } from '../sh
 import type { TimerAlert } from '../shared/timers';
 
 /**
- * The only bridge between the shell and main. Deliberately narrow: no raw
+ * The only bridge between the shell and main — a game window's shell and
+ * Settings' both, the same preload for either. Deliberately narrow: no raw
  * ipcRenderer, no channel names, no send passthrough. The push returns an
  * unsubscribe closure so React effects can clean up.
  *

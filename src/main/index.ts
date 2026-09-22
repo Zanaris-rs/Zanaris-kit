@@ -283,11 +283,11 @@ function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
 /** Modification time of servers.json at the last load, so a focus change only re-reads it when it changed. */
 let catalogSeen = 0;
 /**
- * Whether this launch opens Settings once its game windows are open: only on
- * a profile that had no state file, so a newcomer sees the server list rather
- * than a Lost City client that never mentions anything else. Never during
- * capture, whose output must not depend on whether its profile happened to be
- * new.
+ * Whether this launch opens Settings once its first game window has shown:
+ * only on a profile that had no state file, so a newcomer sees the server
+ * list rather than a Lost City client that never mentions anything else.
+ * Never during capture, whose output must not depend on whether its profile
+ * happened to be new.
  */
 let openSettingsOnLaunch = false;
 const serverWindows = new Map<number, ServerWindow>();
@@ -344,9 +344,9 @@ const windows = new ServerWindows(
                 byShell.delete(sw.shellContentsId);
                 log(`[main] closed ${spec.title}`);
                 onClosed();
-                // Focus lands somewhere else, or nowhere, and the menu's panel item
-                // belongs to whoever has it now. Closing the last window on macOS
-                // fires no focus event at all, so it is done here as well.
+                // Focus lands somewhere else, or nowhere, and the menu's Always on
+                // Top item belongs to whoever has it now. Closing the last window on
+                // macOS fires no focus event at all, so it is done here as well.
                 syncMenuWindowItems();
             },
             {
@@ -412,8 +412,9 @@ function pushSettings(): void {
  * Opens Settings, or brings it forward. `anchor` is the window that asked —
  * the one whose gear was clicked, from the menu's Settings…, whichever game
  * window has focus, or, on a fresh profile's first launch, the first game
- * window it opened. Placed beside it when there is room; centred on the
- * display when there is no anchor, or no room beside it.
+ * window it opened. Placed beside it when there is room, against the work
+ * area's edge when there is not; centred on the display only with no anchor
+ * at all. See `settingsBounds`.
  *
  * Pinned to match `anchor`'s own pin, or the app's last-remembered one with
  * no anchor — set after `settings.open()` returns, on every call, so an
@@ -1911,15 +1912,20 @@ app.whenReady().then(async () => {
     if (opening.length === 0) actions.newWindow();
     else {
         const opened = opening.map(openServer);
-        // Beside the first game window, so the list does not sit on the game it
-        // has just opened.
-        if (openSettingsOnLaunch) {
-            openSettings(opened[0]);
-            // fresh() means "no state file", and a launch where the player
-            // changes nothing writes none — so without this every later launch
-            // would be fresh too, and open Settings again. It writes the defaults
-            // as they stand, as the first save of anything always has.
-            appState.save();
+        const first = opened[0];
+        if (openSettingsOnLaunch && first) {
+            // Once the first game window has shown, so Settings is the later of the
+            // two and lands in front: the list is the point of a first launch. The
+            // save is here too, not before, so a launch that quits before the game
+            // shows stays fresh and tries again next time. fresh() means "no state
+            // file", and a launch where the player changes nothing writes none —
+            // without this save every later launch would be fresh too.
+            const openOnce = (): void => {
+                openSettings(first);
+                appState.save();
+            };
+            if (first.window.isVisible()) openOnce();
+            else first.window.once('show', openOnce);
         }
     }
 });

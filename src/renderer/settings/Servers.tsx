@@ -32,8 +32,9 @@ function QuietButton({ onClick, disabled = false, children }: { onClick?: () => 
  * decides what "worked" means, since a removed row's own answer is to
  * disappear when Settings' next state arrives, where a saved form's is to
  * clear itself) or shows the refusal. Shared by the row's Remove and the add
- * form's Save so a refusal — a built-in guard, or a race with another
- * window's own Remove — is never silently dropped.
+ * form's Save so a refusal — a built-in guard, or servers.json having changed
+ * since Settings last read it, from a hand edit the kit picks up on focus —
+ * is never silently dropped.
  */
 async function send(request: Promise<string | null>, setBusy: (busy: boolean) => void, setRefusal: (refusal: string | null) => void, onDone?: () => void): Promise<void> {
     setBusy(true);
@@ -70,7 +71,7 @@ function Row({ row }: { row: ServerRow }): ReactNode {
                     Open at startup
                 </label>
                 {row.removable && (
-                    /* Text, not a button: removing is rare, and a red slab beside Save is the loudest thing in this section. Routed through the same `send` round-trip as `Timers.tsx`'s Delete, so the built-in guard and a race with another window's own Remove both surface here rather than vanishing silently. */
+                    /* Text, not a button: removing is rare, and a red slab beside Save is the loudest thing in this section. Routed through the same `send` round-trip as `Timers.tsx`'s Delete, so the built-in guard and a servers.json changed by hand since Settings last read it both surface here rather than vanishing silently. */
                     <button
                         type="button"
                         disabled={busy}

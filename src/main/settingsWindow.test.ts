@@ -84,9 +84,15 @@ test('settings opens beside the window that asked when the display has room', ()
     assert.deepEqual(settingsBounds(anchor, SIZE, WORK), { x: 100 + 765 + SETTINGS_GAP, y: 80, width: 520, height: 640 });
 });
 
-test('settings is centred when the display has no room beside the window', () => {
+test('settings opens beside the window on its left when there is no room to its right', () => {
     const anchor = { x: 1200, y: 80, width: 765, height: 803 };
-    assert.deepEqual(settingsBounds(anchor, SIZE, WORK), { x: 700, y: 233, width: 520, height: 640 });
+    assert.deepEqual(settingsBounds(anchor, SIZE, WORK), { x: 668, y: 80, width: 520, height: 640 });
+});
+
+test('on a laptop-sized display, a centred first game window leaves no room on either side, so settings goes against the edge with more free space', () => {
+    const work: Rect = { x: 0, y: 25, width: 1440, height: 875 };
+    const anchor = { x: 337, y: 60, width: 765, height: 803 };
+    assert.deepEqual(settingsBounds(anchor, SIZE, work), { x: 920, y: 60, width: 520, height: 640 });
 });
 
 test('settings is centred when no window asked for it', () => {
@@ -116,7 +122,7 @@ test('beside a window above the work area, settings is lowered to stay on it', (
     assert.deepEqual(settingsBounds(anchor, SIZE, WORK), { x: 877, y: 25, width: 520, height: 640 });
 });
 
-test('settings is centred when the anchor sits off the left edge', () => {
+test('settings goes against the right edge when the anchor sits off the left edge with no room on either side', () => {
     const anchor = { x: -1000, y: 80, width: 300, height: 803 };
-    assert.deepEqual(settingsBounds(anchor, SIZE, WORK), { x: 700, y: 233, width: 520, height: 640 });
+    assert.deepEqual(settingsBounds(anchor, SIZE, WORK), { x: 1400, y: 80, width: 520, height: 640 });
 });

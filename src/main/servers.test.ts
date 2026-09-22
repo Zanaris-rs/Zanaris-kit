@@ -33,7 +33,7 @@ test('built-ins are not removable, because load never puts one back', () => {
     assert.equal(isRemovable('my-server'), true);
 });
 
-test('a row carries what the pane draws, and marks the ones a launch opens', () => {
+test('a row carries what Settings draws, and marks the ones a launch opens', () => {
     const view = serversView({ catalog, startup: ['zanaris'], openCounts: new Map([['lostcity', 2]]) });
     const lostcity = view.rows.find(r => r.id === 'lostcity')!;
     const zanaris = view.rows.find(r => r.id === 'zanaris')!;

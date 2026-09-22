@@ -105,9 +105,6 @@ export function installMenu(
                 // The only way back once the switch dialog's "Don't ask again" has been ticked.
                 { label: 'Warn Before Switching Worlds', type: 'checkbox', checked: warnOnSwitch, click: item => actions.setWarnOnSwitch(item.checked) },
                 { type: 'separator' },
-                // Disabled rather than hidden where the panel has no legal
-                // occupant — a chat-only server with chat in the dock — so the
-                // shortcut reads as unavailable here instead of broken.
                 { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => actions.newTab() },
                 { label: 'Close Tab', accelerator: 'CmdOrCtrl+Shift+W', click: () => actions.closeTab() },
                 /*

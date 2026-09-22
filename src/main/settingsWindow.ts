@@ -67,26 +67,37 @@ export const SETTINGS_GAP = 12;
 /**
  * Where the Settings window opens.
  *
- * To the right of the window that asked for it, top edges level, when the
- * display has room there, so on a first launch it sits beside the game the
- * player just opened rather than on top of it. Centred on the display when
- * there is no room, or no window asked. Never larger than the display's work
- * area, and never off it — including beside a window whose top edge sits too
- * high or too low for Settings to fit there level, when `y` is clamped to the
- * work area instead.
+ * Beside the window that asked for it, top edges level: to its right when the
+ * display has room there, else to its left when the display has room there.
+ * A first launch's game window is centred (`nextPosition()` has no window to
+ * cascade from yet), and on a laptop-sized display that leaves no room on
+ * either side, so the last resort is against the work area's edge — the side
+ * with more free space, so Settings covers as little of the game window as it
+ * can, rather than centring over its middle. Centred on the display only when
+ * no window asked. Never larger than the display's work area, and never off
+ * it — including beside or against a window whose top edge sits too high or
+ * too low for Settings to fit there level, when `y` is clamped to the work
+ * area instead.
  */
 export function settingsBounds(anchor: Rect | null, size: Size, workArea: Rect): Rect {
     const width = Math.min(size.width, workArea.width);
     const height = Math.min(size.height, workArea.height);
+    const left = workArea.x;
+    const right = workArea.x + workArea.width;
     if (anchor) {
-        const x = anchor.x + anchor.width + SETTINGS_GAP;
-        if (x >= workArea.x && x + width <= workArea.x + workArea.width) {
-            const y = Math.min(Math.max(anchor.y, workArea.y), workArea.y + workArea.height - height);
-            return { x, y, width, height };
-        }
+        const y = Math.min(Math.max(anchor.y, workArea.y), workArea.y + workArea.height - height);
+        const besideRight = anchor.x + anchor.width + SETTINGS_GAP;
+        if (besideRight >= left && besideRight + width <= right) return { x: besideRight, y, width, height };
+        const besideLeft = anchor.x - SETTINGS_GAP - width;
+        if (besideLeft >= left && besideLeft + width <= right) return { x: besideLeft, y, width, height };
+        // No room on either side: against the edge with more free space, so it
+        // covers as little of the window as it can.
+        const roomRight = right - (anchor.x + anchor.width);
+        const roomLeft = anchor.x - left;
+        return { x: roomRight >= roomLeft ? right - width : left, y, width, height };
     }
     return {
-        x: workArea.x + Math.round((workArea.width - width) / 2),
+        x: left + Math.round((workArea.width - width) / 2),
         y: workArea.y + Math.round((workArea.height - height) / 2),
         width,
         height

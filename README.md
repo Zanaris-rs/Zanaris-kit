@@ -45,12 +45,12 @@ a newer version, adds Help > Update Available, which opens that page. Set
 
 ## What it does
 
-There is no launcher. There are game windows, and one Settings window for the
-app; new game windows come from the **File menu**: New Window (Cmd/Ctrl+N)
-opens another window of the focused window's server, and New Window For lists
-the catalog. On macOS the app keeps running with no windows and the dock menu
-opens one; elsewhere closing the last window quits, since the menu lives in
-the window.
+There are game windows, and one Settings window for the app; new game windows
+come from the **File menu**, from Settings' Open buttons, and at launch from
+the servers ticked there. New Window (Cmd/Ctrl+N) opens another window of the
+focused window's server, and New Window For lists the catalog. On macOS the
+app keeps running with no windows and the dock menu opens one; elsewhere
+closing the last window quits, since the menu lives in the window.
 
 The catalog lives in **Settings**, one window for the whole app, opened from
 the gear at the right of every window's tab bar or from Settings…
@@ -62,8 +62,9 @@ and a launch falls back to the catalog's first entry, exactly what an empty
 list has always done. The same section adds a server through a short form and
 removes one — except the handful the kit ships with, which nothing in the app
 can put back once gone, so it does not offer to take them out. A fresh
-profile's first launch opens Settings beside the game, because nothing else on
-screen ever says the kit runs more than Lost City: New Window For lists the
+profile's first launch opens Settings beside the game where there is room, or
+against the edge of the screen in front of it otherwise, because nothing else
+on screen ever says the kit runs more than Lost City: New Window For lists the
 rest of the catalog, but that is a menu nobody opens without already
 suspecting there is something behind it. After that, Settings opens only when
 asked. It is a window rather than a pane or a popover because the game is a
@@ -822,6 +823,9 @@ src/main/layoutFile.ts      pure: a layout file — writing, validating, fresh i
 src/main/paneMenu.ts        pure: a pane's name, its gestures, what it may become    (tested)
 src/main/paneHost.ts        the views inside a tab's panes; holds no rules
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)
+src/main/servers.ts         pure: Settings' Servers section — rows, isRemovable,
+                            startup picks, the add form                             (tested)
+src/main/settingsWindow.ts  pure: the Settings window's slot, and where it opens   (tested)
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
@@ -849,12 +853,17 @@ src/main/share/reachable.ts whether the link works yet, asking no caching resolv
 src/main/share/service.ts   the one share, and what to ask before it                (tested)
 src/main/share/electron.ts  cloudflared's folder, net.fetch, killing it at exit
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
+src/main/settingsView.ts    builds the Settings window; holds no rules, as paneHost.ts
+                            does for panes
 src/main/menu.ts            application menu: new windows, the server list, the pane
                             gestures, the switch warning
 src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.zanaris bridge
 src/renderer/Shell.tsx      the tab bar, Add pane, and every pane where main put it
+src/renderer/Settings.tsx   the Settings window's page: one section today, Servers
+src/renderer/settings/Servers.tsx  the Servers section: the list, Open, the startup
+                            checkbox, the add form, Remove
 src/renderer/paneHeader.tsx a pane's name, its own controls, and what it may become
 src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
 src/renderer/grip.tsx       one draggable seam, and its keyboard path

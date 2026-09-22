@@ -1,5 +1,11 @@
 # Servers Pane Implementation Plan
 
+> **Superseded in part, 2026-09-22,** by `2026-09-22-settings-window.md`, the
+> plan that replaced its surface. The catalog lives in one Settings window
+> opened from a gear, not in a tool pane. What carries over unchanged: the
+> pure rules in `servers.ts`, the startup set, adding and removing, and the
+> protection of built-in entries.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the server catalog a tool pane reachable from any window — listing, opening, adding and removing servers, and choosing which ones a launch opens.

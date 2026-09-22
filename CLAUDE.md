@@ -74,17 +74,6 @@ that pane. So an id, once shipped, is never removed or renamed: a kit that
 stopped knowing one would cost someone their whole saved arrangement, not just
 the pane that used it, the day they tried to open it here.
 
-A catalog entry the kit ships with cannot be removed from Settings,
-for a plain reason: `Catalog.load` never puts a missing built-in back. At file
-version 5 `migrateCatalog` only validates what is already there, and the four
-refresh functions (`refreshYourWorld`, `refreshHiscores`, `refreshBookmarks`,
-`refreshTimers`) touch only entries already present — none of them re-adds one
-that is gone. So removing a built-in is permanent short of deleting
-`servers.json` by hand. The guard is `isRemovable`, in `src/main/servers.ts`;
-`Catalog.remove` itself is deliberately left as a general primitive, free to
-remove anything a caller hands it, because the rule about which callers may
-belongs at the one place that decides, not inside the primitive.
-
 > The old invariant said the opposite: opening chrome must never resize the
 > game, because resizing cost the login. The second half was never true —
 > `setBounds` does not reload a `WebContentsView`, only `loadURL` does — and the
@@ -107,6 +96,17 @@ over them would sit underneath. It takes its state on its own channel,
 window's `state()` builds anything for it, which is how `windowCounts()` once
 came to recurse through `state()`. Only Settings may call the servers
 handlers.
+
+A catalog entry the kit ships with cannot be removed from Settings,
+for a plain reason: `Catalog.load` never puts a missing built-in back. At file
+version 5 `migrateCatalog` only validates what is already there, and the four
+refresh functions (`refreshYourWorld`, `refreshHiscores`, `refreshBookmarks`,
+`refreshTimers`) touch only entries already present — none of them re-adds one
+that is gone. So removing a built-in is permanent short of deleting
+`servers.json` by hand. The guard is `isRemovable`, in `src/main/servers.ts`;
+`Catalog.remove` itself is deliberately left as a general primitive, free to
+remove anything a caller hands it, because the rule about which callers may
+belongs at the one place that decides, not inside the primitive.
 
 ## Where logic is allowed to live
 
