@@ -369,21 +369,6 @@ export default function Shell(): ReactNode {
                         </button>
                     </div>
                     {/*
-                     * How a pane gets added, at the far end of the bar from the
-                     * tabs. It replaced the tool rail down the window's right
-                     * edge, which could reach the tools and none of the links,
-                     * and put what it opened in whichever pane had focus — so
-                     * nothing on screen said a second pane was possible, and a
-                     * click could replace the page you were reading.
-                     *
-                     * Words and a caret rather than a second plus: a plus in
-                     * this bar already means "new tab", and two of them side by
-                     * side is a guess about which is which. A raised `.btn`
-                     * rather than a tab's face, so it does not read as one more
-                     * tab. The menu is main's, like every pane menu, and opens
-                     * under the button.
-                     */}
-                    {/*
                      * Settings: a window of its own rather than a pane, since
                      * everything in it is the app's rather than this window's. A
                      * gear and no word, beside a button that already has one; its
@@ -399,6 +384,21 @@ export default function Shell(): ReactNode {
                     >
                         <Gear />
                     </button>
+                    {/*
+                     * How a pane gets added, at the far end of the bar from the
+                     * tabs. It replaced the tool rail down the window's right
+                     * edge, which could reach the tools and none of the links,
+                     * and put what it opened in whichever pane had focus — so
+                     * nothing on screen said a second pane was possible, and a
+                     * click could replace the page you were reading.
+                     *
+                     * Words and a caret rather than a second plus: a plus in
+                     * this bar already means "new tab", and two of them side by
+                     * side is a guess about which is which. A raised `.btn`
+                     * rather than a tab's face, so it does not read as one more
+                     * tab. The menu is main's, like every pane menu, and opens
+                     * under the button.
+                     */}
                     <button
                         type="button"
                         title="Add a pane to this tab"

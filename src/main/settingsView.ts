@@ -20,7 +20,7 @@ export interface SettingsWindow extends SettingsHandle {
  * No parent: parented to a game window it would close with that window, and
  * it belongs to no one window.
  */
-export function createSettingsWindow(opts: { anchor: Rect | null; alwaysOnTop: boolean; onClosed: () => void }): SettingsWindow {
+export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () => void }): SettingsWindow {
     const display = opts.anchor ? screen.getDisplayMatching(opts.anchor) : screen.getPrimaryDisplay();
     const win = new BrowserWindow({
         ...settingsBounds(opts.anchor, SIZE, display.workArea),
@@ -29,10 +29,15 @@ export function createSettingsWindow(opts: { anchor: Rect | null; alwaysOnTop: b
         title: 'Settings',
         backgroundColor: '#17120d',
         show: false,
-        // Beside a pinned game window, an unpinned Settings would open behind it.
-        alwaysOnTop: opts.alwaysOnTop,
-        // Windows and Linux hang the app menu on every window, and nothing in it
-        // but Settings… acts here. Its shortcuts still fire.
+        // No initial pin: `openSettings` in index.ts sets it right after this
+        // returns, to match whichever window asked (or the app's remembered
+        // pin with none), and does so again on a re-open — a pin set here
+        // once would not follow a second gear pressed on an already-open
+        // Settings.
+        // Windows and Linux hang the app menu on every window; here, the
+        // pane and tab items — Split, Close Pane, Close Tab, Even Out,
+        // Select Tab — have nothing to act on. Everything else still does,
+        // and every shortcut still fires.
         autoHideMenuBar: true,
         webPreferences: {
             preload: preloadPath(),
@@ -43,9 +48,8 @@ export function createSettingsWindow(opts: { anchor: Rect | null; alwaysOnTop: b
         }
     });
     // The page is the kit's own, but the names and notes on it come from
-    // servers.json, which people edit by hand. React renders them as text; this
-    // is the line behind that, and the shell has no need of it because it shows
-    // nothing of the kind.
+    // servers.json, which people edit by hand. React renders them as text;
+    // this is the line behind that.
     win.webContents.on('will-navigate', event => event.preventDefault());
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     // Keep "Settings": the page's own <title> is the shell's.

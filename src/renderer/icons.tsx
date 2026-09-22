@@ -265,7 +265,7 @@ export function OpenExternal(): ReactNode {
 export function Gear(): ReactNode {
     return (
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-            <path d="M7.6 2.2h2.8l.4 1.9 1.4.6 1.6-1.1 2 2-1.1 1.6.6 1.4 1.9.4v2.8l-1.9.4-.6 1.4 1.1 1.6-2 2-1.6-1.1-1.4.6-.4 1.9H7.6l-.4-1.9-1.4-.6-1.6 1.1-2-2 1.1-1.6-.6-1.4-1.9-.4V7.6l1.9-.4.6-1.4-1.1-1.6 2-2 1.6 1.1 1.4-.6Z" />
+            <path d="M7.5 3.9L7.9 1.8L10.1 1.8L10.5 3.9L11.5 4.3L13.3 3.1L14.9 4.7L13.7 6.5L14.1 7.5L16.2 7.9L16.2 10.1L14.1 10.5L13.7 11.5L14.9 13.3L13.3 14.9L11.5 13.7L10.5 14.1L10.1 16.2L7.9 16.2L7.5 14.1L6.5 13.7L4.7 14.9L3.1 13.3L4.3 11.5L3.9 10.5L1.8 10.1L1.8 7.9L3.9 7.5L4.3 6.5L3.1 4.7L4.7 3.1L6.5 4.3Z" />
             <circle cx="9" cy="9" r="2.3" />
         </svg>
     );

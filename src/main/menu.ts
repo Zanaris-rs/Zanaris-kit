@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
+import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
 import type { LatestRelease } from './update';
@@ -28,7 +28,8 @@ export interface MenuActions {
 }
 
 /**
- * The application menu is where new windows come from; there is no launcher.
+ * The application menu is where new windows come from — File's own items, and
+ * Settings' Open buttons behind them; there is no launcher beyond that.
  * Native menus follow the platform's Title Case; everything the renderer
  * draws is sentence case. Rebuilt whenever the catalog changes so the server
  * submenu stays current, whenever the switch warning is turned on or off so
@@ -36,14 +37,17 @@ export interface MenuActions {
  * change, and once more when a newer release is found.
  *
  * `window` holds the inputs that belong to a window rather than to the app:
- * there is one menu for every window, so it tracks whichever has focus, and
- * reads false when none does — the item acts on the focused window, and with no
- * focus there is nothing to act on. Everything else here is the app's and is the
- * same whatever is in front.
+ * there is one menu for every window, so it tracks whichever has focus. Both
+ * fields read false with nothing focused or with Settings focused — Settings
+ * is not a game window, so Always on Top has no window of that kind to act
+ * on, and `canPin` says so. Everything else here is the app's and is the same
+ * whatever is in front.
  */
 export interface MenuWindowState {
     /** Whether the focused window is pinned above other apps. */
     alwaysOnTop: boolean;
+    /** Whether a game window has focus — Always on Top has nothing to act on otherwise. */
+    canPin: boolean;
 }
 
 export function installMenu(
@@ -122,14 +126,16 @@ export function installMenu(
                 { label: 'Split Down', accelerator: 'CmdOrCtrl+Shift+D', click: () => actions.splitPane('y') },
                 { label: 'Close Pane', accelerator: 'CmdOrCtrl+W', click: () => actions.closePane() },
                 { label: 'Even Out', accelerator: 'CmdOrCtrl+Alt+=', click: () => actions.evenOut() },
-                // Acts on the focused window and reads back from it, so with
-                // nothing focused it is disabled rather than showing the
-                // remembered value as though some window were wearing it.
+                // Acts on the focused window and reads back from it, so it is
+                // disabled whenever there is no game window to act on —
+                // nothing focused, or Settings, which is not one — rather
+                // than showing the remembered value as though some window
+                // were wearing it.
                 {
                     label: 'Always on Top',
                     type: 'checkbox',
                     checked: window.alwaysOnTop,
-                    enabled: BrowserWindow.getFocusedWindow() !== null,
+                    enabled: window.canPin,
                     click: item => actions.setAlwaysOnTop(item.checked)
                 },
                 { type: 'separator' },

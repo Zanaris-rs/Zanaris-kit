@@ -79,11 +79,10 @@ On Windows and Linux, closing it when it is the last window left quits the app,
 as closing any last window does.
 
 It uses the shell view's `webPreferences` — `sandbox`, `contextIsolation`, no
-`nodeIntegration`, `webSecurity` — and, unlike the shell, refuses any
-navigation away from its own page and any `window.open`. The shell has no such
-guard because it shows only the kit's own text; this window shows server names
-and notes that come from `servers.json`, which people edit by hand. React
-renders them as text, so this is defence in depth, and it is two lines.
+`nodeIntegration`, `webSecurity` — and refuses any navigation away from its own
+page and any `window.open`. This window shows server names and notes that come
+from `servers.json`, which people edit by hand. React renders them as text, so
+this is defence in depth, and it is two lines.
 
 ### How it opens
 

@@ -153,25 +153,22 @@ let builds: BuildStore | null = null;
 let share: ShareService | null = null;
 
 /**
- * The two menu items that belong to the focused window rather than to the app.
+ * Always on Top belongs to the focused window rather than to the app: whether
+ * it is pinned is asked of the window itself, for the reason `alwaysOnTop`
+ * gives there.
  *
- * Whether the panel could open at all is main's decision, from the same rules
- * that would refuse the open — a window whose only tool is chat, with chat
- * living in the dock, has no legal occupant for the side column — and both the
- * strip's toggle and the menu item take their enabled state from it rather than
- * working it out a second time. Whether the window is pinned is asked of the
- * window itself, for the reason `alwaysOnTop` gives there.
- *
- * Both read false with nothing focused, which is what disables the two items:
- * each acts on the focused window, and there is then no window to act on.
+ * `focusedServerWindow()` is undefined with nothing focused and with Settings
+ * focused alike — Settings is not a game window, so there is nothing there for
+ * Always on Top to act on — and `canPin` is what the menu item's `enabled`
+ * reads instead of working that out a second time.
  */
 function menuWindowState(): MenuWindowState {
     const focused = focusedServerWindow();
-    return { alwaysOnTop: focused?.alwaysOnTop() ?? false };
+    return { alwaysOnTop: focused?.alwaysOnTop() ?? false, canPin: focused !== undefined };
 }
 
 /** What the menu was last built with, so the rebuild below only runs when an item would actually change. */
-let menuWindow: MenuWindowState = { alwaysOnTop: false };
+let menuWindow: MenuWindowState = { alwaysOnTop: false, canPin: false };
 
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
@@ -180,15 +177,14 @@ function installAppMenu(): void {
 }
 
 /**
- * One menu, many windows: Toggle Panel and Always on Top both belong to
- * whichever window has focus, so they are re-examined when focus moves, when a
- * window closes out from under them, and when chat's home changes app-wide —
- * the ways either answer moves without the catalog, the warning or the update
- * doing anything.
+ * One menu, many windows: Always on Top, and whether it can be reached at
+ * all, both belong to whichever window has focus, so they are re-examined
+ * when focus moves — including to or from Settings, which is not a game
+ * window — and when a window closes out from under them.
  */
 function syncMenuWindowItems(): void {
     const now = menuWindowState();
-    if (now.alwaysOnTop !== menuWindow.alwaysOnTop) installAppMenu();
+    if (now.alwaysOnTop !== menuWindow.alwaysOnTop || now.canPin !== menuWindow.canPin) installAppMenu();
 }
 
 /**
@@ -405,7 +401,7 @@ function openServer(server: ServerDef): ServerWindow {
 // ── settings ──────────────────────────────────────────────────────────────
 
 /** The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this only builds it. */
-const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) => createSettingsWindow({ anchor, alwaysOnTop: appState.alwaysOnTop(), onClosed }));
+const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) => createSettingsWindow({ anchor, onClosed }));
 
 /** What Settings draws, built when asked for, like a shell's state. */
 function settingsState(): SettingsState {
@@ -418,12 +414,20 @@ function pushSettings(): void {
 }
 
 /**
- * Opens Settings, or brings it forward. Placed beside `anchor` when there is
- * room: the window whose gear was pressed, or on a first launch the game
- * window just opened. With no anchor, beside whichever game window has focus.
+ * Opens Settings, or brings it forward. `anchor` is the window that asked —
+ * the one whose gear was clicked, or, from the menu's Settings…, whichever
+ * game window has focus. Placed beside it when there is room; centred on the
+ * display when there is no anchor, or no room beside it.
+ *
+ * Pinned to match `anchor`'s own pin, or the app's last-remembered one with
+ * no anchor — set after `settings.open()` returns, on every call, so an
+ * already-open Settings re-follows whichever window's gear was just pressed
+ * rather than keeping the pin it happened to open with.
  */
 function openSettings(anchor: ServerWindow | undefined = focusedServerWindow()): void {
-    settings.open(anchor && !anchor.window.isDestroyed() ? anchor.window.getBounds() : null);
+    const pinned = anchor ? anchor.alwaysOnTop() : appState.alwaysOnTop();
+    const opened = settings.open(anchor && !anchor.window.isDestroyed() ? anchor.window.getBounds() : null);
+    opened.window.setAlwaysOnTop(pinned);
 }
 
 /** Whether an IPC call may manage the catalog: the Settings window, or a game window's Servers pane while that still exists. */
@@ -451,9 +455,10 @@ function loadCatalog(): void {
     catalog.load();
     catalogSeen = catalogMtime();
     installAppMenu();
-    // Every window's Servers pane reads the catalog too, and has no poll of its
-    // own — it only ever learns of a change through a push, and neither does
-    // Settings. A no-op at the `whenReady` call site, where no windows exist yet.
+    // Every window's Servers pane reads the catalog too, and Settings does as
+    // well — neither has a poll of its own, so each only ever learns of a
+    // change through a push. A no-op at the `whenReady` call site, where no
+    // windows exist yet.
     for (const sw of serverWindows.values()) sw.pushState();
     pushSettings();
     if (catalog.recovered) {
@@ -489,9 +494,20 @@ function setWarnOnSwitch(value: boolean): void {
  * The menu is rebuilt from the window rather than from the number just saved:
  * a window that refused the pin, or was destroyed between the click and here,
  * must leave the checkbox unticked rather than claiming a state nothing is in.
+ *
+ * A no-op with nothing to pin — the item disables itself for that case
+ * (`canPin`), but the click still has to be refused rather than trusted, and a
+ * refusal here must not write down a pin nothing asked for. Settings focused
+ * is exactly this case: it is not a game window, so there is nothing here for
+ * it to act on.
  */
 function setAlwaysOnTop(value: boolean): void {
-    focusedServerWindow()?.setAlwaysOnTop(value);
+    const sw = focusedServerWindow();
+    if (!sw) {
+        installAppMenu();
+        return;
+    }
+    sw.setAlwaysOnTop(value);
     appState.setAlwaysOnTop(value);
     installAppMenu();
 }
@@ -1201,13 +1217,14 @@ ipcMain.handle(IPC.timersSound, async (event): Promise<Uint8Array | null> => {
 // ── servers ───────────────────────────────────────────────────────────────
 
 /**
- * Everything that must happen after the catalog changes from inside a pane.
- * The startup set does not come through here — it touches no file and no
- * menu, so its handler does the smaller push itself. The menu is rebuilt so
- * File > New Window For agrees, every window is pushed because this one's
- * change is app-wide — Settings too, since it shows the same rows — and
- * `catalogSeen` is refreshed so the on-focus reload does not mistake our own
- * write for somebody editing servers.json underneath us.
+ * Everything that must happen after the catalog changes — from Settings, or
+ * from a game window's own Servers pane while that still exists. The startup
+ * set does not come through here — it touches no file and no menu, so its
+ * handler does the smaller push itself. The menu is rebuilt so File > New
+ * Window For agrees, every window is pushed because this one's change is
+ * app-wide — Settings too, since it shows the same rows — and `catalogSeen`
+ * is refreshed so the on-focus reload does not mistake our own write for
+ * somebody editing servers.json underneath us.
  */
 function catalogChanged(): void {
     catalogSeen = catalogMtime();
@@ -1801,11 +1818,14 @@ app.whenReady().then(async () => {
         })
     );
     yourWorld = world;
-    // The File menu names the revision of the line the world runs; a switch changes it.
+    // The File menu names the revision of the line the world runs; a switch
+    // changes it, and it is a catalog change like any other, so Settings
+    // learns of it too.
     const followRevision = (): void => {
         if (!catalog.followYourWorld()) return;
         catalogSeen = catalogMtime();
         installAppMenu();
+        pushSettings();
     };
     let revision = world.view().revision;
     world.subscribe(() => {
@@ -1854,7 +1874,10 @@ app.whenReady().then(async () => {
 });
 
 app.on('activate', () => {
-    if (serverWindows.size === 0) actions.newWindow();
+    // Settings counts as a window here, agreeing with 'second-instance' below:
+    // a dock click with only Settings on screen must surface it, not open a
+    // game window underneath it.
+    if (BrowserWindow.getAllWindows().length === 0) actions.newWindow();
 });
 
 /**
