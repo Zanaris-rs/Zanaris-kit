@@ -281,6 +281,14 @@ function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
 }
 /** Modification time of servers.json at the last load, so a focus change only re-reads it when it changed. */
 let catalogSeen = 0;
+/**
+ * Whether this launch opens Settings once its game windows are open: only on
+ * a profile that had no state file, so a newcomer sees the server list rather
+ * than a Lost City client that never mentions anything else. Never during
+ * capture, whose output must not depend on whether its profile happened to be
+ * new.
+ */
+let openSettingsOnLaunch = false;
 const serverWindows = new Map<number, ServerWindow>();
 const byShell = new Map<number, ServerWindow>();
 
@@ -401,8 +409,9 @@ function pushSettings(): void {
 
 /**
  * Opens Settings, or brings it forward. `anchor` is the window that asked —
- * the one whose gear was clicked, or, from the menu's Settings…, whichever
- * game window has focus. Placed beside it when there is room; centred on the
+ * the one whose gear was clicked, from the menu's Settings…, whichever game
+ * window has focus, or, on a fresh profile's first launch, the first game
+ * window it opened. Placed beside it when there is room; centred on the
  * display when there is no anchor, or no room beside it.
  *
  * Pinned to match `anchor`'s own pin, or the app's last-remembered one with
@@ -1721,6 +1730,8 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // Set right after load(), the only call that gives fresh() an answer.
+    openSettingsOnLaunch = CAPTURE_DIR ? false : appState.fresh();
     // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
     powerMonitor.on('resume', () => {
         for (const sw of serverWindows.values()) sw.settleTimers();
@@ -1825,7 +1836,12 @@ app.whenReady().then(async () => {
     // given a second dialog of its own.
     const opening = startupServers(appState.startupIds(), catalog.list());
     if (opening.length === 0) actions.newWindow();
-    else for (const server of opening) openServer(server);
+    else {
+        const opened = opening.map(openServer);
+        // Beside the first game window, so the list does not sit on the game it
+        // has just opened.
+        if (openSettingsOnLaunch) openSettings(opened[0]);
+    }
 });
 
 app.on('activate', () => {
