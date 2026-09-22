@@ -23,6 +23,7 @@ import { canSeal, open as openSecret, seal } from './chat/secret';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
+import { ShotLedger } from './shotLedger';
 import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
 import { YourWorldService } from './yourworld/service';
 import { BuildStore } from './yourworld/buildStore';
@@ -1127,38 +1128,82 @@ const shotOfThePage =
  * allowed to abort the run. Last comes the reference pane: the Guides list,
  * two pages open beside the game, and the first of them brought back to prove
  * a tab switch did not reload it.
+ *
+ * A shell that never paints, or a shell shot with the same bytes as an
+ * earlier one, is a shot that does not show its step while the log reports it
+ * as good, so either fails the run: it still finishes, and exits 1.
  */
 async function captureAndExit(dir: string): Promise<void> {
     mkdirSync(dir, { recursive: true });
     const settleMs = Number(process.env.ZANARIS_CAPTURE_WAIT) || 15_000;
     const loadTimeoutMs = 60_000;
+    const frontTimeoutMs = 10_000;
 
-    const save = async (name: string, capture: () => Promise<NativeImage>): Promise<void> => {
+    /** What makes this run's shots untrustworthy. Any at all and the run exits 1, in `finally` below. */
+    const faults: string[] = [];
+    const fault = (message: string): void => {
+        faults.push(message);
+        log(`[capture] ${message}`);
+    };
+    const shells = new ShotLedger();
+
+    /**
+     * Writes a shot and returns its bytes, or returns null having removed any
+     * file of that name an earlier run left: a shot this run did not take must
+     * not sit in the folder looking like one it did.
+     */
+    const save = async (name: string, capture: () => Promise<NativeImage>): Promise<Buffer | null> => {
+        const file = join(dir, `${name}.png`);
         let lastError: unknown = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
                 const image = await capture();
-                writeFileSync(join(dir, `${name}.png`), image.toPNG());
+                const png = image.toPNG();
+                writeFileSync(file, png);
                 const { width, height } = image.getSize();
                 log(`[capture] ${name}.png ${width}x${height}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
-                return;
+                return png;
             } catch (err) {
                 lastError = err;
                 await wait(1_500);
             }
         }
+        rmSync(file, { force: true });
         log(`[capture] ${name}.png skipped: ${(lastError as Error).message}`);
+        return null;
+    };
+    /**
+     * Fronts the window and waits for its shell to paint, which is what makes
+     * a shot of it current. A covered window's shell paints nothing, so
+     * capturePage would hand back the last frame it drew — some earlier
+     * step's — and the log would report it as this one. The window is fronted
+     * again on every attempt, since whatever covered it can still be there:
+     * one run lost a window to something outside the kit, and moveTop before
+     * each of two shots eight seconds apart left it covered for both.
+     * Resolves false if the shell never painted.
+     */
+    const front = async (sw: ServerWindow, shot: string): Promise<boolean> => {
+        const started = Date.now();
+        for (let attempt = 1; ; attempt++) {
+            sw.window.moveTop();
+            sw.focus();
+            if (await sw.settle()) {
+                if (attempt > 1) log(`[capture] ${shot}: the shell painted only after ${Date.now() - started}ms of fronting its window`);
+                return true;
+            }
+            if (Date.now() - started >= frontTimeoutMs) return false;
+        }
     };
     const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
-        // Front the window first: macOS refuses to capture an occluded surface,
-        // and a page that is not painting would hand back a stale frame anyway.
-        // The wait is generous because an occluded shell can be several state
-        // pushes behind — a shorter one caught the world list mid-load.
-        sw.window.moveTop();
-        sw.focus();
-        await wait(400);
-        await sw.settle();
-        await save(`${name}-shell`, () => sw.captureShell());
+        const shell = `${name}-shell`;
+        if (await front(sw, shell)) {
+            const png = await save(shell, () => sw.captureShell());
+            const twin = png && shells.record(`${shell}.png`, png);
+            if (twin) fault(`${shell}.png is byte-identical to ${twin}, so one of the two does not show its step: a stale frame, or a change gone before the shot`);
+        } else {
+            rmSync(join(dir, `${shell}.png`), { force: true });
+            fault(`${shell}.png not written: the shell did not paint in ${frontTimeoutMs}ms of fronting its window, so a shot would repeat its last frame`);
+        }
         await save(`${name}-game`, () => sw.captureGame());
     };
     /**
@@ -1553,8 +1598,18 @@ async function captureAndExit(dir: string): Promise<void> {
             rmSync(layoutPath, { force: true });
         }
     } catch (err) {
-        log(`[capture] aborted: ${(err as Error).stack ?? String(err)}`);
+        fault(`aborted: ${(err as Error).stack ?? String(err)}`);
     } finally {
+        if (faults.length > 0) {
+            log(`[capture] failed, exiting 1:\n${faults.map(f => `  ${f}`).join('\n')}`);
+            // app.quit exits 0 whatever happened, and process.exitCode does not
+            // change that. Exiting from will-quit keeps the quit's own work —
+            // your world stopped, the share closed — and still hands the failure
+            // to `npm run capture`, which exits with Electron's code.
+            app.once('will-quit', () => app.exit(1));
+        } else {
+            log('[capture] every shell painted, and no two shell shots are the same');
+        }
         quitting = true;
         app.quit();
     }

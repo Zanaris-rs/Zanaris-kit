@@ -303,8 +303,15 @@ behaviour, re-read the comments around it before you commit.
 | `npm run dist` | electron-builder output |
 
 **The capture hazard.** `npm run capture` opens real windows and makes real
-network requests, and it can return a **silently stale frame**: a correct-looking
-log line and a PNG byte-identical to an earlier shot, if the display sleeps
-mid-run. A green log is not evidence. Run it under `caffeinate -d` and compare
-file hashes before trusting the output. It is likeliest on any step that awaits a
-network round-trip between fronting the window and shooting it.
+network requests, and `capturePage` hands back the last frame a view
+composited. A shell that is not painting — its window covered by another app's,
+or the display asleep — composites nothing, so a shot of it is a **silently
+stale frame**: a correct-looking log line over a PNG byte-identical to an
+earlier shot. `caffeinate -d` covers only the display. The harness guards the
+rest: `shoot` waits for the shell to paint (`settle` answers whether it did),
+fronting the window again for up to ten seconds; a shell that never paints is
+not written, a shell shot byte-identical to an earlier one is flagged
+(`shotLedger.ts`), and either makes the run exit 1 with the faults listed last.
+A failed run usually means the machine was in use: rerun it under
+`caffeinate -d` and leave it alone. Game and page shots are not compared, and
+the log reads state, not pixels, so a green run still means opening the PNGs.

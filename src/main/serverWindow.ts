@@ -1,4 +1,4 @@
-import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage } from 'electron';
+import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage, type WebContents } from 'electron';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
@@ -112,6 +112,22 @@ const STATUS_WORD: Record<YourWorldView['status'], string> = {
 
 function statusWord(status: YourWorldView['status']): string {
     return STATUS_WORD[status];
+}
+
+/**
+ * Whether a view composites two frames within a second and a half, for
+ * capture mode. Two frames: the first schedules the render, the second proves
+ * it composited. Raced against a timeout because requestAnimationFrame does
+ * not fire at all in a window that is covered — waiting on it alone hangs
+ * forever, which is exactly what it did — and the timeout answers false,
+ * because a view that is not painting leaves capturePage its last frame.
+ */
+async function paintsFrames(contents: WebContents): Promise<boolean> {
+    const frames = contents.executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))').then(
+        () => true,
+        () => false
+    );
+    return Promise.race([frames, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 1_500))]);
 }
 
 export interface ServerWindowDeps {
@@ -244,16 +260,23 @@ export interface ServerWindow extends ServerWindowHandle {
     setDetail(detail: Detail): Promise<LoadResult | 'unchanged'>;
     refreshWorlds(): Promise<void>;
     /**
-     * Resolves once the shell has actually painted what main last pushed.
-     * capturePage hands back the last composited frame, so without this a
-     * capture taken right after a state change photographs the previous one —
-     * which had capture mode reporting a stale panel three times over.
+     * Whether the shell is painting: true once it has composited two frames
+     * since the call, false if it has not within a second and a half.
+     * capturePage hands back the last composited frame, so a shot of a shell
+     * that is not painting — its window covered by another app's —
+     * photographs whatever it last drew, and reads as correct in the log.
+     * That had capture mode reporting a stale panel three times over, and
+     * writing byte-identical shots of different steps.
      */
-    settle(): Promise<void>;
+    settle(): Promise<boolean>;
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
-    /** The focused page pane, for capture mode. Resolves with null when no pane holds a page: there is no view to shoot. */
+    /**
+     * The focused page pane, for capture mode. Resolves with null when no pane
+     * holds a page: there is no view to shoot. Rejects when the page is not
+     * painting, rather than hand back the frame it last drew.
+     */
     capturePage(): Promise<NativeImage | null>;
 }
 
@@ -1366,16 +1389,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             await deps.worlds.list(true);
             await deps.worlds.probeAll(worldSwitch.detail);
         },
-        settle: async () => {
-            // Two frames: the first schedules the render, the second proves it
-            // composited. Raced against a timeout because requestAnimationFrame
-            // does not fire at all in an occluded window — waiting on it alone
-            // hangs forever, which is exactly what it did.
-            const painted = shellView.webContents
-                .executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
-                .catch(() => undefined);
-            await Promise.race([painted, new Promise(resolve => setTimeout(resolve, 1_500))]);
-        },
+        settle: () => paintsFrames(shellView.webContents),
         captureShell: () => shellView.webContents.capturePage(),
         captureGame: () => gameView?.webContents.capturePage() ?? Promise.reject(new Error('no game view')),
         capturePage: async () => {
@@ -1387,11 +1401,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // was hidden on. That photographed a forum that had long since
             // finished booting as a page still showing its loading spinner —
             // a stale frame reported as a broken feature, which is the whole
-            // hazard the shell's own settle exists for.
-            const painted = view.webContents
-                .executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
-                .catch(() => undefined);
-            await Promise.race([painted, new Promise(resolve => setTimeout(resolve, 1_500))]);
+            // hazard the shell's own settle exists for. A page that paints
+            // nothing is refused rather than shot, for the same reason.
+            if (!(await paintsFrames(view.webContents))) throw new Error('the page is not painting');
             return view.webContents.capturePage();
         }
     };
