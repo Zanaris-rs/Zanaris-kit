@@ -1220,7 +1220,7 @@ ipcMain.handle(IPC.serversOpen, (event, id: unknown) => {
     const server = catalog.get(id);
     if (!server) return;
     // windows.open() (inside openServer) tells ServerWindows' onChange, which
-    // pushes every window's state, so opening does not need its own loop here.
+    // pushes Settings, so opening does not need its own push here.
     openServer(server);
 });
 

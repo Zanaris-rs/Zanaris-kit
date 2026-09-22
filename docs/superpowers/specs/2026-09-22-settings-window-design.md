@@ -100,8 +100,8 @@ this is defence in depth, and it is two lines.
 The window loads `index.html#settings`, and `main.tsx` renders `<Settings />`
 for that hash and `<Shell />` otherwise. `Settings.tsx` is the page: titled
 Settings, with one section, **Servers**. That section is the existing list,
-Open buttons, startup ticks and add form from `tools/Servers.tsx`, moved rather
-than rewritten.
+Open buttons, startup ticks and add form, moved from `tools/Servers.tsx` to
+`settings/Servers.tsx` rather than rewritten.
 
 ### State and IPC
 
@@ -147,7 +147,7 @@ goes with it, since that caller no longer exists.
 | `src/main/settingsView.ts` | **New.** Creates, guards, loads and captures the window. No rules. |
 | `src/renderer/Settings.tsx` | **New.** The page, holding the Servers section. |
 | `src/renderer/main.tsx` | Renders `Settings` for `#settings`, `Shell` otherwise. |
-| `src/renderer/tools/Servers.tsx` | Takes its view from the Settings page instead of a pane; otherwise unchanged. |
+| `src/renderer/settings/Servers.tsx` | Moved from `tools/`. Takes its view from the Settings page instead of a pane; its comments reworded for a section rather than a pane. |
 | `src/renderer/Shell.tsx` | The gear; the `servers` case removed. |
 | `src/renderer/icons.tsx` | A gear icon. |
 | `src/main/renderer.ts` | `loadShell` takes an optional hash. |
