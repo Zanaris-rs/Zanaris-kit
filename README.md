@@ -45,25 +45,30 @@ a newer version, adds Help > Update Available, which opens that page. Set
 
 ## What it does
 
-There is no launcher or management window; there are only game windows. New
-ones come from the **File menu**: New Window (Cmd/Ctrl+N) opens another window
-of the focused window's server, and New Window For lists the catalog. On macOS
-the app keeps running with no windows and the dock menu opens one; elsewhere
-closing the last window quits, since the menu lives in the window.
+There is no launcher. There are game windows, and one Settings window for the
+app; new game windows come from the **File menu**: New Window (Cmd/Ctrl+N)
+opens another window of the focused window's server, and New Window For lists
+the catalog. On macOS the app keeps running with no windows and the dock menu
+opens one; elsewhere closing the last window quits, since the menu lives in
+the window.
 
-The catalog itself is also a pane, **Servers**, offered from **Add pane** in
-every window like any other tool. Each row shows how many windows of that
-server are open, an Open button that starts one, and a checkbox for whether a
+The catalog lives in **Settings**, one window for the whole app, opened from
+the gear at the right of every window's tab bar or from Settings…
+(Cmd/Ctrl+,); opening it again brings the open one forward rather than making
+another. Its Servers section lists every server with how many of its windows
+are open, an Open button that starts another, and a checkbox for whether a
 launch opens it: tick two servers and relaunching opens both, untick every row
 and a launch falls back to the catalog's first entry, exactly what an empty
-list has always done. The same pane adds a server through a short form and
+list has always done. The same section adds a server through a short form and
 removes one — except the handful the kit ships with, which nothing in the app
-can put back once gone, so the pane does not offer to take them out. The first
-window on a fresh profile shows Servers under the game instead of chat,
-because nothing else on screen ever says the kit runs more than Lost City:
-New Window For lists the rest of the catalog, but that is a menu nobody opens
-without already suspecting there is something behind it. Every window after
-that opens on chat as before.
+can put back once gone, so it does not offer to take them out. A fresh
+profile's first launch opens Settings beside the game, because nothing else on
+screen ever says the kit runs more than Lost City: New Window For lists the
+rest of the catalog, but that is a menu nobody opens without already
+suspecting there is something behind it. After that, Settings opens only when
+asked. It is a window rather than a pane or a popover because the game is a
+native view drawn above the tab bar's own page, so anything that page drew
+over the game would sit underneath it.
 
 A **server window** is bound to one catalog entry for its whole life. The game
 pane's own header reads "Lost City · W5 · low · 43 ms": the server, the world,
@@ -297,10 +302,8 @@ date it was created.
 Chat is a pane like anything else: drag its header to wherever you want it, drag
 its seams, close it. A new window opens with it already there, in a pane below the game —
 chat is the kit's own reason to be open instead of a browser tab, and a pane
-nobody knows is there is a pane nobody opens. The one exception is a fresh
-profile's first window, which opens on the Servers pane instead (see What it
-does, above). Closed, chat comes back from **Add pane** in the tab bar, as a
-column down the tab's right edge.
+nobody knows is there is a pane nobody opens. Closed, chat comes back from
+**Add pane** in the tab bar, as a column down the tab's right edge.
 
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short
@@ -440,7 +443,7 @@ of the three only if the new directory has not got it already, since Chromium
 builds that directory during startup before any of our code runs. See the note
 at the top of `src/main/index.ts`.
 
-The Servers pane adds and removes whole entries; changing one already there —
+Settings adds and removes whole entries; changing one already there —
 its address, its revision, its worlds source — is still done as a file:
 File > Edit Server List… opens it in your editor, and the app re-reads it when
 it regains focus, or from File > Reload Server List. A file that cannot be read is renamed

@@ -74,7 +74,7 @@ that pane. So an id, once shipped, is never removed or renamed: a kit that
 stopped knowing one would cost someone their whole saved arrangement, not just
 the pane that used it, the day they tried to open it here.
 
-A catalog entry the kit ships with cannot be removed from the Servers pane,
+A catalog entry the kit ships with cannot be removed from Settings,
 for a plain reason: `Catalog.load` never puts a missing built-in back. At file
 version 5 `migrateCatalog` only validates what is already there, and the four
 refresh functions (`refreshYourWorld`, `refreshHiscores`, `refreshBookmarks`,
@@ -90,6 +90,23 @@ belongs at the one place that decides, not inside the primitive.
 > `setBounds` does not reload a `WebContentsView`, only `loadURL` does — and the
 > first half went with the fixed columns that motivated it. The design is
 > `docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`.
+
+## The Settings window
+
+One window is not a game window: Settings, which holds what belongs to the
+app rather than to any one window — today the catalog and the startup set.
+`SettingsWindowSlot` (`src/main/settingsWindow.ts`) keeps it to one, and
+opening it again brings the open one forward, because two would be two
+copies of one thing. It has no parent window, since a parent would close it
+along with a game window, and it never holds up a quit.
+
+It is a window rather than a pane or a popover because the game and pages
+are native views stacked above the shell's HTML: anything the shell drew
+over them would sit underneath. It takes its state on its own channel,
+`settings.get` and `settings.onState`, never through `ShellState`. No game
+window's `state()` builds anything for it, which is how `windowCounts()` once
+came to recurse through `state()`. Only Settings may call the servers
+handlers.
 
 ## Where logic is allowed to live
 

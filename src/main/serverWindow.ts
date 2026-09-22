@@ -122,7 +122,7 @@ function statusWord(status: YourWorldView['status']): string {
  * forever, which is exactly what it did — and the timeout answers false,
  * because a view that is not painting leaves capturePage its last frame.
  */
-async function paintsFrames(contents: WebContents): Promise<boolean> {
+export async function paintsFrames(contents: WebContents): Promise<boolean> {
     const frames = contents.executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))').then(
         () => true,
         () => false

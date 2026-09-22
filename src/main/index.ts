@@ -1337,6 +1337,8 @@ async function captureAndExit(dir: string): Promise<void> {
         log(`[capture] ${name}.png skipped: ${(lastError as Error).message}`);
         return null;
     };
+    /** What a shell shot needs from a window: a game window, or Settings. */
+    type ShotTarget = { readonly window: BrowserWindow; focus(): void; settle(): Promise<boolean>; captureShell(): Promise<NativeImage> };
     /**
      * Fronts the window and waits for its shell to paint, which is what makes
      * a shot of it current. A covered window's shell paints nothing, so
@@ -1347,7 +1349,7 @@ async function captureAndExit(dir: string): Promise<void> {
      * each of two shots eight seconds apart left it covered for both.
      * Resolves false if the shell never painted.
      */
-    const front = async (sw: ServerWindow, shot: string): Promise<boolean> => {
+    const front = async (sw: ShotTarget, shot: string): Promise<boolean> => {
         const started = Date.now();
         for (let attempt = 1; ; attempt++) {
             sw.window.moveTop();
@@ -1359,16 +1361,19 @@ async function captureAndExit(dir: string): Promise<void> {
             if (Date.now() - started >= frontTimeoutMs) return false;
         }
     };
-    const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
+    const shootShell = async (name: string, target: ShotTarget): Promise<void> => {
         const shell = `${name}-shell`;
-        if (await front(sw, shell)) {
-            const png = await save(shell, () => sw.captureShell());
+        if (await front(target, shell)) {
+            const png = await save(shell, () => target.captureShell());
             const twin = png && shells.record(`${shell}.png`, png);
             if (twin) fault(`${shell}.png is byte-identical to ${twin}, so one of the two does not show its step: a stale frame, or a change gone before the shot`);
         } else {
             rmSync(join(dir, `${shell}.png`), { force: true });
             fault(`${shell}.png not written: the shell did not paint in ${frontTimeoutMs}ms of fronting its window, so a shot would repeat its last frame`);
         }
+    };
+    const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
+        await shootShell(name, sw);
         await save(`${name}-game`, () => sw.captureGame());
     };
     /**
@@ -1404,6 +1409,19 @@ async function captureAndExit(dir: string): Promise<void> {
         await wait(settleMs);
 
         for (const sw of opened) await shoot(sw.state().server.id, sw);
+
+        // Settings, the one window that is not a game window. Anchored to the
+        // first game window as a first launch anchors it, and closed once shot:
+        // where it cannot sit beside a window it opens centred, on top of one,
+        // and every later shot of that window would fail its paint check.
+        {
+            const settingsWindow = settings.open(opened[0]?.window.getBounds() ?? null);
+            await settingsWindow.loaded;
+            await wait(500);
+            await shootShell('settings', settingsWindow);
+            log(`[capture] settings lists ${settingsState().servers.rows.length} servers`);
+            settingsWindow.window.close();
+        }
 
         // The layout and slot checks use a window whose game actually loaded, if any did.
         const first = opened[results.indexOf('loaded')] ?? opened[0];

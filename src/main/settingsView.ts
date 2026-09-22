@@ -1,6 +1,7 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, screen, type NativeImage } from 'electron';
 import { IPC, type Rect, type SettingsState } from '../shared/ipc';
 import { loadShell, preloadPath } from './renderer';
+import { paintsFrames } from './serverWindow';
 import { settingsBounds, type SettingsHandle } from './settingsWindow';
 
 /** What Settings asks for: room for four servers and the add form without scrolling. */
@@ -10,6 +11,12 @@ export interface SettingsWindow extends SettingsHandle {
     readonly window: BrowserWindow;
     /** Sends Settings its state. A no-op once the page is gone. */
     push(state: SettingsState): void;
+    /** Resolves once the page has loaded, for capture. */
+    readonly loaded: Promise<void>;
+    /** Whether the page paints, as a server window's `settle` answers for its shell: a page that is not painting would hand capture its last frame. */
+    settle(): Promise<boolean>;
+    /** The page as it is drawn now, for capture. Named for the shot it takes, a shell shot, so capture can treat it as any other. */
+    captureShell(): Promise<NativeImage>;
 }
 
 /**
@@ -58,15 +65,19 @@ export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () =
     win.on('closed', opts.onClosed);
     // Read now: once the window closes its contents are destroyed and the id with them.
     const contentsId = win.webContents.id;
+    const loaded = new Promise<void>(resolve => win.webContents.once('did-finish-load', () => resolve()));
     loadShell(win.webContents, 'settings');
     return {
         window: win,
         contentsId,
+        loaded,
         focus: () => {
             if (win.isMinimized()) win.restore();
             win.show();
             win.focus();
         },
+        settle: () => paintsFrames(win.webContents),
+        captureShell: () => win.webContents.capturePage(),
         push: state => {
             if (win.isDestroyed() || win.webContents.isDestroyed()) return;
             win.webContents.send(IPC.settingsState, state);
