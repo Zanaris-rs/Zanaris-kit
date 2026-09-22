@@ -1840,7 +1840,14 @@ app.whenReady().then(async () => {
         const opened = opening.map(openServer);
         // Beside the first game window, so the list does not sit on the game it
         // has just opened.
-        if (openSettingsOnLaunch) openSettings(opened[0]);
+        if (openSettingsOnLaunch) {
+            openSettings(opened[0]);
+            // fresh() means "no state file", and a launch where the player
+            // changes nothing writes none — so without this every later launch
+            // would be fresh too, and open Settings again. It writes the defaults
+            // as they stand, as the first save of anything always has.
+            appState.save();
+        }
     }
 });
 

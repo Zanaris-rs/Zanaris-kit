@@ -586,3 +586,14 @@ test('a profile is fresh only when there was no state file at all', () => {
     b.load();
     assert.equal(b.fresh(), false);
 });
+
+test('saving a fresh profile makes the next load not fresh, which is how a first launch stays the only one', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    assert.equal(a.fresh(), true);
+    a.save();
+    const b = new AppState(file);
+    b.load();
+    assert.equal(b.fresh(), false);
+});
