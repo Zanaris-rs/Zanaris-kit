@@ -12,5 +12,10 @@
         "commit": "5da837c55ae1c978d2d2b17af20710b7c747906a"
     },
     "patches": "patches/engine",
-    "artifact": null
+    "artifact": {
+        "tag": "engine-lostcity-289-0c7cf655-5da837c5-0b973543",
+        "file": "engine-lostcity-289.tar.gz",
+        "size": 51349291,
+        "sha256": "dfb4cca299b80449b0b3f4522e93527581031784fd427cbf7900065da558f8c6"
+    }
 }
