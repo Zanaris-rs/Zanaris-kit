@@ -16,5 +16,7 @@ const recipes = readdirSync('engines')
 export default defineConfig({
     main: { plugins: [externalizeDepsPlugin()], define: { __ENGINE_RECIPES__: JSON.stringify(recipes) } },
     preload: { plugins: [externalizeDepsPlugin()] },
-    renderer: { plugins: [react(), tailwindcss()] }
+    // Every asset ships as a file: the shell's CSP allows only 'self', so a
+    // small sprite inlined as a data: URL would be refused and draw nothing.
+    renderer: { plugins: [react(), tailwindcss()], build: { assetsInlineLimit: 0 } }
 });

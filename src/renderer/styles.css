@@ -306,13 +306,16 @@ input {
     background: var(--color-gold);
 }
 
-/* A divider scored into the stone: the cut, then a hairline of light under it. */
+/*
+ * A divider scored into the stone: the cut, then a hairline of light under it.
+ * It runs the width of the list it divides, inset as far as the rows' own
+ * sprites are, so it reads as the list splitting in two rather than a stray dash.
+ */
 .sep {
-    width: 32px;
     height: 2px;
     background: var(--color-edge-dark);
     border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-    margin: 2px 0;
+    margin: 6px 4px;
 }
 
 /* Links look like links here, as they did then. */
