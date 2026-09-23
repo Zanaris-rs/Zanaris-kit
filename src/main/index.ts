@@ -573,17 +573,13 @@ ipcMain.handle(IPC.settingsOpen, event => {
 });
 
 /*
- * The two files behind Settings, for the fields no form there exposes. Opened
- * with the system's own editor, as File > Edit Server List… does. Only Settings
- * may ask: these hand out the profile's paths, and a game window has no reason
- * to want them.
+ * The file behind the server list, for the fields no form in Settings exposes.
+ * Opened with the system's own editor, as File > Edit Server List… does. Only
+ * Settings may ask: it hands out a path inside the profile, and a game window
+ * has no reason to want one.
  */
 ipcMain.handle(IPC.settingsEditServers, event => {
     if (settings.isSender(event.sender.id)) void shell.openPath(catalog.file);
-});
-
-ipcMain.handle(IPC.settingsEditState, event => {
-    if (settings.isSender(event.sender.id)) void shell.openPath(appState.file);
 });
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());

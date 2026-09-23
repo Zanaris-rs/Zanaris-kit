@@ -113,8 +113,7 @@ const api: ZanarisApi = {
             };
         },
         open: () => ipcRenderer.invoke(IPC.settingsOpen),
-        editServers: () => ipcRenderer.invoke(IPC.settingsEditServers),
-        editState: () => ipcRenderer.invoke(IPC.settingsEditState)
+        editServers: () => ipcRenderer.invoke(IPC.settingsEditServers)
     }
 };
 

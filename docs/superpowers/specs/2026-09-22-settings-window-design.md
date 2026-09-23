@@ -4,8 +4,11 @@
 > opens Settings on its own, on a fresh profile or otherwise. A launch opens the
 > servers that are ticked, and with none ticked that is Lost City, as it has
 > always been. Settings opens from the gear and from Settings… only. The window
-> also gained two buttons for the files behind it — `servers.json` and
-> `state.json` — opened in the system's editor rather than edited in the app.
+> also gained a button that opens `servers.json` in the system's editor, for the
+> fields no form exposes. A companion button for `state.json` was built and
+> removed the same day, on the owner's call: the kit reads that file only at
+> launch and rewrites it as it goes, so editing it from a running app achieves
+> nothing.
 > The sections below are marked where they described the old behaviour.
 
 The owner's design of 2026-09-22. It replaces the surface chosen in
