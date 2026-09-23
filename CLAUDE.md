@@ -340,6 +340,7 @@ behaviour, re-read the comments around it before you commit.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev` / `npm start` | run it |
 | `npm run capture` | screenshot every view — see the hazard below |
+| `npm run fresh` | set the profile aside so the next launch is a first launch, keeping the builds and the characters |
 | `npm run stage:engine -- <id>` | stage a recipe into `engine-dist/` and `engine-<id>.tar.gz` |
 | `npm run pin:engine -- <id>` | write a published build's size and digest into its recipe |
 | `npm run dist` | electron-builder output |
