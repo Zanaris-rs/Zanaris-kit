@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, rmSync, type WriteStream } from 'node:fs';
 
 /**
  * Downloads the kit makes of pinned files: cloudflared for sharing, and single
@@ -45,10 +45,21 @@ export async function downloadFile(opts: DownloadOptions): Promise<void> {
     };
     // Armed before the request, so a server that never answers is caught too.
     let timer = setTimeout(stall, idleMs);
-    const out = createWriteStream(opts.to);
+    /*
+     * Opened only once there is a body to write, and never before the answer.
+     * `createWriteStream` queues its own open rather than opening where it is
+     * called, so a stream made ahead of the response is one whose open lands
+     * after a refusal has already been thrown — writing the file this download
+     * just refused to make, or failing against a directory the caller has since
+     * cleaned up, by which point nothing is left to catch it. That is an
+     * uncaught ENOENT: it failed CI from a test that had already passed.
+     */
+    let out: WriteStream | null = null;
     try {
         const response = await opts.fetch(opts.url, { signal: controller.signal });
         if (!response.ok || !response.body) throw new Error(`Downloading ${opts.file} failed: HTTP ${response.status}`);
+        const stream = createWriteStream(opts.to);
+        out = stream;
         const reader = response.body.getReader();
         let received = 0;
         opts.onProgress?.(0);
@@ -59,18 +70,18 @@ export async function downloadFile(opts: DownloadOptions): Promise<void> {
             timer = setTimeout(stall, idleMs);
             received += value.byteLength;
             if (received > opts.size) break;
-            if (!out.write(value)) await once(out, 'drain');
+            if (!stream.write(value)) await once(stream, 'drain');
             opts.onProgress?.(received / opts.size);
         }
-        out.end();
-        await once(out, 'close');
+        stream.end();
+        await once(stream, 'close');
         if (received !== opts.size) throw new Error(`${opts.file} arrived at the wrong size (${received} bytes, expected ${opts.size})`);
     } catch (err) {
         if (stalled) throw new Error(`Downloading ${opts.file} stalled: nothing arrived for ${Math.round(idleMs / 1000)} s`);
         throw err;
     } finally {
         clearTimeout(timer);
-        out.destroy();
+        out?.destroy();
     }
 }
 

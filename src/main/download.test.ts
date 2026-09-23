@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { downloadChecked } from './download.ts';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { downloadChecked, downloadFile } from './download.ts';
 
 const sha = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex');
 
@@ -60,4 +61,23 @@ test('a checked download of the wrong size is refused and leaves no file', async
         /wrong size/
     );
     assert.equal(existsSync(to), false);
+});
+
+test('a refused download opens no file at all, not even one that turns up after the refusal', async t => {
+    const dir = mkdtempSync(join(tmpdir(), 'download-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const to = join(dir, 'engine.tar.gz.partial');
+    // The answer arrives at once, as a stubbed fetch makes it: the refusal then
+    // beats the write stream's own open, where a real round trip gives the open
+    // time to land first and hides this.
+    const instant404 = async (): Promise<Response> => new Response('not found', { status: 404 });
+    await assert.rejects(downloadFile({ url: 'http://example.invalid/engine.tar.gz', file: 'engine.tar.gz', size: 5, to, fetch: instant404 }), /404/);
+    assert.deepEqual(readdirSync(dir), []);
+    // `createWriteStream` queues its open rather than opening there and then, so
+    // an empty directory at the moment of the refusal proves nothing: the file
+    // this download refused to make used to appear a tick later, landing on
+    // whatever the caller had cleaned up by then — in CI, on a deleted
+    // directory, as an ENOENT nobody was left to catch.
+    await sleep(50);
+    assert.deepEqual(readdirSync(dir), [], 'the partial file turned up after the refusal');
 });

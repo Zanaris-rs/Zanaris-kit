@@ -9,7 +9,7 @@ import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterInfo, type C
  */
 const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 const SPENT: CSSProperties = { ...BUTTON_SIZE, color: 'var(--color-faint)' };
-/* A row's own actions, a size down so they fit beside a name. */
+/* A row's own actions, a size down from the panel's so they read as belonging to it. */
 const ROW_BUTTON: CSSProperties = { fontSize: 12, padding: '0 6px' };
 
 const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
@@ -55,12 +55,20 @@ function Row({
     const api = window.zanaris.yourWorld;
     const usable = character.summary !== null;
     return (
-        <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1">
-            <span className="text-cream">{character.displayName}</span>
-            <span className={`min-w-0 flex-1 text-[12px] ${usable ? 'text-dim' : 'text-warn'}`}>
-                {character.summary ? summaryLine(character.summary) : PROBLEM_LABEL[character.problem ?? 'unreadable']}
-            </span>
-            <span className="flex shrink-0 items-center gap-1">
+        /*
+         * Two lines whatever the width: who the character is, then what can be
+         * done with it. Sharing one line squeezed the levels into a word-wide
+         * column in a narrow pane, and wrapping only some rows made a list
+         * whose rows don't line up.
+         */
+        <li className="flex flex-col gap-1 border-b border-edge-dark py-1.5 last:border-b-0">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-cream">{character.displayName}</span>
+                <span className={`text-[12px] ${usable ? 'text-dim' : 'text-warn'}`}>
+                    {character.summary ? summaryLine(character.summary) : PROBLEM_LABEL[character.problem ?? 'unreadable']}
+                </span>
+            </div>
+            <span className="flex flex-wrap items-center gap-1">
                 {/* A damaged save can still be exported or deleted; main refuses to rename or copy one, which would only spread it. */}
                 <QuietButton size={ROW_BUTTON} disabled={busy || !usable} onClick={() => ask('rename')}>
                     Rename

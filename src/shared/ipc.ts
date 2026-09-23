@@ -1,5 +1,5 @@
 /** Channel names and payload types, shared by main, preload and the renderer so they can't drift. */
-import type { ServerDef } from './catalog';
+import type { NewServerInput, ServerDef } from './catalog';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatView } from './chat';
 import type { SettingsSave } from './chatSettings';
@@ -10,6 +10,7 @@ import type { CharacterOutcome, ImportPick, YourWorldSettings, YourWorldView } f
 import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
+import type { ServersView } from '../main/servers.ts';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -71,7 +72,15 @@ export const IPC = {
     timersDelete: 'zanaris:timers-delete',
     timersRestore: 'zanaris:timers-restore',
     timersSound: 'zanaris:timers-sound',
-    timersAlert: 'zanaris:timers-alert'
+    timersAlert: 'zanaris:timers-alert',
+    serversOpen: 'zanaris:servers-open',
+    serversStartup: 'zanaris:servers-startup',
+    serversAdd: 'zanaris:servers-add',
+    serversRemove: 'zanaris:servers-remove',
+    settingsGet: 'zanaris:settings-get',
+    settingsState: 'zanaris:settings-state',
+    settingsOpen: 'zanaris:settings-open',
+    settingsEditServers: 'zanaris:settings-edit-servers'
 } as const;
 
 /**
@@ -138,6 +147,14 @@ export interface ShellState {
     share: ShareView | null;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
+}
+
+/**
+ * What the Settings window draws. Its own channel rather than a field on
+ * `ShellState`: it is not a game window, and no game window draws any of it.
+ */
+export interface SettingsState {
+    servers: ServersView;
 }
 
 export interface ZanarisApi {
@@ -335,5 +352,23 @@ export interface ZanarisApi {
         sound(): Promise<Uint8Array | null>;
         /** Main asking this window to play the alert. Returns an unsubscribe. */
         onAlert(cb: (alert: TimerAlert) => void): () => void;
+    };
+    servers: {
+        /** Opens a new window on this catalog entry. */
+        open(id: string): Promise<void>;
+        /** Whether a launch opens this entry. */
+        setStartup(id: string, on: boolean): Promise<void>;
+        /** Null when it was added; a sentence saying why not otherwise. */
+        add(input: NewServerInput): Promise<string | null>;
+        remove(id: string): Promise<string | null>;
+    };
+    settings: {
+        /** Null when the calling page is not the Settings window. */
+        get(): Promise<SettingsState | null>;
+        onState(cb: (state: SettingsState) => void): () => void;
+        /** Opens the Settings window, or brings the open one forward. */
+        open(): Promise<void>;
+        /** Opens `servers.json` in whatever the system opens it with. Safe with the kit running: it is re-read on focus. */
+        editServers(): Promise<void>;
     };
 }

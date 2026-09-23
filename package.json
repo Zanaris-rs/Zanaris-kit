@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
     "capture": "ZANARIS_CAPTURE=captures electron-vite preview",
+    "fresh": "node scripts/fresh-profile.mjs",
     "stage:engine": "node scripts/stage-engine.mjs",
     "pin:engine": "node scripts/pin-engine.mjs",
     "dist": "node scripts/dist.mjs"

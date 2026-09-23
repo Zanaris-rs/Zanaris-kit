@@ -6,7 +6,7 @@ import type { ServerDef } from '../shared/catalog';
 import type { ChatView } from '../shared/chat';
 import { passwordProblem, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
 import { normaliseName } from '../shared/hiscores';
-import { IPC, type ShellState, type ToolId } from '../shared/ipc';
+import { IPC, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
 import { NAME_INPUT_MAX } from '../shared/names';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
 import type { PaneContent } from './paneTree';
@@ -15,6 +15,8 @@ import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
+import { SettingsWindowSlot } from './settingsWindow';
+import { createSettingsWindow, type SettingsWindow } from './settingsView';
 import { installMenu, type MenuActions, type MenuWindowState } from './menu';
 import { WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
@@ -37,6 +39,7 @@ import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
+import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -151,25 +154,22 @@ let builds: BuildStore | null = null;
 let share: ShareService | null = null;
 
 /**
- * The two menu items that belong to the focused window rather than to the app.
+ * Always on Top belongs to the focused window rather than to the app: whether
+ * it is pinned is asked of the window itself, for the reason `alwaysOnTop`
+ * gives there.
  *
- * Whether the panel could open at all is main's decision, from the same rules
- * that would refuse the open — a window whose only tool is chat, with chat
- * living in the dock, has no legal occupant for the side column — and both the
- * strip's toggle and the menu item take their enabled state from it rather than
- * working it out a second time. Whether the window is pinned is asked of the
- * window itself, for the reason `alwaysOnTop` gives there.
- *
- * Both read false with nothing focused, which is what disables the two items:
- * each acts on the focused window, and there is then no window to act on.
+ * `focusedServerWindow()` is undefined with nothing focused and with Settings
+ * focused alike — Settings is not a game window, so there is nothing there for
+ * Always on Top to act on — and `canPin` is what the menu item's `enabled`
+ * reads instead of working that out a second time.
  */
 function menuWindowState(): MenuWindowState {
     const focused = focusedServerWindow();
-    return { alwaysOnTop: focused?.alwaysOnTop() ?? false };
+    return { alwaysOnTop: focused?.alwaysOnTop() ?? false, canPin: focused !== undefined };
 }
 
 /** What the menu was last built with, so the rebuild below only runs when an item would actually change. */
-let menuWindow: MenuWindowState = { alwaysOnTop: false };
+let menuWindow: MenuWindowState = { alwaysOnTop: false, canPin: false };
 
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
@@ -178,15 +178,14 @@ function installAppMenu(): void {
 }
 
 /**
- * One menu, many windows: Toggle Panel and Always on Top both belong to
- * whichever window has focus, so they are re-examined when focus moves, when a
- * window closes out from under them, and when chat's home changes app-wide —
- * the ways either answer moves without the catalog, the warning or the update
- * doing anything.
+ * One menu, many windows: Always on Top, and whether it can be reached at
+ * all, both belong to whichever window has focus, so they are re-examined
+ * when focus moves — including to or from Settings, which is not a game
+ * window — and when a window closes out from under them.
  */
 function syncMenuWindowItems(): void {
     const now = menuWindowState();
-    if (now.alwaysOnTop !== menuWindow.alwaysOnTop) installAppMenu();
+    if (now.alwaysOnTop !== menuWindow.alwaysOnTop || now.canPin !== menuWindow.canPin) installAppMenu();
 }
 
 /**
@@ -293,6 +292,20 @@ function focusedServerWindow(): ServerWindow | undefined {
     return [...serverWindows.values()].find(sw => sw.window === focused);
 }
 
+/**
+ * How many windows each server has open, for Settings' rows.
+ *
+ * Counted from `windows.list()`, which reads each window's spec. That is
+ * cheap and asks nothing of a window itself, which is the reason to keep
+ * reading it from there even though no `ServerWindow`'s own state carries
+ * this count any more.
+ */
+function windowCounts(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const open of windows.list()) counts.set(open.serverId, (counts.get(open.serverId) ?? 0) + 1);
+    return counts;
+}
+
 /** New windows cascade from the focused one, so several can open without stacking exactly. */
 function nextPosition(): { x: number; y: number } | null {
     const anchor = focusedServerWindow() ?? [...serverWindows.values()].at(-1);
@@ -314,48 +327,100 @@ function confirmClose(title: string): boolean {
     return choice === 0;
 }
 
-const windows = new ServerWindows((spec, onClosed) => {
-    const sw = createServerWindow(
-        spec,
-        () => {
-            serverWindows.delete(spec.id);
-            byShell.delete(sw.shellContentsId);
-            log(`[main] closed ${spec.title}`);
-            onClosed();
-            // Focus lands somewhere else, or nowhere, and the menu's panel item
-            // belongs to whoever has it now. Closing the last window on macOS
-            // fires no focus event at all, so it is done here as well.
-            syncMenuWindowItems();
-        },
-        {
-            log,
-            confirmClose,
-            position: nextPosition(),
-            worlds: worldsServiceFor(spec.server),
-            hiscores: hiscoresServiceFor(spec.server),
-            chat: chatView,
-            alwaysOnTop: () => appState.alwaysOnTop(),
-            confirmCloseGame: via => confirmCloseGame(spec, via),
-            layoutsDir: join(userData, 'layouts', slugify(spec.server.id)),
-            remembered: appState.world(spec.server.id),
-            remember: remembered => appState.setWorld(spec.server.id, remembered),
-            probe: probeLatency,
-            yourWorld,
-            share,
-            timers: () => {
-                const state = appState.timers();
-                return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
+const windows = new ServerWindows(
+    (spec, onClosed) => {
+        const sw = createServerWindow(
+            spec,
+            () => {
+                serverWindows.delete(spec.id);
+                byShell.delete(sw.shellContentsId);
+                log(`[main] closed ${spec.title}`);
+                onClosed();
+                // Focus lands somewhere else, or nowhere, and the menu's Always on
+                // Top item belongs to whoever has it now. Closing the last window on
+                // macOS fires no focus event at all, so it is done here as well.
+                syncMenuWindowItems();
+            },
+            {
+                log,
+                confirmClose,
+                position: nextPosition(),
+                worlds: worldsServiceFor(spec.server),
+                hiscores: hiscoresServiceFor(spec.server),
+                chat: chatView,
+                alwaysOnTop: () => appState.alwaysOnTop(),
+                confirmCloseGame: via => confirmCloseGame(spec, via),
+                layoutsDir: join(userData, 'layouts', slugify(spec.server.id)),
+                remembered: appState.world(spec.server.id),
+                remember: remembered => appState.setWorld(spec.server.id, remembered),
+                probe: probeLatency,
+                yourWorld,
+                share,
+                timers: () => {
+                    const state = appState.timers();
+                    return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
+                }
             }
-        }
-    );
-    serverWindows.set(spec.id, sw);
-    byShell.set(sw.shellContentsId, sw);
-    log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
-    return sw;
-});
+        );
+        serverWindows.set(spec.id, sw);
+        byShell.set(sw.shellContentsId, sw);
+        log(`[main] opened ${spec.title} — ${spec.server.url} (${spec.partition})`);
+        return sw;
+    },
+    /**
+     * Settings' rows carry each server's open-window count. That count only
+     * agrees with reality if Settings, when it is open, is pushed whenever ANY
+     * window opens or closes anywhere — so `ServerWindows` calls this after
+     * both: from `open()` once the new window is registered, and from a
+     * closed window's own `onClosed` chain once it has already deleted that
+     * window from every map above, so the count here never still includes
+     * the window that just went away.
+     */
+    () => {
+        pushSettings();
+    }
+);
 
 function openServer(server: ServerDef): ServerWindow {
     return serverWindows.get(windows.open(server).id)!;
+}
+
+// ── settings ──────────────────────────────────────────────────────────────
+
+/** The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this only builds it. */
+const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) => createSettingsWindow({ anchor, onClosed }));
+
+/** What Settings draws, built when asked for, like a shell's state. */
+function settingsState(): SettingsState {
+    return { servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }) };
+}
+
+/** Sends Settings its state when it is open. Every change to the catalog, the startup set or which windows are open comes through here. */
+function pushSettings(): void {
+    settings.current()?.push(settingsState());
+}
+
+/**
+ * Opens Settings, or brings it forward. `anchor` is the window that asked —
+ * the one whose gear was clicked, or, from the menu's Settings…, whichever
+ * game window has focus. Placed beside it when there is room, against the work
+ * area's edge when there is not; centred on the display only with no anchor
+ * at all. See `settingsBounds`.
+ *
+ * Pinned to match `anchor`'s own pin, or the app's last-remembered one with
+ * no anchor — set after `settings.open()` returns, on every call, so an
+ * already-open Settings re-follows whichever window's gear was just pressed
+ * rather than keeping the pin it happened to open with.
+ */
+function openSettings(anchor: ServerWindow | undefined = focusedServerWindow()): void {
+    const pinned = anchor ? anchor.alwaysOnTop() : appState.alwaysOnTop();
+    const opened = settings.open(anchor && !anchor.window.isDestroyed() ? anchor.window.getBounds() : null);
+    opened.window.setAlwaysOnTop(pinned);
+}
+
+/** Whether an IPC call may manage the catalog: only the Settings window, the one page that has a servers UI. */
+function mayManageServers(sender: WebContents): boolean {
+    return settings.isSender(sender.id);
 }
 
 function windowFor(sender: WebContents): ServerWindow | undefined {
@@ -378,6 +443,10 @@ function loadCatalog(): void {
     catalog.load();
     catalogSeen = catalogMtime();
     installAppMenu();
+    // Settings reads the catalog too, and has no poll of its own, so it only
+    // ever learns of a change through a push. A no-op at the `whenReady` call
+    // site, where Settings is never open yet.
+    pushSettings();
     if (catalog.recovered) {
         log(`[main] ${catalog.file} could not be read; the defaults were written and the old file kept beside it`);
         void dialog.showMessageBox({
@@ -411,11 +480,49 @@ function setWarnOnSwitch(value: boolean): void {
  * The menu is rebuilt from the window rather than from the number just saved:
  * a window that refused the pin, or was destroyed between the click and here,
  * must leave the checkbox unticked rather than claiming a state nothing is in.
+ *
+ * A no-op with nothing to pin — the item disables itself for that case
+ * (`canPin`), but the click still has to be refused rather than trusted, and a
+ * refusal here must not write down a pin nothing asked for. Settings focused
+ * is exactly this case: it is not a game window, so there is nothing here for
+ * it to act on.
  */
 function setAlwaysOnTop(value: boolean): void {
-    focusedServerWindow()?.setAlwaysOnTop(value);
+    const sw = focusedServerWindow();
+    if (!sw) {
+        installAppMenu();
+        return;
+    }
+    sw.setAlwaysOnTop(value);
     appState.setAlwaysOnTop(value);
     installAppMenu();
+}
+
+/**
+ * Opens a file or folder with whatever the system opens it with, and says so
+ * when that fails.
+ *
+ * `shell.openPath` reports a failure by answering with the reason rather than
+ * by throwing, and an empty answer means it worked. Every call here used to
+ * discard that, so on a machine with nothing registered for `.json` — which is
+ * an ordinary state for a Mac — Edit Server List… was a click that did nothing
+ * at all, with nothing in the log either. The dialog offers the folder as the
+ * way out, since showing a file in Finder needs no handler for its type.
+ */
+async function openInSystem(path: string, what: string): Promise<void> {
+    const problem = await shell.openPath(path);
+    if (problem === '') return;
+    log(`[main] could not open ${path}: ${problem}`);
+    const reveal = process.platform === 'darwin' ? 'Show in Finder' : 'Show in Folder';
+    const choice = await dialog.showMessageBox({
+        type: 'warning',
+        message: `Couldn't open ${what}.`,
+        detail: `${problem}\n\n${path}`,
+        buttons: ['OK', reveal],
+        defaultId: 0,
+        cancelId: 0
+    });
+    if (choice.response === 1) shell.showItemInFolder(path);
 }
 
 const actions: MenuActions = {
@@ -433,12 +540,13 @@ const actions: MenuActions = {
         if (server) openServer(server);
     },
     editServers: () => {
-        void shell.openPath(catalog.file);
+        void openInSystem(catalog.file, 'the server list');
     },
     reloadServers: () => {
         loadCatalog();
         log(`[main] server list reloaded: ${catalog.list().length} servers`);
     },
+    openSettings: () => openSettings(),
     setWarnOnSwitch,
     setAlwaysOnTop,
     splitPane: axis => {
@@ -447,7 +555,14 @@ const actions: MenuActions = {
     },
     closePane: () => {
         const sw = focusedServerWindow();
-        if (sw) void sw.closePane(sw.state().panes.find(p => p.focused)?.paneId ?? '');
+        if (sw) {
+            void sw.closePane(sw.state().panes.find(p => p.focused)?.paneId ?? '');
+            return;
+        }
+        // Cmd/Ctrl+W is Close Pane's. Settings has no panes, so there it closes
+        // the window, as the same keys would anywhere else.
+        const open = settings.current();
+        if (open?.window.isFocused()) open.window.close();
     },
     evenOut: () => focusedServerWindow()?.evenOutFocused(),
     newTab: () => focusedServerWindow()?.newTab(),
@@ -476,6 +591,23 @@ const actions: MenuActions = {
 // ── ipc ───────────────────────────────────────────────────────────────────
 
 ipcMain.handle(IPC.shellGet, (event): ShellState | null => windowFor(event.sender)?.state() ?? null);
+
+ipcMain.handle(IPC.settingsGet, (event): SettingsState | null => (settings.isSender(event.sender.id) ? settingsState() : null));
+
+ipcMain.handle(IPC.settingsOpen, event => {
+    const sw = windowFor(event.sender);
+    if (sw) openSettings(sw);
+});
+
+/*
+ * The file behind the server list, for the fields no form in Settings exposes.
+ * Opened with the system's own editor, as File > Edit Server List… does. Only
+ * Settings may ask: it hands out a path inside the profile, and a game window
+ * has no reason to want one.
+ */
+ipcMain.handle(IPC.settingsEditServers, event => {
+    if (settings.isSender(event.sender.id)) void openInSystem(catalog.file, 'the server list');
+});
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
 
@@ -1005,7 +1137,7 @@ ipcMain.handle(IPC.yourWorldCommands, (event): CommandRef[] | null => {
 ipcMain.handle(IPC.yourWorldOpenSaves, async () => {
     if (!yourWorld) return;
     mkdirSync(yourWorld.savesDir, { recursive: true });
-    await shell.openPath(yourWorld.savesDir);
+    await openInSystem(yourWorld.savesDir, 'the characters folder');
 });
 
 ipcMain.handle(IPC.yourWorldShowLog, async () => {
@@ -1014,7 +1146,7 @@ ipcMain.handle(IPC.yourWorldShowLog, async () => {
     mkdirSync(yourWorld.home, { recursive: true });
     const logPath = join(yourWorld.home, 'world.log');
     if (!existsSync(logPath)) writeFileSync(logPath, '');
-    await shell.openPath(logPath);
+    await openInSystem(logPath, "the world's log");
 });
 
 // ── sharing your world ──────────────────────────────────────────
@@ -1105,6 +1237,68 @@ ipcMain.handle(IPC.timersSound, async (event): Promise<Uint8Array | null> => {
     return readAlertSound();
 });
 
+// ── servers ───────────────────────────────────────────────────────────────
+
+/**
+ * Everything that must happen after the catalog changes, from Settings — the
+ * only page that can change it. The startup set does not come through here —
+ * it touches no file and no menu, so its handler does the smaller push
+ * itself. The menu is rebuilt so File > New Window For agrees, Settings is
+ * pushed since it shows these rows, and `catalogSeen` is refreshed so the
+ * on-focus reload does not mistake our own write for somebody editing
+ * servers.json underneath us.
+ */
+function catalogChanged(): void {
+    catalogSeen = catalogMtime();
+    installAppMenu();
+    pushSettings();
+}
+
+ipcMain.handle(IPC.serversOpen, (event, id: unknown) => {
+    if (!mayManageServers(event.sender) || typeof id !== 'string') return;
+    const server = catalog.get(id);
+    if (!server) return;
+    // windows.open() (inside openServer) tells ServerWindows' onChange, which
+    // pushes Settings, so opening does not need its own push here.
+    openServer(server);
+});
+
+ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {
+    if (!mayManageServers(event.sender) || typeof id !== 'string' || typeof on !== 'boolean') return;
+    if (!catalog.get(id)) return;
+    appState.setStartupServer(id, on);
+    pushSettings();
+});
+
+/**
+ * The add form's submit. `readNewServerInput` checks the shape only; what the
+ * values mean is `catalog.add`'s, which runs `createServer` — the one
+ * authority, since the renderer cannot import it.
+ */
+ipcMain.handle(IPC.serversAdd, (event, raw: unknown): string | null => {
+    if (!mayManageServers(event.sender)) return null;
+    const input = readNewServerInput(raw);
+    if (!input) return 'That is not a server the kit can add.';
+    const result = catalog.add(input);
+    if (!result.ok) return result.error;
+    catalogChanged();
+    return null;
+});
+
+ipcMain.handle(IPC.serversRemove, (event, id: unknown): string | null => {
+    if (!mayManageServers(event.sender)) return null;
+    if (typeof id !== 'string') return 'That is not a server.';
+    // The guard is here and in the row's `removable`, both from `isRemovable`:
+    // nothing in the app puts a removed built-in back.
+    if (!isRemovable(id)) return 'That server came with the kit and cannot be removed.';
+    if (!catalog.remove(id)) return 'That server is no longer in the list.';
+    // Otherwise a later add can reuse this id (`uniqueId` only avoids ids that
+    // currently exist) and inherit a tick nobody meant for it.
+    appState.setStartupServer(id, false);
+    catalogChanged();
+    return null;
+});
+
 // ── dev capture ───────────────────────────────────────────────────────────
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -1172,6 +1366,8 @@ async function captureAndExit(dir: string): Promise<void> {
         log(`[capture] ${name}.png skipped: ${(lastError as Error).message}`);
         return null;
     };
+    /** What a shell shot needs from a window: a game window, or Settings. */
+    type ShotTarget = { readonly window: BrowserWindow; focus(): void; settle(): Promise<boolean>; captureShell(): Promise<NativeImage> };
     /**
      * Fronts the window and waits for its shell to paint, which is what makes
      * a shot of it current. A covered window's shell paints nothing, so
@@ -1182,7 +1378,7 @@ async function captureAndExit(dir: string): Promise<void> {
      * each of two shots eight seconds apart left it covered for both.
      * Resolves false if the shell never painted.
      */
-    const front = async (sw: ServerWindow, shot: string): Promise<boolean> => {
+    const front = async (sw: ShotTarget, shot: string): Promise<boolean> => {
         const started = Date.now();
         for (let attempt = 1; ; attempt++) {
             sw.window.moveTop();
@@ -1194,16 +1390,19 @@ async function captureAndExit(dir: string): Promise<void> {
             if (Date.now() - started >= frontTimeoutMs) return false;
         }
     };
-    const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
+    const shootShell = async (name: string, target: ShotTarget): Promise<void> => {
         const shell = `${name}-shell`;
-        if (await front(sw, shell)) {
-            const png = await save(shell, () => sw.captureShell());
+        if (await front(target, shell)) {
+            const png = await save(shell, () => target.captureShell());
             const twin = png && shells.record(`${shell}.png`, png);
             if (twin) fault(`${shell}.png is byte-identical to ${twin}, so one of the two does not show its step: a stale frame, or a change gone before the shot`);
         } else {
             rmSync(join(dir, `${shell}.png`), { force: true });
             fault(`${shell}.png not written: the shell did not paint in ${frontTimeoutMs}ms of fronting its window, so a shot would repeat its last frame`);
         }
+    };
+    const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
+        await shootShell(name, sw);
         await save(`${name}-game`, () => sw.captureGame());
     };
     /**
@@ -1239,6 +1438,19 @@ async function captureAndExit(dir: string): Promise<void> {
         await wait(settleMs);
 
         for (const sw of opened) await shoot(sw.state().server.id, sw);
+
+        // Settings, the one window that is not a game window. Anchored to the
+        // first game window as the gear in its tab bar would, and closed once shot:
+        // where it cannot sit beside a window it opens centred, on top of one,
+        // and every later shot of that window would fail its paint check.
+        {
+            const settingsWindow = settings.open(opened[0]?.window.getBounds() ?? null);
+            await settingsWindow.loaded;
+            await wait(500);
+            await shootShell('settings', settingsWindow);
+            log(`[capture] settings lists ${settingsState().servers.rows.length} servers`);
+            settingsWindow.window.close();
+        }
 
         // The layout and slot checks use a window whose game actually loaded, if any did.
         const first = opened[results.indexOf('loaded')] ?? opened[0];
@@ -1686,11 +1898,14 @@ app.whenReady().then(async () => {
         })
     );
     yourWorld = world;
-    // The File menu names the revision of the line the world runs; a switch changes it.
+    // The File menu names the revision of the line the world runs; a switch
+    // changes it, and it is a catalog change like any other, so Settings
+    // learns of it too.
     const followRevision = (): void => {
         if (!catalog.followYourWorld()) return;
         catalogSeen = catalogMtime();
         installAppMenu();
+        pushSettings();
     };
     let revision = world.view().revision;
     world.subscribe(() => {
@@ -1728,11 +1943,21 @@ app.whenReady().then(async () => {
         await captureAndExit(CAPTURE_DIR);
         return;
     }
-    actions.newWindow();
+    // `startupServers` falls back to the catalog's first entry, so an empty answer
+    // means the catalog itself is empty — the one case a launch cannot open a
+    // window for. `actions.newWindow` already says so, and says it the same way
+    // the File menu does, so the empty list is handed back to it rather than
+    // given a second dialog of its own.
+    const opening = startupServers(appState.startupIds(), catalog.list());
+    if (opening.length === 0) actions.newWindow();
+    else for (const server of opening) openServer(server);
 });
 
 app.on('activate', () => {
-    if (serverWindows.size === 0) actions.newWindow();
+    // Settings counts as a window here, agreeing with 'second-instance' below:
+    // a dock click with only Settings on screen must surface it, not open a
+    // game window underneath it.
+    if (BrowserWindow.getAllWindows().length === 0) actions.newWindow();
 });
 
 /**
