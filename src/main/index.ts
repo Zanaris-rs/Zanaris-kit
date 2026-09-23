@@ -498,6 +498,33 @@ function setAlwaysOnTop(value: boolean): void {
     installAppMenu();
 }
 
+/**
+ * Opens a file or folder with whatever the system opens it with, and says so
+ * when that fails.
+ *
+ * `shell.openPath` reports a failure by answering with the reason rather than
+ * by throwing, and an empty answer means it worked. Every call here used to
+ * discard that, so on a machine with nothing registered for `.json` — which is
+ * an ordinary state for a Mac — Edit Server List… was a click that did nothing
+ * at all, with nothing in the log either. The dialog offers the folder as the
+ * way out, since showing a file in Finder needs no handler for its type.
+ */
+async function openInSystem(path: string, what: string): Promise<void> {
+    const problem = await shell.openPath(path);
+    if (problem === '') return;
+    log(`[main] could not open ${path}: ${problem}`);
+    const reveal = process.platform === 'darwin' ? 'Show in Finder' : 'Show in Folder';
+    const choice = await dialog.showMessageBox({
+        type: 'warning',
+        message: `Couldn't open ${what}.`,
+        detail: `${problem}\n\n${path}`,
+        buttons: ['OK', reveal],
+        defaultId: 0,
+        cancelId: 0
+    });
+    if (choice.response === 1) shell.showItemInFolder(path);
+}
+
 const actions: MenuActions = {
     newWindow: () => {
         const focused = focusedServerWindow();
@@ -513,7 +540,7 @@ const actions: MenuActions = {
         if (server) openServer(server);
     },
     editServers: () => {
-        void shell.openPath(catalog.file);
+        void openInSystem(catalog.file, 'the server list');
     },
     reloadServers: () => {
         loadCatalog();
@@ -579,7 +606,7 @@ ipcMain.handle(IPC.settingsOpen, event => {
  * has no reason to want one.
  */
 ipcMain.handle(IPC.settingsEditServers, event => {
-    if (settings.isSender(event.sender.id)) void shell.openPath(catalog.file);
+    if (settings.isSender(event.sender.id)) void openInSystem(catalog.file, 'the server list');
 });
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
@@ -1110,7 +1137,7 @@ ipcMain.handle(IPC.yourWorldCommands, (event): CommandRef[] | null => {
 ipcMain.handle(IPC.yourWorldOpenSaves, async () => {
     if (!yourWorld) return;
     mkdirSync(yourWorld.savesDir, { recursive: true });
-    await shell.openPath(yourWorld.savesDir);
+    await openInSystem(yourWorld.savesDir, 'the characters folder');
 });
 
 ipcMain.handle(IPC.yourWorldShowLog, async () => {
@@ -1119,7 +1146,7 @@ ipcMain.handle(IPC.yourWorldShowLog, async () => {
     mkdirSync(yourWorld.home, { recursive: true });
     const logPath = join(yourWorld.home, 'world.log');
     if (!existsSync(logPath)) writeFileSync(logPath, '');
-    await shell.openPath(logPath);
+    await openInSystem(logPath, "the world's log");
 });
 
 // ── sharing your world ──────────────────────────────────────────
