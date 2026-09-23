@@ -79,7 +79,9 @@ export const IPC = {
     serversRemove: 'zanaris:servers-remove',
     settingsGet: 'zanaris:settings-get',
     settingsState: 'zanaris:settings-state',
-    settingsOpen: 'zanaris:settings-open'
+    settingsOpen: 'zanaris:settings-open',
+    settingsEditServers: 'zanaris:settings-edit-servers',
+    settingsEditState: 'zanaris:settings-edit-state'
 } as const;
 
 /**
@@ -367,5 +369,9 @@ export interface ZanarisApi {
         onState(cb: (state: SettingsState) => void): () => void;
         /** Opens the Settings window, or brings the open one forward. */
         open(): Promise<void>;
+        /** Opens `servers.json` in whatever the system opens it with. Safe with the kit running: it is re-read on focus. */
+        editServers(): Promise<void>;
+        /** Opens `state.json` the same way. The kit reads it only at launch and rewrites it as it goes, so an edit made now is lost to the next save. */
+        editState(): Promise<void>;
     };
 }

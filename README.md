@@ -61,13 +61,14 @@ launch opens it: tick two servers and relaunching opens both, untick every row
 and a launch falls back to the catalog's first entry, exactly what an empty
 list has always done. The same section adds a server through a short form and
 removes one — except the handful the kit ships with, which nothing in the app
-can put back once gone, so it does not offer to take them out. A fresh
-profile's first launch opens Settings beside the game where there is room, or
-against the edge of the screen in front of it otherwise, because nothing else
-on screen ever says the kit runs more than Lost City: New Window For lists the
-rest of the catalog, but that is a menu nobody opens without already
-suspecting there is something behind it. After that, Settings opens only when
-asked. It is a window rather than a pane or a popover because the game is a
+can put back once gone, so it does not offer to take them out. Below the list
+are the two files behind it: Edit server list… opens `servers.json`, which the
+kit re-reads whenever a window regains focus, and Edit state.json… opens the
+file holding your chat settings, clocks, remembered worlds and startup ticks —
+that one is read only at launch and rewritten as you go, so quit the kit before
+editing it by hand. Settings opens when you ask for it and never on its own; a
+launch with nothing ticked opens Lost City, as it always has. It is a window
+rather than a pane or a popover because the game is a
 native view drawn above the tab bar's own page, so anything that page drew
 over the game would sit underneath it.
 

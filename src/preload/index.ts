@@ -112,7 +112,9 @@ const api: ZanarisApi = {
                 ipcRenderer.off(IPC.settingsState, handler);
             };
         },
-        open: () => ipcRenderer.invoke(IPC.settingsOpen)
+        open: () => ipcRenderer.invoke(IPC.settingsOpen),
+        editServers: () => ipcRenderer.invoke(IPC.settingsEditServers),
+        editState: () => ipcRenderer.invoke(IPC.settingsEditState)
     }
 };
 

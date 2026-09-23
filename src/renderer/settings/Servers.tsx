@@ -17,8 +17,8 @@ const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
 /* The add form's fields, one quiet sunk box each — the same class `Timers.tsx` uses for its own. */
 const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
 
-/** A secondary action: stone, a dim 13px label that lights on hover, and spent when it cannot be used. Same shape as `Timers.tsx`'s. */
-function QuietButton({ onClick, disabled = false, children }: { onClick?: () => void; disabled?: boolean; children: ReactNode }): ReactNode {
+/** A secondary action: stone, a dim 13px label that lights on hover, and spent when it cannot be used. Same shape as `Timers.tsx`'s. Exported because the page's own file buttons are the same kind of thing. */
+export function QuietButton({ onClick, disabled = false, children }: { onClick?: () => void; disabled?: boolean; children: ReactNode }): ReactNode {
     return (
         <button type="button" disabled={disabled} onClick={onClick} style={BUTTON_SIZE} className="btn group shrink-0">
             <span className={disabled ? 'text-faint' : 'text-dim group-hover:text-cream'}>{children}</span>

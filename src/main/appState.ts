@@ -169,7 +169,6 @@ export class AppState {
     // App-wide: the same list in every window, whatever its server.
     private timersState: TimersState = emptyTimersState();
     private startup: string[] = [];
-    private freshProfile = true;
 
     constructor(file: string) {
         this.file = file;
@@ -186,8 +185,7 @@ export class AppState {
         this.onTop = false;
         this.timersState = emptyTimersState();
         this.startup = [];
-        this.freshProfile = !existsSync(this.file);
-        if (this.freshProfile) return;
+        if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
             const worlds = parsed?.worlds;
@@ -358,16 +356,6 @@ export class AppState {
         } else if (!on && at >= 0) this.startup.splice(at, 1);
         else return;
         this.save();
-    }
-
-    /**
-     * Whether this launch is the first on this profile — no state file existed.
-     * A file that was broken and set aside does not count: somebody who has one
-     * has used the kit before, and showing them the first-launch arrangement
-     * again would be telling them something they already know.
-     */
-    fresh(): boolean {
-        return this.freshProfile;
     }
 
     save(): void {

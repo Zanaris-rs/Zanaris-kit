@@ -282,14 +282,6 @@ function hiscoresServiceFor(server: ServerDef): HiscoresService | null {
 }
 /** Modification time of servers.json at the last load, so a focus change only re-reads it when it changed. */
 let catalogSeen = 0;
-/**
- * Whether this launch opens Settings once its first game window has shown:
- * only on a profile that had no state file, so a newcomer sees the server
- * list rather than a Lost City client that never mentions anything else.
- * Never during capture, whose output must not depend on whether its profile
- * happened to be new.
- */
-let openSettingsOnLaunch = false;
 const serverWindows = new Map<number, ServerWindow>();
 const byShell = new Map<number, ServerWindow>();
 
@@ -410,9 +402,8 @@ function pushSettings(): void {
 
 /**
  * Opens Settings, or brings it forward. `anchor` is the window that asked —
- * the one whose gear was clicked, from the menu's Settings…, whichever game
- * window has focus, or, on a fresh profile's first launch, the first game
- * window it opened. Placed beside it when there is room, against the work
+ * the one whose gear was clicked, or, from the menu's Settings…, whichever
+ * game window has focus. Placed beside it when there is room, against the work
  * area's edge when there is not; centred on the display only with no anchor
  * at all. See `settingsBounds`.
  *
@@ -579,6 +570,20 @@ ipcMain.handle(IPC.settingsGet, (event): SettingsState | null => (settings.isSen
 ipcMain.handle(IPC.settingsOpen, event => {
     const sw = windowFor(event.sender);
     if (sw) openSettings(sw);
+});
+
+/*
+ * The two files behind Settings, for the fields no form there exposes. Opened
+ * with the system's own editor, as File > Edit Server List… does. Only Settings
+ * may ask: these hand out the profile's paths, and a game window has no reason
+ * to want them.
+ */
+ipcMain.handle(IPC.settingsEditServers, event => {
+    if (settings.isSender(event.sender.id)) void shell.openPath(catalog.file);
+});
+
+ipcMain.handle(IPC.settingsEditState, event => {
+    if (settings.isSender(event.sender.id)) void shell.openPath(appState.file);
 });
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
@@ -1412,7 +1417,7 @@ async function captureAndExit(dir: string): Promise<void> {
         for (const sw of opened) await shoot(sw.state().server.id, sw);
 
         // Settings, the one window that is not a game window. Anchored to the
-        // first game window as a first launch anchors it, and closed once shot:
+        // first game window as the gear in its tab bar would, and closed once shot:
         // where it cannot sit beside a window it opens centred, on top of one,
         // and every later shot of that window would fail its paint check.
         {
@@ -1804,8 +1809,6 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
-    // Set right after load(), the only call that gives fresh() an answer.
-    openSettingsOnLaunch = CAPTURE_DIR ? false : appState.fresh();
     // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
     powerMonitor.on('resume', () => {
         for (const sw of serverWindows.values()) sw.settleTimers();
@@ -1910,24 +1913,7 @@ app.whenReady().then(async () => {
     // given a second dialog of its own.
     const opening = startupServers(appState.startupIds(), catalog.list());
     if (opening.length === 0) actions.newWindow();
-    else {
-        const opened = opening.map(openServer);
-        const first = opened[0];
-        if (openSettingsOnLaunch && first) {
-            // Once the first game window has shown, so Settings is the later of the
-            // two and lands in front: the list is the point of a first launch. The
-            // save is here too, not before, so a launch that quits before the game
-            // shows stays fresh and tries again next time. fresh() means "no state
-            // file", and a launch where the player changes nothing writes none —
-            // without this save every later launch would be fresh too.
-            const openOnce = (): void => {
-                openSettings(first);
-                appState.save();
-            };
-            if (first.window.isVisible()) openOnce();
-            else first.window.once('show', openOnce);
-        }
-    }
+    else for (const server of opening) openServer(server);
 });
 
 app.on('activate', () => {

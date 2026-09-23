@@ -1,5 +1,13 @@
 # The server list moves to a Settings window
 
+> **Amended 2026-09-23, on the owner's call.** Decision 2 is reversed: nothing
+> opens Settings on its own, on a fresh profile or otherwise. A launch opens the
+> servers that are ticked, and with none ticked that is Lost City, as it has
+> always been. Settings opens from the gear and from Settings… only. The window
+> also gained two buttons for the files behind it — `servers.json` and
+> `state.json` — opened in the system's editor rather than edited in the app.
+> The sections below are marked where they described the old behaviour.
+
 The owner's design of 2026-09-22. It replaces the surface chosen in
 `2026-09-20-servers-pane-design.md`: the catalog was a tool pane, and it
 becomes the first section of one Settings window for the whole app, opened
@@ -33,11 +41,11 @@ These were taken while designing, and override anything below that disagrees.
    a panel that closes when clicked away. The catalog, the startup set and
    chat's settings are all app-wide, and a panel that dismisses itself loses a
    half-typed add form.
-2. **A fresh profile opens Settings once, on Servers.** Discovery stays the
-   goal: a gear reads as "settings", not "there are other servers", so the
-   first launch shows the list rather than hoping someone clicks. It is a
-   window beside the game, not a modal, and it never comes back on its own.
-   This reuses the fresh-profile flag PR #16 already has.
+2. ~~**A fresh profile opens Settings once, on Servers.**~~ **Reversed
+   2026-09-23.** Nothing opens Settings but the gear and Settings…. The
+   discovery argument stood, but an app that opens a second window at you on
+   first run is the kind of thing the owner did not want; the gear carries it
+   instead. `AppState.fresh()` went with the behaviour, having no other caller.
 3. **The Servers pane goes away entirely.** `'servers'` never shipped, so taking
    it out of `TOOL_IDS` breaks no saved layout. Were PR #16 merged first, that
    id would be append-only and removing it would be the migration CLAUDE.md
@@ -63,11 +71,12 @@ tested without Electron:
 - The factory's `onClosed` clears the slot, so the next `open` makes a fresh
   window.
 - `isSender(contentsId)` answers whether an IPC call came from it.
-- `settingsBounds(anchor, size, workArea)` places it to the right of the window
-  that asked, top edges level, when the display's work area has room; and
-  centres it on that work area when it has not, or when there is no anchor.
-  The case it exists for is the first launch, where a window centred on the
-  screen would sit on top of the game the player just opened.
+- `settingsBounds(anchor, size, workArea)` places it beside the window that
+  asked, top edges level — to its right where the work area has room, else to
+  its left, else against the edge with more free space. It centres only when no
+  window asked. The case it exists for is a game window near the middle of a
+  laptop-sized display, where centring Settings would put it over the game
+  rather than beside it.
 
 `src/main/settingsView.ts` is the Electron seam and holds no rules, as
 `paneHost.ts` does for panes: it creates the `BrowserWindow`, loads the page,
@@ -92,8 +101,7 @@ this is defence in depth, and it is two lines.
   which means replacing `{ role: 'appMenu' }` (`menu.ts:61`) with an explicit
   template, since a role menu cannot take extra items. Elsewhere it goes in
   File.
-- **Once on a fresh profile**, after the startup windows are open, anchored to
-  the first of them.
+- ~~Once on a fresh profile~~ — removed 2026-09-23; see the amendment above.
 
 ### The page
 
@@ -130,9 +138,10 @@ window's `state()` touches the catalog at all.
 
 ### First launch
 
-The fresh-profile flag now means "open Settings once, after the startup
-windows". `npm run capture` keeps it pinned off, so a capture run's output
-still does not depend on whether its profile happened to exist.
+**Removed 2026-09-23.** No launch opens Settings. A launch opens the ticked
+servers, or the catalog's first entry when none is ticked, exactly as before
+this branch. `npm run capture` is unaffected, since it never opened Settings
+either.
 
 `openWindowTabs` loses its `bottomTool` parameter and puts chat under the game
 again in every window; the docstring paragraph describing a first-launch caller
@@ -187,8 +196,7 @@ The pane stays until step 3 so every commit on the way builds and runs.
 - Opening and closing a game window updates the open-window counts in Settings.
 - No game window offers a Servers pane anywhere, and a layout saved before this
   change still loads.
-- A fresh profile opens the game window and Settings beside it; a second launch
-  opens no Settings.
+- No launch opens Settings, on a fresh profile or any other.
 - `npm run capture` photographs the Settings window. Open the image — a capture
   log line reads state, not pixels. Leave the machine alone while it runs:
   another window covering the kit mid-run makes the shell stop painting and the

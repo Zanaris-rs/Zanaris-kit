@@ -575,25 +575,3 @@ test('setStartupServer does not push past the cap readStartup enforces on the wa
     fresh.load();
     assert.deepEqual(fresh.startupIds(), state.startupIds(), 'the dropped id was never saved either');
 });
-
-test('a profile is fresh only when there was no state file at all', () => {
-    const file = tempFile();
-    const a = new AppState(file);
-    a.load();
-    assert.equal(a.fresh(), true);
-    a.setWarnOnSwitch(false);
-    const b = new AppState(file);
-    b.load();
-    assert.equal(b.fresh(), false);
-});
-
-test('saving a fresh profile makes the next load not fresh, which is how a first launch stays the only one', () => {
-    const file = tempFile();
-    const a = new AppState(file);
-    a.load();
-    assert.equal(a.fresh(), true);
-    a.save();
-    const b = new AppState(file);
-    b.load();
-    assert.equal(b.fresh(), false);
-});

@@ -69,9 +69,10 @@ export const SETTINGS_GAP = 12;
  *
  * Beside the window that asked for it, top edges level: to its right when the
  * display has room there, else to its left when the display has room there.
- * A first launch's game window is centred (`nextPosition()` has no window to
- * cascade from yet), and on a laptop-sized display that leaves no room on
- * either side, so the last resort is against the work area's edge — the side
+ * A game window sitting near the middle of a laptop-sized display leaves no
+ * room on either side — the first window of a launch is centred, since
+ * `nextPosition()` has nothing to cascade from — so the last resort is
+ * against the work area's edge: the side
  * with more free space, so Settings covers as little of the game window as it
  * can, rather than centring over its middle. Centred on the display only when
  * no window asked. Never larger than the display's work area, and never off
