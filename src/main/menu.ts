@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
+import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
 import type { LatestRelease } from './update';
@@ -10,6 +10,8 @@ export interface MenuActions {
     /** Opens servers.json in the system editor. */
     editServers(): void;
     reloadServers(): void;
+    /** Opens the Settings window, or brings the open one forward. */
+    openSettings(): void;
     splitPane(axis: 'x' | 'y'): void;
     closePane(): void;
     evenOut(): void;
@@ -26,7 +28,8 @@ export interface MenuActions {
 }
 
 /**
- * The application menu is where new windows come from; there is no launcher.
+ * The application menu is where new windows come from — File's own items, and
+ * Settings' Open buttons behind them; there is no launcher beyond that.
  * Native menus follow the platform's Title Case; everything the renderer
  * draws is sentence case. Rebuilt whenever the catalog changes so the server
  * submenu stays current, whenever the switch warning is turned on or off so
@@ -34,14 +37,17 @@ export interface MenuActions {
  * change, and once more when a newer release is found.
  *
  * `window` holds the inputs that belong to a window rather than to the app:
- * there is one menu for every window, so it tracks whichever has focus, and
- * reads false when none does — the item acts on the focused window, and with no
- * focus there is nothing to act on. Everything else here is the app's and is the
- * same whatever is in front.
+ * there is one menu for every window, so it tracks whichever has focus. Both
+ * fields read false with nothing focused or with Settings focused — Settings
+ * is not a game window, so Always on Top has no window of that kind to act
+ * on, and `canPin` says so. Everything else here is the app's and is the same
+ * whatever is in front.
  */
 export interface MenuWindowState {
     /** Whether the focused window is pinned above other apps. */
     alwaysOnTop: boolean;
+    /** Whether a game window has focus — Always on Top has nothing to act on otherwise. */
+    canPin: boolean;
 }
 
 export function installMenu(
@@ -57,8 +63,28 @@ export function installMenu(
             ? [{ label: 'No servers in the list', enabled: false }]
             : servers.map(server => ({ label: serverMenuLabel(server), click: () => actions.newWindowFor(server.id) }));
 
+    const settingsItem: MenuItemConstructorOptions = { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => actions.openSettings() };
+    // Spelled out rather than `role: 'appMenu'`, which cannot take an item of
+    // ours, because Settings belongs in the app menu on macOS.
+    const appMenu: MenuItemConstructorOptions = {
+        label: app.name,
+        submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            settingsItem,
+            { type: 'separator' },
+            { role: 'services' },
+            { type: 'separator' },
+            { role: 'hide' },
+            { role: 'hideOthers' },
+            { role: 'unhide' },
+            { type: 'separator' },
+            { role: 'quit' }
+        ]
+    };
+
     const template: MenuItemConstructorOptions[] = [
-        ...(isMac ? [{ role: 'appMenu' as const }] : []),
+        ...(isMac ? [appMenu] : []),
         {
             label: 'File',
             submenu: [
@@ -67,6 +93,7 @@ export function installMenu(
                 { type: 'separator' },
                 { label: 'Edit Server List…', click: () => actions.editServers() },
                 { label: 'Reload Server List', click: () => actions.reloadServers() },
+                ...(isMac ? [] : [settingsItem]),
                 { type: 'separator' },
                 { role: 'close' }
             ]
@@ -78,9 +105,6 @@ export function installMenu(
                 // The only way back once the switch dialog's "Don't ask again" has been ticked.
                 { label: 'Warn Before Switching Worlds', type: 'checkbox', checked: warnOnSwitch, click: item => actions.setWarnOnSwitch(item.checked) },
                 { type: 'separator' },
-                // Disabled rather than hidden where the panel has no legal
-                // occupant — a chat-only server with chat in the dock — so the
-                // shortcut reads as unavailable here instead of broken.
                 { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => actions.newTab() },
                 { label: 'Close Tab', accelerator: 'CmdOrCtrl+Shift+W', click: () => actions.closeTab() },
                 /*
@@ -99,14 +123,16 @@ export function installMenu(
                 { label: 'Split Down', accelerator: 'CmdOrCtrl+Shift+D', click: () => actions.splitPane('y') },
                 { label: 'Close Pane', accelerator: 'CmdOrCtrl+W', click: () => actions.closePane() },
                 { label: 'Even Out', accelerator: 'CmdOrCtrl+Alt+=', click: () => actions.evenOut() },
-                // Acts on the focused window and reads back from it, so with
-                // nothing focused it is disabled rather than showing the
-                // remembered value as though some window were wearing it.
+                // Acts on the focused window and reads back from it, so it is
+                // disabled whenever there is no game window to act on —
+                // nothing focused, or Settings, which is not one — rather
+                // than showing the remembered value as though some window
+                // were wearing it.
                 {
                     label: 'Always on Top',
                     type: 'checkbox',
                     checked: window.alwaysOnTop,
-                    enabled: BrowserWindow.getFocusedWindow() !== null,
+                    enabled: window.canPin,
                     click: item => actions.setAlwaysOnTop(item.checked)
                 },
                 { type: 'separator' },

@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC, type ShellState, type ZanarisApi } from '../shared/ipc';
+import { IPC, type SettingsState, type ShellState, type ZanarisApi } from '../shared/ipc';
 import type { TimerAlert } from '../shared/timers';
 
 /**
- * The only bridge between the shell and main. Deliberately narrow: no raw
+ * The only bridge between the shell and main — a game window's shell and
+ * Settings' both, the same preload for either. Deliberately narrow: no raw
  * ipcRenderer, no channel names, no send passthrough. The push returns an
  * unsubscribe closure so React effects can clean up.
  *
@@ -95,6 +96,24 @@ const api: ZanarisApi = {
                 ipcRenderer.off(IPC.timersAlert, handler);
             };
         }
+    },
+    servers: {
+        open: id => ipcRenderer.invoke(IPC.serversOpen, id),
+        setStartup: (id, on) => ipcRenderer.invoke(IPC.serversStartup, id, on),
+        add: input => ipcRenderer.invoke(IPC.serversAdd, input),
+        remove: id => ipcRenderer.invoke(IPC.serversRemove, id)
+    },
+    settings: {
+        get: () => ipcRenderer.invoke(IPC.settingsGet),
+        onState: cb => {
+            const handler = (_event: unknown, state: SettingsState): void => cb(state);
+            ipcRenderer.on(IPC.settingsState, handler);
+            return () => {
+                ipcRenderer.off(IPC.settingsState, handler);
+            };
+        },
+        open: () => ipcRenderer.invoke(IPC.settingsOpen),
+        editServers: () => ipcRenderer.invoke(IPC.settingsEditServers)
     }
 };
 

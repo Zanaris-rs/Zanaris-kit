@@ -3,7 +3,7 @@ import type { Rect, ShellState } from '../shared/ipc';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { draggedFar, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
-import { Caret, Plus } from './icons';
+import { Caret, Gear, Plus } from './icons';
 import { playAlert } from './alertSound';
 import DropIndicator from './dropIndicator';
 import Grip from './grip';
@@ -36,6 +36,8 @@ const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', border
 const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 /** The tabs' height, with `.btn`'s padding traded for room on the caret's side. Inline for the same reason as the box above. */
 const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
+/** The tabs' height and a square face for one glyph. Inline for the same reason as the boxes above. */
+const GEAR_BOX: CSSProperties = { height: 26, width: 28, padding: 0 };
 
 /**
  * What the shell draws inside one pane, under the header every pane now has.
@@ -313,12 +315,13 @@ export default function Shell(): ReactNode {
         <div className="relative h-full overflow-hidden bg-ink text-cream">
             <div style={at(rects.tabBar)} className="flex flex-col">
                 {/*
-                 * Tabs and the control that makes one, then Add pane at the far
-                 * end, and nothing else. The game's read-out used to sit at this
-                 * bar's left on the grounds that it was the window's rather than
-                 * any tab's — true, but it left the bar reading as two unrelated
-                 * things, and a read-out about the game is easiest to believe
-                 * beside the game. It is in the game pane's own header now.
+                 * Tabs and the control that makes one, then Settings and Add
+                 * pane at the far end, and nothing else. The game's read-out
+                 * used to sit at this bar's left on the grounds that it was
+                 * the window's rather than any tab's — true, but it left the
+                 * bar reading as two unrelated things, and a read-out about
+                 * the game is easiest to believe beside the game. It is in
+                 * the game pane's own header now.
                  */}
                 <header style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
                     {/*
@@ -362,6 +365,22 @@ export default function Shell(): ReactNode {
                             <Plus />
                         </button>
                     </div>
+                    {/*
+                     * Settings: a window of its own rather than a pane, since
+                     * everything in it is the app's rather than this window's. A
+                     * gear and no word, beside a button that already has one; its
+                     * name is on the tooltip and the label.
+                     */}
+                    <button
+                        type="button"
+                        title="Settings"
+                        aria-label="Settings"
+                        onClick={() => void window.zanaris.settings.open()}
+                        style={GEAR_BOX}
+                        className="btn shrink-0 justify-center"
+                    >
+                        <Gear />
+                    </button>
                     {/*
                      * How a pane gets added, at the far end of the bar from the
                      * tabs. It replaced the tool rail down the window's right

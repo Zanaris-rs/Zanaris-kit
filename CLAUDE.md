@@ -60,11 +60,53 @@ Two properties in there are load-bearing and easy to break —
   so that one is merged into the parent (`absorb`). Every edge drop goes through
   a close, so without it an ordinary drag nests columns in columns.
 
+`TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved layout file
+carries tool ids between people — that is the whole point of saving one — and
+`readContent` checks every leaf's id against `TOOL_IDS` before the tree is
+trusted at all. One leaf naming an id the array no longer holds sinks the
+whole read: `readLayout` refuses the entire file rather than that one pane,
+and whoever tried to open it sees "That file isn't a Zanaris Kit layout" over
+a tab left exactly as it was. `instantiateLayout`'s own empty-pane fallback
+is a different, narrower thing — a tool `TOOL_IDS` still recognises but this
+particular window does not currently offer, Hiscores on a server with none or
+Your world outside its own window, which is meant to happen and costs only
+that pane. So an id, once shipped, is never removed or renamed: a kit that
+stopped knowing one would cost someone their whole saved arrangement, not just
+the pane that used it, the day they tried to open it here.
+
 > The old invariant said the opposite: opening chrome must never resize the
 > game, because resizing cost the login. The second half was never true —
 > `setBounds` does not reload a `WebContentsView`, only `loadURL` does — and the
 > first half went with the fixed columns that motivated it. The design is
 > `docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`.
+
+## The Settings window
+
+One window is not a game window: Settings, which holds what belongs to the
+app rather than to any one window — today the catalog and the startup set.
+`SettingsWindowSlot` (`src/main/settingsWindow.ts`) keeps it to one, and
+opening it again brings the open one forward, because two would be two
+copies of one thing. It has no parent window, since a parent would close it
+along with a game window, and it never holds up a quit.
+
+It is a window rather than a pane or a popover because the game and pages
+are native views stacked above the shell's HTML: anything the shell drew
+over them would sit underneath. It takes its state on its own channel,
+`settings.get` and `settings.onState`, never through `ShellState`. No game
+window's `state()` builds anything for it, which is how `windowCounts()` once
+came to recurse through `state()`. Only Settings may call the servers
+handlers.
+
+A catalog entry the kit ships with cannot be removed from Settings,
+for a plain reason: `Catalog.load` never puts a missing built-in back. At file
+version 5 `migrateCatalog` only validates what is already there, and the four
+refresh functions (`refreshYourWorld`, `refreshHiscores`, `refreshBookmarks`,
+`refreshTimers`) touch only entries already present — none of them re-adds one
+that is gone. So removing a built-in is permanent short of deleting
+`servers.json` by hand. The guard is `isRemovable`, in `src/main/servers.ts`;
+`Catalog.remove` itself is deliberately left as a general primitive, free to
+remove anything a caller hands it, because the rule about which callers may
+belongs at the one place that decides, not inside the primitive.
 
 ## Where logic is allowed to live
 
@@ -298,6 +340,7 @@ behaviour, re-read the comments around it before you commit.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev` / `npm start` | run it |
 | `npm run capture` | screenshot every view — see the hazard below |
+| `npm run fresh` | set the profile aside so the next launch is a first launch, keeping the builds and the characters |
 | `npm run stage:engine -- <id>` | stage a recipe into `engine-dist/` and `engine-<id>.tar.gz` |
 | `npm run pin:engine -- <id>` | write a published build's size and digest into its recipe |
 | `npm run dist` | electron-builder output |

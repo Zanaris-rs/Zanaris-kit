@@ -947,3 +947,13 @@ test('an entry that only borrowed a built-in id keeps its own timers', () => {
 test('newServerTimers is the list the built-ins carry', () => {
     assert.deepEqual(newServerTimers(), BUILT_IN_TIMERS);
 });
+
+test('a removed built-in does not come back on the next load, which is why Settings will not offer Remove for one', () => {
+    const file = tempFile();
+    const a = new Catalog(file);
+    a.load();
+    assert.equal(a.remove('lostcity'), true);
+    const b = new Catalog(file);
+    b.load();
+    assert.equal(b.get('lostcity'), undefined, 'nothing in load() re-adopts a missing built-in');
+});
