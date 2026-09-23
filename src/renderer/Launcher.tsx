@@ -33,7 +33,7 @@ function Row({ sprite, label, open, onOpen, link }: { sprite: ReactNode; label: 
                 type="button"
                 aria-current={open ? 'true' : undefined}
                 onClick={onOpen}
-                className={`flex min-w-0 flex-1 items-center gap-2 py-[2px] pr-2 pl-1 text-left ${open ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}
+                className={`flex min-w-0 flex-1 items-center gap-2.5 px-2 py-[6px] text-left ${open ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}
             >
                 <span className="shrink-0">{sprite}</span>
                 <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -50,12 +50,12 @@ function Row({ sprite, label, open, onOpen, link }: { sprite: ReactNode; label: 
                     title={`Open ${link.name} in your browser`}
                     aria-label={`Open ${link.name} in your browser`}
                     onClick={() => void window.zanaris.panes.openExternal(link.url)}
-                    className="flex w-[34px] shrink-0 items-center justify-center text-faint hover:text-cream"
+                    className="flex w-[30px] shrink-0 items-center justify-center text-faint hover:text-cream"
                 >
                     <OpenExternal />
                 </button>
             ) : (
-                <span aria-hidden="true" className="w-[34px] shrink-0" />
+                <span aria-hidden="true" className="w-[30px] shrink-0" />
             )}
         </li>
     );
