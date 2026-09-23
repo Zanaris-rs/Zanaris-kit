@@ -7,6 +7,11 @@ import { Caret, CloseRoom, NavArrow, Reload } from './icons';
  * The strip at the top of every pane: what the pane is, what that one thing can
  * do, and how to make it something else.
  *
+ * Every pane but one kind: a tab's lone pane has no strip of its own
+ * (`paneTree.headerOf`). Its tab already says its name, so the shell puts the
+ * rest — `PaneNav` and `PaneActions` — into the tab bar instead, and the pane
+ * keeps the 32px.
+ *
  * On all four kinds, not only on pages. A pane used to rely on its content to
  * introduce itself, which the game and a reference page cannot do at all —
  * they are native views with nothing of ours drawn in them — while the tools
@@ -130,18 +135,6 @@ export default function PaneHeader({
     /** This pane is the one being dragged. */
     grabbing?: boolean;
 }): ReactNode {
-    const go = window.zanaris.panes.go;
-    /*
-     * The menu opens under the button that asked for it. `getBoundingClientRect`
-     * is already in the window's coordinates, which is what `popup` wants,
-     * because the shell view spans the whole content area — the same reason a
-     * right-click can forward `clientX/Y` untouched.
-     */
-    const openMenu = (event: MouseEvent<HTMLButtonElement>): void => {
-        const box = event.currentTarget.getBoundingClientRect();
-        void window.zanaris.panes.contentMenu(pane.paneId, box.left, box.bottom);
-    };
-
     return (
         /*
          * The whole strip is the handle, not just the name: a browser tab is
@@ -160,30 +153,60 @@ export default function PaneHeader({
                 {pane.name}
             </span>
 
-            {pane.page && pane.rect.width >= ROOM_FOR_NAV && (
-                <>
-                    <Step label="Back" disabled={!pane.page.canGoBack} on={() => void go('back')}>
-                        <NavArrow />
-                    </Step>
-                    <Step label="Forward" disabled={!pane.page.canGoForward} on={() => void go('forward')}>
-                        <NavArrow forward />
-                    </Step>
-                    <Step label="Reload" disabled={false} on={() => void go('reload')}>
-                        <Reload />
-                    </Step>
-                    {/* The one thing the header keeps of the old toolbar's url field: a page
-                        that is still coming says so, which the curated name beside it never
-                        can — it is the same word before, during and after a load. First to
-                        go when the pane is too narrow for both, since the name is the pane's
-                        identity and this is only its weather. */}
-                    {pane.page.loading && pane.rect.width >= ROOM_FOR_LOADING && <span className="min-w-0 shrink truncate text-[12px] text-faint">Loading…</span>}
-                </>
-            )}
+            <PaneNav pane={pane} />
 
             {readout}
 
             <div className="min-w-0 flex-1" aria-hidden="true" />
 
+            <PaneActions pane={pane} />
+        </div>
+    );
+}
+
+/**
+ * A page's back, forward and reload, and whether it is still loading. Nothing
+ * for any other kind. In the pane's header, or in the tab bar for a lone pane.
+ */
+export function PaneNav({ pane }: { pane: PaneView }): ReactNode {
+    const go = window.zanaris.panes.go;
+    if (!pane.page || pane.rect.width < ROOM_FOR_NAV) return null;
+    return (
+        <>
+            <Step label="Back" disabled={!pane.page.canGoBack} on={() => void go('back')}>
+                <NavArrow />
+            </Step>
+            <Step label="Forward" disabled={!pane.page.canGoForward} on={() => void go('forward')}>
+                <NavArrow forward />
+            </Step>
+            <Step label="Reload" disabled={false} on={() => void go('reload')}>
+                <Reload />
+            </Step>
+            {/* The one thing the header keeps of the old toolbar's url field: a page
+                that is still coming says so, which the curated name beside it never
+                can — it is the same word before, during and after a load. First to
+                go when the pane is too narrow for both, since the name is the pane's
+                identity and this is only its weather. */}
+            {pane.page.loading && pane.rect.width >= ROOM_FOR_LOADING && <span className="min-w-0 shrink truncate text-[12px] text-faint">Loading…</span>}
+        </>
+    );
+}
+
+/** The dropdown and the close. In the pane's header, or in the tab bar for a lone pane. */
+export function PaneActions({ pane }: { pane: PaneView }): ReactNode {
+    /*
+     * The menu opens under the button that asked for it. `getBoundingClientRect`
+     * is already in the window's coordinates, which is what `popup` wants,
+     * because the shell view spans the whole content area — the same reason a
+     * right-click can forward `clientX/Y` untouched.
+     */
+    const openMenu = (event: MouseEvent<HTMLButtonElement>): void => {
+        const box = event.currentTarget.getBoundingClientRect();
+        void window.zanaris.panes.contentMenu(pane.paneId, box.left, box.bottom);
+    };
+
+    return (
+        <>
             <button
                 type="button"
                 title="Change or split this pane"
@@ -209,6 +232,6 @@ export default function PaneHeader({
             >
                 <CloseRoom />
             </button>
-        </div>
+        </>
     );
 }

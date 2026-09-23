@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendColumn, canAppendColumn, clearGame, closePane, contentOf, evenOut, halvable, layoutTree, leaf, movePane, paneIds, parentSplitOf, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane } from './paneTree.ts';
+import { appendColumn, canAppendColumn, clearGame, closePane, contentOf, evenOut, halvable, headerOf, layoutTree, leaf, movePane, paneIds, parentSplitOf, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane } from './paneTree.ts';
+import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -372,4 +373,11 @@ test('a column can be added only while every column, the new one included, fits 
     assert.equal(canAppendColumn(row, 368), true);
     const rows = split('s1', 'y', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
     assert.equal(canAppendColumn(rows, 244), true, 'rows stacked top and bottom are one column wide');
+});
+
+test('a lone pane has no header, and every pane has one once there are two', () => {
+    assert.equal(headerOf(leaf('a', { kind: 'game' })), 0);
+    const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
+    assert.equal(headerOf(tree), PANE_HEADER_HEIGHT);
+    assert.equal(headerOf(closePane(tree, 'b')), 0, 'closing back to one pane folds the header away again');
 });

@@ -1597,6 +1597,20 @@ async function captureAndExit(dir: string): Promise<void> {
         } finally {
             rmSync(layoutPath, { force: true });
         }
+
+        // The game left alone in its tab: the chat beside it closed, so the
+        // pane has no header and its controls sit in the tab bar. Every shot
+        // above has at least two panes, where every pane keeps its header.
+        const chatPane = second.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'chat');
+        if (chatPane) {
+            await second.closePane(chatPane.paneId);
+            await wait(500);
+            const lone = second.state().panes;
+            log(`[capture] ${second.state().title}: lone pane — ${panesOf(second)}, ${lone.length} pane(s), header ${lone.map(p => p.header).join(', ')}`);
+            await shoot(`${first.state().server.id}-lone-pane`, second);
+        } else {
+            log('[capture] lone pane skipped: the loaded tab had no chat pane to close');
+        }
     } catch (err) {
         fault(`aborted: ${(err as Error).stack ?? String(err)}`);
     } finally {

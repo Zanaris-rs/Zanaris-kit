@@ -5,6 +5,7 @@ import {
     closePane,
     contentOf,
     evenOut,
+    headerOf,
     layoutTree,
     leaf,
     paneIds,
@@ -17,7 +18,6 @@ import {
     type Rect
 } from './paneTree.ts';
 import { canDrop, dropPane, dropTargets, type DropTargets, type DropZone } from './paneDrop.ts';
-import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
 import { canClosePane, paneContentItems, paneName } from './paneMenu.ts';
 import { closeTab, closingTab, labelOfTab, loadingLayout, moveGame, newTab, nextIds, selectTab, type TabClosing, type TabSet } from './tabs.ts';
 import { instantiateLayout, type StoredNode } from './layoutFile.ts';
@@ -155,14 +155,15 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
      * A pane's rect less its header, which is the strip of shell drawn at the
      * top of it. Every native view is inset by this — the game's as much as a
      * page's — so the header always has the pane it names to sit in, and that
-     * cost comes out of the pane rather than out of the window.
+     * cost comes out of the pane rather than out of the window. A tab's lone
+     * pane has no header (`headerOf`), so its view starts at the pane's top.
      *
      * Clamped, because a pane can end up shorter than its own header: under the
      * window's own floor the solver cuts every pane proportionally, and a
      * negative height is not something to hand `setBounds`.
      */
     function below(rect: Rect): Rect {
-        const header = Math.min(PANE_HEADER_HEIGHT, rect.height);
+        const header = Math.min(headerOf(active()), rect.height);
         return { x: rect.x, y: rect.y + header, width: rect.width, height: rect.height - header };
     }
 
@@ -331,6 +332,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                     name: paneName(content, deps.bookmarks()),
                     focused: paneId === focused(),
                     closable: canClosePane(tree, paneId),
+                    header: headerOf(tree) > 0,
                     page: pageStates.get(paneId) ?? null,
                     // Only the launcher draws a list; every other pane reaches
                     // the same one through its header, which main pops as a
@@ -382,6 +384,10 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         endDrag: () => setDragging(false),
         rectOf: (paneId: string) => rects.get(paneId) ?? null,
+        viewRectOf: (paneId: string) => {
+            const rect = rects.get(paneId);
+            return rect ? below(rect) : null;
+        },
 
         newTab(): void {
             set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`);
@@ -554,6 +560,8 @@ export interface PaneHost {
     endDrag: () => void;
     /** Where a pane was last drawn, for anything that needs its size — the context menu asks whether it can still be halved. */
     rectOf: (paneId: string) => Rect | null;
+    /** Where a game or page pane's native view sits: its rect less its header, which a tab's lone pane does not have. */
+    viewRectOf: (paneId: string) => Rect | null;
     newTab: () => void;
     instantiate: (stored: StoredNode) => PaneNode;
     /** What loading a layout into a tab would do, the game above all — null when there is no such tab. Nothing changes until `replaceTab`. */

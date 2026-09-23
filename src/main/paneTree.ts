@@ -1,4 +1,4 @@
-import { COLUMN_PREFERRED_WIDTH, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM } from '../shared/layout.ts';
+import { COLUMN_PREFERRED_WIDTH, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
 /**
@@ -402,6 +402,21 @@ export function clearGame(node: PaneNode): PaneNode {
     if (node.kind === 'leaf') return node.content.kind === 'game' ? leaf(node.paneId, { kind: 'empty' }) : node;
     const children = node.children.map(clearGame);
     return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node;
+}
+
+/**
+ * How tall every pane's header is in this tree: nothing when the tree is one
+ * pane, the full strip otherwise.
+ *
+ * A lone pane has its tab's name already — `labelOfTab` is the first pane's
+ * name — so a header of its own said that word a second time and took 32px of
+ * the pane to do it. Its controls fold into the tab bar instead. Once there is
+ * a second pane, each needs its own name to be told apart, and every header
+ * comes back. A leaf root is the only way to have one pane, because a split
+ * left holding one child is collapsed into it.
+ */
+export function headerOf(node: PaneNode): number {
+    return node.kind === 'leaf' ? 0 : PANE_HEADER_HEIGHT;
 }
 
 /** Every pane in the tree, left to right and top to bottom. */

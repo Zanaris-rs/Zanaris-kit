@@ -2,7 +2,7 @@ import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuI
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
-import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
+import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import type { YourWorldView } from '../shared/yourworld';
@@ -466,8 +466,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     // ── labels ───────────────────────────────────────────────────────────
 
     function gameLabel(): string {
-        // The revision of the line the world runs, which a switch changes under an open window.
-        if (single) return `${server.name} · rev ${single.view().revision} · ${statusWord(single.view().status)}`;
+        // No revision: the readout beside this label adds it, from `revisionOf`,
+        // and a label that carried it too showed it twice.
+        if (single) return `${server.name} · ${statusWord(single.view().status)}`;
         return worldSwitch ? worldSwitch.label(server.name, currentLatency) : server.name;
     }
 
@@ -1139,10 +1140,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             event.preventDefault();
             const tree = host.tree();
             const gamePane = paneIds(tree).find(id => contentOf(tree, id)?.kind === 'game');
-            const rect = gamePane ? host.rectOf(gamePane) : null;
-            // The view starts below the pane's header, so that inset is part of
-            // putting the view's coordinates back into the window's.
-            if (gamePane && rect) showPaneMenu(gamePane, rect.x + params.x, rect.y + Math.min(PANE_HEADER_HEIGHT, rect.height) + params.y);
+            const view = gamePane ? host.viewRectOf(gamePane) : null;
+            // The view starts below the pane's header, when it has one, so that
+            // inset is part of putting the view's coordinates back into the window's.
+            if (gamePane && view) showPaneMenu(gamePane, view.x + params.x, view.y + params.y);
         });
         // Mouse back and forward buttons would walk the history of world switches.
         win.on('app-command', (event, command) => {

@@ -8,7 +8,7 @@ import { playAlert } from './alertSound';
 import DropIndicator from './dropIndicator';
 import Grip from './grip';
 import Launcher from './Launcher';
-import PaneHeader, { type Grab } from './paneHeader';
+import PaneHeader, { PaneActions, PaneNav, type Grab } from './paneHeader';
 import Tab from './tab';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
@@ -38,11 +38,11 @@ const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
 
 /**
- * What the shell draws inside one pane, under the header every pane now has.
+ * What the shell draws inside one pane, under its header when it has one.
  *
  * Two of the four kinds draw nothing at all: a game or a page is a native
  * WebContentsView that main has already positioned over this rect, inset below
- * the header, so the shell leaves the rest of the pane empty exactly as it left
+ * any header, so the shell leaves the rest of the pane empty exactly as it left
  * the old content rect empty. A page's back, forward and reload moved up into
  * the header with everything else that names a pane rather than works in one.
  */
@@ -308,6 +308,9 @@ export default function Shell(): ReactNode {
     if (!state) return <div className="h-full bg-ink" />;
 
     const { rects } = state;
+    /** The tab's only pane, when it has no header of its own and the tab bar carries its controls. */
+    const lone = state.panes.length === 1 && !state.panes[0]!.header ? state.panes[0]! : undefined;
+    const readoutFor = (pane: PaneView): ReactNode => (pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined);
 
     return (
         <div className="relative h-full overflow-hidden bg-ink text-cream">
@@ -318,7 +321,10 @@ export default function Shell(): ReactNode {
                  * bar's left on the grounds that it was the window's rather than
                  * any tab's — true, but it left the bar reading as two unrelated
                  * things, and a read-out about the game is easiest to believe
-                 * beside the game. It is in the game pane's own header now.
+                 * beside the game. It is in the game pane's own header now —
+                 * except when that pane is the tab's only one, which has no
+                 * header, and whose controls sit here between the tabs and Add
+                 * pane instead.
                  */}
                 <header style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
                     {/*
@@ -362,6 +368,18 @@ export default function Shell(): ReactNode {
                             <Plus />
                         </button>
                     </div>
+                    {/*
+                     * A lone pane's header, folded in: everything it carried
+                     * but the name, which the tab beside it already says, and
+                     * the grab, since one pane has nowhere to be dropped.
+                     */}
+                    {lone && (
+                        <>
+                            <PaneNav pane={lone} />
+                            {readoutFor(lone)}
+                            <PaneActions pane={lone} />
+                        </>
+                    )}
                     {/*
                      * How a pane gets added, at the far end of the bar from the
                      * tabs. It replaced the tool rail down the window's right
@@ -425,22 +443,24 @@ export default function Shell(): ReactNode {
                         className={`flex flex-col overflow-hidden bg-ink${pane.content.kind === 'tool' || pane.content.kind === 'empty' ? ' tile' : ''}`}
                     >
                         {/*
-                         * Every pane, including the two whose bodies are holes
-                         * for a native view: the header is the only part of a
-                         * game or page pane the shell draws, and the only place
-                         * either can say what it is — and so the only place
-                         * any pane can say it is the focused one. The dot is
-                         * shown only when there is a choice: a tab's lone pane
-                         * is focused by definition, and a mark that is always
-                         * there says nothing.
+                         * Every pane of a tab with more than one, including the
+                         * two whose bodies are holes for a native view: the
+                         * header is the only part of a game or page pane the
+                         * shell draws, and the only place either can say what
+                         * it is — and so the only place any pane can say it is
+                         * the focused one. A tab's lone pane has none: its tab
+                         * already names it, it is focused by definition, and
+                         * its controls are in the tab bar.
                          */}
-                        <PaneHeader
-                            pane={pane}
-                            active={pane.focused && state.panes.length > 1}
-                            readout={pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined}
-                            grab={grabFor(pane.paneId)}
-                            grabbing={drag?.from === pane.paneId}
-                        />
+                        {pane.header && (
+                            <PaneHeader
+                                pane={pane}
+                                active={pane.focused}
+                                readout={readoutFor(pane)}
+                                grab={grabFor(pane.paneId)}
+                                grabbing={drag?.from === pane.paneId}
+                            />
+                        )}
                         <PaneBody pane={pane} state={state} />
                         {/*
                          * Over the body only, so the header stays readable and
@@ -457,7 +477,7 @@ export default function Shell(): ReactNode {
                                 className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center font-pixel text-[15px] ${
                                     drag.from === pane.paneId ? 'text-faint opacity-60' : 'text-dim'
                                 }`}
-                                style={{ top: PANE_HEADER_HEIGHT }}
+                                style={{ top: pane.header ? PANE_HEADER_HEIGHT : 0 }}
                             >
                                 {drag.over === pane.paneId && drag.over !== drag.from && drag.targets ? null : pane.name}
                             </div>

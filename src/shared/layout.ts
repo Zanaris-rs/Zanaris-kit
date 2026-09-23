@@ -53,6 +53,11 @@ export const COLUMN_PREFERRED_WIDTH = 320;
  * and which cost the tools a heading apiece in a window where every pane already
  * has an edge. The game and page views are inset below it by
  * this much, so it costs that pane's own height and never the window's.
+ *
+ * Except a tab's lone pane, which has none (`paneTree.headerOf`): its tab
+ * already says its name, so its controls sit in the tab bar and it keeps
+ * these pixels. The preferred heights below still count a header, because the
+ * window opens with the game and chat split, where both panes have one.
  */
 export const PANE_HEADER_HEIGHT = 32;
 

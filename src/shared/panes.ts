@@ -24,6 +24,8 @@ export interface PaneView {
     focused: boolean;
     /** Whether the header's close would do anything — false only for a tab's lone pane that is already empty. Main's, from `paneMenu.canClosePane`, which the right-click menu asks too. */
     closable: boolean;
+    /** Whether the pane draws a header of its own. False for a tab's lone pane, whose controls sit in the tab bar instead. Main's, from `paneTree.headerOf`. */
+    header: boolean;
     /** Null unless `content.kind === 'page'`. */
     page: PageState | null;
     /**
