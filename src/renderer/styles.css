@@ -306,13 +306,16 @@ input {
     background: var(--color-gold);
 }
 
-/* A divider scored into the stone: the cut, then a hairline of light under it. */
+/*
+ * A divider scored into the stone: the cut, then a hairline of light under it.
+ * It runs the width of the list it divides, inset as far as the rows' own
+ * sprites are, so it reads as the list splitting in two rather than a stray dash.
+ */
 .sep {
-    width: 32px;
     height: 2px;
     background: var(--color-edge-dark);
     border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-    margin: 2px 0;
+    margin: 6px 8px;
 }
 
 /* Links look like links here, as they did then. */
@@ -338,4 +341,19 @@ input {
     border: 2px solid var(--color-edge-dark);
     border-top-color: var(--color-edge-lit);
     border-left-color: var(--color-edge-lit);
+}
+
+/*
+ * The game's sprites, drawn at half their pixels (`sprites.tsx`). On a 2x
+ * display that is one sprite pixel per screen pixel, and nearest-neighbour
+ * keeps every edge. On a 1x display it throws away every other pixel, which
+ * shreds a 32px item, so there they are averaged down instead.
+ */
+.sprite {
+    image-rendering: pixelated;
+}
+@media (max-resolution: 1.5dppx) {
+    .sprite {
+        image-rendering: auto;
+    }
 }
