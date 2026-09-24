@@ -53,8 +53,9 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
  * cost here a player cannot scroll or read past. On a display too short for
  * that, chat gives way down to the floor first and the game takes the rest;
  * only below two floors are they shared in proportion, and there the solver's
- * own minimums decide. Nothing remembers these numbers — they are the shares
- * the split starts with, and the fractions carry them from there.
+ * own minimums decide. Nothing in the tree remembers these numbers — they are
+ * the shares the split starts with. A resize keeps the game at whatever size it
+ * has, and Reset Game Size is the way back to these.
  *
  * Focus is on the game, so Cmd/Ctrl+D and a right-click's splits start from the
  * pane the player is looking at rather than from the chat below it.

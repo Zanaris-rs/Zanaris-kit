@@ -47,7 +47,7 @@ be shown. What a tab close takes with it is `tabs.closingTab`, pure and tested;
 
 Everything else about the layout is `src/main/paneTree.ts`: a tab is a tree of
 leaves and n-ary splits, and one recursive walk turns it into a rect per pane.
-Two properties in there are load-bearing and easy to break —
+Three properties in there are load-bearing and easy to break —
 
 - Shares are distributed by **largest remainder**, so children sum to their
   container exactly. A round per child leaves a hairline of shell showing
@@ -59,6 +59,10 @@ Two properties in there are load-bearing and easy to break —
   running the same way as its parent (a row collapsing into the column it held),
   so that one is merged into the parent (`absorb`). Every edge drop goes through
   a close, so without it an ordinary drag nests columns in columns.
+- A window resize **keeps the game's pixels** (`keepGame`) and is fitted from
+  the arrangement the player last left (`refit`), **not from the last frame**.
+  Shrinking past the other panes' floors squeezes the game; fitted frame from
+  frame, growing back would then hold it at the squeezed size for good.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved layout file
 carries tool ids between people — that is the whole point of saving one — and

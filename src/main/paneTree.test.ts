@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendColumn, canAppendColumn, clearGame, closePane, contentOf, evenOut, halvable, layoutTree, leaf, movePane, paneIds, parentSplitOf, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane } from './paneTree.ts';
+import { appendColumn, canAppendColumn, clearGame, closePane, contentOf, evenOut, halvable, keepGame, layoutTree, leaf, movePane, paneIds, parentSplitOf, refit, resetGame, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -372,4 +372,146 @@ test('a column can be added only while every column, the new one included, fits 
     assert.equal(canAppendColumn(row, 368), true);
     const rows = split('s1', 'y', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
     assert.equal(canAppendColumn(rows, 244), true, 'rows stacked top and bottom are one column wide');
+});
+
+// ── the game holds its size ──────────────────────────────────────────────
+
+const game = leaf('g', { kind: 'game' });
+const chat = leaf('c', { kind: 'tool', tool: 'chat' });
+const drawn = (tree: PaneNode, size: Size, paneId: string): Size => {
+    const rect = layoutTree(tree, { x: 0, y: 0, width: size.width, height: size.height }).panes.get(paneId)!;
+    return { width: rect.width, height: rect.height };
+};
+/** The game over chat a new window opens with: 567 of game, a seam, 232 of chat. */
+const opened = split('s1', 'y', [game, chat], [567 / 799, 232 / 799]);
+const openedAt = { width: 765, height: 803 };
+
+test('a window grown taller gives the height to the pane below the game, and none to the game', () => {
+    const taller = { width: 765, height: 1003 };
+    const tree = keepGame(opened, openedAt, taller);
+    assert.equal(drawn(tree, taller, 'g').height, 567, 'the game keeps its height');
+    assert.equal(drawn(tree, taller, 'c').height, 432, 'chat takes all 200 new pixels');
+});
+
+test('a window grown wider gives the width to the panes beside the game, in proportion to their sizes', () => {
+    const a = leaf('a', { kind: 'empty' });
+    const b = leaf('b', { kind: 'empty' });
+    // 765 of game, 300 and 200 beside it, two seams.
+    const row = split('s1', 'x', [game, a, b], [765 / 1265, 300 / 1265, 200 / 1265]);
+    const from = { width: 1273, height: 600 };
+    const wider = { width: 1773, height: 600 };
+    const tree = keepGame(row, from, wider);
+    assert.equal(drawn(tree, wider, 'g').width, 765);
+    assert.equal(drawn(tree, wider, 'a').width, 600, 'three fifths of the 500 new pixels');
+    assert.equal(drawn(tree, wider, 'b').width, 400, 'and two fifths');
+});
+
+test('the game keeps its size to the pixel, and the row still tiles, at any width with room for it', () => {
+    const a = leaf('a', { kind: 'empty' });
+    const b = leaf('b', { kind: 'empty' });
+    const row = split('s1', 'x', [a, game, b], [1 / 3, 1 / 3, 1 / 3]);
+    const from = { width: 1003, height: 600 };
+    const held = drawn(row, from, 'g').width;
+    for (let width = 700; width <= 2400; width += 37) {
+        const to = { width, height: 600 };
+        const tree = keepGame(row, from, to);
+        assert.equal(drawn(tree, to, 'g').width, held, `the game is ${held}px wide at a ${width}px window`);
+        const panes = layoutTree(tree, { x: 0, y: 0, ...to }).panes;
+        assert.equal(panes.get('b')!.x + panes.get('b')!.width, width, `and the row ends at the window's edge at ${width}px`);
+    }
+});
+
+test('a game nested in a column beside a row keeps both its width and its height', () => {
+    const worlds = leaf('w', { kind: 'tool', tool: 'worlds' });
+    // 765 of column and 331 of Worlds across; 567 of game and 232 of chat down.
+    const tree = split('s1', 'x', [split('s2', 'y', [game, chat], [567 / 799, 232 / 799]), worlds], [765 / 1096, 331 / 1096]);
+    const from = { width: 1100, height: 803 };
+    const to = { width: 1500, height: 1000 };
+    const next = keepGame(tree, from, to);
+    assert.deepEqual(drawn(next, to, 'g'), { width: 765, height: 567 });
+    assert.equal(drawn(next, to, 'w').width, 731, 'Worlds takes the width');
+    assert.equal(drawn(next, to, 'c').height, 429, 'chat takes the height');
+});
+
+test('shrinking takes the other panes to their floor first, and only then the game', () => {
+    const shorter = { width: 765, height: 600 };
+    const tree = keepGame(opened, openedAt, shorter);
+    assert.equal(drawn(tree, shorter, 'c').height, 80, 'chat goes to its floor');
+    assert.equal(drawn(tree, shorter, 'g').height, 516, 'and the game gives up the rest');
+});
+
+test('a tree with no game in it scales every pane, as it always has', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    assert.equal(keepGame(tree, { width: 804, height: 600 }, { width: 1204, height: 600 }), tree);
+});
+
+test('the same size, or a game alone in its tab, leaves the tree as it was', () => {
+    assert.equal(keepGame(opened, openedAt, { ...openedAt }), opened);
+    assert.equal(keepGame(game, openedAt, { width: 1200, height: 900 }), game, 'nothing beside it to take the room');
+});
+
+test('a resize is fitted from the arrangement the player left, so shrinking past the floors and growing back restores the game', () => {
+    const first = refit(null, opened, openedAt);
+    assert.equal(first.shown, opened, 'the first layout is the arrangement itself');
+    const squeezed = refit(first, first.shown, { width: 765, height: 400 });
+    assert.equal(drawn(squeezed.shown, { width: 765, height: 400 }, 'g').height, 316);
+    const back = refit(squeezed, squeezed.shown, openedAt);
+    assert.equal(drawn(back.shown, openedAt, 'g').height, 567, 'the game is back at the size it was left at');
+    assert.equal(back.base, opened, 'fitted from the same arrangement throughout');
+});
+
+test('a change the player makes becomes the arrangement later sizes are fitted from', () => {
+    const taller = { width: 765, height: 1003 };
+    const first = refit(null, opened, openedAt);
+    const grown = refit(first, first.shown, taller);
+    // A seam drag at the taller size: the game made 700 tall.
+    const dragged = setSeam(grown.shown, 's1', 0, 700, 999);
+    const after = refit(grown, dragged, taller);
+    assert.equal(after.base, dragged, 'the dragged tree is the new arrangement');
+    assert.equal(after.shown, dragged, 'and at the size it was made at, it is what is shown');
+    const shrunk = refit(after, after.shown, { width: 765, height: 900 });
+    assert.equal(drawn(shrunk.shown, { width: 765, height: 900 }, 'g').height, 700, 'the game keeps the size it was dragged to');
+});
+
+test('Reset Game Size puts the game back to the size a new window opens it at', () => {
+    const size = { width: 765, height: 1003 };
+    const even = split('s1', 'y', [game, chat], [0.5, 0.5]);
+    const tree = resetGame(even, size, { width: 765, height: 567 });
+    assert.equal(drawn(tree, size, 'g').height, 567);
+    assert.equal(drawn(tree, size, 'c').height, 432, 'chat has the rest');
+});
+
+test('Reset Game Size grows a game that is too small as well as shrinking one that is too big', () => {
+    const worlds = leaf('w', { kind: 'tool', tool: 'worlds' });
+    const size = { width: 1500, height: 600 };
+    const tree = resetGame(split('s1', 'x', [game, worlds], [0.3, 0.7]), size, { width: 765, height: 567 });
+    assert.equal(drawn(tree, size, 'g').width, 765);
+    assert.equal(drawn(tree, size, 'g').height, 600, 'nothing is above or below the game to take the height, so it keeps it');
+});
+
+test('Reset Game Size reaches a game nested in a column, and leaves the panes around it as they were', () => {
+    const a = leaf('a', { kind: 'empty' });
+    const b = leaf('b', { kind: 'empty' });
+    const other = split('s3', 'y', [a, b], [0.25, 0.75]);
+    const tree = split('s1', 'x', [split('s2', 'y', [game, chat], [0.5, 0.5]), other], [0.5, 0.5]);
+    const size = { width: 1504, height: 1000 };
+    const next = resetGame(tree, size, { width: 765, height: 567 });
+    assert.deepEqual(drawn(next, size, 'g'), { width: 765, height: 567 });
+    assert.equal(next.kind === 'split' && next.children[1], other, 'the column beside it is the same column, only narrower');
+});
+
+test('Reset Game Size stops at the floor of the panes beside the game', () => {
+    const worlds = leaf('w', { kind: 'tool', tool: 'worlds' });
+    const size = { width: 880, height: 600 };
+    const tree = resetGame(split('s1', 'x', [game, worlds], [0.5, 0.5]), size, { width: 765, height: 567 });
+    assert.equal(drawn(tree, size, 'w').width, 120, 'Worlds goes no smaller than its floor');
+    assert.equal(drawn(tree, size, 'g').width, 756, 'so the game gets as close as there is room for');
+});
+
+test('Reset Game Size leaves the tree as it was when it would change nothing', () => {
+    const want = { width: 765, height: 567 };
+    assert.equal(resetGame(opened, openedAt, want), opened, 'already at its size');
+    assert.equal(resetGame(game, { width: 1200, height: 900 }, want), game, 'alone in its tab, with nothing to trade space with');
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    assert.equal(resetGame(tree, { width: 1204, height: 600 }, want), tree, 'no game in this tab');
 });
