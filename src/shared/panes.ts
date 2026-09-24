@@ -2,8 +2,9 @@
 import type { PaneContent, Rect } from '../main/paneTree.ts';
 import type { PaneContentItem } from '../main/paneMenu.ts';
 import type { DropTargets, DropZone } from '../main/paneDrop.ts';
+import type { TabMark } from '../main/tabs.ts';
 
-export type { DropTargets, DropZone, PaneContent, PaneContentItem, Rect };
+export type { DropTargets, DropZone, PaneContent, PaneContentItem, Rect, TabMark };
 
 /** A page pane's own navigation state, as its toolbar reads it. One per page leaf, not one per window. */
 export interface PageState {
@@ -59,4 +60,6 @@ export interface TabView {
     /** What the tab button says: its first pane's name, as that pane's header says it. */
     label: string;
     active: boolean;
+    /** What is still running in it while another tab is in front. Always empty on the active tab. Main's, from `tabs.marksOfTab`. */
+    marks: TabMark[];
 }

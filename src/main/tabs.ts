@@ -126,6 +126,54 @@ export function closingTab(set: TabSet, tabId: string): TabClosing {
     return holdsGame(tab.tree) ? 'game' : 'tab';
 }
 
+/** Whether a tab's panes include Your world's. */
+function holdsYourWorld(tree: PaneNode): boolean {
+    return paneIds(tree).some(id => {
+        const content = contentOf(tree, id);
+        return content?.kind === 'tool' && content.tool === 'singleplayer';
+    });
+}
+
+/**
+ * Something still running in a tab that is not in front. The mark sits on
+ * the tab because clicking the tab is what brings it back.
+ *
+ * - `game`: the game keeps playing out of sight, since `backgroundThrottling:
+ *   false` is what a tab switch rests on. Out of sight, a character still
+ *   standing in the world can die to things its player never sees.
+ * - `sharing`: a link to Your world is live, and anyone who has it can log
+ *   in. The world alone is not marked. It runs for as long as its window is
+ *   open, since it is the server the game plays on, so a mark for it would
+ *   never go away.
+ */
+export type TabMark = 'game' | 'sharing';
+
+/**
+ * What a tab would tell someone who is looking at a different one.
+ *
+ * Nothing for the tab in front, since whatever it holds is already on screen.
+ * The same goes for a second Your world pane behind a tab that shows one: that
+ * link is not out of sight.
+ */
+export function marksOfTab(set: TabSet, tabId: string, sharing: boolean): TabMark[] {
+    const tab = set.tabs.find(t => t.id === tabId);
+    if (!tab || tab.id === set.activeId) return [];
+    const marks: TabMark[] = [];
+    if (holdsGame(tab.tree)) marks.push('game');
+    const front = set.tabs.find(t => t.id === set.activeId);
+    if (sharing && holdsYourWorld(tab.tree) && !(front && holdsYourWorld(front.tree))) marks.push('sharing');
+    return marks;
+}
+
+/**
+ * Whether a live link has no pane in any tab to show it, which leaves no tab to
+ * mark. The bar says so itself in that case. The game never gets here, because
+ * closing its pane is what stops it.
+ */
+export function sharingWithoutPane(trees: readonly PaneNode[], sharing: boolean): boolean {
+    return sharing && !trees.some(holdsYourWorld);
+}
+
 /**
  * Puts the game in a pane, taking it from wherever in the window it was.
  *

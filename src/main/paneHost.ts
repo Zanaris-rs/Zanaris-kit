@@ -23,7 +23,7 @@ import {
 import { canDrop, dropPane, dropTargets, type DropTargets, type DropZone } from './paneDrop.ts';
 import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
 import { canClosePane, paneContentItems, paneName } from './paneMenu.ts';
-import { closeTab, closingTab, labelOfTab, loadingLayout, moveGame, newTab, nextIds, selectTab, type TabClosing, type TabSet } from './tabs.ts';
+import { closeTab, closingTab, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, selectTab, type TabClosing, type TabSet } from './tabs.ts';
 import { instantiateLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
@@ -63,6 +63,8 @@ export interface PaneHostDeps {
     /** The tools this window offers, in its own order — the first half of what a pane's header offers to become. */
     tools: () => readonly ToolId[];
     hosts: () => readonly string[];
+    /** Whether a link to Your world is live, which marks a background tab holding its pane. */
+    sharing: () => boolean;
     log: (line: string) => void;
     /**
      * The arrangement the window opens with. Nothing is carried over from last
@@ -360,7 +362,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             return set.tabs.map(tab => ({
                 id: tab.id,
                 label: labelOfTab(tab.tree, deps.bookmarks()),
-                active: tab.id === set.activeId
+                active: tab.id === set.activeId,
+                marks: marksOfTab(set, tab.id, deps.sharing())
             }));
         },
 

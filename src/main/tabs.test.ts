@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, layoutTree, leaf, paneIds, split } from './paneTree.ts';
-import { closeTab, closingTab, labelOfTab, loadingLayout, moveGame, newTab, nextIds, openTabs, openWindowTabs, selectTab } from './tabs.ts';
+import { closeTab, closingTab, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, openTabs, openWindowTabs, selectTab, sharingWithoutPane } from './tabs.ts';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 
 test('a one-pane set holds whatever it was given', () => {
@@ -240,4 +240,57 @@ test('the game leaves only one pane, however many tabs are open', () => {
     const moved = moveGame(set, 'pane-3');
     const games = moved.tabs.flatMap(tab => paneIds(tab.tree).filter(id => contentOf(tab.tree, id)?.kind === 'game'));
     assert.deepEqual(games, ['pane-3'], 'one game leaf in the whole window, which is all there is a view for');
+});
+
+/** Two tabs: the game and Your world side by side in `a`, and an empty `b` in front. */
+function playingBehind(): ReturnType<typeof openTabs> {
+    const a = split('split-1', 'x', [leaf('p1', { kind: 'game' }), leaf('p2', { kind: 'tool', tool: 'singleplayer' })], [0.5, 0.5]);
+    return newTab({ tabs: [{ id: 'a', tree: a, focusedPaneId: 'p1' }], activeId: 'a' }, 'b', 'p3');
+}
+
+test('a game in a background tab marks that tab', () => {
+    const set = newTab(openTabs('a', 'p1', { kind: 'game' }), 'b', 'p2');
+    assert.deepEqual(marksOfTab(set, 'a', false), ['game']);
+    assert.deepEqual(marksOfTab(set, 'b', false), [], 'the tab without it has nothing to say');
+});
+
+test('the tab in front carries no mark, since what it holds is on screen', () => {
+    const set = selectTab(playingBehind(), 'a');
+    assert.deepEqual(marksOfTab(set, 'a', true), []);
+});
+
+test('a live link marks the background tab holding Your world, after the game', () => {
+    assert.deepEqual(marksOfTab(playingBehind(), 'a', true), ['game', 'sharing']);
+});
+
+test('Your world is marked only while it is shared, since the world itself is the window', () => {
+    assert.deepEqual(marksOfTab(playingBehind(), 'a', false), ['game']);
+});
+
+test('a link already shown in the tab in front marks no other tab', () => {
+    const behind = split('split-1', 'x', [leaf('p1', { kind: 'empty' }), leaf('p2', { kind: 'tool', tool: 'singleplayer' })], [0.5, 0.5]);
+    const set = {
+        tabs: [
+            { id: 'a', tree: behind, focusedPaneId: 'p1' },
+            { id: 'b', tree: leaf('p3', { kind: 'tool', tool: 'singleplayer' }), focusedPaneId: 'p3' }
+        ],
+        activeId: 'b'
+    };
+    assert.deepEqual(marksOfTab(set, 'a', true), [], 'Your world is on screen in b, so a second copy behind it is not out of sight');
+});
+
+test('a tab that is not there has no marks', () => {
+    assert.deepEqual(marksOfTab(playingBehind(), 'nope', true), []);
+});
+
+test('a live link with Your world in no tab at all is for the bar to say', () => {
+    const trees = newTab(openTabs('a', 'p1', { kind: 'game' }), 'b', 'p2').tabs.map(tab => tab.tree);
+    assert.equal(sharingWithoutPane(trees, true), true);
+    assert.equal(sharingWithoutPane(trees, false), false, 'with no link there is nothing to say');
+});
+
+test('a Your world pane in any tab, in front or behind, leaves the bar with nothing to say', () => {
+    const set = playingBehind();
+    assert.equal(sharingWithoutPane(set.tabs.map(tab => tab.tree), true), false, 'behind: the tab carries the mark');
+    assert.equal(sharingWithoutPane(selectTab(set, 'a').tabs.map(tab => tab.tree), true), false, 'in front: the pane itself says so');
 });

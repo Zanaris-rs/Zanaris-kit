@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState } from '../shared/ipc';
-import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
+import type { DropTargets, DropZone, PaneView, SeamView, TabView } from '../shared/panes';
 import { draggedFar, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { Caret, Gear, Plus } from './icons';
@@ -10,6 +10,7 @@ import Grip from './grip';
 import Launcher from './Launcher';
 import PaneHeader, { type Grab } from './paneHeader';
 import Tab from './tab';
+import { gameSprite } from './sprites';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
 import YourWorld from './tools/YourWorld';
@@ -38,6 +39,38 @@ const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
 /** The tabs' height and a square face for one glyph. Inline for the same reason as the boxes above. */
 const GEAR_BOX: CSSProperties = { height: 26, width: 28, padding: 0 };
+/** The tabs' height, in the warn colour Your world's own sharing notice uses. Inline because `.btn` sets its gold in unlayered CSS. */
+const SHARING_BOX: CSSProperties = { height: 26, color: 'var(--color-warn)' };
+
+/**
+ * What a tab in the background still has running, after its label: the game's
+ * minimap flag, and Sharing while a link to Your world is live. Main decides
+ * which (`tabs.marksOfTab`), and the tab in front never has any, because what
+ * it holds is on screen.
+ *
+ * The flag rather than a dot, which already means the focused pane in a
+ * header. A word for the link, since it is the one of the two that lets
+ * someone else in.
+ */
+function TabMarks({ tab }: { tab: TabView }): ReactNode {
+    return (
+        <>
+            {tab.marks.includes('game') && (
+                <span className="shrink-0">
+                    {gameSprite()}
+                    <span className="sr-only">, game running</span>
+                </span>
+            )}
+            {tab.marks.includes('sharing') && <span className="shrink-0 text-[12px] text-warn">Sharing</span>}
+        </>
+    );
+}
+
+/** A tab's tooltip: its full name, and why it carries a mark. */
+function tabTitle(tab: TabView): string {
+    const why = [tab.marks.includes('game') && 'the game is still running here', tab.marks.includes('sharing') && 'Your world is shared with a link'].filter(Boolean);
+    return why.length === 0 ? tab.label : `${tab.label} (${why.join('; ')})`;
+}
 
 /**
  * What the shell draws inside one pane, under the header every pane now has.
@@ -344,8 +377,9 @@ export default function Shell(): ReactNode {
                                 key={tab.id}
                                 role="tab"
                                 label={tab.label}
-                                title={tab.label}
+                                title={tabTitle(tab)}
                                 open={tab.active}
+                                after={<TabMarks tab={tab} />}
                                 onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
                                 onClose={() => void window.zanaris.panes.closeTab(tab.id)}
                                 onContextMenu={event => {
@@ -365,6 +399,22 @@ export default function Shell(): ReactNode {
                             <Plus />
                         </button>
                     </div>
+                    {/*
+                     * A live link with no pane showing Your world, so no tab
+                     * can carry the mark. It opens the pane, whose Friends
+                     * section is where the link is copied or stopped.
+                     */}
+                    {state.sharingWithoutPane && (
+                        <button
+                            type="button"
+                            title="Your world is shared with a link, and no pane shows it. Open Your world"
+                            onClick={() => void window.zanaris.panes.showYourWorld()}
+                            style={SHARING_BOX}
+                            className="btn shrink-0"
+                        >
+                            Sharing
+                        </button>
+                    )}
                     {/*
                      * Settings: a window of its own rather than a pane, since
                      * everything in it is the app's rather than this window's. A

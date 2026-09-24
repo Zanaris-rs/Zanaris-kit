@@ -33,6 +33,7 @@ export const IPC = {
     tabSelect: 'zanaris:tab-select',
     tabContextMenu: 'zanaris:tab-context-menu',
     tabAddPaneMenu: 'zanaris:tab-add-pane-menu',
+    tabShowYourWorld: 'zanaris:tab-show-your-world',
     paneOpenExternal: 'zanaris:pane-open-external',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
@@ -114,10 +115,9 @@ export interface ShellState {
     /** The window's title, which follows the world. */
     title: string;
     /**
-     * What the strip says about the game: the server, its world, its detail
-     * and its latency. A read-out where a pinned game tab used to be — the
-     * game is never behind anything now, so there was nothing left to switch
-     * to and nothing for a tab to mean.
+     * What the game pane's header says about the game: the server, its world,
+     * its detail and its latency. It sat at the left of the tab bar once, as a
+     * read-out where a pinned game tab used to be.
      */
     gameLabel: string;
     /** Where main placed the window's own chrome, relative to its content area, so the shell draws exactly there. */
@@ -148,6 +148,12 @@ export interface ShellState {
     yourWorld: YourWorldView | null;
     /** Whether that world is shared with a link; null wherever `yourWorld` is. */
     share: ShareView | null;
+    /**
+     * A link to Your world is live and no pane in any tab shows it, so no tab
+     * can carry the mark and the bar shows it instead. Main's, from
+     * `tabs.sharingWithoutPane`.
+     */
+    sharingWithoutPane: boolean;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
 }
@@ -294,6 +300,12 @@ export interface ZanarisApi {
          * Coordinates are the window's.
          */
         addPaneMenu(x: number, y: number): Promise<void>;
+        /**
+         * The bar's Sharing button, shown while a link is live and no pane
+         * shows Your world: opens its pane as a column down the active tab's
+         * right edge, or in a new tab of its own when there is no room for one.
+         */
+        showYourWorld(): Promise<void>;
         /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */
         openExternal(url: string): Promise<void>;
     };

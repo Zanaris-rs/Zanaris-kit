@@ -821,6 +821,8 @@ ipcMain.handle(IPC.tabAddPaneMenu, (event, x: unknown, y: unknown) => {
     windowFor(event.sender)?.showAddPaneMenu(x, y);
 });
 
+ipcMain.handle(IPC.tabShowYourWorld, event => windowFor(event.sender)?.showYourWorld());
+
 ipcMain.handle(IPC.tabClose, async (event, tabId: unknown) => {
     if (typeof tabId !== 'string') return;
     await windowFor(event.sender)?.closeTab(tabId);
@@ -1899,6 +1901,18 @@ async function captureAndExit(dir: string): Promise<void> {
             const tabs = second.state().tabs.map(tab => tab.label).join(', ');
             log(`[capture] ${second.state().title}: saved "${saved}", loaded into a new tab: ${result} — now "${panesOf(second)}", tabs ${tabs}`);
             await shoot(`${first.state().server.id}-layout-loaded`, second);
+
+            // The game is in the second tab now, so bringing the first one to
+            // the front hides it: the second tab should carry the game's flag,
+            // and the tab in front should carry nothing.
+            const front = second.state().tabs[0];
+            if (front && !front.active) {
+                second.selectTab(front.id);
+                await wait(500);
+                const marks = second.state().tabs.map(tab => `${tab.label}${tab.active ? ' (front)' : ''}: [${tab.marks.join(', ')}]`).join('; ');
+                log(`[capture] ${second.state().title}: game behind another tab — ${marks}`);
+                await shoot(`${first.state().server.id}-game-behind`, second);
+            }
         } finally {
             rmSync(layoutPath, { force: true });
         }
