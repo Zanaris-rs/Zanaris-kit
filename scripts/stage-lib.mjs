@@ -66,6 +66,46 @@ export function findNativeModules(dir) {
 }
 
 /**
+ * Every symbolic link under dir, as forward-slash paths relative to dir, none
+ * of them followed. Empty means the tree can be archived and unpacked the same
+ * everywhere: Windows' tar cannot make a link without the privilege to.
+ */
+export function findSymlinks(dir) {
+    const found = [];
+    const walk = current => {
+        for (const entry of readdirSync(current, { withFileTypes: true })) {
+            const path = join(current, entry.name);
+            if (entry.isSymbolicLink()) found.push(relative(dir, path).split(sep).join('/'));
+            else if (entry.isDirectory()) walk(path);
+        }
+    };
+    walk(dir);
+    return found;
+}
+
+/**
+ * Every file under dir whose forward-slash path relative to dir is longer than
+ * `max` characters, longest first. The kit unpacks a build several folders
+ * deep in the player's data folder, and on Windows a path past 260 characters
+ * is one the system tar may not be able to write.
+ */
+export function findLongPaths(dir, max) {
+    const found = [];
+    const walk = current => {
+        for (const entry of readdirSync(current, { withFileTypes: true })) {
+            const path = join(current, entry.name);
+            if (entry.isDirectory()) walk(path);
+            else {
+                const rel = relative(dir, path).split(sep).join('/');
+                if (rel.length > max) found.push(rel);
+            }
+        }
+    };
+    walk(dir);
+    return found.sort((a, b) => b.length - a.length);
+}
+
+/**
  * The static NPC count from a booted world's output, or null when the world never
  * loaded a game map. GameMap.init() prints "<added>/<max> static NPCs added" as its
  * last act; when `<build.srcDir>/maps` is missing it returns before any of that, and
@@ -100,6 +140,11 @@ export function readPatches(dir) {
  */
 export function patchStamp(patches) {
     return patches.map(({ name, sha256 }) => `${name} ${sha256}`).join('\n');
+}
+
+/** The patch set in eight hex digits, for a build's tag: the start of the stamp's sha-256. */
+export function patchHash(patches) {
+    return createHash('sha256').update(patchStamp(patches)).digest('hex').slice(0, 8);
 }
 
 /**

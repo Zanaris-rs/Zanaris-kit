@@ -1,11 +1,11 @@
-import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage } from 'electron';
+import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage, type WebContents } from 'electron';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
-import type { SinglePlayerView } from '../shared/singleplayer';
+import type { YourWorldView } from '../shared/yourworld';
 import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
@@ -81,24 +81,28 @@ const GAME_PAGE_CSS = `
 
 export type LoadResult = 'loaded' | 'failed';
 
-/** What a single-player window needs of the service; the service itself satisfies it. */
-export interface SinglePlayerHandle {
-    view(): SinglePlayerView;
+/** What a window running your world needs of the service; the service itself satisfies it. */
+export interface YourWorldHandle {
+    view(): YourWorldView;
     subscribe(fn: () => void): () => void;
     acquire(): Promise<string>;
     release(): void;
     retry(): Promise<string>;
+    /** The selected line's build, asked for from the starting page. */
+    download(): Promise<void>;
 }
 
-/** What a single-player window needs of sharing: a view to draw, and a count of the windows that can stop it. */
+/** What a window running your world needs of sharing: a view to draw, and a count of the windows that can stop it. */
 export interface ShareHandle {
     view(): ShareView;
     acquire(): void;
     release(): void;
 }
 
-const STATUS_WORD: Record<SinglePlayerView['status'], string> = {
+const STATUS_WORD: Record<YourWorldView['status'], string> = {
     stopped: 'stopped',
+    missing: 'not downloaded',
+    downloading: 'downloading',
     preparing: 'getting ready',
     starting: 'starting',
     ready: 'running',
@@ -106,8 +110,24 @@ const STATUS_WORD: Record<SinglePlayerView['status'], string> = {
     failed: 'failed'
 };
 
-function statusWord(status: SinglePlayerView['status']): string {
+function statusWord(status: YourWorldView['status']): string {
     return STATUS_WORD[status];
+}
+
+/**
+ * Whether a view composites two frames within a second and a half, for
+ * capture mode. Two frames: the first schedules the render, the second proves
+ * it composited. Raced against a timeout because requestAnimationFrame does
+ * not fire at all in a window that is covered — waiting on it alone hangs
+ * forever, which is exactly what it did — and the timeout answers false,
+ * because a view that is not painting leaves capturePage its last frame.
+ */
+export async function paintsFrames(contents: WebContents): Promise<boolean> {
+    const frames = contents.executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))').then(
+        () => true,
+        () => false
+    );
+    return Promise.race([frames, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 1_500))]);
 }
 
 export interface ServerWindowDeps {
@@ -117,7 +137,7 @@ export interface ServerWindowDeps {
     position: { x: number; y: number } | null;
     /** The server's shared world list and latency, or null when the server has one page. */
     worlds: WorldsService | null;
-    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of a single-player window's menus. */
+    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of the menus of a window running your world. */
     hiscores: HiscoresService | null;
     /**
      * The one conversation, which is the app's rather than this window's: every
@@ -150,8 +170,8 @@ export interface ServerWindowDeps {
     /** Latency of one host, for the current world's readout. */
     probe: (host: string, port: number, timeoutMs: number) => Promise<number | null>;
     /** The world this computer runs, for a window of kind singleplayer; null otherwise. */
-    singlePlayer: SinglePlayerHandle | null;
-    /** Sharing that world. Only a single-player window takes it. */
+    yourWorld: YourWorldHandle | null;
+    /** Sharing that world. Only a window running your world takes it. */
     share: ShareHandle | null;
     /**
      * This window's clock definitions — its server's built-ins with the
@@ -240,16 +260,23 @@ export interface ServerWindow extends ServerWindowHandle {
     setDetail(detail: Detail): Promise<LoadResult | 'unchanged'>;
     refreshWorlds(): Promise<void>;
     /**
-     * Resolves once the shell has actually painted what main last pushed.
-     * capturePage hands back the last composited frame, so without this a
-     * capture taken right after a state change photographs the previous one —
-     * which had capture mode reporting a stale panel three times over.
+     * Whether the shell is painting: true once it has composited two frames
+     * since the call, false if it has not within a second and a half.
+     * capturePage hands back the last composited frame, so a shot of a shell
+     * that is not painting — its window covered by another app's —
+     * photographs whatever it last drew, and reads as correct in the log.
+     * That had capture mode reporting a stale panel three times over, and
+     * writing byte-identical shots of different steps.
      */
-    settle(): Promise<void>;
+    settle(): Promise<boolean>;
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
-    /** The focused page pane, for capture mode. Resolves with null when no pane holds a page: there is no view to shoot. */
+    /**
+     * The focused page pane, for capture mode. Resolves with null when no pane
+     * holds a page: there is no view to shoot. Rejects when the page is not
+     * painting, rather than hand back the frame it last drew.
+     */
     capturePage(): Promise<NativeImage | null>;
 }
 
@@ -267,7 +294,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const { server } = spec;
     const tag = `[${spec.title}]`;
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
-    const single = server.kind === 'singleplayer' ? deps.singlePlayer : null;
+    const single = server.kind === 'singleplayer' ? deps.yourWorld : null;
     const shared = single ? deps.share : null;
     /**
      * The tools this window offers. Chat is app-scoped, so every window offers
@@ -439,7 +466,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     // ── labels ───────────────────────────────────────────────────────────
 
     function gameLabel(): string {
-        if (single) return `${server.name} · rev ${server.revision ?? '?'} · ${statusWord(single.view().status)}`;
+        // The revision of the line the world runs, which a switch changes under an open window.
+        if (single) return `${server.name} · rev ${single.view().revision} · ${statusWord(single.view().status)}`;
         return worldSwitch ? worldSwitch.label(server.name, currentLatency) : server.name;
     }
 
@@ -483,7 +511,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             worlds: worldsView(),
             hiscores: deps.hiscores?.view() ?? null,
             chat: deps.chat(),
-            singlePlayer: single?.view() ?? null,
+            yourWorld: single?.view() ?? null,
             share: shared?.view() ?? null,
             timers: { clocks: clocks.view(), customsFull }
         };
@@ -1002,33 +1030,47 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
-     * The starting page in the state the service is in. Only a single-player
-     * window shows it. `pagefailed` is the page's own state, not the world's:
+     * The starting page in the state the service is in. Only a window
+     * running your world shows it. `pagefailed` is the page's own state, not the world's:
      * the world is up and its page is what would not load.
      */
-    function showStarting(override?: { state: SinglePlayerView['status'] | 'pagefailed'; reason: string }): void {
+    function showStarting(override?: { state: YourWorldView['status'] | 'pagefailed'; reason: string }): void {
         if (!single || win.isDestroyed()) return;
         const view = single.view();
+        const line = view.builds.find(l => l.id === view.selected);
         const version = view.version ? `engine ${view.version.engine.slice(0, 8)} · content ${view.version.content.slice(0, 8)} · rev ${view.version.revision}` : '';
+        const query = {
+            state: override?.state ?? view.status,
+            version,
+            reason: override?.reason ?? view.reason ?? '',
+            log: view.logTail.slice(-20).join('\n'),
+            // What a missing world would download, and how far it has got, in tens
+            // of percent: finer, and a 50 MB download would reload this page a
+            // hundred times.
+            build: line ? `${line.name} · rev ${line.revision}` : '',
+            size: line?.size != null ? String(Math.round(line.size / 1_000_000)) : '',
+            available: line && line.size !== null && line.state !== 'unavailable' ? '1' : '',
+            progress: line?.progress != null ? String(Math.floor(line.progress * 10) * 10) : ''
+        };
+        // Every change to the service lands here while the world is not ready,
+        // the store's progress included. The same page already showing is left alone.
+        const key = JSON.stringify(query);
+        if (key === shownStarting && gameView?.webContents.getURL().includes('starting.html')) return;
+        shownStarting = key;
         // This page supersedes a game load still in flight — the world died between
         // becoming ready and the page finishing. Chromium reports the superseded load
         // as ERR_ABORTED, which did-fail-load ignores, and this page's own
         // did-finish-load settles nothing, so the waiter would wait forever.
         if (gameLoadPending) settleLoad('failed');
         failedOver = true;
-        void gameView?.webContents.loadFile(STARTING_PAGE, {
-            query: {
-                state: override?.state ?? view.status,
-                version,
-                reason: override?.reason ?? view.reason ?? '',
-                log: view.logTail.slice(-20).join('\n')
-            }
-        });
+        void gameView?.webContents.loadFile(STARTING_PAGE, { query });
     }
+    /** The query of the starting page last loaded, so an identical one is not loaded again. */
+    let shownStarting: string | null = null;
 
     /** The world changed state: load the game when it is ready, show the page otherwise. */
     let loadedGameUrl: string | null = null;
-    function syncSinglePlayer(): void {
+    function syncYourWorld(): void {
         if (!single) return;
         const view = single.view();
         refreshLabels();
@@ -1069,16 +1111,21 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             const decision = decideNavigation({ current: wc.getURL(), target: url, expected });
             if (decision === 'allow') return;
             event.preventDefault();
+            if (decision === 'download') {
+                deps.log(`${tag} downloading the world's build`);
+                void single?.download();
+                return;
+            }
             if (decision === 'retry') {
                 deps.log(`${tag} retrying the world`);
                 // Forgetting the url is what lets the same one be loaded again: when the
                 // world is already up and only its page failed, retry() resolves off the
-                // ready status without changing it, so nothing notifies and syncSinglePlayer
+                // ready status without changing it, so nothing notifies and syncYourWorld
                 // would otherwise see the url it has already loaded and do nothing.
                 loadedGameUrl = null;
                 void single?.retry().then(
-                    () => syncSinglePlayer(),
-                    () => syncSinglePlayer()
+                    () => syncYourWorld(),
+                    () => syncYourWorld()
                 );
                 return;
             }
@@ -1248,12 +1295,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         loadPromise = new Promise<LoadResult>(resolve => {
             loadWaiter = resolve;
         });
-        unsubscribeSingle = single.subscribe(syncSinglePlayer);
+        unsubscribeSingle = single.subscribe(syncYourWorld);
         showStarting();
         void single.acquire().then(
-            () => syncSinglePlayer(),
+            () => syncYourWorld(),
             () => {
-                syncSinglePlayer();
+                syncYourWorld();
                 settleLoad('failed');
             }
         );
@@ -1352,16 +1399,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             await deps.worlds.list(true);
             await deps.worlds.probeAll(worldSwitch.detail);
         },
-        settle: async () => {
-            // Two frames: the first schedules the render, the second proves it
-            // composited. Raced against a timeout because requestAnimationFrame
-            // does not fire at all in an occluded window — waiting on it alone
-            // hangs forever, which is exactly what it did.
-            const painted = shellView.webContents
-                .executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
-                .catch(() => undefined);
-            await Promise.race([painted, new Promise(resolve => setTimeout(resolve, 1_500))]);
-        },
+        settle: () => paintsFrames(shellView.webContents),
         captureShell: () => shellView.webContents.capturePage(),
         captureGame: () => gameView?.webContents.capturePage() ?? Promise.reject(new Error('no game view')),
         capturePage: async () => {
@@ -1373,11 +1411,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // was hidden on. That photographed a forum that had long since
             // finished booting as a page still showing its loading spinner —
             // a stale frame reported as a broken feature, which is the whole
-            // hazard the shell's own settle exists for.
-            const painted = view.webContents
-                .executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
-                .catch(() => undefined);
-            await Promise.race([painted, new Promise(resolve => setTimeout(resolve, 1_500))]);
+            // hazard the shell's own settle exists for. A page that paints
+            // nothing is refused rather than shot, for the same reason.
+            if (!(await paintsFrames(view.webContents))) throw new Error('the page is not painting');
             return view.webContents.capturePage();
         }
     };

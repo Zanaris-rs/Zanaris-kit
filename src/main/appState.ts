@@ -4,10 +4,10 @@ import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
 import { AUTO_JOIN_MAX, channelProblem, isNick } from '../shared/chatSettings.ts';
-import type { SinglePlayerSettings } from '../shared/singleplayer.ts';
+import type { YourWorldSettings } from '../shared/yourworld.ts';
 import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
-import { readSinglePlayerSettings } from './singleplayer/settings.ts';
+import { readYourWorldBuild, readYourWorldSettings } from './yourworld/settings.ts';
 
 interface StateFile {
     version: 1;
@@ -15,10 +15,17 @@ interface StateFile {
     warnOnSwitch: boolean;
     /** `nickserv` is the NickServ password sealed by the OS store (`chat/secret.ts`), and absent when there is none. */
     chat: ChatSettings & { nickserv?: string };
-    singlePlayer: SinglePlayerSettings;
+    /**
+     * `build` is the line the player chose, absent until they choose one.
+     * The key is still `singlePlayer`: the tool was renamed, the files people
+     * have were not, and nobody reads this one.
+     */
+    singlePlayer: YourWorldSettings & { build?: string };
     hiscores: Record<string, string>;
     alwaysOnTop: boolean;
     timers: TimersState;
+    /** Which servers a launch opens, in the order they were ticked. Empty, or absent, means the first catalog entry — what a launch has always done. */
+    startup: string[];
 }
 
 // Well past base37's 12-character limit, so no real player name is ever
@@ -29,6 +36,10 @@ const HISCORES_NAME_MAX = 30;
 // A sealed password is base64 of a few hundred bytes at most; anything far past
 // that is not one, and is not worth handing to the OS store to fail on.
 const SEALED_MAX = 4096;
+
+// The catalog a person curates by hand is small; this only stops a hand-edited
+// file from naming thousands of windows to open at once.
+const STARTUP_MAX = 16;
 
 /**
  * DEFAULT_CHAT, cloned deep enough that autoJoin is never shared: every other
@@ -111,6 +122,22 @@ function readHiscores(x: unknown): Record<string, string> {
 }
 
 /**
+ * Reads a stored startup list one entry at a time, for the same reason as
+ * readChat and readHiscores: one bad entry must not cost the user their
+ * remembered worlds. Ids are not checked against the catalog here — that is
+ * `startupServers`' job at launch, and the catalog is not loaded yet.
+ */
+function readStartup(x: unknown): string[] {
+    if (!Array.isArray(x)) return [];
+    const startup: string[] = [];
+    for (const id of x) {
+        if (startup.length >= STARTUP_MAX) break;
+        if (typeof id === 'string' && id !== '' && !startup.includes(id)) startup.push(id);
+    }
+    return startup;
+}
+
+/**
  * Small per-user state. Mostly choices the user made in passing rather than
  * settings they configured — the last world and detail chosen per server, and
  * whether they still want warning before a switch reloads the game — and, now,
@@ -130,8 +157,9 @@ export class AppState {
     private chatSettings: ChatSettings = defaultChat();
     // Sealed, never the password itself: see `chat/secret.ts`.
     private nickservSealed: string | null = null;
-    // The single-player world's settings: cheats off, xp as the game gives it and members on, until asked otherwise.
-    private singlePlayer: SinglePlayerSettings = readSinglePlayerSettings(undefined);
+    // Your world's settings: cheats off, xp as the game gives it and members on, until asked otherwise.
+    private yourWorld: YourWorldSettings = readYourWorldSettings(undefined);
+    private yourWorldBuildId: string | null = null;
     // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
     private hiscoresNames = new Map<string, string>();
     // Off until asked for: a window that floats over everything else is not
@@ -140,6 +168,7 @@ export class AppState {
     // The player's own countdowns and timers, and their changes to the kit's.
     // App-wide: the same list in every window, whatever its server.
     private timersState: TimersState = emptyTimersState();
+    private startup: string[] = [];
 
     constructor(file: string) {
         this.file = file;
@@ -150,10 +179,12 @@ export class AppState {
         this.warn = true;
         this.chatSettings = defaultChat();
         this.nickservSealed = null;
-        this.singlePlayer = readSinglePlayerSettings(undefined);
+        this.yourWorld = readYourWorldSettings(undefined);
+        this.yourWorldBuildId = null;
         this.hiscoresNames = new Map();
         this.onTop = false;
         this.timersState = emptyTimersState();
+        this.startup = [];
         if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
@@ -166,11 +197,13 @@ export class AppState {
             if (typeof parsed?.warnOnSwitch === 'boolean') this.warn = parsed.warnOnSwitch;
             this.chatSettings = readChat(parsed?.chat);
             this.nickservSealed = readSealed(parsed?.chat);
-            this.singlePlayer = readSinglePlayerSettings(parsed?.singlePlayer);
+            this.yourWorld = readYourWorldSettings(parsed?.singlePlayer);
+            this.yourWorldBuildId = readYourWorldBuild((parsed?.singlePlayer as { build?: unknown } | undefined)?.build);
             this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
             // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
             if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
             this.timersState = readTimers(parsed?.timers);
+            this.startup = readStartup(parsed?.startup);
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
         }
@@ -236,17 +269,27 @@ export class AppState {
         if (patch.autoJoin !== undefined) this.chatSettings.autoJoin = [...patch.autoJoin];
     }
 
-    /** The single-player world's settings. A copy: changes go through setSinglePlayerSettings. */
-    singlePlayerSettings(): SinglePlayerSettings {
-        return { ...this.singlePlayer };
+    /** Your world's settings. A copy: changes go through setYourWorldSettings. */
+    yourWorldSettings(): YourWorldSettings {
+        return { ...this.yourWorld };
     }
 
     /**
-     * Read back through `readSinglePlayerSettings` on the way in, as a file
+     * Read back through `readYourWorldSettings` on the way in, as a file
      * would be, so nothing stored here can be something a later load would drop.
      */
-    setSinglePlayerSettings(patch: Partial<SinglePlayerSettings>): void {
-        this.singlePlayer = readSinglePlayerSettings({ ...this.singlePlayer, ...patch });
+    setYourWorldSettings(patch: Partial<YourWorldSettings>): void {
+        this.yourWorld = readYourWorldSettings({ ...this.yourWorld, ...patch });
+        this.save();
+    }
+
+    /** The build line the player last chose for your world; null before they have chosen one. */
+    yourWorldBuild(): string | null {
+        return this.yourWorldBuildId;
+    }
+
+    setYourWorldBuild(id: string): void {
+        this.yourWorldBuildId = readYourWorldBuild(id);
         this.save();
     }
 
@@ -298,6 +341,23 @@ export class AppState {
         this.save();
     }
 
+    /** The ids a launch opens, in the order ticked. Named for ids, not servers, so it does not read as the pure `startupServers` that resolves them. A copy. */
+    startupIds(): string[] {
+        return [...this.startup];
+    }
+
+    setStartupServer(id: string, on: boolean): void {
+        const at = this.startup.indexOf(id);
+        if (on && at < 0) {
+            // The same cap readStartup enforces on the way in, so a list grown
+            // past it here does not silently lose its tail on the next load.
+            if (this.startup.length >= STARTUP_MAX) return;
+            this.startup.push(id);
+        } else if (!on && at >= 0) this.startup.splice(at, 1);
+        else return;
+        this.save();
+    }
+
     save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
         const data: StateFile = {
@@ -305,10 +365,11 @@ export class AppState {
             worlds: Object.fromEntries(this.worlds),
             warnOnSwitch: this.warn,
             chat: this.nickservSealed === null ? this.chatSettings : { ...this.chatSettings, nickserv: this.nickservSealed },
-            singlePlayer: this.singlePlayer,
+            singlePlayer: this.yourWorldBuildId === null ? this.yourWorld : { ...this.yourWorld, build: this.yourWorldBuildId },
             hiscores: Object.fromEntries(this.hiscoresNames),
             alwaysOnTop: this.onTop,
-            timers: this.timersState
+            timers: this.timersState,
+            startup: [...this.startup]
         };
         writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }

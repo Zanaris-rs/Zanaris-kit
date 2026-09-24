@@ -1,5 +1,5 @@
 /**
- * The developer commands a single-player world takes with cheats on, as the
+ * The developer commands your world takes with cheats on, as the
  * Commands section lists them. There are two kinds, and they are typed
  * differently in the game's chat box:
  *
@@ -42,9 +42,9 @@ const param = (name: string, type: string, optional = false): CommandParam => ({
 const engine = (name: string, params: CommandParam[], note: string): CommandRef => ({ kind: 'engine', name, params, note, group: null });
 
 /**
- * The engine's own commands that can do something in single player: every
+ * The engine's own commands that can do something in your world: every
  * branch of ClientCheatHandler.ts open to staff level 4, less the ones gated
- * on `node.production`, which single player never turns on, and two that can
+ * on `node.production`, which your world never turns on, and two that can
  * never act here. `::rebuild` needs build.liveReload, which the kit turns off,
  * and `::random` sets a flag the AFK_EVENT command ignores for staff while
  * node.debug is off, which the kit never turns on.

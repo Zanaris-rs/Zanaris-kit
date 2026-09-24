@@ -122,7 +122,7 @@ function readContent(x: unknown): PaneContent | null {
  *
  * Empty rather than refused, because the rest of the layout is still worth
  * having. A tool this window does not offer — Hiscores on a server with
- * no lookup, Single player anywhere but its own window — and a page that is not
+ * no lookup, Your world anywhere but its own window — and a page that is not
  * one of this server's links both come up as the launcher, which is honest
  * about the gap and one click from filling it. The page rule is not a nicety:
  * a page view may only ever hold one of the server's own links, and a file is

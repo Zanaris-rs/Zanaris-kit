@@ -119,7 +119,7 @@ test('a pane is named for what it holds', () => {
     assert.equal(paneName({ kind: 'empty' }), 'Empty');
     assert.equal(paneName({ kind: 'game' }), 'Game');
     assert.equal(paneName({ kind: 'tool', tool: 'hiscores' }), 'Hiscores');
-    assert.equal(paneName({ kind: 'tool', tool: 'singleplayer' }), 'Single player', 'two words, not a capitalised id');
+    assert.equal(paneName({ kind: 'tool', tool: 'singleplayer' }), 'Your world', 'the name people read, not the stored id');
     assert.equal(paneName({ kind: 'page', bookmark: LINKS[1]!.url }, LINKS), 'World Map', "the catalog's curated name, not the page's own title");
 });
 

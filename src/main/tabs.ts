@@ -37,11 +37,12 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
 /**
  * The arrangement a new window opens with: the game, and chat below it.
  *
- * On the game because there is no launcher window in this kit and never has
- * been — the File menu makes windows, and every one of them is a game window.
- * With chat under it because chat is the kit's own reason to be open instead of
- * a browser tab, and a pane nobody knows is there is a pane nobody opens. Below
- * rather than beside, where the 2004 client keeps its own chat box, so the
+ * On the game because a game window opens straight onto its game — Settings
+ * is the app's one other window, and it has no tabs or panes of its own, so
+ * whatever reaches this function is building a game window. With chat under
+ * it because chat is the kit's own reason to be open instead of a browser
+ * tab, and a pane nobody knows is there is a pane nobody opens. Below rather
+ * than beside, where the 2004 client keeps its own chat box, so the
  * conversation gets the game's full width.
  *
  * `gameHeight` is the game pane's preferred height, which is the stock one

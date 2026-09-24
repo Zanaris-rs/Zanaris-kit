@@ -3,7 +3,7 @@ import { CloseRoom } from './icons';
 
 /**
  * The text-bearing interface tab, worn by the window strip, by the chat
- * pane's row of Settings, Status and channels, and by the Single player
+ * pane's row of Settings, Status and channels, and by the Your world
  * tool's rows of sections and command lists.
  *
  * It lives here rather than in either of them because they are the same

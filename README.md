@@ -5,7 +5,7 @@ server, where every window knows which server it is running and can hop
 between that server's worlds.
 
 **Status: split panes — any pane, any axis, dragged and closed like iTerm —
-on top of the reference pane and single player.** The window is a tree of
+on top of the reference pane and your world.** The window is a tree of
 panes now rather than four fixed regions: the game, a reference page and any
 tool can sit anywhere in it, split left/right or up/down, and every seam
 drags. A fresh pane shows a launcher of this server's links and this window's
@@ -45,12 +45,31 @@ a newer version, adds Help > Update Available, which opens that page. Set
 
 ## What it does
 
-There is no launcher or management window; there are only game windows. New
-ones come from the **File menu**: New Window (Cmd/Ctrl+N) opens another window
-of the focused window's server, and New Window For lists the catalog. At
-startup the app opens the first server in the catalog, Lost City. On macOS the
+There are game windows, and one Settings window for the app; new game windows
+come from the **File menu**, from Settings' Open buttons, and at launch from
+the servers ticked there. New Window (Cmd/Ctrl+N) opens another window of the
+focused window's server, and New Window For lists the catalog. On macOS the
 app keeps running with no windows and the dock menu opens one; elsewhere
 closing the last window quits, since the menu lives in the window.
+
+The catalog lives in **Settings**, one window for the whole app, opened from
+the gear at the right of every window's tab bar or from Settings…
+(Cmd/Ctrl+,); opening it again brings the open one forward rather than making
+another. Its Servers section lists every server with how many of its windows
+are open, an Open button that starts another, and a checkbox for whether a
+launch opens it: tick two servers and relaunching opens both, untick every row
+and a launch falls back to the catalog's first entry, exactly what an empty
+list has always done. The same section adds a server through a short form and
+removes one — except the handful the kit ships with, which nothing in the app
+can put back once gone, so it does not offer to take them out. Below the list,
+Edit server list… opens `servers.json` itself, for the fields no form here
+exposes — a server's worlds source, its bookmarks, its map — and the kit
+re-reads that file whenever a window regains focus, so it is safe to edit with
+the kit running. Settings opens when you ask for it and never on its own; a
+launch with nothing ticked opens Lost City, as it always has. It is a window
+rather than a pane or a popover because the game is a
+native view drawn above the tab bar's own page, so anything that page drew
+over the game would sit underneath it.
 
 A **server window** is bound to one catalog entry for its whole life. The game
 pane's own header reads "Lost City · W5 · low · 43 ms": the server, the world,
@@ -87,7 +106,7 @@ none is. What is remembered is simply the last thing you asked for: windows
 opened after it, and the next launch, start pinned or unpinned to match.
 
 **Hiscores** is the other server tool, offered for the three remote
-servers only — a one-player world has nobody to rank, so single player never
+servers only — a one-player world has nobody to rank, so your world never
 gets it. A name box and a Look up button sit above a Skill · Rank · Lvl · XP
 table; the lookup fires on submit, never on a keystroke, since Lost City
 rate-limits after a handful of requests inside a minute and typing a name would
@@ -143,7 +162,7 @@ pane shows. It lists this server's links, in order — for Lost City: Forums,
 Coordinates, Clue Help, Puzzle Solver, World Map, Markets, Quest Guides, Skill
 Guides, Skills Calculator, Bestiary and Item Database; for Zanaris the nine of
 those that are not Lost City's own forums and prices; for Lost City Labs and
-single player nothing — alongside the tools this window offers and the game.
+your world nothing — alongside the tools this window offers and the game.
 Clicking one fills the pane you are looking at. Split first and you fill the new
 half instead, which is how two pages end up side by side.
 
@@ -171,14 +190,17 @@ browser instead. Every seam drags, on both axes, and the pane before a seam —
 the one to its left, or above it — is the one that grows as you push the seam
 away from it.
 
-**Single player** needs no server at all: the kit carries the Lost City engine
-and the game's files, and File > New Window For > Single player starts a world
-on this computer. There is no account and nothing to sign up for — any name
-typed at the login screen becomes a character, and its saves live in the app's
-own data folder: `Application Support/zanaris-kit/singleplayer/data/players/main`
-on macOS, `%APPDATA%\zanaris-kit\singleplayer\...` on Windows,
-`~/.config/zanaris-kit/singleplayer/...` on Linux. The Single player tool says
-what the world is doing, and has four sections. **World** holds what the kit
+**Your world** needs no server at all: File > New Window For > Your world
+starts a world on this computer. The kit does not carry the server itself. The
+first time, the window offers to download it — a build of Lost City, about
+50 MB, from the kit's own releases on GitHub, checked against a digest this
+version of the kit carries before anything runs. There is no account and
+nothing to sign up for — any name typed at the login screen becomes a
+character, and its saves live in the app's own data folder, one world per game
+revision: `Application Support/zanaris-kit/yourworld/worlds/274/data/players/main`
+on macOS, `%APPDATA%\zanaris-kit\yourworld\worlds\274\...` on Windows,
+`~/.config/zanaris-kit/yourworld/worlds/274/...` on Linux. The Your world
+tool says what the world is doing, and has five sections. **World** holds what the kit
 writes into the world's configuration: Cheats, which turns the engine's
 developer commands on for the whole world; an XP rate of 1×, 2×, 5× or 10×; and
 Members, which off makes it a free world. Each change restarts a running world,
@@ -188,8 +210,14 @@ and deletes them; a deleted character, or one another replaces, goes to the
 system trash. The game writes a save when you log out and every 15 minutes.
 **Commands** lists what cheats unlock: the content's debug procs, typed
 `::~name` in the chat box, and the engine's own `::` commands. The game cannot
-paste, so the list is there to read and type from. **Friends** shares the world
-with a link; see Playing with friends below.
+paste, so the list is there to read and type from. **Builds** lists the builds
+this kit knows — Lost City 274, and Lost City 289, which Lost City itself marks
+as for developers — and downloads, switches between and removes them. Each
+revision keeps its own characters: switching from 274 to 289 starts with none,
+and switching back finds them again. Characters' Copy to… copies one across,
+after saying the other game may read it differently, since a save holds items
+and progress from the game that wrote it. **Friends** shares the world with a
+link; see Playing with friends below.
 
 Your world is not a live one, and it does not pretend to be: the RuneScape
 Guide will offer to skip the tutorial, whether cheats are on or off and however
@@ -200,7 +228,7 @@ the Cheats switch controls is the staff level the world gives you and everyone
 you share it with: it turns the developer commands on, and with them the few
 things the game does differently for staff — random events, for one, stop.
 
-**Playing with friends.** The Single player tool's Friends section lets friends
+**Playing with friends.** The Your world tool's Friends section lets friends
 join that world from a browser. Share with friends downloads Cloudflare's tunnel
 program the first time — 19 to 55 MB depending on the system, from Cloudflare's
 own GitHub release, checked against a digest pinned in the kit — then opens a
@@ -212,7 +240,7 @@ then the kit asks only Cloudflare's own nameservers about the link: an ordinary
 resolver that asks too early can go on saying it does not exist for half an
 hour. The kit asks before
 the download and before every share. The link lasts until you stop sharing,
-close the last Single player window, or quit. Restarting the world, which any
+close the last window for your world, or quit. Restarting the world, which any
 change in World does, keeps it: friends reload once the world is back. Each new
 share gets a new link.
 
@@ -275,8 +303,8 @@ date it was created.
 Chat is a pane like anything else: drag its header to wherever you want it, drag
 its seams, close it. A new window opens with it already there, in a pane below the game —
 chat is the kit's own reason to be open instead of a browser tab, and a pane
-nobody knows is there is a pane nobody opens. Closed, it comes back from **Add
-pane** in the tab bar, as a column down the tab's right edge.
+nobody knows is there is a pane nobody opens. Closed, chat comes back from
+**Add pane** in the tab bar, as a column down the tab's right edge.
 
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short
@@ -379,7 +407,11 @@ seeded on first run, one entry per server, now at file version 5:
 | `lostcity` | 274 | LostHQ's world API (`2004.losthq.rs/pages/api/worlds.php`), which carries players and both detail URLs | yes | losthq |
 | `zanaris` | 274 | `zanaris.rs/worlds.json`, players from each world's `world.json` | yes | losthq |
 | `lostcitylabs` | unknown, "May 2005 per Lost City Labs" | a static list, worlds 1 to 4 | no parameter found | none |
-| `singleplayer` | 274, the bundled engine | none | | losthq |
+| `singleplayer` | the build line it runs, 274 until another is picked | none | | losthq |
+
+The last id is the one the tool was called before it was Your world. It is a
+key in files people already have — a stored `servers.json`, a saved layout —
+so it stays as it is; nothing shows it.
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 `{url}` and `{lowmem}`, whether detail is switchable, the default world),
@@ -393,7 +425,7 @@ block: a `source` — a `kind` naming which of the three lookup APIs it is, plus
 the URL for it — and a `site` the panel's "Full hiscores" link opens. Version 3
 kept only Lost City's as a bare URL template; version 4 is what turned it into
 this shape, and what gave Zanaris and Labs one of their own for the first time.
-Single player carries no `hiscores`, since a one-player world has nobody to
+Your world carries no `hiscores`, since a one-player world has nobody to
 rank. Every entry also carries `timers`, the server's built-in clocks,
 re-adopted on every launch the same way `hiscores` is; version 5 is what added
 it.
@@ -412,9 +444,10 @@ of the three only if the new directory has not got it already, since Chromium
 builds that directory during startup before any of our code runs. See the note
 at the top of `src/main/index.ts`.
 
-Until the settings panel arrives, the list is edited as a file: File > Edit
-Server List… opens it in your editor, and the app re-reads it when it regains
-focus, or from File > Reload Server List. A file that cannot be read is renamed
+Settings adds and removes whole entries; changing one already there —
+its address, its revision, its worlds source — is still done as a file:
+File > Edit Server List… opens it in your editor, and the app re-reads it when
+it regains focus, or from File > Reload Server List. A file that cannot be read is renamed
 to `servers.json.broken-<timestamp>` and the defaults are written in its
 place; a message box says so. A version 1 file from the launcher-era build
 (one entry per world) is migrated in place: its built-in entries become the
@@ -627,24 +660,35 @@ npm start            # build + launch
 npm test             # the pure modules, no Electron
 npm run typecheck
 npm run capture      # open every server, screenshot every view, hop a world, exit
-npm run stage:engine # fetch the pinned engine and content, pack, precompile into engine-dist/
-npm run dist         # package this platform into release/ (stages first if needed)
+npm run stage:engine -- <id>  # stage engines/<id>.json into engine-dist/ and engine-<id>.tar.gz (default lostcity-274)
+npm run pin:engine -- <id>    # write a published build's size and digest into its recipe
+npm run dist         # package this platform into release/
 ```
 
-`engine.lock.json` pins the engine and content commits the kit carries — Lost
-City upstream, `LostCityRS/Engine-TS` and `LostCityRS/Content`, at the latest
-revision Lost City has adopted. Single player is that game, not a fork of it.
-The one exception is `patches/engine/`, which the stage script applies to the
-engine checkout: three backwards-compatible changes a world running on a
-player's own machine needs, on their way upstream. `patches/engine/README.md`
-says what they are and why. See `RELEASE.md` for how a release is cut.
-Everything under `engine-dist/`, `.engine-work/` and `release/` is build
-output.
+Your world's builds are recipes, one file per line under `engines/`: the
+engine and content commits of Lost City upstream (`LostCityRS/Engine-TS` and
+`LostCityRS/Content`) at one of its revisions, the patches the stage script lays
+over the engine, and the published archive's size and sha-256. Your world is
+that game, not a fork of it. The one exception is `patches/engine/`: three
+backwards-compatible changes a world running on a player's own machine needs,
+on their way upstream. `patches/engine/README.md` says what they are and why.
+Any server shaped like Lost City 274 — its layout, `world.json`, Node — can be a
+recipe, as long as that patch applies and the stage script's boot check passes.
 
-Single player runs from `engine-dist/` in dev, so `npm run stage:engine` has
-to have run once before it works: without it the window says "Engine not
-staged: run npm run stage:engine", and a capture run skips the entry rather
-than failing on it. A packaged build stages the engine for you.
+CI builds them. The Engines workflow stages every recipe on a pull request that
+touches one, and on a manual dispatch stages one and publishes it as a
+prerelease of this repository, under a tag naming both commits and the patch
+set. `npm run pin:engine -- <id>` then writes GitHub's size and digest for it into
+the recipe, and the kit, which carries every recipe, runs no build whose digest
+it did not ship with. `RELEASE.md` says how to move a build and how a release is
+cut. Everything under `engine-dist/`, `.engine-work/`, `engine-*.tar.gz` and
+`release/` is build output.
+
+A staged `engine-dist/` is not a build the kit will run. It is what
+`stage:engine` hands to the archive and to CI, and nothing else: playing a
+stage means publishing it as a prerelease and pinning it, which is what
+`engines.yml` and `pin:engine` are for. The kit offers no unpinned build,
+packaged or not.
 
 Capture mode (`ZANARIS_CAPTURE=<dir>`, settle time `ZANARIS_CAPTURE_WAIT` in
 ms, default 15000) writes each window's shell and game views separately,
@@ -653,11 +697,17 @@ child views. It opens the panel on a loaded window, opens the Worlds tool,
 waits for the list, switches to another world and captures that, opens the
 Hiscores tool on each server that has one and looks a single name up there —
 one request per server and no retry, since Lost City rate-limits after a
-handful inside a minute — opens the Single player tool on the window running
-the bundled world, then opens a second instance of that server. It keeps its
+handful inside a minute — opens the Your world tool, then opens a second
+instance of that server. Its own profile has downloaded nothing, so it reads
+the builds from the real one; a line the real profile has not downloaded is
+skipped rather than left waiting. It keeps its
 own `state.json` beside the screenshots so a test switch never changes what
 the next real launch opens. A view that has no frame yet is retried, then
-skipped.
+skipped, and a file of that name left by an earlier run is removed. A shell is
+shot only once it has painted, its window fronted again until it does; one that
+has not painted within ten seconds is not written, and a shell shot
+byte-identical to an earlier one is flagged. Either fails the run: it finishes,
+lists what went wrong, and exits 1.
 
 ## Verified
 
@@ -675,7 +725,7 @@ One capture run with every catalog server open at once:
 | Lost City Labs, Hiscores open | untouched | "Showing knight", Overall in gold at rank 1, level 1,176, 18,174,678 xp; 22 rows in all, Labs' later revision sending the Slayer and Farming lines 274 never does |
 | Zanaris, two pages stacked | untouched | both page panes headed with their catalog names — "Coord…", "Clue H…" — before their back, forward and reload, the name truncating rather than vanishing at 189px |
 | Lost City, seam dragged | 190px wide | asked for 190px of 761 and got 190; the game pane's header keeps its name and drops "rev 274", which is the half worth losing |
-| Lost City, split right then swapped | untouched | "Empty" beside "Game" over "Chat", the dot on the game's header only — the split shot itself came back a stale frame of the window before it (the capture hazard; so did the Single player tool's), and the swapped shot straight after it shows the three panes |
+| Lost City, split right then swapped | untouched | "Empty" beside "Game" over "Chat", the dot on the game's header only — the split shot itself came back a stale frame of the window before it (the capture hazard; so did the Your world tool's), and the swapped shot straight after it shows the three panes |
 | Lost City, swapped then moved (a later run, 2026-09-15) | followed its pane both times: 760x742 on the right after the swap, then 378x1554 as a full-height column after the move | swapped: "Empty" beside "Game" over "Chat", the dot on the game that was dragged, and the tab renamed "Empty" for its new first pane; moved: chat dropped on the game's right edge and became a third full-height column — "Empty", "Game", "Chat" — with the dot on chat. The split, swapped and moved shots all hash differently, so none is a stale frame |
 | Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, opening on the game over chat like every new window rather than on the first window's arrangement, which nothing saves any more |
 | Lost City (2), a layout saved and loaded into a new tab | not reloaded — no second load in the log | tabs "Empty" and "Game": the file saved "game over chat", the new tab loaded it, and the game moved into it, leaving the first tab's game pane empty. `state.json` holds no layouts |
@@ -708,22 +758,21 @@ right-click menu's splits.
   would have to come off the websocket.
 - **Capture mode needs a waking display.** macOS refuses `capturePage` on an
   occluded surface, and once the screen sleeps most shots come back "Current
-  display surface not available for capture". The run still completes and skips
-  those frames; rerun it with the display awake.
-- **A successful-looking capture can still be stale.** `capturePage` does not
-  always fail loudly when a window goes occluded — it can also hand back an
-  old frame without an error at all, so the log reports success and the PNG
-  looks plausible while actually being a duplicate of an earlier shot. It
-  happened once on this branch: a Hiscores capture logged a correct `ready
-  "granny_grunt" 20 row(s)` and wrote a shell PNG that was byte-identical to
-  an unrelated capture of the same window taken moments before, catchable
-  only by hashing the two files against each other. It is likeliest on any
-  capture step that awaits a real network round trip between fronting the
-  window and shooting it — fronting is a point-in-time guard, not a held
-  invariant, and both the Hiscores and Worlds passes do exactly that. The fix
-  for the run that hit it was keeping the display awake throughout, per the
-  bullet above; the safeguard for reading the evidence is not trusting a
-  capture's log line over its own pixels.
+  display surface not available for capture". The run still completes, but a
+  shell that cannot paint fails it; rerun it with the display awake.
+- **A capture needs the machine to itself.** `capturePage` does not always
+  fail loudly when a window is covered — it can hand back the last frame the
+  view composited, with no error at all, so the log reports success over a
+  PNG byte-identical to an earlier shot. `caffeinate -d` does not prevent
+  it: two consecutive runs under it each wrote a different stale pair, and an
+  instrumented run caught the cause — another app's window over the kit's,
+  and `moveTop` before each of two shots eight seconds apart not getting it
+  back. Capture now waits for each shell to paint and fails the run rather
+  than write one that did not, or one identical to an earlier shot, so a
+  failed run usually means something covered the windows: rerun it and leave
+  the machine alone. Game and page shots are not compared, since a page
+  brought back unchanged is meant to match, and a log line still reads state
+  rather than pixels, so the PNGs still need opening.
 - **A kit that is killed outright can leave cloudflared running.** A quit, a
   closed window or Stop sharing ends it, and so does any exit that runs Node's
   `exit` handlers. A `kill -9` does not, and the orphan keeps a link that only
@@ -757,6 +806,17 @@ and none of its `TUNNEL_*` environment, so nothing else on the machine can
 point the tunnel somewhere else or swap the checked binary. The link itself
 is the only access control; see Playing with friends.
 
+**Your world's builds** are the one thing the kit downloads and then runs
+as a program. It downloads only the archive a recipe it shipped with pins, from
+this repository's releases, and refuses one whose size or sha-256 differs. The
+archive is unpacked beside the builds, not among them, and moved into place only
+once the VERSION.json it unpacked to names the pinned line, commits and tag;
+nothing half-downloaded or unexpected sits where the world could run it. Every
+build was staged with `patches/engine/` applied and passed the stage script's
+boot check — loopback-only binds, `POST /shutdown`, a populated map — so the
+sharing guarantees above hold for each of them, not only for one. There is no
+build the kit runs unpinned: `engine-dist/` is staging output, never a line.
+
 ## Layout of the source
 
 ```
@@ -769,6 +829,7 @@ src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/shared/timers.ts        pure: clocks, their limits, digits and the edit form    (tested)
 src/shared/chatSettings.ts  pure: the chat Settings form, line times, rank tones    (tested)
 src/shared/share.ts         ShareView — what Play with friends draws
+src/shared/engines.ts       pure: a build recipe, its tag and its download url      (tested)
 src/main/paneTree.ts        pure: the split tree, its solver, splits, moves, swaps  (tested)
 src/main/paneDrop.ts        pure: what a header drop does and where the pane lands  (tested)
 src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
@@ -777,6 +838,9 @@ src/main/layoutFile.ts      pure: a layout file — writing, validating, fresh i
 src/main/paneMenu.ts        pure: a pane's name, its gestures, what it may become    (tested)
 src/main/paneHost.ts        the views inside a tab's panes; holds no rules
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)
+src/main/servers.ts         pure: Settings' Servers section — rows, isRemovable,
+                            startup picks, the add form                             (tested)
+src/main/settingsWindow.ts  pure: the Settings window's slot, and where it opens   (tested)
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
@@ -794,19 +858,27 @@ src/main/chat/client.ts     one IRC conversation over an injected send          
 src/main/chat/service.ts    the app's one connection: socket, backoff, settings     (tested)
 src/main/chat/secret.ts     sealing the NickServ password with the OS store         (tested)
 src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
-src/main/share/cloudflared.ts  the pinned cloudflared: download, check, unpack       (tested)
+src/main/download.ts        a pinned download: size, sha-256, the system tar        (tested)
+src/main/yourworld/buildStore.ts  your world's builds: install, check, remove       (tested)
+src/main/yourworld/recipes.ts     the recipes the kit carries                       (tested)
+src/main/share/cloudflared.ts  the pinned cloudflared: which build, where, checked   (tested)
 src/main/share/quickTunnel.ts  a quick tunnel: its arguments, its log, the retry     (tested)
 src/main/share/relay.ts     loopback relay: GET, HEAD and the websocket to the world (tested)
 src/main/share/reachable.ts whether the link works yet, asking no caching resolver  (tested)
 src/main/share/service.ts   the one share, and what to ask before it                (tested)
 src/main/share/electron.ts  cloudflared's folder, net.fetch, killing it at exit
 src/main/serverWindow.ts    one server window: shell view over game view, the switch
+src/main/settingsView.ts    builds the Settings window; holds no rules, as paneHost.ts
+                            does for panes
 src/main/menu.ts            application menu: new windows, the server list, the pane
                             gestures, the switch warning
 src/main/renderer.ts        preload path; load the shell
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.zanaris bridge
 src/renderer/Shell.tsx      the tab bar, Add pane, and every pane where main put it
+src/renderer/Settings.tsx   the Settings window's page: one section today, Servers
+src/renderer/settings/Servers.tsx  the Servers section: the list, Open, the startup
+                            checkbox, the add form, Remove
 src/renderer/paneHeader.tsx a pane's name, its own controls, and what it may become
 src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
 src/renderer/grip.tsx       one draggable seam, and its keyboard path
@@ -816,9 +888,12 @@ src/renderer/tools/Worlds.tsx
 src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
 src/renderer/tools/ChatUsers.tsx     a channel's users by rank, and its modes and age
-src/renderer/tools/singleplayer/Friends.tsx  Play with friends: share, the link, stop
+src/renderer/tools/yourworld/Builds.tsx   the build lines: use, download, remove
+src/renderer/tools/yourworld/Friends.tsx  Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
 static/offline.html         shown when a server can't be reached
+static/starting.html        your world starting, failed, or not downloaded yet
+engines/*.json              your world's build lines, pinned by digest
 static/sounds/alert.wav     every timer's alert: Kenney's confirmation_002 (CC0), louder
 ```
 

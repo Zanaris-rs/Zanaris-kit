@@ -1,7 +1,8 @@
-# Packaging for Zanaris Kit. electron-vite builds into out/; this packs it
-# with the staged engine (engine-dist/, from npm run stage:engine) as an
-# extra resource, outside asar, where a child process reads it as files.
-# Spec: docs/superpowers/specs/2026-09-06-packaging-and-single-player-design.md, Part 1.
+# Packaging for Zanaris Kit. electron-vite builds into out/; this packs it.
+# The kit carries no engine: single player downloads the build the player
+# picks into its own data folder, checked against the digest in engines/.
+# Specs: docs/superpowers/specs/2026-09-06-packaging-and-single-player-design.md, Part 1,
+# and docs/superpowers/specs/2026-09-19-single-player-builds-design.md.
 appId: rs.zanaris.kit
 productName: Zanaris Kit
 copyright: Zanaris Kit contributors
@@ -12,16 +13,6 @@ files:
   - out/**
   - static/**
   - package.json
-extraResources:
-  - from: engine-dist
-    to: engine
-  # electron-builder's file filter drops the top-level node_modules of a copy
-  # root unconditionally (app-builder-lib/out/util/filter.js: `if (relative ===
-  # "node_modules") return false`), so the entry above ships the engine without
-  # a single dependency. The dependencies are copied from their own root, where
-  # they are no longer the root's node_modules and the guard does not fire.
-  - from: engine-dist/node_modules
-    to: engine/node_modules
 asar: true
 # No native dependencies anywhere: nothing to rebuild.
 npmRebuild: false

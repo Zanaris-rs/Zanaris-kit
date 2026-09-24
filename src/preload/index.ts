@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC, type ShellState, type ZanarisApi } from '../shared/ipc';
+import { IPC, type SettingsState, type ShellState, type ZanarisApi } from '../shared/ipc';
 import type { TimerAlert } from '../shared/timers';
 
 /**
- * The only bridge between the shell and main. Deliberately narrow: no raw
+ * The only bridge between the shell and main — a game window's shell and
+ * Settings' both, the same preload for either. Deliberately narrow: no raw
  * ipcRenderer, no channel names, no send passthrough. The push returns an
  * unsubscribe closure so React effects can clean up.
  *
@@ -57,18 +58,22 @@ const api: ZanarisApi = {
         addPaneMenu: (x, y) => ipcRenderer.invoke(IPC.tabAddPaneMenu, x, y),
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
     },
-    singlePlayer: {
-        setSetting: (key, value) => ipcRenderer.invoke(IPC.singlePlayerSetSetting, key, value),
-        retry: () => ipcRenderer.invoke(IPC.singlePlayerRetry),
-        openSaves: () => ipcRenderer.invoke(IPC.singlePlayerOpenSaves),
-        showLog: () => ipcRenderer.invoke(IPC.singlePlayerShowLog),
-        pickImport: () => ipcRenderer.invoke(IPC.singlePlayerPickImport),
-        importAs: (token, name) => ipcRenderer.invoke(IPC.singlePlayerImport, token, name),
-        exportCharacter: name => ipcRenderer.invoke(IPC.singlePlayerExport, name),
-        rename: (from, to) => ipcRenderer.invoke(IPC.singlePlayerRename, from, to),
-        duplicate: (from, to) => ipcRenderer.invoke(IPC.singlePlayerDuplicate, from, to),
-        remove: name => ipcRenderer.invoke(IPC.singlePlayerDelete, name),
-        commands: () => ipcRenderer.invoke(IPC.singlePlayerCommands)
+    yourWorld: {
+        setSetting: (key, value) => ipcRenderer.invoke(IPC.yourWorldSetSetting, key, value),
+        retry: () => ipcRenderer.invoke(IPC.yourWorldRetry),
+        openSaves: () => ipcRenderer.invoke(IPC.yourWorldOpenSaves),
+        showLog: () => ipcRenderer.invoke(IPC.yourWorldShowLog),
+        pickImport: () => ipcRenderer.invoke(IPC.yourWorldPickImport),
+        importAs: (token, name) => ipcRenderer.invoke(IPC.yourWorldImport, token, name),
+        exportCharacter: name => ipcRenderer.invoke(IPC.yourWorldExport, name),
+        rename: (from, to) => ipcRenderer.invoke(IPC.yourWorldRename, from, to),
+        duplicate: (from, to) => ipcRenderer.invoke(IPC.yourWorldDuplicate, from, to),
+        remove: name => ipcRenderer.invoke(IPC.yourWorldDelete, name),
+        copyTo: (name, revision) => ipcRenderer.invoke(IPC.yourWorldCopyTo, name, revision),
+        useBuild: id => ipcRenderer.invoke(IPC.yourWorldUseBuild, id),
+        downloadBuild: id => ipcRenderer.invoke(IPC.yourWorldDownloadBuild, id),
+        removeBuild: id => ipcRenderer.invoke(IPC.yourWorldRemoveBuild, id),
+        commands: () => ipcRenderer.invoke(IPC.yourWorldCommands)
     },
     share: {
         start: () => ipcRenderer.invoke(IPC.shareStart),
@@ -91,6 +96,24 @@ const api: ZanarisApi = {
                 ipcRenderer.off(IPC.timersAlert, handler);
             };
         }
+    },
+    servers: {
+        open: id => ipcRenderer.invoke(IPC.serversOpen, id),
+        setStartup: (id, on) => ipcRenderer.invoke(IPC.serversStartup, id, on),
+        add: input => ipcRenderer.invoke(IPC.serversAdd, input),
+        remove: id => ipcRenderer.invoke(IPC.serversRemove, id)
+    },
+    settings: {
+        get: () => ipcRenderer.invoke(IPC.settingsGet),
+        onState: cb => {
+            const handler = (_event: unknown, state: SettingsState): void => cb(state);
+            ipcRenderer.on(IPC.settingsState, handler);
+            return () => {
+                ipcRenderer.off(IPC.settingsState, handler);
+            };
+        },
+        open: () => ipcRenderer.invoke(IPC.settingsOpen),
+        editServers: () => ipcRenderer.invoke(IPC.settingsEditServers)
     }
 };
 

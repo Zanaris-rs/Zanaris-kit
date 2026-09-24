@@ -1,15 +1,16 @@
 /** Channel names and payload types, shared by main, preload and the renderer so they can't drift. */
-import type { ServerDef } from './catalog';
+import type { NewServerInput, ServerDef } from './catalog';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatView } from './chat';
 import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
-import type { CharacterOutcome, ImportPick, SinglePlayerSettings, SinglePlayerView } from './singleplayer';
+import type { CharacterOutcome, ImportPick, YourWorldSettings, YourWorldView } from './yourworld';
 import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
+import type { ServersView } from '../main/servers.ts';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -45,17 +46,21 @@ export const IPC = {
     chatSaveSettings: 'zanaris:chat-save-settings',
     chatConnect: 'zanaris:chat-connect',
     chatDisconnect: 'zanaris:chat-disconnect',
-    singlePlayerSetSetting: 'zanaris:singleplayer-set-setting',
-    singlePlayerRetry: 'zanaris:singleplayer-retry',
-    singlePlayerOpenSaves: 'zanaris:singleplayer-open-saves',
-    singlePlayerShowLog: 'zanaris:singleplayer-show-log',
-    singlePlayerPickImport: 'zanaris:singleplayer-pick-import',
-    singlePlayerImport: 'zanaris:singleplayer-import',
-    singlePlayerExport: 'zanaris:singleplayer-export',
-    singlePlayerRename: 'zanaris:singleplayer-rename',
-    singlePlayerDuplicate: 'zanaris:singleplayer-duplicate',
-    singlePlayerDelete: 'zanaris:singleplayer-delete',
-    singlePlayerCommands: 'zanaris:singleplayer-commands',
+    yourWorldSetSetting: 'zanaris:yourworld-set-setting',
+    yourWorldRetry: 'zanaris:yourworld-retry',
+    yourWorldOpenSaves: 'zanaris:yourworld-open-saves',
+    yourWorldShowLog: 'zanaris:yourworld-show-log',
+    yourWorldPickImport: 'zanaris:yourworld-pick-import',
+    yourWorldImport: 'zanaris:yourworld-import',
+    yourWorldExport: 'zanaris:yourworld-export',
+    yourWorldRename: 'zanaris:yourworld-rename',
+    yourWorldDuplicate: 'zanaris:yourworld-duplicate',
+    yourWorldDelete: 'zanaris:yourworld-delete',
+    yourWorldCommands: 'zanaris:yourworld-commands',
+    yourWorldCopyTo: 'zanaris:yourworld-copy-to',
+    yourWorldUseBuild: 'zanaris:yourworld-use-build',
+    yourWorldDownloadBuild: 'zanaris:yourworld-download-build',
+    yourWorldRemoveBuild: 'zanaris:yourworld-remove-build',
     shareStart: 'zanaris:share-start',
     shareStop: 'zanaris:share-stop',
     shareCopy: 'zanaris:share-copy',
@@ -67,7 +72,15 @@ export const IPC = {
     timersDelete: 'zanaris:timers-delete',
     timersRestore: 'zanaris:timers-restore',
     timersSound: 'zanaris:timers-sound',
-    timersAlert: 'zanaris:timers-alert'
+    timersAlert: 'zanaris:timers-alert',
+    serversOpen: 'zanaris:servers-open',
+    serversStartup: 'zanaris:servers-startup',
+    serversAdd: 'zanaris:servers-add',
+    serversRemove: 'zanaris:servers-remove',
+    settingsGet: 'zanaris:settings-get',
+    settingsState: 'zanaris:settings-state',
+    settingsOpen: 'zanaris:settings-open',
+    settingsEditServers: 'zanaris:settings-edit-servers'
 } as const;
 
 /**
@@ -124,16 +137,24 @@ export interface ShellState {
     tools: ToolId[];
     /** Null when the server has one page. */
     worlds: WorldsView | null;
-    /** Null when the server offers no hiscores — single player above all, where a one-player world has nothing to rank. */
+    /** Null when the server offers no hiscores — your world above all, where a one-player world has nothing to rank. */
     hiscores: HiscoresView | null;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
     /** The world this computer runs; null for every other kind of window. */
-    singlePlayer: SinglePlayerView | null;
-    /** Whether that world is shared with a link; null wherever `singlePlayer` is. */
+    yourWorld: YourWorldView | null;
+    /** Whether that world is shared with a link; null wherever `yourWorld` is. */
     share: ShareView | null;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
+}
+
+/**
+ * What the Settings window draws. Its own channel rather than a field on
+ * `ShellState`: it is not a game window, and no game window draws any of it.
+ */
+export interface SettingsState {
+    servers: ServersView;
 }
 
 export interface ZanarisApi {
@@ -265,9 +286,9 @@ export interface ZanarisApi {
         /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */
         openExternal(url: string): Promise<void>;
     };
-    singlePlayer: {
+    yourWorld: {
         /** Changes one of the world's settings. Asks first when the world is running, since the change restarts it. */
-        setSetting<K extends keyof SinglePlayerSettings>(key: K, value: SinglePlayerSettings[K]): Promise<void>;
+        setSetting<K extends keyof YourWorldSettings>(key: K, value: YourWorldSettings[K]): Promise<void>;
         retry(): Promise<void>;
         openSaves(): Promise<void>;
         showLog(): Promise<void>;
@@ -287,11 +308,23 @@ export interface ZanarisApi {
         duplicate(from: string, to: string): Promise<CharacterOutcome>;
         /** Moves a character's save to the system trash, after asking. */
         remove(name: string): Promise<CharacterOutcome>;
+        /** Copies a character into another revision's world, after asking. Never replaces one there. */
+        copyTo(name: string, revision: number): Promise<CharacterOutcome>;
         /**
-         * The content's debug procs, from the staged COMMANDS.json. Null when
-         * this build has none. Asked for once by the Commands section rather
-         * than carried in ShellState: some 250 entries that never change,
-         * which the shell state would push to every window on every layout.
+         * Makes a build line the one the world runs, downloading it first if it
+         * is not here. Asks first when the world is running, since it restarts.
+         */
+        useBuild(id: string): Promise<void>;
+        /** Downloads a line's build. The button that calls this says what and how big. */
+        downloadBuild(id: string): Promise<void>;
+        /** Deletes a line's build after asking. Resolves with why not when it could not, else null. */
+        removeBuild(id: string): Promise<string | null>;
+        /**
+         * The content's debug procs, from the selected build's COMMANDS.json.
+         * Null when that build has none, or is not downloaded. Asked for by the
+         * Commands section once per build rather than carried in ShellState:
+         * some 250 entries that change only with the build, which the shell
+         * state would push to every window on every layout.
          */
         commands(): Promise<CommandRef[] | null>;
     };
@@ -319,5 +352,23 @@ export interface ZanarisApi {
         sound(): Promise<Uint8Array | null>;
         /** Main asking this window to play the alert. Returns an unsubscribe. */
         onAlert(cb: (alert: TimerAlert) => void): () => void;
+    };
+    servers: {
+        /** Opens a new window on this catalog entry. */
+        open(id: string): Promise<void>;
+        /** Whether a launch opens this entry. */
+        setStartup(id: string, on: boolean): Promise<void>;
+        /** Null when it was added; a sentence saying why not otherwise. */
+        add(input: NewServerInput): Promise<string | null>;
+        remove(id: string): Promise<string | null>;
+    };
+    settings: {
+        /** Null when the calling page is not the Settings window. */
+        get(): Promise<SettingsState | null>;
+        onState(cb: (state: SettingsState) => void): () => void;
+        /** Opens the Settings window, or brings the open one forward. */
+        open(): Promise<void>;
+        /** Opens `servers.json` in whatever the system opens it with. Safe with the kit running: it is re-read on focus. */
+        editServers(): Promise<void>;
     };
 }

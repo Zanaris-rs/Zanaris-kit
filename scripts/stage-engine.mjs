@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-// Turns engine.lock.json into engine-dist/: the Lost City engine and packed
-// cache the kit carries, precompiled to plain JavaScript, with production
-// node_modules and no native binaries, so one tree serves every platform.
-// Spec: docs/superpowers/specs/2026-09-06-packaging-and-single-player-design.md, Part 1.
+// Turns a recipe, engines/<id>.json, into engine-dist/ and engine-<id>.tar.gz:
+// an engine and its packed cache, precompiled to plain JavaScript, with
+// production node_modules, no native binaries and no symbolic links, so one
+// archive serves every platform. `npm run stage:engine -- <id>`; with no id,
+// the default line.
+// Specs: docs/superpowers/specs/2026-09-06-packaging-and-single-player-design.md, Part 1,
+// and docs/superpowers/specs/2026-09-19-single-player-builds-design.md.
+import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { connect, createServer } from 'node:net';
@@ -10,10 +14,15 @@ import { networkInterfaces } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transform } from 'esbuild';
-import { assertPack, classify, commandsJson, findNativeModules, hasTsUrl, parseDebugprocs, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { assertPack, classify, commandsJson, findLongPaths, findNativeModules, findSymlinks, hasTsUrl, parseDebugprocs, patchHash, patchStamp, readPatches, rewriteWorkerUrls, staticNpcs } from './stage-lib.mjs';
+import { artifactFile, DEFAULT_BUILD, readRecipe, recipeTag } from '../src/shared/engines.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const lock = JSON.parse(readFileSync(join(root, 'engine.lock.json'), 'utf8'));
+const id = process.argv[2] ?? DEFAULT_BUILD;
+const recipePath = join(root, 'engines', `${id}.json`);
+if (!existsSync(recipePath)) throw new Error(`no recipe ${relative(root, recipePath)}: the lines are ${readdirSync(join(root, 'engines')).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5)).join(', ')}`);
+const recipe = readRecipe(JSON.parse(readFileSync(recipePath, 'utf8')));
+if (!recipe || recipe.id !== id) throw new Error(`${relative(root, recipePath)} is not a recipe the kit can read`);
 const work = join(root, '.engine-work');
 const engine = join(work, 'engine');
 const content = join(work, 'content');
@@ -23,7 +32,9 @@ const dist = join(root, 'engine-dist');
 const RUNTIME_CONTENT = ['multiway.csv', 'free2play.csv'];
 // What the kit changes in the upstream engine, and the file recording what a
 // checkout already has applied. See patches/engine/README.md.
-const patches = readPatches(join(root, lock.patches ?? 'patches/engine'));
+const patches = readPatches(join(root, recipe.patches));
+const tag = recipeTag(recipe, patchHash(patches));
+const archive = join(root, artifactFile(recipe.id));
 const PATCH_STAMP = '.kit-patches';
 const CONTENT_MAPS = join('content', 'maps');
 const onWindows = process.platform === 'win32';
@@ -65,15 +76,16 @@ function fetchAt(repo, commit, dir, applyPatches = []) {
         // No --3way and no fuzz: a patch that no longer fits the pin is a build that
         // stops, not one that quietly ships an engine missing a piece of it.
         log(`applying ${name}`);
-        run('git', ['apply', join(root, lock.patches ?? 'patches/engine', name)], dir);
+        run('git', ['apply', join(root, recipe.patches, name)], dir);
     }
     // Only where there is something to record: an absent stamp reads as no patches,
     // so the content checkout does not collect an empty file it has no use for.
     if (wanted !== '') writeFileSync(stampPath, wanted);
 }
 
-fetchAt(lock.engine.repo, lock.engine.commit, engine, patches);
-fetchAt(lock.content.repo, lock.content.commit, content);
+log(`staging ${recipe.name} (${recipe.id}) as ${tag}`);
+fetchAt(recipe.engine.repo, recipe.engine.commit, engine, patches);
+fetchAt(recipe.content.repo, recipe.content.commit, content);
 
 // ── 2. pack ──────────────────────────────────────────────────────────────
 
@@ -173,28 +185,51 @@ run(npm, ['ci', '--omit=dev', '--ignore-scripts'], dist);
 for (const dir of ['tsx', 'typescript', 'esbuild', '@esbuild', 'get-tsconfig', 'resolve-pkg-maps', 'fsevents']) {
     rmSync(join(dist, 'node_modules', dir), { recursive: true, force: true });
 }
-// Those packages left their launchers behind in .bin as symlinks pointing at
-// nothing; a tree we are about to archive carries no dangling links.
-const bin = join(dist, 'node_modules', '.bin');
-if (existsSync(bin)) {
-    for (const entry of readdirSync(bin)) {
-        const path = join(bin, entry);
-        if (!existsSync(path)) rmSync(path, { force: true });
-    }
-}
+// .bin holds nothing but launchers, as symbolic links, and the engine runs none
+// of them. The archive is unpacked by every platform's tar, and Windows' cannot
+// make a link without a privilege players do not have, so the tree carries none.
+rmSync(join(dist, 'node_modules', '.bin'), { recursive: true, force: true });
 const native = findNativeModules(join(dist, 'node_modules'));
 if (native.length > 0) throw new Error(`native modules in engine-dist/node_modules: ${native.join(', ')}`);
 log('no native modules in node_modules');
+const links = findSymlinks(dist);
+if (links.length > 0) throw new Error(`symbolic links in engine-dist: ${links.join(', ')}`);
+log('no symbolic links in engine-dist');
+// The kit unpacks this under <userData>\yourworld\builds\.incoming\<id>\build,
+// about a hundred characters on Windows before the tree's own paths start, and
+// a path past 260 there is one the system tar may not write. The deepest files
+// in the dependencies are test fixtures - jimp's image snapshots run to 177
+// characters - which the engine never loads, so they go, and anything still
+// past the budget stops the stage rather than failing on a player's machine.
+const TEST_FIXTURES = new Set(['__image_snapshots__', '__snapshots__', '__tests__']);
+const pruneFixtures = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const path = join(dir, entry.name);
+        if (TEST_FIXTURES.has(entry.name)) rmSync(path, { recursive: true, force: true });
+        else pruneFixtures(path);
+    }
+};
+pruneFixtures(join(dist, 'node_modules'));
+const PATH_BUDGET = 150;
+const long = findLongPaths(dist, PATH_BUDGET);
+if (long.length > 0) throw new Error(`paths in engine-dist longer than ${PATH_BUDGET} characters, which may not unpack on Windows: ${long.slice(0, 5).join(', ')}`);
+log(`no path in engine-dist is longer than ${PATH_BUDGET} characters`);
 
 // ── 7. VERSION.json ──────────────────────────────────────────────────────
 
 const version = {
-    engine: lock.engine,
-    content: lock.content,
+    // The kit checks an unpacked download against its recipe by these three: the
+    // line, and the tag naming both commits and the patch set.
+    id: recipe.id,
+    name: recipe.name,
+    tag,
+    engine: recipe.engine,
+    content: recipe.content,
     // The pin alone does not say what was built: the same commits with a different
     // patch are a different engine, and the working directory re-prepares off this.
     patches,
-    revision: lock.revision,
+    revision: recipe.revision,
     built: new Date().toISOString()
 };
 writeFileSync(join(dist, 'VERSION.json'), JSON.stringify(version, null, 4) + '\n');
@@ -363,4 +398,14 @@ function sizeOf(dir) {
 }
 const mb = bytes => (bytes / 1048576).toFixed(1);
 log(`engine-dist: ${mb(sizeOf(dist))} MB total, ${mb(sizeOf(join(dist, 'node_modules')))} MB of it node_modules`);
-log(`done in ${Math.round((Date.now() - started) / 1000)}s: engine ${lock.engine.commit.slice(0, 8)}, content ${lock.content.commit.slice(0, 8)}, rev ${lock.revision}, ${patches.length} patch${patches.length === 1 ? '' : 'es'}`);
+// ── 10. archive ─────────────────────────────────────────────────────────
+//
+// What CI publishes and the kit downloads. From inside engine-dist, so the
+// archive has no folder of its own around the tree: the kit unpacks it straight
+// into the line's folder. The system tar, which every runner and player has.
+rmSync(archive, { force: true });
+execFileSync('tar', ['-czf', archive, '-C', dist, '.'], { stdio: 'inherit' });
+const digest = createHash('sha256').update(readFileSync(archive)).digest('hex');
+log(`${relative(root, archive)}: ${statSync(archive).size} bytes, sha-256 ${digest}`);
+
+log(`done in ${Math.round((Date.now() - started) / 1000)}s: ${recipe.id}, engine ${recipe.engine.commit.slice(0, 8)}, content ${recipe.content.commit.slice(0, 8)}, rev ${recipe.revision}, ${patches.length} patch${patches.length === 1 ? '' : 'es'}, tag ${tag}`);

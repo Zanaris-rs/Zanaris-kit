@@ -64,11 +64,53 @@ Three properties in there are load-bearing and easy to break —
   Shrinking past the other panes' floors squeezes the game; fitted frame from
   frame, growing back would then hold it at the squeezed size for good.
 
+`TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved layout file
+carries tool ids between people — that is the whole point of saving one — and
+`readContent` checks every leaf's id against `TOOL_IDS` before the tree is
+trusted at all. One leaf naming an id the array no longer holds sinks the
+whole read: `readLayout` refuses the entire file rather than that one pane,
+and whoever tried to open it sees "That file isn't a Zanaris Kit layout" over
+a tab left exactly as it was. `instantiateLayout`'s own empty-pane fallback
+is a different, narrower thing — a tool `TOOL_IDS` still recognises but this
+particular window does not currently offer, Hiscores on a server with none or
+Your world outside its own window, which is meant to happen and costs only
+that pane. So an id, once shipped, is never removed or renamed: a kit that
+stopped knowing one would cost someone their whole saved arrangement, not just
+the pane that used it, the day they tried to open it here.
+
 > The old invariant said the opposite: opening chrome must never resize the
 > game, because resizing cost the login. The second half was never true —
 > `setBounds` does not reload a `WebContentsView`, only `loadURL` does — and the
 > first half went with the fixed columns that motivated it. The design is
 > `docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`.
+
+## The Settings window
+
+One window is not a game window: Settings, which holds what belongs to the
+app rather than to any one window — today the catalog and the startup set.
+`SettingsWindowSlot` (`src/main/settingsWindow.ts`) keeps it to one, and
+opening it again brings the open one forward, because two would be two
+copies of one thing. It has no parent window, since a parent would close it
+along with a game window, and it never holds up a quit.
+
+It is a window rather than a pane or a popover because the game and pages
+are native views stacked above the shell's HTML: anything the shell drew
+over them would sit underneath. It takes its state on its own channel,
+`settings.get` and `settings.onState`, never through `ShellState`. No game
+window's `state()` builds anything for it, which is how `windowCounts()` once
+came to recurse through `state()`. Only Settings may call the servers
+handlers.
+
+A catalog entry the kit ships with cannot be removed from Settings,
+for a plain reason: `Catalog.load` never puts a missing built-in back. At file
+version 5 `migrateCatalog` only validates what is already there, and the four
+refresh functions (`refreshYourWorld`, `refreshHiscores`, `refreshBookmarks`,
+`refreshTimers`) touch only entries already present — none of them re-adds one
+that is gone. So removing a built-in is permanent short of deleting
+`servers.json` by hand. The guard is `isRemovable`, in `src/main/servers.ts`;
+`Catalog.remove` itself is deliberately left as a general primitive, free to
+remove anything a caller hands it, because the rule about which callers may
+belongs at the one place that decides, not inside the primitive.
 
 ## Where logic is allowed to live
 
@@ -148,14 +190,61 @@ LostHQ's actual community is.
 - LostHQ's NickServ pass is **optional**, so those rooms are not
   registered-only.
 
-## Single player's characters and commands
+## Your world was called Single player
 
-A character is `data/players/main/<name>.sav`, and the engine finds it by
-`toSafeName(typed)`. `src/shared/names.ts` and `src/main/singleplayer/save.ts`
-are ports of the pinned engine: `JString.ts`, `Packet.getcrc`, `Player.ts`'s
-level table and combat formula, and the checks in `PlayerLoading.load`. A change
-to the engine's names or to its save format before the varps has to be made
-there too. The fixture tests are what catch a slip.
+The name changed on 2026-09-20: the feature runs a world on your machine and
+Friends shares it by link, so "single player" said the opposite of what it
+does. Three stored keys did not change, because they sit in files that already
+exist and nothing shows them — the catalog entry's `id` and `kind`
+(`singleplayer`), `TOOL_IDS`' `singleplayer`, which saved layouts carry between
+people, and `state.json`'s `singlePlayer` block. Renaming one of those is a
+migration, not a rename. Everything else reads "your world".
+
+## Your world's builds
+
+The kit ships no engine. Each build line is a recipe, `engines/<id>.json`: the
+upstream engine and content commits, the patches, and the published archive's
+tag, size and sha-256. The design is
+`docs/superpowers/specs/2026-09-19-single-player-builds-design.md`.
+
+- **Pins move by hand, in a pull request.** Nothing follows a branch head:
+  upstream changed its config, runtime and web server within 2026, and any of
+  those can break the patch. The `engines.yml` pull-request run stages every
+  recipe; a dispatch publishes one as a prerelease; `npm run pin:engine -- <id>`
+  writes its size and digest. `scripts/engines.test.mjs` fails a recipe whose
+  tag was not built from its own commits and patches.
+- **The kit runs only what it pins.** `BuildStore` downloads into `.incoming`,
+  checks size and digest, unpacks, checks the VERSION.json it unpacked to, and
+  only then renames into place. A build on disk that is not this kit's pin is
+  *outdated* and does not start: a newer kit may rely on something it lacks.
+  There is no exception, packaged or not: `engine-dist/` is what `stage:engine`
+  hands to CI and to the archive, never a build the kit offers. Playing a stage
+  means publishing it as a prerelease and pinning it. A capture reads the
+  builds from the real profile, since its own has downloaded nothing, and
+  those are pinned like any other.
+- **A recipe must take `patches/engine/` and pass the boot check**, or it
+  cannot be a line: the sharing invariants below depend on both. That is what
+  "any 04-like server" means here — shaped like Lost City 274 (its layout,
+  `world.json`, Node). Bun-era revisions need their own patch and a pinned
+  Bun, and are not lines yet.
+- **Characters live per revision**, in `<userData>/yourworld/worlds/<rev>/`,
+  which is also the world's working directory. A switch never moves a save;
+  Copy to… copies one after asking, and never replaces one there.
+- Two older trees are left where they are rather than migrated, under the
+  no-migrations licence below: `<userData>/singleplayer/data/players/main`,
+  from before characters lived per revision, and the whole of
+  `<userData>/singleplayer/` from before the tool was called Your world.
+
+## Your world's characters and commands
+
+A character is `worlds/<rev>/data/players/main/<name>.sav`, and the engine finds
+it by `toSafeName(typed)`. `src/shared/names.ts` and `src/main/yourworld/save.ts`
+are ports of the pinned engines: `JString.ts`, `Packet.getcrc`, `Player.ts`'s
+level table and combat formula, and the checks in `PlayerLoading.load`, which
+274 and 289 share byte for byte as of 2026-09-19. A change to the engine's names
+or to its save format before the varps has to be made there too, and a line
+whose engine differs there makes those per-revision. The fixture tests are what
+catch a slip.
 
 **Every path in the saves folder is built by `Characters.path`**, which refuses
 any name `toSafeName` would change. Nothing typed or picked reaches the file
@@ -168,17 +257,17 @@ if a later step fails, the old save is already in the trash and the refusal
 says so. Changes to the folder run one at a time, after their question is
 answered, and check again what the question was about.
 
-`engine-dist/COMMANDS.json` is written by `stage-engine.mjs` from the content
+Each build's `COMMANDS.json` is written by `stage-engine.mjs` from its content
 checkout, since the kit ships no `.rs2`. The `::` table in
-`src/shared/commands.ts` is written by hand from `ClientCheatHandler.ts`. It
-leaves out what single player can never run: the production-only commands,
-`::rebuild` and `::random`.
+`src/shared/commands.ts` is written by hand from `ClientCheatHandler.ts`, the
+same in 274 and 289. It leaves out what your world can never run: the
+production-only commands, `::rebuild` and `::random`.
 
 `node.debug` stays off. It does more than keep a player logged in: it enables
 random events for staff, in-game developer messages, and loopback map-editor
 routes that write content. The owner cut it as a setting on 2026-09-16.
 
-## Sharing the single-player world
+## Sharing your world
 
 A share is a Cloudflare quick tunnel to a loopback relay in main, which
 forwards to the world's web port (`src/main/share/`). The link is the only
@@ -193,10 +282,14 @@ the link reaches is the whole security story. Keep these true:
 - **`worldJson` keeps `node.debug: false` and loopback hosts.** Debug on makes
   the engine serve `/data/` (the RSA key, `world.json`, every save) and accept
   writes under `/content/`. `share/invariants.test.ts` pins both; if either has
-  to change, sharing changes first.
+  to change, sharing changes first. The host keys mean something only because
+  every build carries `patches/engine/`: upstream binds `0.0.0.0` in code, so
+  a build without the patch would ignore them. The stage script's boot check
+  refuses a build that answers on a routable address.
 - **The share never follows the world's status.** A restart passes through
   `stopped`, and ending the share there would cost the link on every change in
-  World. It ends on Stop, on the last single-player window's release, or at quit.
+  World, and on every switch of build. It ends on Stop, on the last
+  window for your world releasing it, or at quit.
 - **cloudflared is the pinned build, checked by digest before every share**, and
   runs with `--no-autoupdate`, an empty `--config` and no `TUNNEL_*` variables.
   Bumping `CLOUDFLARED_VERSION` means new sizes and digests from GitHub's asset
@@ -226,7 +319,7 @@ users in the field, so a change of defaults does not need a migration path.
 > Delete this section at first release. It is a temporary licence, not a rule, and
 > inheriting it after users exist would be how their data gets lost.
 
-Note the contrast already in the catalog: `refreshSinglePlayer` and
+Note the contrast already in the catalog: `refreshYourWorld` and
 `refreshHiscores` re-adopt built-in fields from the defaults on **every** launch,
 because those fields are the kit's knowledge rather than the user's choice. A
 stored entry must not freeze what the kit has since learned. Anything the add form
@@ -251,12 +344,21 @@ behaviour, re-read the comments around it before you commit.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev` / `npm start` | run it |
 | `npm run capture` | screenshot every view — see the hazard below |
-| `npm run stage:engine` | fetch and pack the pinned engine |
+| `npm run fresh` | set the profile aside so the next launch is a first launch, keeping the builds and the characters |
+| `npm run stage:engine -- <id>` | stage a recipe into `engine-dist/` and `engine-<id>.tar.gz` |
+| `npm run pin:engine -- <id>` | write a published build's size and digest into its recipe |
 | `npm run dist` | electron-builder output |
 
 **The capture hazard.** `npm run capture` opens real windows and makes real
-network requests, and it can return a **silently stale frame**: a correct-looking
-log line and a PNG byte-identical to an earlier shot, if the display sleeps
-mid-run. A green log is not evidence. Run it under `caffeinate -d` and compare
-file hashes before trusting the output. It is likeliest on any step that awaits a
-network round-trip between fronting the window and shooting it.
+network requests, and `capturePage` hands back the last frame a view
+composited. A shell that is not painting — its window covered by another app's,
+or the display asleep — composites nothing, so a shot of it is a **silently
+stale frame**: a correct-looking log line over a PNG byte-identical to an
+earlier shot. `caffeinate -d` covers only the display. The harness guards the
+rest: `shoot` waits for the shell to paint (`settle` answers whether it did),
+fronting the window again for up to ten seconds; a shell that never paints is
+not written, a shell shot byte-identical to an earlier one is flagged
+(`shotLedger.ts`), and either makes the run exit 1 with the faults listed last.
+A failed run usually means the machine was in use: rerun it under
+`caffeinate -d` and leave it alone. Game and page shots are not compared, and
+the log reads state, not pixels, so a green run still means opening the PNGs.

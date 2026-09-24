@@ -1,0 +1,70 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { DEFAULT_YOUR_WORLD_SETTINGS, type YourWorldSettings } from '../../shared/yourworld.ts';
+import { gameUrl, parseVersion, stampMatches, worldJson } from './config.ts';
+
+const ports = { web: 40001, management: 40002, tcp: 40003 };
+const settings = (patch: Partial<YourWorldSettings> = {}): YourWorldSettings => ({ ...DEFAULT_YOUR_WORLD_SETTINGS, ...patch });
+
+test('worldJson binds loopback, disables the servers, and sets the staff level from cheats', () => {
+    const off = JSON.parse(worldJson({ ports, settings: settings(), revision: 274 }));
+    assert.equal(off.web.port, 40001);
+    assert.equal(off.web.managementPort, 40002);
+    assert.equal(off.web.host, '127.0.0.1');
+    assert.equal(off.node.port, 40003);
+    assert.equal(off.node.host, '127.0.0.1');
+    assert.equal(off.node.production, false);
+    assert.equal(off.node.localStaffLevel, 0);
+    assert.equal(off.node.id, 1);
+    assert.equal(off.node.members, true);
+    assert.equal(off.node.xpRate, 1);
+    assert.equal(off.node.debug, false);
+    assert.equal(off.node.maxConnected, 10);
+    assert.equal(off.engine.revision, 274);
+    assert.equal(off.login.enabled, false);
+    assert.equal(off.friend.enabled, false);
+    assert.equal(off.logger.enabled, false);
+    assert.equal(off.build.liveReload, false);
+    assert.equal(off.build.startup, false);
+    // The engine's GameMap.init() returns without loading anything - no npcs, objs,
+    // locs or collision - when <srcDir>/maps is absent, so this has to be a real
+    // directory the kit ships and copies into the working directory.
+    assert.equal(off.build.srcDir, 'content');
+    assert.equal(off.easyStartup, false);
+    assert.equal(off.account.autoCreate, false);
+    const on = JSON.parse(worldJson({ ports, settings: settings({ cheats: true }), revision: 274 }));
+    assert.equal(on.node.localStaffLevel, 4);
+    assert.equal(on.node.production, false);
+});
+
+test('worldJson takes the XP rate and members from the settings, and never turns debug on', () => {
+    const world = JSON.parse(worldJson({ ports, settings: settings({ xpRate: 5, members: false }), revision: 274 }));
+    assert.equal(world.node.xpRate, 5);
+    assert.equal(world.node.members, false);
+    assert.equal(world.node.localStaffLevel, 0);
+    assert.equal(world.node.debug, false);
+    assert.equal(world.node.production, false);
+});
+
+test('gameUrl puts the port on the catalog url and keeps its query', () => {
+    assert.equal(gameUrl('http://127.0.0.1/rs2.cgi?lowmem=1', 40001), 'http://127.0.0.1:40001/rs2.cgi?lowmem=1');
+    assert.equal(gameUrl('http://127.0.0.1:8888/rs2.cgi', 40001), 'http://127.0.0.1:40001/rs2.cgi');
+});
+
+test('parseVersion accepts the stage script output and rejects anything else', () => {
+    const text = JSON.stringify({ engine: { repo: 'r', commit: 'abc' }, content: { repo: 'c', commit: 'def' }, revision: 274, built: '2026-09-06T00:00:00.000Z' });
+    // A stage from before builds had recipes names no line, and reads with the three left null.
+    assert.deepEqual(parseVersion(text), { id: null, name: null, tag: null, engine: 'abc', content: 'def', revision: 274, built: '2026-09-06T00:00:00.000Z' });
+    const staged = JSON.stringify({ id: 'lostcity-289', name: 'Lost City 289', tag: 'engine-lostcity-289-a-b-c', engine: { commit: 'abc' }, content: { commit: 'def' }, revision: 289, built: 'x' });
+    assert.deepEqual(parseVersion(staged), { id: 'lostcity-289', name: 'Lost City 289', tag: 'engine-lostcity-289-a-b-c', engine: 'abc', content: 'def', revision: 289, built: 'x' });
+    assert.equal(parseVersion(JSON.stringify({ id: 7, engine: { commit: 'a' }, content: { commit: 'b' }, revision: 274, built: 'x' })), null);
+    assert.equal(parseVersion('not json'), null);
+    assert.equal(parseVersion(JSON.stringify({ engine: {}, content: {}, revision: 274, built: 'x' })), null);
+    assert.equal(parseVersion(JSON.stringify({ engine: { commit: 'a' }, content: { commit: 'b' }, revision: 'x', built: 'x' })), null);
+});
+
+test('stampMatches compares the stamp with the version text exactly, ignoring trailing whitespace', () => {
+    assert.equal(stampMatches('{"a":1}\n', '{"a":1}'), true);
+    assert.equal(stampMatches('{"a":1}', '{"a":2}'), false);
+    assert.equal(stampMatches(null, '{"a":1}'), false);
+});

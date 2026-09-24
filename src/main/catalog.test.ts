@@ -14,7 +14,6 @@ import {
     isServerDef,
     serverMenuLabel,
     migrateCatalog,
-    engineRevision,
     Catalog
 } from './catalog.ts';
 import { isWorldsDef } from './worlds/sources.ts';
@@ -37,19 +36,18 @@ test('the built-in list is per server, Lost City first, with the settled revisio
     assert.equal(byId['zanaris']!.revision, 274);
     assert.equal(byId['lostcitylabs']!.revision, null);
     assert.equal(byId['lostcitylabs']!.notes, 'May 2005 per Lost City Labs');
-    assert.equal(byId['local'], undefined, 'single player superseded the local server');
+    assert.equal(byId['local'], undefined, 'your world superseded the local server');
     assert.equal(byId['lostcity']!.wiki?.home, 'https://2004.losthq.rs/');
     assert.equal(byId['zanaris']!.wiki?.home, 'https://2004.losthq.rs/');
     assert.equal(byId['lostcitylabs']!.wiki, null);
 });
 
-test('the single-player entry runs on this computer and carries the engine revision', () => {
+test('the entry for your world runs on this computer and carries the default line\'s revision', () => {
     const sp = DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!;
     assert.equal(sp.kind, 'singleplayer');
-    assert.equal(sp.name, 'Single player');
+    assert.equal(sp.name, 'Your world');
     assert.equal(sp.url, 'http://127.0.0.1/rs2.cgi?lowmem=1');
-    assert.equal(sp.revision, engineRevision());
-    assert.equal(typeof sp.revision, 'number');
+    assert.equal(sp.revision, 274);
     assert.equal(sp.worlds, null);
     assert.equal(sp.wiki?.home, 'https://2004.losthq.rs/');
     assert.deepEqual(sp.bookmarks, [], 'the reference links are for the live servers, not a development world');
@@ -57,12 +55,7 @@ test('the single-player entry runs on this computer and carries the engine revis
     for (const server of DEFAULT_SERVERS) assert.equal(server.kind, server.id === 'singleplayer' ? 'singleplayer' : 'remote');
 });
 
-test('engineRevision reads engine.lock.json when nothing was stamped at build time', () => {
-    const lock = JSON.parse(readFileSync('engine.lock.json', 'utf8')) as { revision: number };
-    assert.equal(engineRevision(), lock.revision);
-});
-
-test('a version 2 file gains kind and the single-player entry, and loses local', () => {
+test('a version 2 file gains kind and the entry for your world, and loses local', () => {
     const v2 = {
         version: 2,
         servers: [
@@ -79,7 +72,7 @@ test('a version 2 file gains kind and the single-player entry, and loses local',
     assert.equal(migrated[0]!.hiscores?.source.kind, 'lostcity', 'a version 2 file gets the version 3 step too');
 });
 
-test('a version 2 file without local gets the single-player entry appended', () => {
+test('a version 2 file without local gets the entry for your world appended', () => {
     const created = createServer(input(), []);
     assert.ok(created.ok);
     const custom: ServerDef = { ...created.server };
@@ -448,7 +441,7 @@ const v3File = (): Record<string, unknown> => ({
 test('a v3 file loses the local entry and keeps the rest, in order', () => {
     const migrated = migrateCatalog(v3File());
     assert.ok(migrated);
-    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'my-server'], 'single player superseded the local server');
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'my-server'], 'your world superseded the local server');
 });
 
 test("a v3 file's Lost City template becomes the structured lookup, with the site the panel links to", () => {
@@ -588,7 +581,7 @@ test("an entry that claims a built-in's id and host but is a different kind of s
     writeFileSync(file, JSON.stringify({ version: 4, servers: [theirs] }));
     const catalog = new Catalog(file);
     catalog.load();
-    assert.equal(catalog.get('lostcity')!.hiscores, null, 'a single-player world is not the remote one it is named after');
+    assert.equal(catalog.get('lostcity')!.hiscores, null, 'a world on this computer is not the remote one it is named after');
 });
 
 test("a server of the user's own that took a built-in id keeps its own hiscores", () => {
@@ -654,22 +647,45 @@ test('Catalog.load migrates a v1 file in place and rewrites it as v5', () => {
     assert.equal(written.servers[0].id, 'lostcity');
 });
 
-test('a stored single-player entry follows the pinned engine, keeping the rest of the entry', () => {
+test('a stored entry for your world follows the revision of the line the world runs, keeping the rest of the entry', () => {
     const file = tempFile();
     const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
     const stored = servers.find(s => s.id === 'singleplayer')!;
     stored.revision = 1;
     stored.bookmarks = [{ name: 'Mine', url: 'https://example.com/' }];
-    writeFileSync(file, JSON.stringify({ version: 4, servers }));
-    const catalog = new Catalog(file);
+    writeFileSync(file, JSON.stringify({ version: 5, servers }));
+    const catalog = new Catalog(file, { yourWorldRevision: () => 289 });
     catalog.load();
     assert.equal(catalog.recovered, false);
     const loaded = catalog.get('singleplayer')!;
-    assert.equal(loaded.revision, engineRevision());
+    assert.equal(loaded.revision, 289);
     assert.deepEqual(loaded.bookmarks, [{ name: 'Mine', url: 'https://example.com/' }]);
     // and the file was rewritten, so the menu agrees on the next launch too
     const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
-    assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, engineRevision());
+    assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, 289);
+});
+
+test('without a line to follow, the stored entry for your world takes the default line\'s revision', () => {
+    const file = tempFile();
+    const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
+    servers.find(s => s.id === 'singleplayer')!.revision = 1;
+    writeFileSync(file, JSON.stringify({ version: 5, servers }));
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.get('singleplayer')!.revision, 274);
+});
+
+test('followYourWorld takes the revision again after a switch, and writes only when it changed', () => {
+    const file = tempFile();
+    let revision = 274;
+    const catalog = new Catalog(file, { yourWorldRevision: () => revision });
+    catalog.load();
+    assert.equal(catalog.followYourWorld(), false);
+    revision = 289;
+    assert.equal(catalog.followYourWorld(), true);
+    assert.equal(catalog.get('singleplayer')!.revision, 289);
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
+    assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, 289);
 });
 
 test('list returns deep copies of the worlds block', () => {
@@ -930,4 +946,14 @@ test('an entry that only borrowed a built-in id keeps its own timers', () => {
 
 test('newServerTimers is the list the built-ins carry', () => {
     assert.deepEqual(newServerTimers(), BUILT_IN_TIMERS);
+});
+
+test('a removed built-in does not come back on the next load, which is why Settings will not offer Remove for one', () => {
+    const file = tempFile();
+    const a = new Catalog(file);
+    a.load();
+    assert.equal(a.remove('lostcity'), true);
+    const b = new Catalog(file);
+    b.load();
+    assert.equal(b.get('lostcity'), undefined, 'nothing in load() re-adopts a missing built-in');
 });
