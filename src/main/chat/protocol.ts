@@ -3,7 +3,7 @@
  * socket, no state, so every rule here is tested against real server lines.
  */
 
-import { asChannel } from '../../shared/ircNames.ts';
+import { asChannel, isChannel } from '../../shared/ircNames.ts';
 
 export interface IrcMessage {
     /** The raw prefix, without its leading colon. Null when the server sent none. */
@@ -201,11 +201,35 @@ export type Input =
     | { kind: 'nick'; nick: string }
     | { kind: 'join'; channel: string }
     | { kind: 'part'; channel: string }
+    /** Opens a private conversation with someone, and says the text in it when there is some. */
+    | { kind: 'query'; target: string; text: string }
+    | { kind: 'notice'; target: string; text: string }
+    /** An empty channel means the active one. Null text asks what the topic is; a string sets it. */
+    | { kind: 'topic'; channel: string; text: string | null }
+    /** An empty reason is back. */
+    | { kind: 'away'; reason: string }
+    | { kind: 'whois'; nick: string }
+    /** An empty channel means the active one. */
+    | { kind: 'kick'; channel: string; nick: string; reason: string }
+    | { kind: 'invite'; nick: string; channel: string }
+    /** /op, /deop, /voice and /devoice: one rank given or taken, for everyone named, in the active channel. */
+    | { kind: 'rank'; mode: '+o' | '-o' | '+v' | '-v'; nicks: string[] }
+    /** An empty nick lists who is ignored. */
+    | { kind: 'ignore'; nick: string }
+    | { kind: 'unignore'; nick: string }
+    /** Empties the active tab's log, here only. */
+    | { kind: 'clear' }
+    /** Closes the active tab: parts a channel, or ends a private conversation. */
+    | { kind: 'close' }
+    | { kind: 'help' }
     /** Leave the network. ChatService reads it as Disconnect, so the kit does not reconnect behind it. */
     | { kind: 'quit'; reason: string }
     /** A command for the server, as typed: this client has no reading of its own for it. */
     | { kind: 'raw'; command: string; args: string }
     | { kind: 'unknown'; command: string };
+
+/** What /op and the rest ask the server for. */
+const RANKS = { op: '+o', deop: '-o', voice: '+v', devoice: '-v' } as const;
 
 /** A command is letters. Anything else — "/123", "/?" — is a typo, and typing it at the server would only earn a 421. */
 const COMMAND_WORD = /^[A-Za-z]+$/;
@@ -228,6 +252,8 @@ export function parseInput(text: string): Input | null {
     // args has no leading space, so its first word starts at 0 and the rest follows it.
     const [first = ''] = args.split(/\s+/);
     const rest = args.slice(first.length).trim();
+    // Trailing text, where a colon typed out of IRC habit is not part of what was meant.
+    const uncolon = (text: string): string => text.replace(/^:/, '');
 
     switch (command) {
         case 'me':
@@ -237,21 +263,68 @@ export function parseInput(text: string): Input | null {
         case 'nick':
             return first === '' ? null : { kind: 'nick', nick: first };
         case 'join':
+        case 'j':
             return first === '' ? null : { kind: 'join', channel: asChannel(first) };
         case 'part':
             // No channel means the active one, which only the client knows.
             return { kind: 'part', channel: first === '' ? '' : asChannel(first) };
         case 'quit':
-            // The reason is sent as trailing text, so a colon typed out of IRC habit is not part of it.
-            return { kind: 'quit', reason: args.replace(/^:/, '') };
+            return { kind: 'quit', reason: uncolon(args) };
+        case 'query':
+        case 'q':
+            return first === '' || isChannel(first) ? null : { kind: 'query', target: first, text: rest };
+        case 'notice':
+            return first === '' || rest === '' ? null : { kind: 'notice', target: first, text: uncolon(rest) };
+        case 'topic': {
+            if (isChannel(first)) return { kind: 'topic', channel: first, text: rest === '' ? null : uncolon(rest) };
+            return { kind: 'topic', channel: '', text: args === '' ? null : uncolon(args) };
+        }
+        case 'away':
+            return { kind: 'away', reason: uncolon(args) };
+        case 'back':
+            return { kind: 'away', reason: '' };
+        case 'whois':
+        case 'wi':
+            return first === '' ? null : { kind: 'whois', nick: first };
+        case 'kick': {
+            if (isChannel(first)) {
+                const [nick = ''] = rest.split(/\s+/);
+                return nick === '' ? null : { kind: 'kick', channel: first, nick, reason: uncolon(rest.slice(nick.length).trim()) };
+            }
+            return first === '' ? null : { kind: 'kick', channel: '', nick: first, reason: uncolon(rest) };
+        }
+        case 'invite': {
+            const [channel = ''] = rest.split(/\s+/);
+            return first === '' ? null : { kind: 'invite', nick: first, channel: channel === '' ? '' : asChannel(channel) };
+        }
+        case 'op':
+        case 'deop':
+        case 'voice':
+        case 'devoice': {
+            const nicks = args.split(/\s+/).filter(n => n !== '');
+            return nicks.length === 0 ? null : { kind: 'rank', mode: RANKS[command], nicks };
+        }
+        case 'ignore':
+            return { kind: 'ignore', nick: first };
+        case 'unignore':
+            return first === '' ? null : { kind: 'unignore', nick: first };
+        case 'clear':
+            return { kind: 'clear' };
+        case 'close':
+            return { kind: 'close' };
+        case 'help':
+            return { kind: 'help' };
         default:
             /*
              * Everything else is the server's. The commands above are here
              * because the client has to know what they did — a join opens a tab,
-             * a part closes one, /me is a message, a quit is a disconnect. INVITE, TOPIC, WHOIS, KICK, MODE and
-             * the rest change nothing this client tracks, so passing them on is
-             * both less code and more commands than a list could hold: the answer
-             * comes back from the server and lands in Status like any other.
+             * a part closes one, /me is a message, a quit is a disconnect — or
+             * because the active tab fills in what the command leaves out, as
+             * /topic, /kick and /op take the channel you are looking at. MODE,
+             * WHO, LIST and the rest change nothing this client tracks, so
+             * passing them on is both less code and more commands than a list
+             * could hold: the answer comes back from the server and lands in
+             * Status like any other.
              *
              * The arguments go as typed, IRC's own order and its own colon rules
              * included, since guessing where a trailing parameter starts is the

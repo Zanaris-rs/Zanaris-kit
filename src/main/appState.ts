@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
-import { AUTO_JOIN_MAX, channelProblem, isNick } from '../shared/chatSettings.ts';
+import { AUTO_JOIN_MAX, IGNORE_MAX, channelProblem, isNick } from '../shared/chatSettings.ts';
 import type { YourWorldSettings } from '../shared/yourworld.ts';
 import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
@@ -48,7 +48,7 @@ const STARTUP_MAX = 16;
  * by reference.
  */
 function defaultChat(): ChatSettings {
-    return { ...DEFAULT_CHAT, autoJoin: [...DEFAULT_CHAT.autoJoin] };
+    return { ...DEFAULT_CHAT, autoJoin: [...DEFAULT_CHAT.autoJoin], ignore: [...DEFAULT_CHAT.ignore] };
 }
 
 function isRemembered(x: unknown): x is RememberedWorld {
@@ -91,6 +91,9 @@ function readChat(x: unknown): ChatSettings {
         chat.autoJoin = autoJoin;
     }
     if (typeof c.autoConnect === 'boolean') chat.autoConnect = c.autoConnect;
+    // A nick that is not one is dropped rather than the list: it could never have matched anyone.
+    if (Array.isArray(c.ignore)) chat.ignore = c.ignore.filter((nick): nick is string => typeof nick === 'string' && isNick(nick)).slice(0, IGNORE_MAX);
+    if (typeof c.notify === 'boolean') chat.notify = c.notify;
     return chat;
 }
 
@@ -231,11 +234,11 @@ export class AppState {
 
     /** Where chat connects, as whom, and what it joins. Falls back to the SwiftIRC defaults field by field. */
     chat(): ChatSettings {
-        // autoJoin is cloned too, unlike the rest of the spread: it is the one
-        // array in an otherwise-primitive settings object, and returning it by
+        // The lists are cloned too, unlike the rest of the spread: they are the
+        // arrays in an otherwise-primitive settings object, and returning one by
         // reference would let a caller mutate this instance's own list without
         // going through setChat/stageChat at all.
-        return { ...this.chatSettings, autoJoin: [...this.chatSettings.autoJoin] };
+        return { ...this.chatSettings, autoJoin: [...this.chatSettings.autoJoin], ignore: [...this.chatSettings.ignore] };
     }
 
     /** The NickServ password as sealed by the OS store, or null when none is kept. */
@@ -267,6 +270,7 @@ export class AppState {
         // array, and holding the caller's own array by reference would let it
         // mutate this instance's settings from outside setChat/stageChat entirely.
         if (patch.autoJoin !== undefined) this.chatSettings.autoJoin = [...patch.autoJoin];
+        if (patch.ignore !== undefined) this.chatSettings.ignore = [...patch.ignore];
     }
 
     /** Your world's settings. A copy: changes go through setYourWorldSettings. */

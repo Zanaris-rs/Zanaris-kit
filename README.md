@@ -266,14 +266,17 @@ conversation. It connects to SwiftIRC over TLS, the network LostHQ's community
 actually uses, and joins the channels on its auto-join list:
 `#2004scape, #LostHQ, #Zanaris` until you change it.
 
-Its tabs are **Settings**, **Status**, then one per channel in the order they
-were joined:
+Its tabs are **Settings**, **Status**, then one per channel or private
+conversation in the order they were opened:
 
 - **Settings** can't be closed. It has the nickname, an optional NickServ
-  password, the auto-join list, and Connect or Disconnect.
+  password, the auto-join list, the ignore list, whether mentions raise a
+  system notification, and Connect or Disconnect.
 - **Status** is where the server talks to you. It shows the welcome, the
-  message of the day, notices, private messages and anything refused. It can't
-  be closed either.
+  message of the day, notices and anything refused. It can't be closed either.
+- **A private message opens a tab** named for whoever sent it, and `/query
+  nick` opens one yourself. A notice never opens one, so NickServ's answers
+  stay in Status. The tab follows its person through a nick change.
 - **Every channel has its own close.** Closing a tab leaves that channel for
   the session, and `/join` joins one for the session. Only Settings changes the
   saved list, and each Connect joins that list again.
@@ -300,6 +303,16 @@ ops in gold, half-ops in orange, voices in green. Each nick has the same colour
 as in the log. Above the list are the user count, the channel's modes and the
 date it was created.
 
+Click a name, in the list or the log, for a menu: message them, mention them,
+look them up, or ignore them. Ignoring hides someone's messages, notices and
+invites, and lasts across launches; `/ignore` and `/unignore` do the same from
+the message box. Links in a line open in your browser, http and https only,
+and a channel name joins it, which is how an invite is accepted. Tab finishes
+a nick, a channel or a command, and pressing it again moves to the next match.
+Up and Down bring back what you sent. While the kit is in the background, a
+line that names you or a private message raises a system notification, unless
+Settings turns them off.
+
 Chat is a pane like anything else: drag its header to wherever you want it, drag
 its seams, close it. A new window opens with it already there, in a pane below the game —
 chat is the kit's own reason to be open instead of a browser tab, and a pane
@@ -318,15 +331,19 @@ mean.
 The first time you open chat it opens on Settings, because there is nothing
 sensible to default a nick to, and a name others see should be chosen rather
 than assigned. Nothing connects until you pick one, which is also why an
-unattended capture run never opens a socket. `/me`, `/msg`, `/nick`, `/join`,
-`/part` and `/quit` are the kit's own: they change what it draws, so it has to
-understand them. `/quit [reason]` is the Disconnect button, remembered the same
-way, rather than a dropped connection the kit would reconnect behind. Every other slash command goes to the server as typed — `/invite bob
-#LostHQ`, `/whois`, `/mode`, `/kick` — in IRC's own argument order, colons and
-all, so `/topic #LostHQ :hello there` needs its colon or the server keeps only
-the first word. The answer comes back in Status, including the complaint when
-the command was a typo. A slash followed by something that is not a command at
-all, like `/123`, is still refused here rather than sent.
+unattended capture run never opens a socket. Some commands are the kit's own,
+because they change what it draws or take the channel you are looking at:
+`/me`, `/msg`, `/query`, `/notice`, `/nick`, `/join`, `/part`, `/close`,
+`/topic`, `/away`, `/whois`, `/kick`, `/invite`, `/op`, `/deop`, `/voice`,
+`/devoice`, `/ignore`, `/unignore`, `/clear`, `/help` and `/quit`. `/help`
+lists them. `/quit [reason]` is the Disconnect button, remembered the same
+way, rather than a dropped connection the kit would reconnect behind. A whois
+answer is written out as sentences in the tab you asked from. Every other
+slash command goes to the server as typed — `/mode`, `/who`, `/list` — in
+IRC's own argument order, colons and all. The answer comes back in Status,
+including the complaint when the command was a typo. A slash followed by
+something that is not a command at all, like `/123`, is still refused here
+rather than sent.
 
 The protocol layer is hand-written and tested rather than a dependency: a
 parser and serializer for the commands and numerics this needs, including the

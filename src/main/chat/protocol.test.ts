@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { COMMANDS } from '../../shared/chatInput.ts';
 import { DEFAULT_ISUPPORT, formatCommand, isChannel, mentions, modeChanges, parseInput, parseLine, readIsupport, stripFormatting } from './protocol.ts';
 
 // ── parseLine ─────────────────────────────────────────────────────────────
@@ -161,9 +162,8 @@ test('/part may name a channel or leave it to the client', () => {
 });
 
 test('a slash command this client has no reading of its own for is one for the server', () => {
-    assert.deepEqual(parseInput('/invite bob #LostHQ'), { kind: 'raw', command: 'invite', args: 'bob #LostHQ' });
-    assert.deepEqual(parseInput('/away'), { kind: 'raw', command: 'away', args: '' });
-    assert.deepEqual(parseInput('/TOPIC #LostHQ :hello there'), { kind: 'raw', command: 'topic', args: '#LostHQ :hello there' }, 'the arguments are the user\'s, colon included');
+    assert.deepEqual(parseInput('/mode #LostHQ +b *!*@bad'), { kind: 'raw', command: 'mode', args: '#LostHQ +b *!*@bad' });
+    assert.deepEqual(parseInput('/WHO #LostHQ :x'), { kind: 'raw', command: 'who', args: '#LostHQ :x' }, 'the arguments are the user\'s, colon included');
 });
 
 test('/quit is read here, with its reason as the trailing text it will be sent as', () => {
@@ -237,4 +237,67 @@ test('bold, colour, italic, underline, reverse and reset codes are stripped, col
     assert.equal(stripFormatting(`${c(3)}12,5 on 5`), ' on 5', 'a background takes its digits too');
     assert.equal(stripFormatting(`${c(3)}, not a colour`), ', not a colour', 'a comma with no colour before it is text');
     assert.equal(stripFormatting('plain text'), 'plain text');
+});
+
+test('/query opens a conversation with a nick, never a channel, and may say something in it', () => {
+    assert.deepEqual(parseInput('/query bob'), { kind: 'query', target: 'bob', text: '' });
+    assert.deepEqual(parseInput('/q bob hi there'), { kind: 'query', target: 'bob', text: 'hi there' });
+    assert.equal(parseInput('/query'), null);
+    assert.equal(parseInput('/query #LostHQ'), null, 'a channel is joined, not queried');
+});
+
+test('/topic reads or sets the topic, of the channel named or the one you are in', () => {
+    assert.deepEqual(parseInput('/topic'), { kind: 'topic', channel: '', text: null });
+    assert.deepEqual(parseInput('/topic #LostHQ'), { kind: 'topic', channel: '#LostHQ', text: null });
+    assert.deepEqual(parseInput('/topic welcome all'), { kind: 'topic', channel: '', text: 'welcome all' });
+    assert.deepEqual(parseInput('/TOPIC #LostHQ :hello there'), { kind: 'topic', channel: '#LostHQ', text: 'hello there' }, 'a colon typed out of habit is not part of it');
+});
+
+test('/away with a reason is away, and with none, or /back, is back', () => {
+    assert.deepEqual(parseInput('/away gone fishing'), { kind: 'away', reason: 'gone fishing' });
+    assert.deepEqual(parseInput('/away'), { kind: 'away', reason: '' });
+    assert.deepEqual(parseInput('/back'), { kind: 'away', reason: '' });
+});
+
+test('/kick takes the channel you are in unless one is named, and a reason after the nick', () => {
+    assert.deepEqual(parseInput('/kick bob spam'), { kind: 'kick', channel: '', nick: 'bob', reason: 'spam' });
+    assert.deepEqual(parseInput('/kick #LostHQ bob :no spam'), { kind: 'kick', channel: '#LostHQ', nick: 'bob', reason: 'no spam' });
+    assert.deepEqual(parseInput('/kick #LostHQ bob'), { kind: 'kick', channel: '#LostHQ', nick: 'bob', reason: '' });
+    assert.equal(parseInput('/kick #LostHQ'), null, 'nobody to kick');
+    assert.equal(parseInput('/kick'), null);
+});
+
+test('/invite names someone, and a channel or the one you are in', () => {
+    assert.deepEqual(parseInput('/invite bob #LostHQ'), { kind: 'invite', nick: 'bob', channel: '#LostHQ' });
+    assert.deepEqual(parseInput('/invite bob LostHQ'), { kind: 'invite', nick: 'bob', channel: '#LostHQ' });
+    assert.deepEqual(parseInput('/invite bob'), { kind: 'invite', nick: 'bob', channel: '' });
+    assert.equal(parseInput('/invite'), null);
+});
+
+test('/op, /deop, /voice and /devoice take everyone named', () => {
+    assert.deepEqual(parseInput('/op bob alice'), { kind: 'rank', mode: '+o', nicks: ['bob', 'alice'] });
+    assert.deepEqual(parseInput('/devoice bob'), { kind: 'rank', mode: '-v', nicks: ['bob'] });
+    assert.equal(parseInput('/voice'), null);
+});
+
+test('the commands the kit reads for itself', () => {
+    assert.deepEqual(parseInput('/whois bob'), { kind: 'whois', nick: 'bob' });
+    assert.equal(parseInput('/whois'), null);
+    assert.deepEqual(parseInput('/notice bob :heads up'), { kind: 'notice', target: 'bob', text: 'heads up' });
+    assert.equal(parseInput('/notice bob'), null);
+    assert.deepEqual(parseInput('/ignore spammer'), { kind: 'ignore', nick: 'spammer' });
+    assert.deepEqual(parseInput('/ignore'), { kind: 'ignore', nick: '' }, 'with no nick, it lists');
+    assert.deepEqual(parseInput('/unignore spammer'), { kind: 'unignore', nick: 'spammer' });
+    assert.equal(parseInput('/unignore'), null);
+    assert.deepEqual(parseInput('/j LostHQ'), { kind: 'join', channel: '#LostHQ' });
+    assert.deepEqual(parseInput('/clear'), { kind: 'clear' });
+    assert.deepEqual(parseInput('/close'), { kind: 'close' });
+    assert.deepEqual(parseInput('/help'), { kind: 'help' });
+});
+
+test('every command offered as it is typed is one the kit reads itself', () => {
+    for (const command of COMMANDS) {
+        const typed = parseInput(`/${command} bob #LostHQ some words`);
+        assert.ok(typed !== null && typed.kind !== 'raw' && typed.kind !== 'unknown', `/${command} is offered but goes to the server as typed`);
+    }
 });

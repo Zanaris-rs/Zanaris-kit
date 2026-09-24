@@ -58,7 +58,7 @@ export interface ChatChannel {
 
 /** What the shell is shown: everything the client knows, plus what only ChatService can add. */
 export interface ViewChannel extends ChatChannel {
-    /** Any channel may be closed; the Status log may not, since it is where the server talks to you. */
+    /** Any channel or conversation may be closed; the Status log may not, since it is where the server talks to you. */
     closable: boolean;
 }
 
@@ -71,6 +71,10 @@ export interface ChatSettingsView {
      */
     nick: string | null;
     autoJoin: string[];
+    /** Nicks whose messages are dropped unseen. */
+    ignore: string[];
+    /** Whether a mention or a private message raises a system notification while the kit is in the background. */
+    notify: boolean;
     hasPassword: boolean;
     /** Whether a password given now outlives this run. False where the OS has no secure store to keep it in. */
     canSavePassword: boolean;
@@ -99,6 +103,10 @@ export interface ChatSettings {
     autoJoin: string[];
     /** Whether launch connects. Pressing Disconnect clears it, and Connect sets it again. */
     autoConnect: boolean;
+    /** Nicks whose messages are dropped unseen. Written by Settings and by /ignore and /unignore. */
+    ignore: string[];
+    /** Whether a mention or a private message raises a system notification while the kit is in the background. */
+    notify: boolean;
 }
 
 export const DEFAULT_AUTO_JOIN: readonly string[] = ['#2004scape', '#LostHQ', '#Zanaris'];
@@ -108,5 +116,7 @@ export const DEFAULT_CHAT: ChatSettings = {
     server: 'irc.swiftirc.net',
     port: 6697,
     autoJoin: [...DEFAULT_AUTO_JOIN],
-    autoConnect: true
+    autoConnect: true,
+    ignore: [],
+    notify: true
 };

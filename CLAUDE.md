@@ -157,6 +157,9 @@ and `basic_text` on Linux counts as no store. Keep all three true: a debug line
 that logs `sent`, or a view field that echoes the password, is a leak.
 
 **Settings is the only writer of chat's saved nick and auto-join list.**
+The ignore list is the one list with a second writer: `/ignore` and
+`/unignore` save it through `ChatStart.onIgnoreChanged`, since a person
+ignored for this session only would be back on the next launch.
 Nothing learnt from the connection is saved. `chatPersist.ts`, which used to
 learn the nick from the view, is gone. A services rename to `Guest12345`
 saved as the nick would have been the next launch's nick.
@@ -180,9 +183,20 @@ offline until Connect. Connect, Disconnect and a typed `/quit` report through
 `ChatStart.onConnectionWanted`, the one writer of that flag.
 `ChatService.stop()`, for the app quitting, must not call it.
 
-**Typed commands:** `/me /msg /nick /join /part /quit` are read by the kit.
-Everything else goes to the server as typed (`Input` kind `raw`), and the reply
-lands in Status.
+**Typed commands:** `parseInput` reads the kit's own — the list is
+`COMMANDS` in `shared/chatInput.ts`, which a test keeps in step with it, plus
+the aliases `/j /q /wi /back`. Everything else goes to the server as typed
+(`Input` kind `raw`), and the reply lands in Status.
+
+**A conversation with one person is a tab named by their nick.** A PRIVMSG to
+us opens one; a notice never does, and neither does `/msg`, so NickServ's
+answers stay in Status. A conversation is never in the auto-join list, is not
+reopened on reconnect, and follows its person through a NICK. Anything said
+to NickServ, in a conversation or by `/msg`, is echoed with its secret words
+hidden (`hideSecret`).
+
+**Links in the log open only if `linkTarget` says http or https**, read again
+in main whatever the shell sent: a chat line is a stranger's writing.
 
 Chat connects to **SwiftIRC** (`irc.swiftirc.net:6697`, TLS, confirmed by
 handshake against its Let's Encrypt certificate), not Libera. That is where

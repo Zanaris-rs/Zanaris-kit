@@ -4,7 +4,7 @@ import { ANSWER_MS, ChatService, offlineChat, SILENCE_MS, splitLines, type ChatI
 import { SERVER_LOG } from '../../shared/chat.ts';
 
 const LOBBY = '#LostHQ';
-const SETTINGS: ChatStart = { nick: null, server: 'irc.swiftirc.net', port: 6697, autoJoin: [LOBBY], autoConnect: true, password: null, canSavePassword: true };
+const SETTINGS: ChatStart = { nick: null, server: 'irc.swiftirc.net', port: 6697, autoJoin: [LOBBY], autoConnect: true, ignore: [], notify: true, password: null, canSavePassword: true };
 
 // ── the stream ────────────────────────────────────────────────────────────
 //
@@ -304,7 +304,7 @@ test('the view carries the saved auto-join list and whether a password is held, 
     const f = fake();
     const service = new ChatService({ ...SETTINGS, nick: 'matt', password: 'hunter2', canSavePassword: false }, f.io);
     const settings = service.view().settings;
-    assert.deepEqual(settings, { nick: 'matt', autoJoin: [LOBBY], hasPassword: true, canSavePassword: false });
+    assert.deepEqual(settings, { nick: 'matt', autoJoin: [LOBBY], ignore: [], notify: true, hasPassword: true, canSavePassword: false });
     assert.ok(!JSON.stringify(service.view()).includes('hunter2'));
 });
 
@@ -798,4 +798,53 @@ test('a wake with no connection up sends nothing and changes nothing', () => {
     service.wake();
     assert.deepEqual(f.sent, []);
     assert.deepEqual(watching(f), []);
+});
+
+// ── ignoring, mentions and conversations ──────────────────────────────────
+
+test('/ignore is kept for the next launch, and shown in the view', () => {
+    const f = fake();
+    const kept: string[][] = [];
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', onIgnoreChanged: list => kept.push(list) }, f.io);
+    f.register();
+    service.send('/ignore spammer');
+    assert.deepEqual(kept, [['spammer']]);
+    assert.deepEqual(service.view().settings.ignore, ['spammer']);
+});
+
+test('a saved ignore list applies to the connection at once', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    service.select(LOBBY);
+    service.applySettings({ nick: 'matt', autoJoin: [LOBBY], ignore: ['spammer'] });
+    f.line(`:spammer!s@h PRIVMSG ${LOBBY} :buy gold`);
+    assert.deepEqual(service.view().lines, []);
+    assert.deepEqual(service.view().settings.ignore, ['spammer']);
+});
+
+test('a mention is passed on while notifications are on, and not once they are off', () => {
+    const f = fake();
+    const seen: string[] = [];
+    const service = new ChatService({ ...SETTINGS, nick: 'matt', onMention: line => seen.push(line.text) }, f.io);
+    f.register();
+    f.line(`:bob!b@h PRIVMSG ${LOBBY} :matt: look`);
+    f.line(':bob!b@h PRIVMSG matt :psst');
+    service.applySettings({ nick: 'matt', autoJoin: [LOBBY], notify: false });
+    f.line(':bob!b@h PRIVMSG matt :again');
+    assert.deepEqual(seen, ['matt: look', 'psst']);
+    assert.equal(service.view().settings.notify, false);
+});
+
+test('a conversation can be closed like a channel, and is never parted', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    f.line(':bob!b@h PRIVMSG matt :hi');
+    const bob = service.view().channels.find(c => c.name === 'bob');
+    assert.equal(bob?.closable, true);
+    f.sent.length = 0;
+    assert.equal(service.closeRoom('bob'), true);
+    assert.deepEqual(f.sent, []);
+    assert.equal(service.view().channels.some(c => c.name === 'bob'), false);
 });

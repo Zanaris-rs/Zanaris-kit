@@ -1,7 +1,7 @@
 import { connect } from 'node:tls';
-import { DEFAULT_AUTO_JOIN, SERVER_LOG, type ChatSettings, type ChatSettingsView, type ChatView } from '../../shared/chat.ts';
+import { DEFAULT_AUTO_JOIN, SERVER_LOG, type ChatLine, type ChatSettings, type ChatSettingsView, type ChatView } from '../../shared/chat.ts';
 import { backoffDelay, IrcClient } from './client.ts';
-import { formatCommand, isChannel, parseInput, sameName } from './protocol.ts';
+import { formatCommand, parseInput, sameName } from './protocol.ts';
 
 /**
  * The app's one chat connection.
@@ -67,7 +67,7 @@ export const SILENCE_MS = 90_000;
 export const ANSWER_MS = 30_000;
 
 /** What the Settings tab shows when no service exists to ask: the defaults, nothing saved. */
-const NO_SETTINGS: ChatSettingsView = { nick: null, autoJoin: [...DEFAULT_AUTO_JOIN], hasPassword: false, canSavePassword: false };
+const NO_SETTINGS: ChatSettingsView = { nick: null, autoJoin: [...DEFAULT_AUTO_JOIN], ignore: [], notify: true, hasPassword: false, canSavePassword: false };
 
 /** What the panel shows when there is no connection to describe yet. */
 export function offlineChat(nick: string | null, settings: ChatSettingsView = NO_SETTINGS): ChatView {
@@ -86,6 +86,14 @@ export interface ChatStart extends ChatSettings {
      * the app quits: a kit closed while connected should connect again.
      */
     onConnectionWanted?: (wanted: boolean) => void;
+    /** Told the ignore list after /ignore or /unignore changed it, so the next launch ignores the same people. */
+    onIgnoreChanged?: (ignore: string[]) => void;
+    /**
+     * Told each line that names you or is said to you alone, while `notify` is
+     * on. Whether anyone is looking is the caller's to judge: the service
+     * knows nothing of windows.
+     */
+    onMention?: (line: ChatLine) => void;
 }
 
 /** One save from the Settings tab, already checked by `readSettingsDraft`. */
@@ -94,6 +102,10 @@ export interface SettingsChange {
     autoJoin: string[];
     /** Absent leaves the password alone; a string replaces it; null forgets it. */
     password?: string | null;
+    /** Absent leaves the list alone. */
+    ignore?: string[];
+    /** Absent leaves the choice alone. */
+    notify?: boolean;
 }
 
 export class ChatService {
@@ -102,8 +114,12 @@ export class ChatService {
     private readonly port: number;
     private readonly canSavePassword: boolean;
     private readonly onConnectionWanted: (wanted: boolean) => void;
+    private readonly onIgnoreChanged: (ignore: string[]) => void;
+    private readonly onMention: (line: ChatLine) => void;
     private nick: string | null;
     private autoJoin: string[];
+    private ignore: string[];
+    private notify: boolean;
     private password: string | null;
     private client: IrcClient | null = null;
     private socket: ChatSocket | null = null;
@@ -132,8 +148,12 @@ export class ChatService {
         this.port = start.port;
         this.canSavePassword = start.canSavePassword;
         this.onConnectionWanted = start.onConnectionWanted ?? (() => {});
+        this.onIgnoreChanged = start.onIgnoreChanged ?? (() => {});
+        this.onMention = start.onMention ?? (() => {});
         this.nick = start.nick === '' ? null : start.nick;
         this.autoJoin = [...start.autoJoin];
+        this.ignore = [...start.ignore];
+        this.notify = start.notify;
         this.password = start.password;
         this.stopped = !start.autoConnect;
         // A remembered nick connects straight away unless the user last
@@ -146,6 +166,8 @@ export class ChatService {
         const settings: ChatSettingsView = {
             nick: this.nick,
             autoJoin: [...this.autoJoin],
+            ignore: [...this.ignore],
+            notify: this.notify,
             hasPassword: this.password !== null,
             canSavePassword: this.canSavePassword
         };
@@ -153,7 +175,7 @@ export class ChatService {
         const snapshot = this.client.snapshot();
         return {
             ...snapshot,
-            channels: snapshot.channels.map(channel => ({ ...channel, closable: isChannel(channel.name) })),
+            channels: snapshot.channels.map(channel => ({ ...channel, closable: channel.name !== SERVER_LOG })),
             needsNick: this.nick === null,
             settings
         };
@@ -209,11 +231,18 @@ export class ChatService {
      * - A channel added to the list is joined now, or as soon as the
      *   connection on its way is up. One taken off is not parted: the list
      *   says what to join next time, and closing the tab is how to leave now.
+     * - The ignore list applies to what arrives from now on; what is already
+     *   in a log stays.
      */
     applySettings(change: SettingsChange): void {
         const added = change.autoJoin.filter(channel => !this.autoJoin.some(saved => sameName(saved, channel)));
         this.autoJoin = [...change.autoJoin];
         if (change.password !== undefined) this.password = change.password;
+        if (change.notify !== undefined) this.notify = change.notify;
+        if (change.ignore !== undefined) {
+            this.ignore = [...change.ignore];
+            this.client?.setIgnore(this.ignore);
+        }
         const nick = change.nick.trim();
         const client = this.client;
 
@@ -247,12 +276,16 @@ export class ChatService {
         this.emit();
     }
 
-    /** Leaves a channel for the rest of the session. Status is refused, since it is not a room and the server keeps talking into it. */
+    /**
+     * Leaves a channel for the rest of the session, or ends a private
+     * conversation. Status is refused, since it is not a room and the server
+     * keeps talking into it.
+     */
     closeRoom(channel: string): boolean {
-        if (this.client === null || !isChannel(channel)) return false;
+        if (this.client === null || channel === SERVER_LOG) return false;
         const known = this.client.snapshot().channels.some(c => sameName(c.name, channel));
         if (!known) return false;
-        this.client.part(channel);
+        this.client.close(channel);
         this.emit();
         return true;
     }
@@ -312,8 +345,16 @@ export class ChatService {
                 nick: this.nick,
                 channels: [...this.autoJoin],
                 password: this.password,
+                ignore: this.ignore,
                 now: () => this.io.now(),
-                send: line => this.socket?.send(line)
+                send: line => this.socket?.send(line),
+                onIgnoreChanged: ignore => {
+                    this.ignore = [...ignore];
+                    this.onIgnoreChanged([...ignore]);
+                },
+                onHighlight: line => {
+                    if (this.notify) this.onMention(line);
+                }
             });
         this.client = client;
         client.connecting();

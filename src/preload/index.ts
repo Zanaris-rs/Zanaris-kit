@@ -27,7 +27,9 @@ const api: ZanarisApi = {
         closeRoom: channel => ipcRenderer.invoke(IPC.chatCloseRoom, channel),
         saveSettings: save => ipcRenderer.invoke(IPC.chatSaveSettings, save),
         connect: () => ipcRenderer.invoke(IPC.chatConnect),
-        disconnect: () => ipcRenderer.invoke(IPC.chatDisconnect)
+        disconnect: () => ipcRenderer.invoke(IPC.chatDisconnect),
+        openLink: url => ipcRenderer.invoke(IPC.chatOpenLink, url),
+        userMenu: (nick, x, y) => ipcRenderer.invoke(IPC.chatUserMenu, nick, x, y)
     },
     worlds: {
         refresh: () => ipcRenderer.invoke(IPC.worldsRefresh),
