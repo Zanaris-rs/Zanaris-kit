@@ -47,7 +47,7 @@ be shown. What a tab close takes with it is `tabs.closingTab`, pure and tested;
 
 Everything else about the layout is `src/main/paneTree.ts`: a tab is a tree of
 leaves and n-ary splits, and one recursive walk turns it into a rect per pane.
-Three properties in there are load-bearing and easy to break —
+Four properties in there are load-bearing and easy to break —
 
 - Shares are distributed by **largest remainder**, so children sum to their
   container exactly. A round per child leaves a hairline of shell showing
@@ -63,6 +63,15 @@ Three properties in there are load-bearing and easy to break —
   the arrangement the player last left (`refit`), **not from the last frame**.
   Shrinking past the other panes' floors squeezes the game; fitted frame from
   frame, growing back would then hold it at the squeezed size for good.
+- A pane that is **added** — Add pane's column, Split Right, Split Down — is
+  **paid for by the window, not the game** (`makeRoom`): the window grows by
+  what the game would have lost, as far as its display allows, and the game
+  takes the growth back. The tree is recorded as arranged at the size the
+  window is growing to (`arrangedAt`). Left to `refit`, it would be fitted from
+  the last frame's size, the growth would read as a resize, and the game would
+  be held at the size the new pane squeezed it to while the window grew around
+  it. The window grows itself for nothing else — not Reset Game Size, not a
+  drop — and never shrinks itself back.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved layout file
 carries tool ids between people — that is the whole point of saving one — and
