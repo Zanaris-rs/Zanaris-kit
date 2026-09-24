@@ -141,6 +141,10 @@ Hand-written IRC over raw TLS (`node:tls`), no library, no WebSocket.
 - **Host and port** are captured `readonly` at construction, so changing them
   needs an app restart, and there is no UI for them.
 - **`tlsConnect.send` refuses** any line holding CR, LF or NUL.
+- **A silent socket is presumed dead.** After `SILENCE_MS` with nothing from
+  the server, `ChatService` sends a `PING`; with nothing back in `ANSWER_MS` it
+  drops the socket and reconnects. Any bytes count as an answer, and a wake from
+  sleep pings at once, because timers stand still while the machine sleeps.
 
 **The password never enters a log line or the renderer.** `identify()` writes
 straight to `send` and never through `push()`. `ChatView.settings` carries only

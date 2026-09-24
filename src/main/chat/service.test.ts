@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ChatService, offlineChat, splitLines, type ChatIo, type ChatSocket, type ChatStart, type SocketHandlers } from './service.ts';
+import { ANSWER_MS, ChatService, offlineChat, SILENCE_MS, splitLines, type ChatIo, type ChatSocket, type ChatStart, type SocketHandlers } from './service.ts';
 import { SERVER_LOG } from '../../shared/chat.ts';
 
 const LOBBY = '#LostHQ';
@@ -283,7 +283,11 @@ test('connect while waiting out a backoff connects now rather than when the time
 
     service.connect();
     assert.equal(f.connects.length, 2);
-    assert.deepEqual(f.timers.filter(t => !t.cancelled), [], 'the waiting retry is dropped, not left to open a second socket');
+    assert.deepEqual(
+        f.timers.filter(t => !t.cancelled).map(t => t.ms),
+        [SILENCE_MS],
+        'the waiting retry is dropped, not left to open a second socket; only the new socket is watched'
+    );
 });
 
 test('connect on a live connection does not open another', () => {
@@ -683,4 +687,115 @@ test('a half-arrived line does not survive the socket that was carrying it', () 
     f.register();
     f.chunk(`lo\r\n`);
     assert.deepEqual(service.view().lines, [], 'the tail of a dead connection is not the head of the next');
+});
+
+// ── a connection that died without closing ────────────────────────────────
+//
+// A laptop that slept, or a network that changed under it, can leave a socket
+// that never errors and never closes: the panel says online while nothing
+// arrives. The only way to know is to ask the server and hear nothing back.
+
+/** The watchdog's timers still waiting, by how long they wait. */
+function watching(f: Fake): number[] {
+    return f.timers.filter(t => !t.cancelled && (t.ms === SILENCE_MS || t.ms === ANSWER_MS)).map(t => t.ms);
+}
+
+test('a server silent for a while is pinged, and any answer keeps the connection', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    f.sent.length = 0;
+    assert.deepEqual(watching(f), [SILENCE_MS], 'online, the silence is being counted');
+
+    assert.equal(f.fire(), SILENCE_MS);
+    assert.equal(f.sent.length, 1);
+    assert.match(f.sent[0]!, /^PING /, 'the server is asked for a sign of life');
+    assert.deepEqual(watching(f), [ANSWER_MS]);
+
+    f.line(':irc.swiftirc.net PONG irc.swiftirc.net :zanaris');
+    assert.deepEqual(watching(f), [SILENCE_MS], 'the answer starts the count over');
+    assert.equal(service.view().status, 'online');
+    assert.equal(f.closes, 0);
+    assert.deepEqual(service.view().lines, [], 'the PONG is not a line in Status');
+});
+
+test('anything the server sends starts the silence count over', () => {
+    const f = fake();
+    new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    f.chunk(':bob!b@h PRIVMSG #LostHQ :hal');
+    assert.deepEqual(watching(f), [SILENCE_MS], 'even half a line: the socket is alive');
+    assert.equal(f.timers.filter(t => t.ms === SILENCE_MS).length, 4, 'one count per arrival: connect, opened, 001, and this');
+});
+
+test('a ping nobody answers drops the socket and reconnects', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+
+    f.fire(); // the silence
+    f.fire(); // the wait for an answer
+    assert.equal(f.closes, 1, 'the dead socket is let go');
+    assert.equal(service.view().status, 'reconnecting');
+    assert.match(service.view().error ?? '', /stopped answering/);
+
+    // The dropped socket may still report its close, late; it is not ours any more.
+    f.drop('closed by us');
+    assert.equal(f.fire(), 1_000, 'one reconnect, counted once');
+    assert.equal(f.connects.length, 2);
+});
+
+test('a handshake that never completes is given up on without a ping', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    assert.deepEqual(watching(f), [SILENCE_MS]);
+
+    f.fire();
+    assert.deepEqual(f.sent, [], 'there is no connection to ping on');
+    assert.equal(f.closes, 1);
+    assert.equal(service.view().status, 'reconnecting');
+    assert.match(service.view().error ?? '', /did not answer/);
+});
+
+test('nothing is watched once the connection is closed, whoever closed it', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    f.drop();
+    assert.deepEqual(watching(f), [], 'a dropped connection has no silence to count');
+
+    f.fire();
+    f.register();
+    service.disconnect();
+    assert.deepEqual(watching(f), []);
+});
+
+test('a wake asks the server at once rather than waiting out the silence', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    f.register();
+    f.sent.length = 0;
+
+    service.wake();
+    assert.equal(f.sent.length, 1);
+    assert.match(f.sent[0]!, /^PING /);
+    assert.deepEqual(watching(f), [ANSWER_MS]);
+
+    f.fire();
+    assert.equal(service.view().status, 'reconnecting', 'slept through its connection, it gets a new one');
+});
+
+test('a wake with no connection up sends nothing and changes nothing', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    service.wake(); // still connecting
+    assert.deepEqual(f.sent, []);
+    assert.deepEqual(watching(f), [SILENCE_MS]);
+
+    f.register();
+    service.disconnect();
+    f.sent.length = 0;
+    service.wake();
+    assert.deepEqual(f.sent, []);
+    assert.deepEqual(watching(f), []);
 });

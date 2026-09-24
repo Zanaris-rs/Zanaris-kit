@@ -1,7 +1,7 @@
 import { connect } from 'node:tls';
 import { DEFAULT_AUTO_JOIN, SERVER_LOG, type ChatSettings, type ChatSettingsView, type ChatView } from '../../shared/chat.ts';
 import { backoffDelay, IrcClient } from './client.ts';
-import { isChannel, parseInput, sameName } from './protocol.ts';
+import { formatCommand, isChannel, parseInput, sameName } from './protocol.ts';
 
 /**
  * The app's one chat connection.
@@ -54,6 +54,18 @@ export function splitLines(pending: string, chunk: string): { lines: string[]; r
     return { lines: parts.map(line => line.replace(/\r$/, '')).filter(line => line !== ''), rest };
 }
 
+/**
+ * How long the server may say nothing before it is asked whether it is still
+ * there. A socket whose network went away while the laptop slept can stay open
+ * with nothing on it: no error, no close, and the panel still saying online.
+ * Servers ping their own clients every few minutes, so on a working
+ * connection this is rarely the first thing to speak.
+ */
+export const SILENCE_MS = 90_000;
+
+/** How long a PING of ours waits for anything at all to come back before the connection is taken for dead. */
+export const ANSWER_MS = 30_000;
+
 /** What the Settings tab shows when no service exists to ask: the defaults, nothing saved. */
 const NO_SETTINGS: ChatSettingsView = { nick: null, autoJoin: [...DEFAULT_AUTO_JOIN], hasPassword: false, canSavePassword: false };
 
@@ -99,6 +111,8 @@ export class ChatService {
     /** Failed attempts since the last connection that reached online, which is what the backoff counts. */
     private attempt = 0;
     private cancelRetry: (() => void) | null = null;
+    /** The silence count, or the wait for an answer to our PING: one or the other, while a socket is ours. */
+    private cancelWatch: (() => void) | null = null;
     /**
      * The user does not want a connection: they pressed Disconnect, this run or
      * the last, or the app is quitting. Nothing reconnects while it is set.
@@ -253,6 +267,16 @@ export class ChatService {
         this.emit();
     }
 
+    /**
+     * The machine woke. Timers stand still while it sleeps, so the silence
+     * count would pick up where it left off; this asks the server now instead,
+     * since a sleep is the likeliest way for a socket to die without closing.
+     */
+    wake(): void {
+        if (this.socket === null || this.client?.snapshot().status === 'connecting') return;
+        this.ping();
+    }
+
     /** For quit. The close this causes is ours, so nothing reconnects after it. */
     stop(): void {
         this.hangUp();
@@ -297,6 +321,8 @@ export class ChatService {
 
         const gen = ++this.generation;
         const mine = (): boolean => gen === this.generation;
+        // Counted from here, so a handshake that never finishes is given up on too.
+        this.watch();
         this.socket = this.io.connect(this.host, this.port, {
             opened: () => {
                 if (mine()) this.opened();
@@ -312,11 +338,14 @@ export class ChatService {
     }
 
     private opened(): void {
+        this.watch();
         this.client?.opened();
         this.emit();
     }
 
     private receive(chunk: string): void {
+        // Any bytes at all, even half a line, say the socket is alive.
+        this.watch();
         const { lines, rest } = splitLines(this.pending, chunk);
         this.pending = rest;
         if (this.client === null || lines.length === 0) return;
@@ -327,6 +356,7 @@ export class ChatService {
     }
 
     private closed(reason: string): void {
+        this.unwatch();
         this.socket = null;
         this.pending = '';
         const retrying = !this.stopped && this.nick !== null;
@@ -341,9 +371,51 @@ export class ChatService {
         this.emit();
     }
 
+    /** Cancels a pending retry, and the watch on a socket that is about to be replaced or dropped. */
     private cancel(): void {
         this.cancelRetry?.();
         this.cancelRetry = null;
+        this.unwatch();
+    }
+
+    /** Starts the silence count over. */
+    private watch(): void {
+        this.unwatch();
+        this.cancelWatch = this.io.setTimer(() => {
+            this.cancelWatch = null;
+            // Silent before the socket was even up: there is nobody to ping.
+            if (this.client?.snapshot().status === 'connecting') this.dead('the server did not answer');
+            else this.ping();
+        }, SILENCE_MS);
+    }
+
+    /**
+     * Asks the server for a sign of life. The PONG is not looked for as such:
+     * whatever arrives next goes through receive(), which starts the count over.
+     */
+    private ping(): void {
+        this.unwatch();
+        this.socket?.send(formatCommand('PING', ['zanaris']));
+        this.cancelWatch = this.io.setTimer(() => {
+            this.cancelWatch = null;
+            this.dead('the server stopped answering');
+        }, ANSWER_MS);
+    }
+
+    private unwatch(): void {
+        this.cancelWatch?.();
+        this.cancelWatch = null;
+    }
+
+    /**
+     * Lets go of a socket that has gone quiet and reconnects as if it had
+     * closed. The generation moves first, so the close the dropped socket
+     * reports, whenever it gets round to it, is not taken for a second one.
+     */
+    private dead(reason: string): void {
+        this.generation++;
+        this.socket?.close();
+        this.closed(reason);
     }
 
     private emit(): void {
