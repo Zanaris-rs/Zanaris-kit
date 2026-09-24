@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendColumn, canAppendColumn, clearGame, closePane, contentOf, evenOut, halvable, keepGame, layoutTree, leaf, movePane, paneIds, parentSplitOf, refit, resetGame, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
+import { appendColumn, arrangedAt, canAppendColumn, clearGame, closePane, contentOf, evenOut, halvable, keepGame, layoutTree, leaf, makeRoom, movePane, paneIds, parentSplitOf, refit, resetGame, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -514,4 +514,94 @@ test('Reset Game Size leaves the tree as it was when it would change nothing', (
     assert.equal(resetGame(game, { width: 1200, height: 900 }, want), game, 'alone in its tab, with nothing to trade space with');
     const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
     assert.equal(resetGame(tree, { width: 1204, height: 600 }, want), tree, 'no game in this tab');
+});
+
+// ── a new pane is paid for by the window, not the game ───────────────────
+
+const plenty = { width: 2000, height: 2000 };
+const none = { width: 0, height: 0 };
+/** The size `made` is arranged at: where the tab was, plus what the window grew. */
+const grownFrom = (size: Size, made: { grown: Size }): Size => ({ width: size.width + made.grown.width, height: size.height + made.grown.height });
+
+test('a column added beside the game a window opens with widens the window by the column, and the game keeps every pixel', () => {
+    const added = appendColumn(opened, worlds, openedAt.width, born);
+    const made = makeRoom(opened, added, openedAt, plenty);
+    // 320 of column and the seam before it.
+    assert.deepEqual(made.grown, { width: 324, height: 0 });
+    const at = grownFrom(openedAt, made);
+    assert.deepEqual(drawn(made.tree, at, 'g'), { width: 765, height: 567 }, 'the game is the size it was');
+    assert.equal(drawn(made.tree, at, 'new').width, 320, 'the column is the width it asked for');
+    assert.equal(drawn(made.tree, at, 'c').height, 232, 'chat keeps its height too');
+});
+
+test('a column added to a row beside the game grows the window by what the game lost, and the other panes keep what the column left them', () => {
+    const a = leaf('a', { kind: 'empty' });
+    // 765 of game and 300 beside it.
+    const row = split('s1', 'x', [game, a], [765 / 1065, 300 / 1065]);
+    const size = { width: 1069, height: 600 };
+    const added = appendColumn(row, worlds, size.width, born);
+    const made = makeRoom(row, added, size, plenty);
+    assert.equal(made.grown.width, 765 - drawn(added, size, 'g').width);
+    const at = grownFrom(size, made);
+    assert.equal(drawn(made.tree, at, 'g').width, 765);
+    assert.equal(drawn(made.tree, at, 'a').width, drawn(added, size, 'a').width, 'the growth is the game\'s, not theirs');
+    assert.equal(drawn(made.tree, at, 'new').width, 320);
+});
+
+test('splitting the game down makes the window taller by what the game lost, and the game keeps its height', () => {
+    const halved = splitPane(opened, 'g', 'y', born);
+    const made = makeRoom(opened, halved, openedAt, plenty);
+    assert.deepEqual(made.grown, { width: 0, height: 567 - drawn(halved, openedAt, 'g').height }, 'nothing was taken across');
+    const at = grownFrom(openedAt, made);
+    assert.deepEqual(drawn(made.tree, at, 'g'), { width: 765, height: 567 });
+    assert.equal(drawn(made.tree, at, 'new').height, drawn(halved, openedAt, 'new').height, 'the new pane is the half the split made');
+    assert.equal(drawn(made.tree, at, 'c').height, drawn(halved, openedAt, 'c').height, 'chat neither pays for the growth nor gains from it');
+});
+
+test('splitting the game right makes the window wider by the new pane, and the chat under both widens with it', () => {
+    const made = makeRoom(opened, splitPane(opened, 'g', 'x', born), openedAt, plenty);
+    const at = grownFrom(openedAt, made);
+    assert.deepEqual(drawn(made.tree, at, 'g'), { width: 765, height: 567 });
+    assert.equal(made.grown.width, drawn(made.tree, at, 'new').width + 4);
+    assert.equal(drawn(made.tree, at, 'c').width, at.width, 'chat spans the window, as it did');
+});
+
+test('splitting a pane other than the game costs the game nothing, so the window stays as it is', () => {
+    const halved = splitPane(opened, 'c', 'x', born);
+    const made = makeRoom(opened, halved, openedAt, plenty);
+    assert.deepEqual(made.grown, none);
+    assert.equal(made.tree, halved, 'the split is laid out exactly as it was made');
+});
+
+test('a window with less room than the new pane grows as far as it can, and the game gives only the rest', () => {
+    const made = makeRoom(opened, appendColumn(opened, worlds, openedAt.width, born), openedAt, { width: 100, height: 100 });
+    assert.deepEqual(made.grown, { width: 100, height: 0 }, 'no taller than it needed to be');
+    const at = grownFrom(openedAt, made);
+    assert.equal(drawn(made.tree, at, 'new').width, 320, 'the column still gets its width');
+    assert.equal(drawn(made.tree, at, 'g').width, 541, 'the game gives the 224 the window could not find');
+});
+
+test('a window with no room at all lays the new pane out as it always was', () => {
+    const added = appendColumn(opened, worlds, openedAt.width, born);
+    const made = makeRoom(opened, added, openedAt, none);
+    assert.deepEqual(made.grown, none);
+    assert.equal(made.tree, added);
+});
+
+test('a tab with no game in it never grows the window', () => {
+    const tree = split('s1', 'y', [leaf('a', { kind: 'empty' }), chat], [0.5, 0.5]);
+    const added = appendColumn(tree, worlds, openedAt.width, born);
+    const made = makeRoom(tree, added, openedAt, plenty);
+    assert.deepEqual(made.grown, none);
+    assert.equal(made.tree, added);
+});
+
+test('a tree arranged for a size the window has not reached yet is fitted from that size once it arrives', () => {
+    const made = makeRoom(opened, appendColumn(opened, worlds, openedAt.width, born), openedAt, plenty);
+    const at = grownFrom(openedAt, made);
+    // The layout the gesture sets off runs before the window has grown.
+    const early = refit(arrangedAt(made.tree, at), made.tree, openedAt);
+    const arrived = refit(early, early.shown, at);
+    assert.deepEqual(drawn(arrived.shown, at, 'g'), { width: 765, height: 567 }, 'the game is its old size once the window is');
+    assert.equal(drawn(arrived.shown, at, 'new').width, 320);
 });

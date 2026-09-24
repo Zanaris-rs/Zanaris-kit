@@ -1,5 +1,10 @@
 # Zanaris Kit: split panes and workspace tabs
 
+**Amended 2026-09-24:** the window grows again for one thing — a pane added
+(Add pane, Split Right, Split Down) where the game would otherwise have paid for
+it, by what the game would have lost (`paneTree.makeRoom`). "The window never
+grows itself to accommodate anything", below, is no longer true of that case.
+
 **Status:** proposed, 2026-09-12. Replaces the fixed column layout described in
 `2026-09-05-server-windows-design.md` and the bottom dock of
 `2026-09-07-chat-dock-design.md`. Both of those specs describe geometry this

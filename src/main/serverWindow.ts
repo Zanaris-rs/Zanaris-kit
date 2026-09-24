@@ -15,7 +15,8 @@ import { showAlertBanner } from './timers/electron';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
-import { canAppendColumn, contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
+import { canAppendColumn, contentOf, paneIds, parentSplitOf, type PaneContent, type Rect, type Size } from './paneTree';
+import { grownFrame, roomFor } from './windowRoom';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
 import { layoutEntries, layoutFileName, readLayout, writeLayout } from './layoutFile';
 import { loadShell, preloadPath } from './renderer';
@@ -544,13 +545,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /**
      * Where everything goes.
      *
-     * The window no longer grows to accommodate what opens inside it. Nothing
-     * opens *beside* anything now — a split divides space that is already
-     * allocated — so the widen / shift / push ladder, the content extent
-     * carried across a chrome toggle and the per-axis mode the shell used to
-     * report all went with the chrome that motivated them. What is left is: the
-     * bar across the top and the tree in the rest. The tool rail that used to
-     * run down the right went too; the bar's Add pane is how a pane is added.
+     * The bar across the top and the tree in the rest. The widen / shift /
+     * push ladder, the content extent carried across a chrome toggle and the
+     * per-axis mode the shell used to report all went with the fixed chrome
+     * that motivated them, and so did the tool rail down the right; the bar's
+     * Add pane is how a pane is added. The window grows for one thing only: a
+     * pane added where the game would otherwise have paid for it
+     * (`paneTree.makeRoom`, through `growWindow`), and then it is the resize
+     * that lays everything out again, through here.
      *
      * The tree runs to the window's edges. It used to be inset by a pixel so a
      * gold ring round the focused pane had shell to land on; focus is a dot in
@@ -605,9 +607,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * The tab bar's Add pane. Something already in this tab is brought into
      * focus instead of opened a second time — the menu ticks it, so that is
      * what the player was told would happen — and anything else gets a new
-     * column down the tab's right edge (`paneTree.appendColumn`). Nothing
-     * already on screen is replaced, which is the difference from a pane's own
-     * dropdown: that one changes a pane, this one adds one.
+     * column down the tab's right edge (`paneTree.appendColumn`), with the
+     * window grown by what the column would have taken from the game
+     * (`split` does the same). Nothing already on screen is replaced, which
+     * is the difference from a pane's own dropdown: that one changes a pane,
+     * this one adds one.
      *
      * The game goes in through `setPaneContent` rather than straight into the
      * column, because it is a move: the window has one game view, and the pane
@@ -625,9 +629,34 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             deps.log(`${tag} no room to add a pane`);
             return;
         }
-        const born = host.appendColumn(content.kind === 'game' ? { kind: 'empty' } : content, rects.tree.width);
-        if (content.kind === 'game') setPaneContent(born, content);
+        const born = host.appendColumn(content.kind === 'game' ? { kind: 'empty' } : content, rects.tree.width, roomToGrow());
+        growWindow(born.grown);
+        if (content.kind === 'game') setPaneContent(born.paneId, content);
         syncPanelProbe();
+    }
+
+    /** Split Right and Split Down, from the menus, the header's dropdown and the keyboard alike. */
+    function split(paneId: string, axis: 'x' | 'y'): void {
+        growWindow(host.split(paneId, axis, roomToGrow()));
+    }
+
+    /**
+     * How much the window may grow for a pane the game would otherwise pay
+     * for (`paneTree.makeRoom`): up to the size of its display, and not at all
+     * while it is maximised or full screen, since it already fills the screen
+     * and a resize would only take it out of that.
+     */
+    function roomToGrow(): Size {
+        if (win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return { width: 0, height: 0 };
+        const frame = win.getBounds();
+        return roomFor(frame, screen.getDisplayMatching(frame).workArea);
+    }
+
+    /** The window grown by what a new pane needed, kept on its display (`windowRoom.grownFrame`). Its resize lays everything out again. */
+    function growWindow(by: Size): void {
+        if (win.isDestroyed() || (by.width <= 0 && by.height <= 0)) return;
+        const frame = win.getBounds();
+        win.setBounds(grownFrame(frame, screen.getDisplayMatching(frame).workArea, by));
     }
 
     function showYourWorld(): void {
@@ -747,8 +776,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             accelerator: item.accelerator,
             registerAccelerator: false,
             click: () => {
-                if (item.id === 'split-x') host.split(paneId, 'x');
-                else if (item.id === 'split-y') host.split(paneId, 'y');
+                if (item.id === 'split-x') split(paneId, 'x');
+                else if (item.id === 'split-y') split(paneId, 'y');
                 else if (item.id === 'close') void closePane(paneId);
                 else if (item.id === 'reset-game') host.resetGame(gameSizes().game);
                 else {
@@ -1369,7 +1398,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             clocks.setDefs(next.listed);
         },
         settleTimers: () => clocks.settle(),
-        splitPane: (paneId, axis) => host.split(paneId, axis),
+        splitPane: split,
         closePane,
         setPaneContent,
         focusPane: paneId => host.focus(paneId),

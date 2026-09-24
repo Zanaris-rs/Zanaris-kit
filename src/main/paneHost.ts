@@ -2,11 +2,13 @@ import { WebContentsView, shell, type BrowserWindow } from 'electron';
 import { decidePageNavigation } from './guard.ts';
 import {
     appendColumn,
+    arrangedAt,
     closePane,
     contentOf,
     evenOut,
     layoutTree,
     leaf,
+    makeRoom,
     paneIds,
     refit,
     resetGame,
@@ -314,6 +316,23 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         deps.changed();
     }
 
+    /**
+     * A tree with a pane just added, adopted with the room made for it
+     * (`paneTree.makeRoom`): the growth the window owes it is returned for the
+     * window to act on, and the tree is fitted from the size it will have
+     * once it has (`arrangedAt`). The layout this sets off runs before the
+     * window has grown, and the one after it is exact.
+     */
+    function adoptAdded(next: PaneNode, room: Size): Size {
+        const size = { width: bounds.width, height: bounds.height };
+        const made = makeRoom(active(), next, size, room);
+        if (made.grown.width > 0 || made.grown.height > 0) {
+            fits.set(set.activeId, arrangedAt(made.tree, { width: size.width + made.grown.width, height: size.height + made.grown.height }));
+        }
+        adopt(made.tree);
+        return made.grown;
+    }
+
     return {
         tree: active,
         trees: () => set.tabs.map(tab => tab.tree),
@@ -460,17 +479,18 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.changed();
         },
 
-        split(paneId: string, axis: 'x' | 'y'): void {
+        split(paneId: string, axis: 'x' | 'y', room: Size): Size {
             const born = `pane-${nextPane++}`;
-            adopt(splitPane(active(), paneId, axis, { paneId: born, splitId: `split-${nextSplit++}` }));
+            const grown = adoptAdded(splitPane(active(), paneId, axis, { paneId: born, splitId: `split-${nextSplit++}` }), room);
             focus(born);
+            return grown;
         },
 
-        appendColumn(content: PaneContent, width: number): string {
+        appendColumn(content: PaneContent, width: number, room: Size): { paneId: string; grown: Size } {
             const born = `pane-${nextPane++}`;
-            adopt(appendColumn(active(), content, width, { paneId: born, splitId: `split-${nextSplit++}` }));
+            const grown = adoptAdded(appendColumn(active(), content, width, { paneId: born, splitId: `split-${nextSplit++}` }), room);
             focus(born);
-            return born;
+            return { paneId: born, grown };
         },
 
         close(paneId: string): void {
@@ -589,9 +609,14 @@ export interface PaneHost {
     /** False when that was the last tab, which is the window's cue to close. */
     closeTab: (tabId: string) => boolean;
     selectTab: (tabId: string) => void;
-    split: (paneId: string, axis: 'x' | 'y') => void;
-    /** Adds a pane holding `content` down the active tab's right edge, `width` being the px the tab is laid out in, and focuses it. Returns the new pane's id. */
-    appendColumn: (content: PaneContent, width: number) => string;
+    /**
+     * Splits a pane and focuses the new half. `room` is how much the window
+     * could grow; what it has to grow by, for the game to keep its size, is
+     * returned (`paneTree.makeRoom`), and nothing when the game paid nothing.
+     */
+    split: (paneId: string, axis: 'x' | 'y', room: Size) => Size;
+    /** Adds a pane holding `content` down the active tab's right edge, `width` being the px the tab is laid out in, and focuses it. Returns the new pane's id, and the window's growth as `split` does. */
+    appendColumn: (content: PaneContent, width: number, room: Size) => { paneId: string; grown: Size };
     close: (paneId: string) => void;
     setContent: (paneId: string, content: PaneContent) => void;
     /** Moves the game into a pane, emptying the one it was in, in whichever tab that was. */

@@ -214,14 +214,55 @@ export function refit(was: Fitted | null, tree: PaneNode, size: Size): Fitted {
 }
 
 /**
+ * `tree` as the arrangement made at `at`, whatever size the tab is drawn at
+ * next — what `makeRoom`'s tree is, since it is made for the size the window
+ * is about to grow to.
+ *
+ * `refit` alone would take the size of the last frame, which is the size the
+ * window was before it grew. Fitted from there, the growth would count as a
+ * resize, and the game would be held at the size the new pane had squeezed it
+ * to while the window grew around it.
+ */
+export function arrangedAt(tree: PaneNode, at: Size): Fitted {
+    return { base: tree, from: at, shown: tree, at };
+}
+
+/**
+ * A pane just added, paid for by the window rather than by the game.
+ *
+ * `after` is what a gesture made of `before` — Add pane's column, or a split —
+ * laid out at `size`. Wherever that left the game smaller than it was, the
+ * window grows by the difference, as far as `room` allows, and the game takes
+ * the growth back. Every other pane keeps the pixels the gesture gave it, so
+ * the new pane arrives at the size it would have had anyway.
+ *
+ * What `room` cannot cover the game gives, as it did before there was any
+ * room: a window already filling its display has nowhere to grow. A gesture
+ * that cost the game nothing — a split of any other pane, or a tab with no
+ * game in it — grows nothing and returns `after` itself.
+ *
+ * The tree returned is arranged at `size` plus `grown` (`arrangedAt`).
+ */
+export function makeRoom(before: PaneNode, after: PaneNode, size: Size, room: Size): { tree: PaneNode; grown: Size } {
+    const was = gameSize(before, size);
+    const now = gameSize(after, size);
+    const grown = {
+        width: was && now ? Math.min(Math.max(0, was.width - now.width), Math.max(0, room.width)) : 0,
+        height: was && now ? Math.min(Math.max(0, was.height - now.height), Math.max(0, room.height)) : 0
+    };
+    if (grown.width === 0 && grown.height === 0) return { tree: after, grown };
+    return { tree: holdGame(after, size, { width: size.width + grown.width, height: size.height + grown.height }, grown), grown };
+}
+
+/**
  * The game back at `want`, by moving the seams around it — the game pane's
  * Reset Game Size.
  *
  * Works through the same splits `keepGame` does, taking the difference from the
  * panes beside the game down to their floors, so the game gets as close to
  * `want` as there is room for. It never reaches past the tab: along an axis the
- * game spans alone there is nobody to trade with, and the window does not
- * resize itself for a pane.
+ * game spans alone there is nobody to trade with, and a reset does not resize
+ * the window — only a pane being added does that (`makeRoom`).
  *
  * Returns the tree itself when the game would not move — already at its size,
  * alone in its tab, or not in this tab — so a menu can grey the item by
@@ -409,7 +450,9 @@ function besideAlready(node: PaneNode, from: string, to: string, axis: 'x' | 'y'
  * The column asks for `COLUMN_PREFERRED_WIDTH` of `width`, the px the tab is
  * laid out in, capped at an even share of the row. Whatever it takes comes out
  * of the columns already there in proportion, so their seams keep their
- * relative places. Whether it fits at all is `canAppendColumn`'s to say.
+ * relative places. Whether it fits at all is `canAppendColumn`'s to say. The
+ * game's part of that is then handed back by growing the window (`makeRoom`),
+ * which is the host's to do with this tree, not this function's.
  */
 export function appendColumn(node: PaneNode, content: PaneContent, width: number, ids: { paneId: string; splitId: string }): PaneNode {
     const row = node.kind === 'split' && node.axis === 'x' ? node : null;
