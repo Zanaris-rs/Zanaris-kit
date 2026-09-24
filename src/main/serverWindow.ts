@@ -14,7 +14,7 @@ import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
-import { addPaneItems, paneContentItems, paneHolding, paneMenuItems, paneSplitItems, type PaneMenuItem } from './paneMenu';
+import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
 import { canAppendColumn, contentOf, paneIds, parentSplitOf, type PaneContent, type Rect } from './paneTree';
 import { holdsGame, openWindowTabs } from './tabs';
 import { layoutEntries, layoutFileName, readLayout, writeLayout } from './layoutFile';
@@ -681,6 +681,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
+     * What Reset Game Size puts the game back to: the size a new window of this
+     * server opens it at, Lost City's taller page included, against the rect
+     * the tab is laid out in now.
+     */
+    function gameSizes(): GameSizes {
+        return { tab: rects.tree, game: { width: GAME_PREFERRED_WIDTH, height: content.game } };
+    }
+
+    /**
      * The pane menu, raised by a right-click anywhere in a pane.
      *
      * Built in main rather than drawn by the shell because a right-click on a
@@ -702,7 +711,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // clicked rather than on whatever happened to have focus — every item
         // below names the pane, but Even Out and the accelerators do not.
         host.focus(paneId);
-        const menu = Menu.buildFromTemplate(paneMenuItems(host.tree(), paneId, rect).map(item => gestureItem(paneId, item)));
+        const menu = Menu.buildFromTemplate(paneMenuItems(host.tree(), paneId, rect, gameSizes()).map(item => gestureItem(paneId, item)));
         menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
@@ -717,6 +726,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 if (item.id === 'split-x') host.split(paneId, 'x');
                 else if (item.id === 'split-y') host.split(paneId, 'y');
                 else if (item.id === 'close') void closePane(paneId);
+                else if (item.id === 'reset-game') host.resetGame(gameSizes().game);
                 else {
                     const splitId = parentSplitOf(host.tree(), paneId);
                     if (splitId) host.evenOut(splitId);
@@ -762,8 +772,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             }
         ]);
         const rect = host.rectOf(paneId);
-        const splits = rect ? paneSplitItems(host.tree(), paneId, rect) : [];
-        if (splits.length > 0) template.push({ type: 'separator' }, ...splits.map(item => gestureItem(paneId, item)));
+        const gestures = rect ? paneHeaderItems(host.tree(), paneId, rect, gameSizes()) : [];
+        if (gestures.length > 0) template.push({ type: 'separator' }, ...gestures.map(item => gestureItem(paneId, item)));
         Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 

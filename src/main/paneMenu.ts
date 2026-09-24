@@ -1,6 +1,6 @@
 import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
-import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, type PaneContent, type PaneNode } from './paneTree.ts';
+import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, resetGame, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
 
 /**
  * What a pane is called, and what its two menus offer: the gestures a
@@ -19,15 +19,23 @@ import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, type Pane
  */
 
 export interface PaneMenuItem {
-    id: 'split-x' | 'split-y' | 'even-out' | 'close';
+    id: 'split-x' | 'split-y' | 'even-out' | 'reset-game' | 'close';
     label: string;
     enabled: boolean;
     /**
      * The View menu's shortcut for the same act, shown beside the item so a
      * menu teaches it. Shown, not registered: the application menu already
      * owns these shortcuts, and a popup menu is not where they should live.
+     * Absent for Reset Game Size, which is the game pane's own and not the
+     * View menu's.
      */
-    accelerator: string;
+    accelerator?: string;
+}
+
+/** What Reset Game Size needs to know whether it would do anything: the size the tab is laid out in, and the size the game opens at. */
+export interface GameSizes {
+    tab: Size;
+    game: Size;
 }
 
 /** One of this server's curated links, as much of it as naming a pane needs. */
@@ -174,7 +182,7 @@ export function canClosePane(tree: PaneNode, paneId: string): boolean {
     return !(tree.kind === 'leaf' && content.kind === 'empty');
 }
 
-export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }): PaneMenuItem[] {
+export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }, sizes: GameSizes): PaneMenuItem[] {
     const isGame = contentOf(tree, paneId)?.kind === 'game';
     return [
         { id: 'split-x', label: 'Split Right', enabled: halvable(rect.width, PANE_MIN_WIDTH), accelerator: 'CmdOrCtrl+D' },
@@ -183,6 +191,10 @@ export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: num
         // siblings to share with, and the item would be a no-op wearing the
         // same face as the working one.
         { id: 'even-out', label: 'Even Out', enabled: parentSplitOf(tree, paneId) !== null, accelerator: 'CmdOrCtrl+Alt+=' },
+        // The game's alone. Greyed by the same test that decides what it does,
+        // so it is never offered where the game would not move: already at its
+        // size, or with nothing beside it to take or give the room.
+        ...(isGame ? [{ id: 'reset-game' as const, label: 'Reset Game Size', enabled: resetGame(tree, sizes.tab, sizes.game) !== tree }] : []),
         {
             id: 'close',
             // Named for what it costs. Closing the game destroys its view and
@@ -200,17 +212,19 @@ export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: num
 }
 
 /**
- * The two ways to make a new pane, for the header's dropdown.
+ * The gestures the header's dropdown carries: the two ways to make a new pane,
+ * and on the game's pane, Reset Game Size.
  *
- * The same items the right-click menu opens with, taken from it rather than
- * restated, so the dropdown greys a split under exactly the floor the gesture
- * menu does. They are repeated there because a right-click is invisible: the
- * arrow on the header is the one control a player can see, and a menu reached
- * from it that could change a pane but not add one left splitting as something
- * only the people who already knew about it would ever do. Even Out and Close
- * stay off it — the close sits beside the arrow already, and evening out is
- * about the panes around this one rather than this one.
+ * The same items the right-click menu has, taken from it rather than restated,
+ * so the dropdown greys a split under exactly the floor the gesture menu does.
+ * They are repeated there because a right-click is invisible: the arrow on the
+ * header is the one control a player can see, and a menu reached from it that
+ * could change a pane but not add one left splitting as something only the
+ * people who already knew about it would ever do. Reset Game Size is there for
+ * the same reason, and because it is about this pane. Even Out and Close stay
+ * off it — the close sits beside the arrow already, and evening out is about
+ * the panes around this one rather than this one.
  */
-export function paneSplitItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }): PaneMenuItem[] {
-    return paneMenuItems(tree, paneId, rect).filter(item => item.id === 'split-x' || item.id === 'split-y');
+export function paneHeaderItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }, sizes: GameSizes): PaneMenuItem[] {
+    return paneMenuItems(tree, paneId, rect, sizes).filter(item => item.id === 'split-x' || item.id === 'split-y' || item.id === 'reset-game');
 }

@@ -150,6 +150,154 @@ function allocate(fractions: number[], gross: number, minimums: number[]): numbe
     }
 }
 
+/** A width and a height with no place: what a tab is laid out in, or what a pane asks to be. */
+export interface Size {
+    width: number;
+    height: number;
+}
+
+/**
+ * The tree refitted from one size to another with the game held where it was.
+ *
+ * Fractions alone would scale every pane with the window, and the game is the
+ * one pane that should not grow: a canvas of fixed pixels in a pane bigger than
+ * it is a border of nothing, and a player who sized the game tight wants it to
+ * stay tight while the window changes around it. So on every split between the
+ * tab's edge and the game, the game's side keeps its pixels and the panes
+ * beside it share the difference in proportion to their size. When they cannot
+ * — they are at their floor — the game gives way last.
+ *
+ * The game still grows along an axis where nothing sits beside it, since a pane
+ * spanning the tab is as long as the tab: the game over chat a window opens
+ * with widens with the window. Splits off the game's path keep their fractions.
+ *
+ * Returns the tree itself when there is no game in it or the size is unchanged.
+ */
+export function keepGame(node: PaneNode, from: Size, to: Size): PaneNode {
+    if (from.width === to.width && from.height === to.height) return node;
+    return holdGame(node, from, to, { width: 0, height: 0 });
+}
+
+/**
+ * One tab's arrangement as the player left it, and what it became at the size
+ * it was last drawn.
+ *
+ * A resize is fitted from `base` rather than from the tree on screen, and that
+ * is load-bearing. Fitting frame from frame would lose the game's size for good
+ * the first time a window shrank past the other panes' floors: the game gives
+ * way there, and the next frame would hold it at the smaller size. Fitted from
+ * the arrangement, growing the window back returns the game to where it was.
+ */
+export interface Fitted {
+    /** The last tree a gesture produced. */
+    base: PaneNode;
+    /** The size `base` was arranged at. */
+    from: Size;
+    /** `base` fitted to `at`: the tree on screen. */
+    shown: PaneNode;
+    at: Size;
+}
+
+/**
+ * The tree to draw at `size`, and the bookkeeping for the next one.
+ *
+ * `tree` is the tab's tree now. When it is still what the last fit showed,
+ * nothing has changed but the size, so the arrangement is fitted again from
+ * `base`. When it is anything else a gesture made it, on the tree shown at
+ * `at`, so it becomes the arrangement and that is the size it was made at.
+ */
+export function refit(was: Fitted | null, tree: PaneNode, size: Size): Fitted {
+    const kept = was !== null && was.shown === tree;
+    const base = kept ? was.base : tree;
+    const from = kept ? was.from : (was?.at ?? size);
+    return { base, from, shown: keepGame(base, from, size), at: size };
+}
+
+/**
+ * The game back at `want`, by moving the seams around it — the game pane's
+ * Reset Game Size.
+ *
+ * Works through the same splits `keepGame` does, taking the difference from the
+ * panes beside the game down to their floors, so the game gets as close to
+ * `want` as there is room for. It never reaches past the tab: along an axis the
+ * game spans alone there is nobody to trade with, and the window does not
+ * resize itself for a pane.
+ *
+ * Returns the tree itself when the game would not move — already at its size,
+ * alone in its tab, or not in this tab — so a menu can grey the item by
+ * identity.
+ */
+export function resetGame(node: PaneNode, size: Size, want: Size): PaneNode {
+    const was = gameSize(node, size);
+    if (!was) return node;
+    const next = holdGame(node, size, size, { width: want.width - was.width, height: want.height - was.height });
+    const now = gameSize(next, size)!;
+    return now.width === was.width && now.height === was.height ? node : next;
+}
+
+function gameSize(node: PaneNode, size: Size): Size | null {
+    const paneId = paneIds(node).find(id => contentOf(node, id)?.kind === 'game');
+    if (!paneId) return null;
+    const rect = layoutTree(node, { x: 0, y: 0, width: size.width, height: size.height }).panes.get(paneId)!;
+    return { width: rect.width, height: rect.height };
+}
+
+function holdsGame(node: PaneNode): boolean {
+    return node.kind === 'leaf' ? node.content.kind === 'game' : node.children.some(holdsGame);
+}
+
+/**
+ * Down the game's path from `from` to `to`, the game's side of each split given
+ * the px it had plus `grow` along that split's axis.
+ *
+ * One `grow` serves every level. A split across the axis hands each child its
+ * whole extent, so the game's own change along an axis is also the change of
+ * every split along that axis on its path — which is what lets a reset move
+ * the outer seam by exactly the room the inner one then gives the game.
+ */
+function holdGame(node: PaneNode, from: Size, to: Size, grow: Size): PaneNode {
+    if (node.kind === 'leaf') return node;
+    const at = node.children.findIndex(holdsGame);
+    if (at < 0) return node;
+
+    const across = node.axis === 'x';
+    const extent = (size: Size): number => (across ? size.width : size.height) - SEAM * (node.children.length - 1);
+    const minimums = node.children.map(child => minimumOf(child, node.axis));
+    const had = allocate(node.fractions, extent(from), minimums);
+    const gross = extent(to);
+    const held = share(had, at, had[at]! + (across ? grow.width : grow.height), gross, minimums);
+    // Under the floors `allocate` scales everything and fractions do not
+    // matter, so they are kept for when the window grows back.
+    const sizes = held ?? allocate(node.fractions, gross, minimums);
+    const resized = (size: Size, px: number): Size => (across ? { width: px, height: size.height } : { width: size.width, height: px });
+    const child = holdGame(node.children[at]!, resized(from, had[at]!), resized(to, sizes[at]!), grow);
+    return {
+        ...node,
+        children: node.children.map((c, i) => (i === at ? child : c)),
+        fractions: held ? held.map(px => px / gross) : node.fractions
+    };
+}
+
+/**
+ * `gross` px with child `at` given `target` of it, as far as the floors allow,
+ * and the rest shared by the others in proportion to what they `had`.
+ *
+ * Whole pixels, so the fractions made from them lay out to exactly these sizes
+ * again. Null when the floors alone do not fit, where there is no share to hold.
+ */
+function share(had: number[], at: number, target: number, gross: number, minimums: number[]): number[] | null {
+    const floors = minimums.filter((_, i) => i !== at);
+    const room = gross - floors.reduce((sum, m) => sum + m, 0);
+    if (room < minimums[at]!) return null;
+    const held = Math.min(Math.max(target, minimums[at]!), room);
+    const others = had.filter((_, i) => i !== at);
+    const total = others.reduce((sum, px) => sum + px, 0);
+    const weights = total > 0 ? others.map(px => px / total) : floors.map(m => m / (gross - room));
+    const sizes = allocate(weights, gross - held, floors);
+    sizes.splice(at, 0, held);
+    return sizes;
+}
+
 /**
  * Whether one extent can hold two panes and the seam between them.
  *
@@ -451,8 +599,8 @@ export function seamPixels(node: PaneNode, splitId: string, index: number, gross
     // The sizes the split was actually drawn at, not the ones its fractions ask
     // for. The two part company whenever `allocate` has had to pin somebody at
     // their floor — which needs no illegal drag to reach, only a window that
-    // shrank, since nothing renormalises a fraction that was comfortable at one
-    // width and is under the floor at another. Reporting the fraction there
+    // shrank, since a fraction off the game's path is never renormalised, and
+    // one comfortable at one width can be under the floor at another. Reporting the fraction there
     // would hand `Grip` a position the pane is not at, and every later key press
     // would build on it.
     const sizes = allocate(found.fractions, gross, found.children.map(child => minimumOf(child, found.axis)));

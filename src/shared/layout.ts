@@ -64,8 +64,8 @@ export const PANE_HEADER_HEIGHT = 32;
 export const PAGE_CONTROLS_HEIGHT = 32;
 
 /**
- * What a game pane asks for when it is first placed, and what a double-click on
- * its seam snaps it back to.
+ * What a game pane asks for when it is first placed, and what the game pane's
+ * Reset Game Size puts it back to.
  *
  * Three bands make up the height, and each is there because something would be
  * cut off without it: the stock 503px canvas, the client page's own controls
@@ -77,7 +77,9 @@ export const PAGE_CONTROLS_HEIGHT = 32;
  *
  * A preference, not a floor. Nothing protects it once the user has dragged a
  * seam past it — the game is an ordinary pane now, and a pane smaller than its
- * content simply clips it. The served page does not rescale to follow unless
+ * content simply clips it. A window resize holds the game at whatever size it
+ * has (`paneTree.keepGame`), which is not the same thing: that is the size the
+ * player left it at, not this one. The served page does not rescale to follow unless
  * the player picked Auto Sizing from the controls under the game, so what a
  * small game pane costs is the bottom of the canvas, still reachable by
  * scrolling.

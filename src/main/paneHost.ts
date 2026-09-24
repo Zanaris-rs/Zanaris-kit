@@ -8,13 +8,17 @@ import {
     layoutTree,
     leaf,
     paneIds,
+    refit,
+    resetGame,
     seamPixels,
     setContent,
     setSeam,
     splitPane,
+    type Fitted,
     type PaneContent,
     type PaneNode,
-    type Rect
+    type Rect,
+    type Size
 } from './paneTree.ts';
 import { canDrop, dropPane, dropTargets, type DropTargets, type DropZone } from './paneDrop.ts';
 import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
@@ -104,6 +108,13 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     /** The rect the active tab was last laid out in. A drop is judged against it, since whether a pane can be halved depends on its size. */
     let bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
     let seams: SeamView[] = [];
+    /**
+     * Per tab, the arrangement a resize is fitted from, so the game keeps its
+     * size while the window changes around it. The rule, and why it fits from
+     * the arrangement rather than from the last frame, is `paneTree.refit`;
+     * this only keeps one per tab.
+     */
+    const fits = new Map<string, Fitted>();
     /**
      * True while a pane is being dragged by its header.
      *
@@ -309,6 +320,11 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         layout(rect: Rect): void {
             bounds = rect;
+            const fit = refit(fits.get(set.activeId) ?? null, active(), rect);
+            fits.set(set.activeId, fit);
+            // Adopted without reconciling views, as a seam drag is: a fit
+            // moves seams and cannot change which panes exist.
+            if (fit.shown !== active()) set = withActive(fit.shown);
             const solved = layoutTree(active(), rect);
             rects = solved.panes;
             seams = solved.seams.map(seam => {
@@ -422,6 +438,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             if (next === null) return false;
             if (next === set) return true;
             set = next;
+            fits.delete(tabId);
             dragging = false;
             // The tab's panes went with it, so its page views have nothing left
             // pointing at them. Reconciled rather than tracked: `syncViews`
@@ -483,6 +500,10 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         evenOut(splitId: string): void {
             adopt(evenOut(active(), splitId));
+        },
+
+        resetGame(want: Size): void {
+            adopt(resetGame(active(), bounds, want));
         },
 
         dragSeam(splitId: string, index: number, px: number): number {
@@ -573,6 +594,8 @@ export interface PaneHost {
     /** Moves the game into a pane, emptying the one it was in, in whichever tab that was. */
     moveGame: (paneId: string) => void;
     evenOut: (splitId: string) => void;
+    /** Moves the seams around the active tab's game until it is `want`, or as near as the panes beside it allow. Nothing happens when the game is in another tab. */
+    resetGame: (want: Size) => void;
     dragSeam: (splitId: string, index: number, px: number) => number;
     pageWebContents: () => WebContentsView | null;
     go: (where: 'back' | 'forward' | 'reload') => void;
