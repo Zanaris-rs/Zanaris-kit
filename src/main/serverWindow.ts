@@ -17,7 +17,7 @@ import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
 import { canAppendColumn, contentOf, paneIds, parentSplitOf, type PaneContent, type Rect, type Size } from './paneTree';
 import { grownFrame, roomFor } from './windowRoom';
-import { holdsGame, openWindowTabs } from './tabs';
+import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
 import { layoutEntries, layoutFileName, readLayout, writeLayout } from './layoutFile';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
@@ -195,6 +195,12 @@ export interface ServerWindow extends ServerWindowHandle {
      * needed and there is no room for one.
      */
     addPane(content: PaneContent): void;
+    /**
+     * The bar's Sharing button: Your world's pane, added as `addPane` adds one,
+     * or in a new tab of its own when the active tab has no room for a column.
+     * Nothing on a window that is not Your world's.
+     */
+    showYourWorld(): void;
     /** Raises the tab bar's Add pane menu at a point in the window. */
     showAddPaneMenu(x: number, y: number): void;
     /** Whether this window floats above other apps. Read back from the window itself, not from a flag kept beside it. */
@@ -457,6 +463,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         bookmarks: () => server.bookmarks,
         tools: () => tools,
         hosts: () => server.hosts,
+        sharing: () => linkLive(),
         log: line => deps.log(`${tag} ${line}`),
         initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT, content.game),
         changed: () => applyLayout(),
@@ -497,6 +504,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         return tools.filter(id => placed.includes(id));
     }
 
+    /** Whether anyone with the link can reach this world right now. Before `live` the link does not work yet, so there is nothing to mark. */
+    function linkLive(): boolean {
+        return shared?.view().status === 'live';
+    }
+
     function state(): ShellState {
         return {
             windowId: spec.id,
@@ -514,6 +526,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             chat: deps.chat(),
             yourWorld: single?.view() ?? null,
             share: shared?.view() ?? null,
+            sharingWithoutPane: sharingWithoutPane(host.trees(), linkLive()),
             timers: { clocks: clocks.view(), customsFull }
         };
     }
@@ -644,6 +657,17 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (win.isDestroyed() || (by.width <= 0 && by.height <= 0)) return;
         const frame = win.getBounds();
         win.setBounds(grownFrame(frame, screen.getDisplayMatching(frame).workArea, by));
+    }
+
+    function showYourWorld(): void {
+        if (!single) return;
+        const content: PaneContent = { kind: 'tool', tool: 'singleplayer' };
+        if (paneHolding(host.tree(), content) || canAppendColumn(host.tree(), rects.tree.width)) {
+            addPane(content);
+            return;
+        }
+        host.newTab();
+        host.setContent(host.focusedPaneId(), content);
     }
 
     /**
@@ -1347,6 +1371,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         },
         close: () => win.close(),
         addPane,
+        showYourWorld,
         showAddPaneMenu,
         // Asked of the window rather than answered from a flag kept alongside
         // it. The window is where the state actually lives, so a copy here

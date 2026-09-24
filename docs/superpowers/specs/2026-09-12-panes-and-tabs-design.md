@@ -277,6 +277,10 @@ the window's and there is exactly one game.
 - **Hiding it** — by a tab switch — keeps it running with `setVisible(false)`,
   the mechanism `syncPageBounds` already uses. The tab holding the game carries
   a dot in the tab bar so it is always findable.
+
+  > Built on 2026-09-24 as the game's minimap flag, and only while the tab is
+  > in the background, because by then a gold dot meant the focused pane. The
+  > same mark covers a live link to Your world. See `tabs.marksOfTab`.
 - **Reopening it** from the launcher is a `loadURL` of the remembered world at
   the remembered detail, which is an ordinary fresh login.
 

@@ -39,6 +39,17 @@ reopening costs. Switching tabs is the other case and is fine — it hides the
 game the way another app in front of the window already does, which is what
 `backgroundThrottling: false` exists to support, and it reads as temporary.
 
+What a tab switch hides still shows where it went. A background tab holding
+the game carries the game's flag, and one holding Your world carries
+**Sharing** while a link is live. The tab in front carries neither, since what
+it holds is on screen. A live link with no Your world pane in any tab has no
+tab to mark, so the bar shows a Sharing button that opens the pane. The
+world itself is never marked. It runs for as long as its window is open,
+because the game plays on it, so a mark for it would never go away. The rule
+is `tabs.marksOfTab` and `tabs.sharingWithoutPane`, pure and tested. Anything
+else that keeps running out of sight and can cost the player something gets
+a mark there, not in the shell.
+
 The tab close is the easy one to get wrong: removing the tab drops the game's
 leaf, and nothing in `paneHost` destroys the game view, because the window owns
 it. A tab close once did exactly that and left a logged-in game with nowhere to
