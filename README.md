@@ -509,11 +509,24 @@ window opens it at, taking the room from the panes beside it down to their floor
 It never resizes the window, so along an axis the game spans alone it has nothing
 to trade, and it is greyed when it would not move the game.
 
+Adding a pane leaves the game alone too. When Add pane's column or a split would
+take pixels from the game — Split Right or Split Down on the game's own pane, or
+a column beside a tab the game spans — the window grows by exactly what the game
+would have lost, to the right or down, and the game keeps its size. The new pane
+arrives at the size it would have had anyway, and every other pane keeps what
+the gesture left it. A window that would run off its display moves back onto it,
+and one that cannot grow far enough — at the display's size already, maximised,
+or full screen — takes what is still short from the game, as it always did. A
+split of any other pane costs the game nothing and never grows the window.
+Closing a pane does not shrink the window back: its room goes to the panes
+beside it.
+
 **Add pane**, at the right end of the tab bar, adds a pane without splitting one
 by hand. It lists what a pane's own dropdown does — the tools, the game, this
 server's links — and whatever you pick opens as a new column down the tab's
 right edge: 320px wide, or an even share of the row on a narrow window, with the
-columns already there giving up the room in proportion. It adds rather than
+columns already there giving up the room in proportion and the window growing
+by the game's part of it (above). It adds rather than
 replaces — a pane's dropdown changes that pane, Add pane adds one. Something
 already in the tab is ticked, and choosing it goes to that pane rather than
 opening a second copy; the game, when it is in another tab, is moved here. With
@@ -600,15 +613,18 @@ for the reason the right-click menu is: an item offered and then refused is
 worse than one never offered, and the launcher would otherwise be a second
 opinion about the same question. It was a second opinion, and it was wrong.
 
-The window never resizes itself any more. Opening the old panel or dock grew the
-window rather than shrinking the game, through a `widen → shift → push` ladder,
-because reloading or rescaling the game view was believed to cost the player
-their login. That turned out not to be true of resizing — `setBounds` does not
-reload a `WebContentsView`; only `loadURL` does, which is why a world switch
-warns and a drag does not — and with the game an ordinary pane there is no
-chrome opening beside it to make room for. Splits divide space that is already
-allocated, so the ladder, the per-axis mode notes and the protected content
-extent all went with the columns that motivated them.
+The window resizes itself for one thing: a pane added where the game would have
+paid for it (above). Opening the old panel or dock grew the window rather than
+shrinking the game, through a `widen → shift → push` ladder, because reloading
+or rescaling the game view was believed to cost the player their login. That
+turned out not to be true of resizing — `setBounds` does not reload a
+`WebContentsView`; only `loadURL` does, which is why a world switch warns and a
+drag does not — so the ladder, the per-axis mode notes and the protected content
+extent went with the fixed columns that motivated them, and for a while the
+window never grew at all. What came back is the plain half of the old idea: a
+new pane is paid for by the window rather than the game, because the cost of
+the other way was dragging the window wider after every Add pane to see the
+game again.
 
 What a small game pane costs is the bottom of the canvas. The served page does
 not rescale to follow unless the player picked **Auto Sizing** from the controls
@@ -735,7 +751,8 @@ One capture run with every catalog server open at once:
 | Lost City | the whole login screen, canvas and controls strip, nothing clipped at 765x535 inside the window's own opening size of 813x839 | the game's pane headed "Game · Lost City · W2 · low · 283 ms · rev 274" with the focus dot before its name, over a 232px chat pane showing the nick prompt (since 2026-09-15, its Settings tab); no ring round either |
 | Zanaris | login screen | "Game · Zanaris · W1 · low · 268 ms" |
 | Lost City Labs | login screen | "Game · Lost City Labs · W1 · N ms", no detail since Labs has no switch |
-| Lost City, split right | untouched at 765→381px wide | the new pane headed "Empty", its launcher offering Chat, Worlds, Hiscores, **Move game here**, then the eleven links under a rule |
+| Lost City, split right | untouched at 765px wide (a later run, 2026-09-24: the window grew from 765 to 1149 for the new pane; before, the game went to 381) | the new pane headed "Empty", its launcher offering Chat, Worlds, Hiscores, **Move game here**, then the eleven links under a rule |
+| Zanaris, Hiscores added to a new window (2026-09-24) | untouched at 765px wide | the window grew by exactly the column and its seam, 765 to 1089, and Hiscores got its full 320px beside the game over chat |
 | Lost City, Worlds open | untouched | the pane headed "Worlds" with no heading of its own inside it, the red Low detail slab pressed |
 | Lost City, Hiscores and Chat open beside the game | untouched | three headers — "Game" with its read-out, "Chat", "Hiscores" — and "Showing granny_grunt", Overall in gold at rank 18, level 1,724, 143,195,458 xp. Every xp is a whole number: Attack reads 13,073,159, the floor of the raw `value` 130731598 |
 | Zanaris, Hiscores open | untouched | the header row and nothing else, with "No hiscores entry for that name." in warn: `zezima` is nobody on Zanaris, and the pane says so rather than showing an empty table |
