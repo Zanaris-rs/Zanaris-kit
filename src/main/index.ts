@@ -1835,6 +1835,8 @@ app.whenReady().then(async () => {
     // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
     powerMonitor.on('resume', () => {
         for (const sw of serverWindows.values()) sw.settleTimers();
+        // Chat's silence count stood still too, and a sleep is how its socket dies without closing.
+        chat?.wake();
     });
     // The reference pages' shared session. They are somebody else's pages shown
     // inside the kit, so they get the web and nothing else: no file the user
