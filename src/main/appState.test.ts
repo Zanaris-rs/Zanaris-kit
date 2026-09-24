@@ -575,3 +575,22 @@ test('setStartupServer does not push past the cap readStartup enforces on the wa
     fresh.load();
     assert.deepEqual(fresh.startupIds(), state.startupIds(), 'the dropped id was never saved either');
 });
+
+test('the chat ignore list and notification choice are kept, and a bad entry costs only itself', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, chat: { nick: 'matt', ignore: ['spammer', 42, 'two words', 'Bob'], notify: false } }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.chat().ignore, ['spammer', 'Bob']);
+    assert.equal(state.chat().notify, false);
+
+    const fresh = new AppState(tempFile());
+    fresh.load();
+    assert.deepEqual(fresh.chat().ignore, [], 'nobody is ignored until someone is');
+    assert.equal(fresh.chat().notify, true);
+
+    state.setChat({ ignore: ['carol'] });
+    const again = new AppState(file);
+    again.load();
+    assert.deepEqual(again.chat().ignore, ['carol']);
+});

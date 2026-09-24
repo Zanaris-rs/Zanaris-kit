@@ -14,6 +14,8 @@ export const NICK_MAX = 30;
 export const CHANNEL_NAME_MAX = 50;
 /** A sanity rail rather than a real ceiling on how many rooms someone could want. */
 export const AUTO_JOIN_MAX = 20;
+/** The same kind of rail for the ignore list. */
+export const IGNORE_MAX = 100;
 
 /**
  * A nick as IRC allows one: a letter or one of the specials first, then those
@@ -53,6 +55,36 @@ export interface SettingsInput {
  */
 export interface SettingsSave extends SettingsInput {
     password?: string | null;
+    /** The ignore list as typed, read by `readIgnore`. Absent leaves the saved one alone. */
+    ignore?: string;
+    /** Absent leaves the saved choice alone. */
+    notify?: boolean;
+}
+
+/**
+ * Reads the ignore field: nicks, separated by commas or spaces, each kept once
+ * whatever its case. A name IRC would never give anyone is refused rather than
+ * kept, since it could never match.
+ */
+export function readIgnore(text: string): { ok: true; ignore: string[] } | { ok: false; message: string } {
+    const ignore: string[] = [];
+    for (const word of text.split(/[\s,]+/)) {
+        if (word === '') continue;
+        if (!isNick(word)) return { ok: false, message: `"${word.slice(0, 30)}" is not a nick.` };
+        if (!ignore.some(kept => foldName(kept) === foldName(word))) ignore.push(word);
+    }
+    if (ignore.length > IGNORE_MAX) return { ok: false, message: `${IGNORE_MAX} names is the most.` };
+    return { ok: true, ignore };
+}
+
+/** Whether two name lists hold the same names, whatever their order or case. */
+export function sameNames(a: readonly string[], b: readonly string[]): boolean {
+    if (a.length !== b.length) return false;
+    const folded = b.map(foldName).sort();
+    return a
+        .map(foldName)
+        .sort()
+        .every((name, i) => name === folded[i]);
 }
 
 /** Longer than any NickServ allows, and short enough that nothing silly reaches the wire. */
@@ -128,13 +160,7 @@ export function formatAutoJoin(autoJoin: readonly string[]): string {
  * comes first on the next connect.
  */
 export function sameSettings(draft: SettingsDraft, nick: string | null, autoJoin: readonly string[]): boolean {
-    if (draft.nick !== nick) return false;
-    if (draft.autoJoin.length !== autoJoin.length) return false;
-    const saved = autoJoin.map(foldName).sort();
-    return draft.autoJoin
-        .map(foldName)
-        .sort()
-        .every((channel, i) => channel === saved[i]);
+    return draft.nick === nick && sameNames(draft.autoJoin, autoJoin);
 }
 
 /**

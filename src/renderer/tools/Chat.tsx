@@ -1,10 +1,14 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { SERVER_LOG, type ChatLine, type ChatStatus, type ChatView, type ViewChannel } from '../../shared/chat';
+import { COMMANDS, complete, recall, remember, type Completion, type Recall } from '../../shared/chatInput';
 import { clockTime, isConnectionWanted } from '../../shared/chatSettings';
+import { segments } from '../../shared/chatText';
+import { isChannel } from '../../shared/ircNames';
 import Tab from '../tab';
 import ChatSettings from './ChatSettings';
 import ChatUsers from './ChatUsers';
 import { nickColour } from './nickColour';
+import { openUserMenu } from './userMenu';
 
 /*
  * .btn and .sunk are hand-written CSS carrying colour and padding, so the few
@@ -43,6 +47,12 @@ function Status({ view, onSettings }: { view: ChatView; onSettings: boolean }): 
 function channelLabel(name: string): string {
     return name === SERVER_LOG ? 'Status' : name;
 }
+
+function channelTitle(name: string): string {
+    if (name === SERVER_LOG) return 'Messages from the server';
+    return isChannel(name) ? name : `Private conversation with ${name}`;
+}
+
 
 /** The open tab carries `aria-current`, which is what the focus restore below looks for. */
 const OPEN_TAB = '[aria-current="true"]';
@@ -133,7 +143,7 @@ function ChatTabs({
                         key={channel.name}
                         role="button"
                         label={channelLabel(channel.name)}
-                        title={channel.name === SERVER_LOG ? 'Messages from the server' : channel.name}
+                        title={channelTitle(channel.name)}
                         open={open}
                         onSelect={() => showChannel(channel.name)}
                         after={!open && channel.unread > 0 ? <span className="shrink-0 text-gold">{channel.unread}</span> : null}
@@ -161,7 +171,50 @@ function ChatTabs({
  * system lines drop to faint because they are the room talking about itself,
  * not somebody in it.
  */
-function Line({ line, self }: { line: ChatLine; self: string | null }): ReactNode {
+/**
+ * A line's words, with its links and channel names made clickable: a link
+ * opens in the system browser, and a channel joins it — which is how an
+ * invite is accepted.
+ */
+function Words({ text }: { text: string }): ReactNode {
+    return segments(text).map((part, i) => {
+        if (part.kind === 'text') return part.text;
+        if (part.kind === 'link')
+            return (
+                <a
+                    key={i}
+                    href={part.url}
+                    title={part.url}
+                    onClick={event => {
+                        /* The shell is the window's own page: following the link here would navigate it away. */
+                        event.preventDefault();
+                        void window.zanaris.chat.openLink(part.url);
+                    }}
+                    className="text-link underline underline-offset-2 hover:text-cream"
+                >
+                    {part.text}
+                </a>
+            );
+        return (
+            /* `.link`, not a text- utility: the base `button` rule is unlayered and would win over one. */
+            <button key={i} type="button" title={`Join ${part.text}`} onClick={() => void window.zanaris.chat.send(`/join ${part.text}`)} className="link inline">
+                {part.text}
+            </button>
+        );
+    });
+}
+
+/** A speaker's name in the log, which opens the same menu as their row in the user list. */
+function Speaker({ nick, colour, prefix = '', mention }: { nick: string; colour: string | undefined; prefix?: string; mention: (nick: string) => void }): ReactNode {
+    return (
+        <button type="button" onClick={event => openUserMenu(nick, event, mention)} style={{ color: colour }} className="inline hover:underline">
+            {prefix}
+            {nick}
+        </button>
+    );
+}
+
+function Line({ line, self, mention }: { line: ChatLine; self: string | null; mention: (nick: string) => void }): ReactNode {
     const nick = line.nick;
     const colour = nick === null ? undefined : nickColour(nick, self);
     const at = new Date(line.at);
@@ -172,16 +225,18 @@ function Line({ line, self }: { line: ChatLine; self: string | null }): ReactNod
             </time>
             <div className="min-w-0 flex-1 wrap-break-word">
                 {line.kind === 'system' || nick === null ? (
-                    <span className="text-faint">{line.text}</span>
+                    <span className="text-faint">
+                        <Words text={line.text} />
+                    </span>
                 ) : line.kind === 'action' ? (
                     <>
-                        <span style={{ color: colour }}>* {nick}</span> {line.text}
+                        <Speaker nick={nick} colour={colour} prefix="* " mention={mention} /> <Words text={line.text} />
                     </>
                 ) : (
                     <>
-                        {/* A private message lands in Status beside notices, so it says which it is. */}
+                        {/* A /msg sent with no conversation open is echoed into Status beside notices, so it says which it is. */}
                         {line.kind === 'private' && <span className="text-faint">pm </span>}
-                        <span style={{ color: colour }}>{nick}</span> {line.text}
+                        <Speaker nick={nick} colour={colour} mention={mention} /> <Words text={line.text} />
                     </>
                 )}
             </div>
@@ -201,7 +256,13 @@ function TopicBar({ channel, wide, usersOpen, toggleUsers }: { channel: ViewChan
     return (
         <div className="mx-2.5 mb-1.5 flex min-w-0 items-center gap-1.5 text-[12px]">
             <p title={topic === null ? undefined : [topic.text, setBy].filter(Boolean).join('\n')} className="min-w-0 flex-1 truncate">
-                {topic === null ? <span className="text-faint">No topic set</span> : <span className="text-cream">{topic.text}</span>}
+                {topic === null ? (
+                    <span className="text-faint">No topic set</span>
+                ) : (
+                    <span className="text-cream">
+                        <Words text={topic.text} />
+                    </span>
+                )}
             </p>
             {!wide && (
                 <button type="button" aria-expanded={usersOpen} onClick={toggleUsers} style={QUIET_SIZE} className="btn group shrink-0">
@@ -216,6 +277,12 @@ function TopicBar({ channel, wide, usersOpen, toggleUsers }: { channel: ViewChan
 const STICK_SLACK = 24;
 
 /**
+ * What was sent, for the arrows to bring back. One list for every chat pane in
+ * the window, since it is one person typing; it lasts until the window closes.
+ */
+let sentLines: string[] = [];
+
+/**
  * The conversation: the topic, the log with the user list beside it, and the
  * line you are typing.
  *
@@ -228,6 +295,10 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
     const [behind, setBehind] = useState(false);
     const [usersOpen, setUsersOpen] = useState(false);
     const log = useRef<HTMLDivElement | null>(null);
+    const box = useRef<HTMLInputElement | null>(null);
+    /* The last Tab and where the arrows have got to. Refs: they only matter to the next key, and any other change to the box drops them. */
+    const completion = useRef<Completion | null>(null);
+    const recalled = useRef<Recall | null>(null);
     /*
      * Whether the reader is at the end. A ref rather than state: it is read by
      * the layout effect that fires as lines land, and a render in between
@@ -235,7 +306,9 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
      */
     const stuck = useRef(true);
 
-    const channel = view.active === SERVER_LOG ? null : (view.channels.find(c => c.name === view.active) ?? null);
+    /* A conversation with one person has no topic and no list of people: only a channel is a `channel` here. */
+    const channel = isChannel(view.active) ? (view.channels.find(c => c.name === view.active) ?? null) : null;
+    const person = view.active !== SERVER_LOG && !isChannel(view.active) ? view.active : null;
     /* A narrow pane shows the list in place of the log, so the log is only there when the list is not. */
     const listInstead = !wide && usersOpen && channel !== null;
 
@@ -277,11 +350,53 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
         const text = draft.trim();
         if (text === '') return;
         setDraft('');
+        sentLines = remember(sentLines, text);
+        completion.current = null;
+        recalled.current = null;
         /* Speaking is a claim on the end of the log, wherever you had scrolled to. */
         stuck.current = true;
         setBehind(false);
         setUsersOpen(false);
         void window.zanaris.chat.send(text);
+    };
+
+    /** Puts the caret at `at` once React has written the box's new value. */
+    const place = (at: number): void => {
+        requestAnimationFrame(() => box.current?.setSelectionRange(at, at));
+    };
+
+    /** A mention from someone's menu: their name to open the line, or at the end of what is already there. */
+    const mention = (nick: string): void => {
+        const next = draft.trim() === '' ? `${nick}: ` : `${draft.replace(/\s*$/, ' ')}${nick} `;
+        setDraft(next);
+        completion.current = null;
+        box.current?.focus();
+        place(next.length);
+    };
+
+    const onKey = (event: KeyboardEvent<HTMLInputElement>): void => {
+        const el = event.currentTarget;
+        if (event.key === 'Tab') {
+            const nicks = channel !== null ? channel.users.map(u => u.nick) : person !== null ? [person] : [];
+            const channels = view.channels.map(c => c.name).filter(isChannel);
+            const done = complete(el.value, el.selectionStart ?? el.value.length, { nicks, channels, commands: COMMANDS }, completion.current, event.shiftKey);
+            /* Nothing to finish: Tab moves focus on, as it does everywhere else. */
+            if (done === null) return;
+            event.preventDefault();
+            completion.current = done;
+            setDraft(done.text);
+            place(done.caret);
+            return;
+        }
+        if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.altKey && !event.metaKey && !event.shiftKey) {
+            const step = recall(sentLines, recalled.current, el.value, event.key === 'ArrowUp' ? 'up' : 'down');
+            if (step === null) return;
+            event.preventDefault();
+            recalled.current = step.at;
+            completion.current = null;
+            setDraft(step.text);
+            place(step.text.length);
+        }
     };
 
     return (
@@ -290,7 +405,7 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
 
             <div className="mx-2.5 flex min-h-0 flex-1 gap-[5px]">
                 {listInstead && channel !== null ? (
-                    <ChatUsers channel={channel} self={view.nick} className="min-w-0 flex-1" />
+                    <ChatUsers channel={channel} self={view.nick} mention={mention} className="min-w-0 flex-1" />
                 ) : (
                     /*
                      * mt-auto on the lines: a short log sits on the floor of the well
@@ -301,21 +416,21 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
                         ref={log}
                         onScroll={onScroll}
                         role="log"
-                        aria-label={channel === null ? 'Status' : `Conversation in ${channel.name}`}
+                        aria-label={view.active === SERVER_LOG ? 'Status' : person !== null ? `Conversation with ${person}` : `Conversation in ${view.active}`}
                         className="sunk flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-2 py-1.5 leading-[1.45]"
                     >
                         <div className="mt-auto">
                             {view.lines.map(line => (
-                                <Line key={line.id} line={line} self={view.nick} />
+                                <Line key={line.id} line={line} self={view.nick} mention={mention} />
                             ))}
                             {view.lines.length === 0 && (
-                                <p className="px-1 py-[2px] text-dim">{channel === null ? 'Nothing from the server yet.' : 'Nothing said here yet.'}</p>
+                                <p className="px-1 py-[2px] text-dim">{view.active === SERVER_LOG ? 'Nothing from the server yet.' : 'Nothing said here yet.'}</p>
                             )}
                         </div>
                     </div>
                 )}
                 {/* 150px: a nick and its rank without truncating most of them, and little enough that the log keeps the pane. */}
-                {wide && channel !== null && <ChatUsers channel={channel} self={view.nick} className="w-[150px] shrink-0" />}
+                {wide && channel !== null && <ChatUsers channel={channel} self={view.nick} mention={mention} className="w-[150px] shrink-0" />}
             </div>
 
             {behind && !listInstead && (
@@ -330,10 +445,16 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
             <form onSubmit={send} className="flex items-center gap-1.5 px-2.5 py-2">
                 <input
+                    ref={box}
                     value={draft}
-                    onChange={event => setDraft(event.target.value)}
+                    onChange={event => {
+                        completion.current = null;
+                        recalled.current = null;
+                        setDraft(event.target.value);
+                    }}
+                    onKeyDown={onKey}
                     aria-label="Message"
-                    placeholder={offline ? 'Chat is not connected' : channel === null ? 'Commands like /join #channel' : `Message ${channel.name}`}
+                    placeholder={offline ? 'Chat is not connected' : view.active === SERVER_LOG ? 'Commands like /join #channel — /help lists them' : `Message ${view.active}`}
                     maxLength={400}
                     autoComplete="off"
                     spellCheck={false}

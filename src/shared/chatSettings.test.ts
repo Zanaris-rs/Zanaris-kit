@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AUTO_JOIN_MAX, PASSWORD_MAX, channelProblem, clockTime, isNick, formatAutoJoin, isConnectionWanted, passwordProblem, rankTone, readSettingsDraft, sameSettings } from './chatSettings.ts';
+import { AUTO_JOIN_MAX, IGNORE_MAX, readIgnore, sameNames, PASSWORD_MAX, channelProblem, clockTime, isNick, formatAutoJoin, isConnectionWanted, passwordProblem, rankTone, readSettingsDraft, sameSettings } from './chatSettings.ts';
 import { DEFAULT_AUTO_JOIN } from './chat.ts';
 
 // ── the form ──────────────────────────────────────────────────────────────
@@ -132,4 +132,22 @@ test('ops share the gold, a half-op is between, a voice is green, and anything e
     assert.equal(rankTone('+'), 'link');
     assert.equal(rankTone(''), 'plain');
     assert.equal(rankTone('!'), 'plain');
+});
+
+test('the ignore field reads nicks by comma or space, each once whatever the case', () => {
+    assert.deepEqual(readIgnore(' spammer, Bob bob ,, '), { ok: true, ignore: ['spammer', 'Bob'] });
+    assert.deepEqual(readIgnore(''), { ok: true, ignore: [] });
+});
+
+test('the ignore field refuses a name no one could have, and a list past its rail', () => {
+    const bad = readIgnore('fine #channel');
+    assert.equal(bad.ok, false);
+    const many = Array.from({ length: IGNORE_MAX + 1 }, (_, i) => `n${i}`).join(' ');
+    assert.equal(readIgnore(many).ok, false);
+});
+
+test('two name lists are the same whatever their order or case', () => {
+    assert.equal(sameNames(['Bob', 'alice'], ['ALICE', 'bob']), true);
+    assert.equal(sameNames(['bob'], ['bob', 'alice']), false);
+    assert.equal(sameNames([], []), true);
 });

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ViewChannel } from '../../shared/chat';
 import { rankTone } from '../../shared/chatSettings';
+import { openUserMenu } from './userMenu';
 import { nickColour } from './nickColour';
 
 /** Each tone `rankTone` decides, as the class that draws it. */
@@ -24,7 +25,7 @@ function createdOn(at: number): string {
  * the nick in the colour the log gives it, so a person found here is the same
  * shape when you look back at the conversation.
  */
-export default function ChatUsers({ channel, self, className = '' }: { channel: ViewChannel; self: string | null; className?: string }): ReactNode {
+export default function ChatUsers({ channel, self, mention, className = '' }: { channel: ViewChannel; self: string | null; mention: (nick: string) => void; className?: string }): ReactNode {
     const count = channel.users.length;
     /* "+" alone is a channel the server said has no flags, which is not worth a mention. */
     const modes = channel.modes !== null && channel.modes !== '+' ? channel.modes : null;
@@ -45,15 +46,23 @@ export default function ChatUsers({ channel, self, className = '' }: { channel: 
                         const top = user.prefixes[0] ?? '';
                         const ranks = [...user.prefixes].map(symbol => RANK_NAME[symbol]).filter(Boolean);
                         return (
-                            <li key={user.nick} title={ranks.length > 0 ? `${user.nick}, ${ranks.join(' and ')}` : user.nick} className="flex min-w-0 items-baseline px-1.5 py-px">
-                                <span aria-hidden="true" className={`w-[12px] shrink-0 text-center ${TONE_CLASS[rankTone(top)]}`}>
-                                    {top}
-                                </span>
-                                <span style={{ color: nickColour(user.nick, self) }} className="truncate">
-                                    {user.nick}
-                                </span>
-                                {/* The symbol is drawn for the eye; this says it for a screen reader, which would otherwise read "at matt". */}
-                                {ranks.length > 0 && <span className="sr-only">, {ranks.join(' and ')}</span>}
+                            <li key={user.nick}>
+                                {/* A button, so the menu is a Tab and an Enter away as well as a click. */}
+                                <button
+                                    type="button"
+                                    title={ranks.length > 0 ? `${user.nick}, ${ranks.join(' and ')}` : user.nick}
+                                    onClick={event => openUserMenu(user.nick, event, mention)}
+                                    className="flex w-full min-w-0 items-baseline px-1.5 py-px text-left hover:bg-stone-lit/40"
+                                >
+                                    <span aria-hidden="true" className={`w-[12px] shrink-0 text-center ${TONE_CLASS[rankTone(top)]}`}>
+                                        {top}
+                                    </span>
+                                    <span style={{ color: nickColour(user.nick, self) }} className="truncate">
+                                        {user.nick}
+                                    </span>
+                                    {/* The symbol is drawn for the eye; this says it for a screen reader, which would otherwise read "at matt". */}
+                                    {ranks.length > 0 && <span className="sr-only">, {ranks.join(' and ')}</span>}
+                                </button>
                             </li>
                         );
                     })}

@@ -1,10 +1,12 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, net, powerMonitor, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { ServerDef } from '../shared/catalog';
-import type { ChatView } from '../shared/chat';
-import { passwordProblem, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
+import { SERVER_LOG, type ChatLine, type ChatView } from '../shared/chat';
+import { userActions, type UserAction } from '../shared/chatInput';
+import { isNick, passwordProblem, readIgnore, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
+import { linkTarget } from '../shared/chatText';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
 import { NAME_INPUT_MAX } from '../shared/names';
@@ -290,6 +292,31 @@ const byShell = new Map<number, ServerWindow>();
 function focusedServerWindow(): ServerWindow | undefined {
     const focused = BrowserWindow.getFocusedWindow();
     return [...serverWindows.values()].find(sw => sw.window === focused);
+}
+
+/** The window last in front, for a notification to bring back when the kit itself is not. */
+let lastFocusedWindow: BrowserWindow | null = null;
+app.on('browser-window-focus', (_event, win) => {
+    lastFocusedWindow = win;
+});
+
+/**
+ * Raises a system notification for a mention or a private message, but only
+ * while no window of the kit's is in front: someone looking at the kit sees
+ * the gold edge and the badge already. Clicking it brings the last window
+ * back with that conversation open.
+ */
+function notifyMention(line: ChatLine): void {
+    if (BrowserWindow.getFocusedWindow() !== null || !Notification.isSupported()) return;
+    const where = line.channel === SERVER_LOG ? 'Status' : line.channel;
+    const title = line.nick === null ? where : line.nick === line.channel ? `${line.nick} (private)` : `${line.nick} in ${where}`;
+    const note = new Notification({ title, body: line.kind === 'action' ? `* ${line.nick} ${line.text}` : line.text });
+    note.on('click', () => {
+        chat?.select(line.channel);
+        const sw = [...serverWindows.values()].find(w => w.window === lastFocusedWindow) ?? [...serverWindows.values()][0];
+        sw?.focus();
+    });
+    note.show();
 }
 
 /**
@@ -897,7 +924,15 @@ function readSettingsSave(x: unknown): SettingsSave | null {
     const form = x as Record<string, unknown>;
     if (typeof form.nick !== 'string' || typeof form.channels !== 'string') return null;
     if (form.password !== undefined && form.password !== null && typeof form.password !== 'string') return null;
-    return { nick: form.nick, channels: form.channels, ...(form.password === undefined ? {} : { password: form.password as string | null }) };
+    if (form.ignore !== undefined && typeof form.ignore !== 'string') return null;
+    if (form.notify !== undefined && typeof form.notify !== 'boolean') return null;
+    return {
+        nick: form.nick,
+        channels: form.channels,
+        ...(form.password === undefined ? {} : { password: form.password as string | null }),
+        ...(form.ignore === undefined ? {} : { ignore: form.ignore as string }),
+        ...(form.notify === undefined ? {} : { notify: form.notify as boolean })
+    };
 }
 
 ipcMain.handle(IPC.chatGet, (): ChatView => chatView());
@@ -912,7 +947,60 @@ ipcMain.handle(IPC.chatSelect, (_event, channel: unknown) => {
     chat?.select(channel);
 });
 
-/** Any channel may be closed, for the session; the service refuses Status, and a channel that is not open. */
+/**
+ * A link clicked in the log, opened in the system browser. Read again here by
+ * the same rule the log drew it with, so only http and https ever reach the
+ * browser, whatever the shell sent: a chat line is a stranger's writing.
+ */
+ipcMain.handle(IPC.chatOpenLink, (_event, text: unknown) => {
+    if (typeof text !== 'string') return;
+    const url = linkTarget(text);
+    if (url === null) {
+        log(`[main] refused to open a chat link: not http or https`);
+        return;
+    }
+    void shell.openExternal(url);
+});
+
+/**
+ * Someone's name clicked in the user list or the log: a native menu, since
+ * a menu drawn by the shell would sit under the game beside it. What main can
+ * do it does here; what belongs to the message box — a mention — is handed
+ * back for the shell to do. Resolves to the choice, or null when the menu was
+ * dismissed.
+ */
+ipcMain.handle(IPC.chatUserMenu, (event, nick: unknown, x: unknown, y: unknown): Promise<UserAction | null> | null => {
+    if (typeof nick !== 'string' || !isNick(nick) || typeof x !== 'number' || typeof y !== 'number') return null;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const service = chat;
+    if (win === null || service === null) return null;
+    const view = service.view();
+    return new Promise(resolve => {
+        let settled = false;
+        const settle = (choice: UserAction | null): void => {
+            if (settled) return;
+            settled = true;
+            resolve(choice);
+        };
+        const act = (action: UserAction): void => {
+            if (action === 'message') service.send(`/query ${nick}`);
+            else if (action === 'whois') service.send(`/whois ${nick}`);
+            else if (action === 'ignore') service.send(`/ignore ${nick}`);
+            else if (action === 'unignore') service.send(`/unignore ${nick}`);
+            settle(action);
+        };
+        const items = userActions(nick, view.nick, view.settings.ignore).map(item => ({ label: item.label, click: () => act(item.action) }));
+        Menu.buildFromTemplate([{ label: nick, enabled: false }, { type: 'separator' as const }, ...items]).popup({
+            window: win,
+            x: Math.round(x),
+            y: Math.round(y),
+            // Settled a moment after the close rather than at it, in case the close is reported before the click that ended it.
+            callback: () => setTimeout(() => settle(null), 100)
+        });
+    });
+});
+
+/** Any channel or conversation may be closed, for the session; the service refuses Status, and a tab that is not open. */
 ipcMain.handle(IPC.chatCloseRoom, (_event, channel: unknown) => {
     if (typeof channel !== 'string') return;
     chat?.closeRoom(channel);
@@ -945,9 +1033,14 @@ ipcMain.handle(IPC.chatSaveSettings, (_event, input: unknown): string | null => 
         if (problem !== null) return problem;
     }
 
+    const ignore = form.ignore === undefined ? null : readIgnore(form.ignore);
+    if (ignore !== null && !ignore.ok) return ignore.message;
+
     const { draft } = reading;
-    appState.setChat({ nick: draft.nick, autoJoin: draft.autoJoin });
     const change: SettingsChange = { nick: draft.nick, autoJoin: draft.autoJoin };
+    if (ignore !== null) change.ignore = ignore.ignore;
+    if (form.notify !== undefined) change.notify = form.notify;
+    appState.setChat({ nick: draft.nick, autoJoin: draft.autoJoin, ...(change.ignore ? { ignore: change.ignore } : {}), ...(change.notify !== undefined ? { notify: change.notify } : {}) });
     if (form.password !== undefined) {
         change.password = form.password;
         appState.setNickservSealed(form.password === null ? null : seal(form.password, safeStorage, process.platform));
@@ -1853,7 +1946,9 @@ app.whenReady().then(async () => {
             password: openSecret(appState.sealedNickserv(), safeStorage, process.platform),
             canSavePassword: canSeal(safeStorage, process.platform),
             // Connect, Disconnect and /quit all land here, so the next launch does what the user last asked.
-            onConnectionWanted: wanted => appState.setChat({ autoConnect: wanted })
+            onConnectionWanted: wanted => appState.setChat({ autoConnect: wanted }),
+            onIgnoreChanged: ignore => appState.setChat({ ignore }),
+            onMention: notifyMention
         },
         {
             connect: tlsConnect,

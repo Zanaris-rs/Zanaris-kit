@@ -2,6 +2,7 @@
 import type { NewServerInput, ServerDef } from './catalog';
 import type { Detail, WorldsView } from './worlds';
 import type { ChatView } from './chat';
+import type { UserAction } from './chatInput';
 import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
@@ -46,6 +47,8 @@ export const IPC = {
     chatSaveSettings: 'zanaris:chat-save-settings',
     chatConnect: 'zanaris:chat-connect',
     chatDisconnect: 'zanaris:chat-disconnect',
+    chatOpenLink: 'zanaris:chat-open-link',
+    chatUserMenu: 'zanaris:chat-user-menu',
     yourWorldSetSetting: 'zanaris:yourworld-set-setting',
     yourWorldRetry: 'zanaris:yourworld-retry',
     yourWorldOpenSaves: 'zanaris:yourworld-open-saves',
@@ -184,6 +187,14 @@ export interface ZanarisApi {
         connect(): Promise<void>;
         /** Says goodbye and stays offline, this launch and the next, until connect. */
         disconnect(): Promise<void>;
+        /** Opens a link from the log in the system browser. Main reads it again, and opens only http and https. */
+        openLink(url: string): Promise<void>;
+        /**
+         * Shows the menu for someone's name at a point in the window, and does
+         * what was chosen that main can. Resolves to the choice, so the shell
+         * can do the rest — a mention goes in its message box — or null.
+         */
+        userMenu(nick: string, x: number, y: number): Promise<UserAction | null>;
     };
     worlds: {
         refresh(): Promise<void>;

@@ -1,6 +1,6 @@
 import { useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import type { ChatView } from '../../shared/chat';
-import { NICK_MAX, PASSWORD_MAX, formatAutoJoin, isConnectionWanted, passwordProblem, readSettingsDraft, sameSettings, type SettingsSave } from '../../shared/chatSettings';
+import { NICK_MAX, PASSWORD_MAX, formatAutoJoin, isConnectionWanted, passwordProblem, readIgnore, readSettingsDraft, sameNames, sameSettings, type SettingsSave } from '../../shared/chatSettings';
 
 /*
  * One loud button at a time, as the rest of the pane has it. Offline, that is
@@ -17,9 +17,13 @@ const SPENT: CSSProperties = { ...BUTTON_SIZE, color: 'var(--color-faint)' };
 
 const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
 
+/** The checkbox in the kit's gold, as the other forms draw theirs. */
+const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
+
 /**
  * The chat Settings tab: who you are in chat, the password NickServ knows you
- * by, the channels a connect joins, and the connection itself.
+ * by, the channels a connect joins, who is ignored, whether a mention raises a
+ * notification, and the connection itself.
  *
  * Each field shows what is saved until it is typed in, and goes back to
  * showing what is saved after a save — the saved nick, not the one the
@@ -37,6 +41,8 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
     /* Null while untouched, so the field follows what is saved. */
     const [nickDraft, setNickDraft] = useState<string | null>(null);
     const [channelsDraft, setChannelsDraft] = useState<string | null>(null);
+    const [ignoreDraft, setIgnoreDraft] = useState<string | null>(null);
+    const [notifyDraft, setNotifyDraft] = useState<boolean | null>(null);
     const [password, setPassword] = useState('');
     const [forget, setForget] = useState(false);
     const [refusal, setRefusal] = useState<string | null>(null);
@@ -44,10 +50,21 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
 
     const nick = nickDraft ?? saved.nick ?? '';
     const channels = channelsDraft ?? formatAutoJoin(saved.autoJoin);
+    /* Follows what is saved until typed in, so an /ignore typed in a channel shows up here. */
+    const ignoreText = ignoreDraft ?? saved.ignore.join(', ');
+    const notify = notifyDraft ?? saved.notify;
     const reading = readSettingsDraft({ nick, channels });
+    const ignoreReading = readIgnore(ignoreText);
     const passwordNote = password === '' ? null : passwordProblem(password);
-    const valid = reading.ok && passwordNote === null;
-    const changed = !reading.ok || !sameSettings(reading.draft, saved.nick, saved.autoJoin) || password !== '' || forget;
+    const valid = reading.ok && ignoreReading.ok && passwordNote === null;
+    const changed =
+        !reading.ok ||
+        !sameSettings(reading.draft, saved.nick, saved.autoJoin) ||
+        !ignoreReading.ok ||
+        !sameNames(ignoreReading.ignore, saved.ignore) ||
+        notify !== saved.notify ||
+        password !== '' ||
+        forget;
     /* Only while connected is there a connection's name to differ from the saved one. */
     const calledElse = view.status === 'online' && view.nick !== null && saved.nick !== null && view.nick !== saved.nick ? view.nick : null;
     const connected = isConnectionWanted(view.status);
@@ -60,7 +77,7 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
     /** Saves what changed. True when there was nothing to save or it was saved; false when main refused, with its reason shown. */
     const save = async (): Promise<boolean> => {
         if (!changed) return true;
-        const form: SettingsSave = { nick, channels };
+        const form: SettingsSave = { nick, channels, ignore: ignoreText, notify };
         if (password !== '') form.password = password;
         else if (forget) form.password = null;
         const refused = await window.zanaris.chat.saveSettings(form);
@@ -70,6 +87,8 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
         }
         setNickDraft(null);
         setChannelsDraft(null);
+        setIgnoreDraft(null);
+        setNotifyDraft(null);
         setPassword('');
         setForget(false);
         return true;
@@ -190,6 +209,33 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
                             </span>
                         )}
                     </div>
+
+                    <div className={`flex min-w-0 flex-col gap-0.5 ${wide ? 'col-span-2' : ''}`}>
+                        <label htmlFor={`${id}-ignore`} className="text-[12px] text-dim">
+                            Ignored nicks
+                        </label>
+                        <input
+                            id={`${id}-ignore`}
+                            value={ignoreText}
+                            autoComplete="off"
+                            spellCheck={false}
+                            placeholder="Nobody"
+                            aria-invalid={!ignoreReading.ok}
+                            aria-describedby={`${id}-ignore-note`}
+                            onChange={e => edit(() => setIgnoreDraft(e.target.value))}
+                            className={FIELD}
+                        />
+                        <span id={`${id}-ignore-note`} className={`text-[12px] ${ignoreReading.ok ? 'text-dim' : 'text-warn'}`}>
+                            {ignoreReading.ok ? 'Their messages, notices and invites are hidden. /ignore and /unignore change this list too.' : ignoreReading.message}
+                        </span>
+                    </div>
+
+                    <label className={`flex items-start gap-2 text-cream ${wide ? 'col-span-2' : ''}`}>
+                        <input type="checkbox" checked={notify} onChange={e => edit(() => setNotifyDraft(e.target.checked))} style={ACCENT} className="mt-[3px]" />
+                        <span>
+                            Notify me of mentions and private messages <span className="text-[12px] text-dim">while the kit is in the background</span>
+                        </span>
+                    </label>
                 </div>
 
                 {refusal !== null && (

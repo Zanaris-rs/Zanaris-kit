@@ -137,12 +137,14 @@ test('CTCP ACTION is an action, and other CTCP is ignored', () => {
     );
 });
 
-test('a private message lands in the server log and always highlights', () => {
+test('a private message opens a conversation with whoever sent it, and always highlights', () => {
     const f = online();
     f.client.receive(':bob!~b@host PRIVMSG matt :psst, over here');
-    f.client.select(SERVER_LOG);
+    assert.equal(f.channel('bob').unread, 1, 'a tab of its own, badged');
+    assert.equal(f.client.snapshot().active, '#04scape', 'it does not take the open tab away');
+    f.client.select('bob');
     const line = f.lines().at(-1);
-    assert.equal(line?.kind, 'private');
+    assert.equal(line?.kind, 'say', 'the tab says it is private, so the line need not');
     assert.equal(line?.nick, 'bob');
     assert.equal(line?.text, 'psst, over here');
     assert.equal(line?.highlight, true);
@@ -394,17 +396,15 @@ test('a channel wanted while offline is joined on the next 001', () => {
 
 test('a command this client does not read itself goes to the server as typed, uppercased', () => {
     const f = online();
-    f.client.input('/invite bob #LostHQ');
-    f.client.input('/whois bob');
-    f.client.input('/topic #04scape :hello there');
-    f.client.input('/away');
-    assert.deepEqual(f.sent, ['INVITE bob #LostHQ', 'WHOIS bob', 'TOPIC #04scape :hello there', 'AWAY']);
+    f.client.input('/mode #04scape +m');
+    f.client.input('/who #04scape');
+    assert.deepEqual(f.sent, ['MODE #04scape +m', 'WHO #04scape']);
     assert.deepEqual(f.lines(), [], 'the server answers in Status; the client does not echo what it does not understand');
 });
 
 test('a passed-through command while not connected says so instead of being dropped silently', () => {
     const f = fake();
-    f.client.input('/invite bob #04scape');
+    f.client.input('/mode #04scape +m');
     assert.deepEqual(f.sent, []);
     assert.equal(f.lines().at(-1)?.kind, 'system');
     assert.match(f.lines().at(-1)?.text ?? '', /not connected/);
@@ -789,4 +789,261 @@ test('an invite badges Status, since it is addressed to you', () => {
     const f = online();
     f.client.receive(':bob!b@h INVITE matt #secret');
     assert.equal(f.channel(SERVER_LOG).unread, 1);
+});
+
+// ── private conversations ─────────────────────────────────────────────────
+
+test('/query opens a conversation and shows it, and lines typed there go to that person', () => {
+    const f = online();
+    f.client.input('/query bob');
+    assert.equal(f.client.snapshot().active, 'bob');
+    assert.deepEqual(f.sent, [], 'a conversation is ours alone until something is said');
+
+    f.client.input('hello bob');
+    f.client.input('/me waves');
+    assert.deepEqual(f.sent, ['PRIVMSG bob :hello bob', `PRIVMSG bob :${CTCP}ACTION waves${CTCP}`]);
+    assert.deepEqual(
+        f.lines().map(l => [l.kind, l.nick, l.text]),
+        [
+            ['say', 'matt', 'hello bob'],
+            ['action', 'matt', 'waves']
+        ]
+    );
+});
+
+test('/query with text says it at once; a name that is no nick opens nothing', () => {
+    const f = online();
+    f.client.input('/query bob are you there?');
+    assert.deepEqual(f.sent, ['PRIVMSG bob :are you there?']);
+    f.client.input('/query bob,alice');
+    assert.equal(f.client.snapshot().channels.some(c => c.name === 'bob,alice'), false);
+    assert.match(f.lines().at(-1)?.text ?? '', /not a nick/);
+});
+
+test('a /msg to someone with a conversation open is echoed there; to NickServ it stays in Status and hides the password', () => {
+    const f = online();
+    f.client.input('/query bob');
+    f.client.input('/msg bob from afar');
+    assert.equal(f.lines().at(-1)?.text, 'from afar');
+    f.client.input('/msg NickServ IDENTIFY matt hunter2');
+    assert.equal(f.client.snapshot().channels.some(c => c.name === 'NickServ'), false, 'services get no tab of their own');
+    f.client.select(SERVER_LOG);
+    assert.equal(f.lines().at(-1)?.text, 'IDENTIFY (hidden)');
+});
+
+test('a password typed into a conversation with NickServ is not written into it', () => {
+    const f = online();
+    f.client.input('/query NickServ');
+    f.client.input('identify matt hunter2');
+    assert.deepEqual(f.sent, ['PRIVMSG NickServ :identify matt hunter2']);
+    assert.equal(f.lines().at(-1)?.text, 'identify (hidden)');
+});
+
+test('a notice goes to the conversation with its sender when one is open, and never opens one', () => {
+    const f = online();
+    f.client.receive(':NickServ!s@services. NOTICE matt :You are now identified.');
+    assert.equal(f.client.snapshot().channels.some(c => c.name === 'NickServ'), false);
+    f.client.input('/query bob');
+    f.client.receive(':bob!b@h NOTICE matt :psst');
+    assert.equal(f.lines().at(-1)?.text, '-bob- psst');
+});
+
+test('a conversation follows its person to a new name, in the same place in the row', () => {
+    const f = online();
+    f.client.receive(':bob!b@h PRIVMSG matt :hi');
+    f.client.receive(':alice!a@h PRIVMSG matt :hey');
+    f.client.select('bob');
+    f.client.receive(':bob!b@h NICK :robert');
+    assert.deepEqual(
+        f.client.snapshot().channels.map(c => c.name),
+        [SERVER_LOG, '#04scape', 'robert', 'alice']
+    );
+    assert.equal(f.client.snapshot().active, 'robert');
+    assert.deepEqual(
+        f.lines().map(l => l.text),
+        ['hi', 'bob is now known as robert']
+    );
+    f.client.input('still there?');
+    assert.equal(f.sent.at(-1), 'PRIVMSG robert :still there?');
+});
+
+test('someone quitting says so in the conversation with them', () => {
+    const f = online();
+    f.client.input('/query bob');
+    f.client.receive(':bob!b@h QUIT :bye');
+    assert.equal(f.lines().at(-1)?.text, 'bob quit (bye)');
+});
+
+test('/close ends a conversation and parts a channel; Status stays', () => {
+    const f = online();
+    f.client.input('/query bob');
+    f.client.input('/close');
+    assert.equal(f.client.snapshot().channels.some(c => c.name === 'bob'), false);
+    assert.deepEqual(f.sent, [], 'the server never knew the conversation was open');
+
+    f.client.select('#04scape');
+    f.client.input('/close');
+    assert.deepEqual(f.sent, ['PART #04scape']);
+
+    f.client.input('/close');
+    assert.match(f.lines().at(-1)?.text ?? '', /Status cannot be closed/);
+});
+
+test('a typed /join shows the channel it joins', () => {
+    const f = online();
+    f.client.input('/join #LostHQ');
+    assert.equal(f.client.snapshot().active, '#LostHQ');
+});
+
+// ── ignoring ──────────────────────────────────────────────────────────────
+
+test('an ignored nick\'s messages, notices, actions and invites are dropped, whatever the case', () => {
+    const f = online({ ignore: ['Spammer'] });
+    f.client.receive(':spammer!s@h PRIVMSG #04scape :buy gold');
+    f.client.receive(`:spammer!s@h PRIVMSG #04scape :${CTCP}ACTION buys gold${CTCP}`);
+    f.client.receive(':spammer!s@h PRIVMSG matt :psst');
+    f.client.receive(':spammer!s@h NOTICE matt :psst');
+    f.client.receive(':spammer!s@h INVITE matt #gold');
+    assert.deepEqual(f.lines(), []);
+    assert.equal(f.client.snapshot().channels.some(c => c.name === 'spammer'), false);
+    f.client.select(SERVER_LOG);
+    assert.deepEqual(
+        f.lines().map(l => l.text),
+        ['Welcome to Libera.Chat, matt']
+    );
+});
+
+test('/ignore and /unignore change the list and report it; /ignore alone lists it', () => {
+    const changes: string[][] = [];
+    const f = online({ onIgnoreChanged: list => changes.push(list) });
+    f.client.input('/ignore');
+    assert.equal(f.lines().at(-1)?.text, 'you are not ignoring anyone');
+    f.client.input('/ignore bob');
+    f.client.input('/ignore BOB');
+    assert.match(f.lines().at(-1)?.text ?? '', /already ignoring/);
+    f.client.receive(':bob!b@h PRIVMSG #04scape :hi');
+    assert.equal(f.lines().some(l => l.text === 'hi'), false);
+    f.client.input('/unignore Bob');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :hi again');
+    assert.equal(f.lines().at(-1)?.text, 'hi again');
+    assert.deepEqual(changes, [['bob'], []]);
+    assert.deepEqual(f.sent, [], 'ignoring is ours, not the server\'s');
+});
+
+// ── the commands the kit reads ────────────────────────────────────────────
+
+test('/topic with text sets the active channel\'s; alone it shows what the join said', () => {
+    const f = online();
+    f.client.select('#04scape');
+    f.client.input('/topic');
+    assert.equal(f.lines().at(-1)?.text, '#04scape has no topic');
+    f.client.receive(':irc 332 matt #04scape :Welcome to 2004scape');
+    f.client.receive(':irc 333 matt #04scape alice!a@h 1700000000');
+    f.client.input('/topic');
+    assert.equal(f.lines().at(-1)?.text, 'topic of #04scape: Welcome to 2004scape (set by alice)');
+    f.client.input('/topic A new topic');
+    assert.deepEqual(f.sent, ['TOPIC #04scape :A new topic']);
+});
+
+test('/kick, /invite and /op take the channel you are looking at', () => {
+    const f = online();
+    f.client.select('#04scape');
+    f.client.input('/kick bob spamming links');
+    f.client.input('/invite alice');
+    f.client.input('/op a b c d');
+    f.client.input('/devoice e');
+    assert.deepEqual(f.sent, ['KICK #04scape bob :spamming links', 'INVITE alice #04scape', 'MODE #04scape +ooo a b c', 'MODE #04scape +o d', 'MODE #04scape -v e']);
+});
+
+test('channel commands in Status say there is no channel rather than sending', () => {
+    const f = online();
+    f.client.select(SERVER_LOG);
+    f.client.input('/kick bob');
+    f.client.input('/op bob');
+    assert.deepEqual(f.sent, []);
+    assert.match(f.lines().at(-1)?.text ?? '', /no channel/);
+});
+
+test('/away with a reason marks you away, and alone marks you back', () => {
+    const f = online();
+    f.client.input('/away gone fishing');
+    f.client.input('/away');
+    assert.deepEqual(f.sent, ['AWAY :gone fishing', 'AWAY']);
+});
+
+test('/clear empties the tab here only, and /help lists the commands', () => {
+    const f = online();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :hi');
+    f.client.input('/clear');
+    assert.deepEqual(f.lines(), []);
+    f.client.input('/help');
+    assert.ok(f.lines().some(l => l.text.startsWith('/join')));
+    assert.deepEqual(f.sent, []);
+});
+
+test('a whois answer is read into sentences in the tab it was asked from', () => {
+    const f = online();
+    f.clock.now = 1_700_010_000_000;
+    f.client.select('#04scape');
+    f.client.input('/whois bob');
+    assert.deepEqual(f.sent, ['WHOIS bob']);
+    f.client.receive(':irc 311 matt bob ~b host.example * :Bob Smith');
+    f.client.receive(':irc 319 matt bob :@#04scape #LostHQ');
+    f.client.receive(':irc 312 matt bob fiery.swiftirc.net :SwiftIRC');
+    f.client.receive(':irc 301 matt bob :lunch');
+    f.client.receive(':irc 330 matt bob bobacct :is logged in as');
+    f.client.receive(':irc 317 matt bob 190 1700000000 :seconds idle, signon time');
+    f.client.receive(':irc 378 matt bob :is connecting from *@1.2.3.4');
+    f.client.receive(':irc 318 matt bob :End of /WHOIS list.');
+    assert.deepEqual(
+        f.lines().map(l => l.text),
+        [
+            'bob is ~b@host.example (Bob Smith)',
+            'bob is in @#04scape #LostHQ',
+            'bob is connected to fiery.swiftirc.net',
+            'bob is away: lunch',
+            'bob is logged in as bobacct',
+            'bob has been idle 3m 10s, signed on 2h 46m ago',
+            'bob is connecting from *@1.2.3.4'
+        ]
+    );
+    f.client.receive(':irc 378 matt bob :is connecting from *@1.2.3.4');
+    assert.equal(f.lines().length, 7, 'once the whois is over, the next reply is Status\'s');
+});
+
+test('someone not online says so where you were talking to them', () => {
+    const f = online();
+    f.client.input('/query ghost');
+    f.client.input('boo');
+    f.client.receive(':irc 401 matt ghost :No such nick/channel');
+    assert.equal(f.lines().at(-1)?.text, 'ghost is not online');
+});
+
+test('a full, registered-only or overfull join is refused in words', () => {
+    const f = online();
+    f.client.receive(':irc 471 matt #full :Cannot join channel (+l)');
+    f.client.receive(':irc 477 matt #regonly :Cannot join channel (+R)');
+    f.client.receive(':irc 405 matt #more :You have joined too many channels');
+    f.client.select(SERVER_LOG);
+    assert.deepEqual(
+        f.lines().slice(1).map(l => l.text),
+        ['cannot join #full: the channel is full', 'cannot join #regonly: you need to be identified with NickServ', 'cannot join #more: you are in too many channels']
+    );
+});
+
+test('not being an operator is said in the channel it happened in', () => {
+    const f = online();
+    f.client.receive(':irc 482 matt #04scape :You\'re not channel operator');
+    assert.equal(f.lines().at(-1)?.text, 'you are not an operator in #04scape');
+});
+
+// ── highlights ────────────────────────────────────────────────────────────
+
+test('each line that names you or is said to you alone is reported as it arrives, and nothing else', () => {
+    const seen: string[] = [];
+    const f = online({ onHighlight: line => seen.push(`${line.channel} ${line.nick} ${line.text}`) });
+    f.client.receive(':bob!b@h PRIVMSG #04scape :hey matt, look');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :nothing to see');
+    f.client.receive(':bob!b@h PRIVMSG matt :psst');
+    assert.deepEqual(seen, ['#04scape bob hey matt, look', 'bob bob psst']);
 });
