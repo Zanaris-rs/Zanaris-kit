@@ -422,6 +422,30 @@ and the text's contrast behave as they do on the stone. Zanaris in 274 is brown 
 grass in black void, not the blue of later years. A test holds every theme to
 the stone's own contrast, pair by pair.
 
+**Your own themes.** Customise, under any theme's card in Settings > Appearance,
+opens an editor on a copy of it. Every one of the frame's 21 colours can be
+set there, by a colour well or by hex, beside a preview drawn with the kit's
+own panels, tabs and buttons that follows each change as it is made. When a
+pair of colours reads worse than it does in 2004 stone, the editor says which
+and by how much; saving is still yours. The windows wearing a theme change
+when it is saved, and Cancel changes nothing. Up to 32 themes of your own are
+kept, and each is chosen from its card, per server and from View > Server
+Theme like any other.
+
+A theme can carry a picture, shown across the whole window: behind the tab
+bar, the headers and every panel, with the game and the pages covering their
+own part of it. The stone turns partly see-through over it, by as much as the
+theme says, up to 60%; the bevels and the words stay solid, and a list inside
+a panel shows less of the picture than the panel's frame, so the text sits on
+the most solid stone. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB,
+checked by its own bytes rather than its name; the kit keeps a copy in its
+data folder, under `backgrounds/`.
+
+Export… writes a theme to a `.zktheme` file, its picture inside it, to hand to
+someone else; Import theme… adds one as a new theme beside yours and never
+over one. A theme file carries the look and nothing else — no server, no
+layout.
+
 The mockups this was ported from live in `design/`: `build.mjs` generates the
 artboards, and `seed-canvas.mjs` from the design skill packages them into a
 canvas. The seeded output is gitignored because it is 2.5 MB of editor payload;
