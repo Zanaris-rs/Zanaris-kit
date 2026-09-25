@@ -594,3 +594,67 @@ test('the chat ignore list and notification choice are kept, and a bad entry cos
     again.load();
     assert.deepEqual(again.chat().ignore, ['carol']);
 });
+
+test('the app theme starts as stone with no server themes, and both survive a round trip', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    assert.deepEqual(a.appearance(), { theme: 'stone', servers: {} });
+    a.setTheme('zanaris');
+    a.setServerTheme('lostcity', 'wilderness');
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.appearance(), { theme: 'zanaris', servers: { lostcity: 'wilderness' } });
+});
+
+test('an unknown theme costs only itself: the app theme falls back, a bad server entry is dropped, the rest stays', () => {
+    const file = tempFile();
+    writeFileSync(
+        file,
+        JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED }, appearance: { theme: 'parchment', servers: { lostcity: 'morytania', zanaris: 'parchment', labs: 7, '': 'zanaris' } } })
+    );
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'morytania' } });
+    assert.deepEqual(state.world('lostcity'), REMEMBERED);
+});
+
+test('an appearance block that is not an object, or a file without one, starts at stone', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, appearance: 'zanaris' }));
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: {} });
+});
+
+test('setServerTheme with null clears an override, and an unknown id changes nothing', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    state.setServerTheme('lostcity', 'lumbridge');
+    state.setServerTheme('lostcity', 'parchment');
+    state.setTheme('parchment');
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'lumbridge' } });
+    state.setServerTheme('lostcity', null);
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: {} });
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).appearance, { theme: 'stone', servers: {} });
+});
+
+test('appearance() hands out a copy, so a caller cannot change the stored state', () => {
+    const state = new AppState(tempFile());
+    state.load();
+    state.setServerTheme('lostcity', 'zanaris');
+    const copy = state.appearance() as { theme: string; servers: Record<string, string> };
+    copy.servers.lostcity = 'wilderness';
+    copy.theme = 'wilderness';
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'zanaris' } });
+});
+
+test('a server id of __proto__ in a hand-edited file is a plain entry, not a prototype', () => {
+    const file = tempFile();
+    writeFileSync(file, '{"version":1,"worlds":{},"appearance":{"theme":"stone","servers":{"__proto__":"zanaris"}}}');
+    const state = new AppState(file);
+    state.load();
+    assert.deepEqual(Object.keys(state.appearance().servers), ['__proto__']);
+    assert.equal(Object.getPrototypeOf(state.appearance().servers), Object.prototype);
+});
