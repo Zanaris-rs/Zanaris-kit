@@ -153,9 +153,12 @@ path.
 - Edges, text, signals and `window` stay solid.
 - Without a picture it is exactly what it was.
 
-`body` in `styles.css` paints `--picture` over its own ink. Each surface
-over it is see-through by `show`, and a surface inside another stacks with
-it. A list in a panel therefore shows less of the picture than the panel's
+A `.picture` class in `styles.css` paints `--picture` as an element's own
+image, over its ink. It goes on the element that spans each page (the
+shell's root, and Settings'), not on `body` behind it: the shell's root is
+itself inked, and a picture behind it would show through one surface more
+everywhere. Each surface over it is see-through by `show`, and a surface
+inside another stacks with it. A list in a panel therefore shows less of the picture than the panel's
 frame does, which keeps the wells, where the words are, the most solid.
 Settings wears the app theme, picture and all.
 

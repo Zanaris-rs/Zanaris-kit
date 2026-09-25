@@ -14,8 +14,8 @@ import type { ServerRow, ServersView } from '../../main/servers.ts';
 const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 /* The startup checkbox wears the gold the client's own accents do. */
 const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
-/* The add form's fields, one quiet sunk box each — the same class `Timers.tsx` uses for its own. */
-const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
+/* The add form's fields, one quiet sunk box each — the same class `Timers.tsx` uses for its own, and the theme editor's. */
+export const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
 
 /** A secondary action: stone, a dim 13px label that lights on hover, and spent when it cannot be used. Same shape as `Timers.tsx`'s. Exported because the page's own file buttons are the same kind of thing. */
 export function QuietButton({ onClick, disabled = false, children }: { onClick?: () => void; disabled?: boolean; children: ReactNode }): ReactNode {

@@ -6,8 +6,8 @@ let applied = '';
 /**
  * Puts a look on the page: every token as the `--color-*` variable
  * `styles.css` and Tailwind's utilities already read, and the picture as the
- * variables `body` paints, set on :root so they outrank the `@theme` block's
- * fallback. Main resolves which look; this only applies it.
+ * variables `.picture` paints, set on :root so they outrank the `@theme`
+ * block's fallback. Main resolves which look; this only applies it.
  */
 export function applyTheme(look: ThemeLook): void {
     const vars = Object.entries(themeVars(look));

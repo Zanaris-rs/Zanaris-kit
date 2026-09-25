@@ -483,7 +483,8 @@ function seeThrough(hex: string, alpha: number): string {
 /**
  * A look as the variables `styles.css` and Tailwind's utilities read: each
  * token as `--color-<token>`, and the picture as `--picture`,
- * `--picture-size` and `--picture-repeat`, which `body` paints.
+ * `--picture-size` and `--picture-repeat`, which `styles.css`'s `.picture`
+ * paints on the element that spans each page.
  *
  * With a picture showing, each surface lets `show` of it through. A surface
  * inside another stacks with it, so a list inside a panel shows less of the
