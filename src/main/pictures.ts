@@ -23,6 +23,16 @@ export type PictureType = 'png' | 'jpg' | 'webp' | 'gif';
 /** A picture a theme can carry: big enough for any screen, small enough that a theme file stays something to pass around. */
 export const PICTURE_MAX = 10 * 1024 * 1024;
 
+/**
+ * The most pixels a picture may have: a 5K screen's worth, about 59 MB once
+ * decoded. The file limit says nothing about this — a single-colour PNG of
+ * 20000×20000 fits in 10 MB and decodes to 1.6 GB, in every page that shows
+ * it — so the header's own size is checked too.
+ */
+export const PICTURE_PIXELS_MAX = 5120 * 2880;
+/** Either side may be long, for a panorama, but not past this. */
+export const PICTURE_SIDE_MAX = 8192;
+
 export const MIME: Readonly<Record<PictureType, string>> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
 
 const at = (bytes: Uint8Array, offset: number, signature: readonly number[]): boolean => signature.every((b, i) => bytes[offset + i] === b);
@@ -34,6 +44,59 @@ export function pictureType(bytes: Uint8Array): PictureType | null {
     if (at(bytes, 0, [0x47, 0x49, 0x46, 0x38]) && (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61) return 'gif';
     if (at(bytes, 0, [0x52, 0x49, 0x46, 0x46]) && at(bytes, 8, [0x57, 0x45, 0x42, 0x50])) return 'webp';
     return null;
+}
+
+const u16be = (b: Uint8Array, i: number): number => ((b[i] ?? 0) << 8) | (b[i + 1] ?? 0);
+const u16le = (b: Uint8Array, i: number): number => (b[i] ?? 0) | ((b[i + 1] ?? 0) << 8);
+const u24le = (b: Uint8Array, i: number): number => (b[i] ?? 0) | ((b[i + 1] ?? 0) << 8) | ((b[i + 2] ?? 0) << 16);
+const u32be = (b: Uint8Array, i: number): number => (((b[i] ?? 0) << 24) >>> 0) + (((b[i + 1] ?? 0) << 16) | ((b[i + 2] ?? 0) << 8) | (b[i + 3] ?? 0));
+const u32le = (b: Uint8Array, i: number): number => (u16le(b, i) + u16le(b, i + 2) * 65536) >>> 0;
+
+/** JPEG's start-of-frame markers, which carry the size: C0–CF except C4 (tables), C8 (reserved) and CC (arithmetic). */
+const JPEG_FRAME = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+
+function jpegSize(b: Uint8Array): { width: number; height: number } | null {
+    let i = 2;
+    while (i + 9 < b.length) {
+        if (b[i] !== 0xff) return null;
+        const marker = b[i + 1] ?? 0;
+        if (marker === 0xff) {
+            i++;
+            continue;
+        }
+        if (JPEG_FRAME.has(marker)) return { width: u16be(b, i + 7), height: u16be(b, i + 5) };
+        // Markers with no length of their own.
+        if ((marker >= 0xd0 && marker <= 0xd9) || marker === 0x01) {
+            i += 2;
+            continue;
+        }
+        const length = u16be(b, i + 2);
+        if (length < 2) return null;
+        i += 2 + length;
+    }
+    return null;
+}
+
+/**
+ * A picture's width and height, read off its header without decoding a
+ * pixel, or null when the header does not say — which `add` refuses, since a
+ * size it cannot check is a size it cannot bound.
+ */
+export function pictureSize(bytes: Uint8Array): { width: number; height: number } | null {
+    const type = pictureType(bytes);
+    let size: { width: number; height: number } | null = null;
+    if (type === 'png' && bytes.length >= 24) size = { width: u32be(bytes, 16), height: u32be(bytes, 20) };
+    else if (type === 'gif' && bytes.length >= 10) size = { width: u16le(bytes, 6), height: u16le(bytes, 8) };
+    else if (type === 'jpg') size = jpegSize(bytes);
+    else if (type === 'webp' && bytes.length >= 25) {
+        const chunk = String.fromCharCode(...bytes.subarray(12, 16));
+        if (chunk === 'VP8 ') size = { width: u16le(bytes, 26) & 0x3fff, height: u16le(bytes, 28) & 0x3fff };
+        else if (chunk === 'VP8L' && bytes[20] === 0x2f) {
+            const bits = u32le(bytes, 21);
+            size = { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+        } else if (chunk === 'VP8X') size = { width: u24le(bytes, 24) + 1, height: u24le(bytes, 27) + 1 };
+    }
+    return size && size.width > 0 && size.height > 0 ? size : null;
 }
 
 /** A name `PictureStore` made, or one about to be: its hash and type, or the same with `.incoming` while it is written. */
@@ -57,6 +120,11 @@ export class PictureStore {
         }
         const type = pictureType(bytes);
         if (type === null) return { error: "That isn't a PNG, JPEG, WebP or GIF picture." };
+        const size = pictureSize(bytes);
+        if (size === null) return { error: "That picture's size can't be read from it." };
+        if (size.width > PICTURE_SIDE_MAX || size.height > PICTURE_SIDE_MAX || size.width * size.height > PICTURE_PIXELS_MAX) {
+            return { error: `That picture is ${size.width}×${size.height} pixels. A theme can carry one of up to a 5K screen's worth, 5120×2880 pixels.` };
+        }
         const picture = `${createHash('sha256').update(bytes).digest('hex')}.${type}`;
         const file = join(this.dir, picture);
         if (!existsSync(file)) {
@@ -82,12 +150,24 @@ export class PictureStore {
     /**
      * Deletes every picture no theme keeps — one whose theme was deleted, or
      * one chosen in an editor that was then cancelled — and any left half
-     * written. Leaves alone anything this store did not name.
+     * written. Leaves alone anything this store did not name. Never throws: it
+     * runs at launch, where a throw would stop every window opening, and a
+     * picture that cannot be deleted today — held open, say — costs only disk.
      */
     prune(keep: ReadonlySet<string>): void {
-        if (!existsSync(this.dir)) return;
-        for (const name of readdirSync(this.dir)) {
-            if (STORED.test(name) && !keep.has(name)) rmSync(join(this.dir, name), { force: true });
+        let names: string[];
+        try {
+            names = existsSync(this.dir) ? readdirSync(this.dir) : [];
+        } catch {
+            return;
+        }
+        for (const name of names) {
+            if (!STORED.test(name) || keep.has(name)) continue;
+            try {
+                rmSync(join(this.dir, name), { force: true });
+            } catch {
+                // Tried again at the next prune.
+            }
         }
     }
 }
