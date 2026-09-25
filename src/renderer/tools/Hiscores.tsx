@@ -50,7 +50,7 @@ const LAST = 'pr-2';
  * background stays put while its rows move, so the two grains line up at any
  * scroll and the header has no edge.
  */
-const HEAD_GROUP = 'sticky top-0 bg-well bg-(image:--stone-grain) bg-blend-overlay';
+const HEAD_GROUP = 'sticky top-0 bg-well bg-[image:var(--grain,var(--stone-grain))] bg-blend-overlay';
 const HEAD = `${CELL} text-[12px] font-normal text-dim`;
 
 /** One skill's line. Overall is picked out in gold, as the client picks out a total. */

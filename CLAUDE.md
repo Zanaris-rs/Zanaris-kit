@@ -426,6 +426,14 @@ every surface drew as its flat base until 2026-09-25 with no test failing.
 them. Themes are checked on flat colours, so a change to the grain or a base
 is checked by `npm run capture`, not by a test.
 
+**Over a picture the grain is off.** Every surface wears it as
+`var(--grain, var(--stone-grain))`, and `themeVars` sets `--grain` to `none`
+when a picture shows through, `initial` otherwise, so a theme change always
+resets it. The noise has an alpha of its own and blends only with the
+surface's colour, so on a see-through surface it paints grey over the
+picture: at `show` 0.4 the capture's dusk sky all but disappeared. A new
+grained surface uses the same `var()`, or it greys every picture theme.
+
 ## Theme pictures
 
 A theme's picture is somebody's file — theirs, or a stranger's inside a theme

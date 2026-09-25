@@ -437,7 +437,8 @@ bar, the headers and every panel, with the game and the pages covering their
 own part of it. The stone turns partly see-through over it, by as much as the
 theme says, up to 60%; the bevels and the words stay solid, and a list inside
 a panel shows less of the picture than the panel's frame, so the text sits on
-the most solid stone. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB and
+the most solid stone. The picture stands in for the stone's grain, which would
+only lay a grey haze over it. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB and
 a 5K screen's worth of pixels, checked by its own bytes rather than its name; the kit keeps a copy in its
 data folder, under `backgrounds/`.
 
