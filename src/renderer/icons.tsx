@@ -12,14 +12,19 @@ import type { ReactNode } from 'react';
  * all: they are the game's own item sprites, in `sprites.tsx`.
  */
 
-/** The outline every sprite shares, as sprite art does. */
-const OUTLINE = '#3a3428';
+/*
+ * The two sprites below fill with cream on the outline every sprite shares, as
+ * sprite art does. Both are theme tokens, set as classes (`fill-cream`,
+ * `stroke-outline`) so a theme reaches them: a class is a CSS rule, which
+ * outranks the `fill="none"` on the <svg>, where a presentation attribute is
+ * no place to rely on `var()`.
+ */
 
 /** The new-tab control. Drawn as the same thick, outlined cross the close is, turned a quarter — they are the same pair of gestures and should read as a pair. */
 export function Plus(): ReactNode {
     return (
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
-            <path d="M7.2 3.2h3.6v4h4v3.6h-4v4H7.2v-4h-4V7.2h4Z" fill="#ece7dc" stroke={OUTLINE} strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M7.2 3.2h3.6v4h4v3.6h-4v4H7.2v-4h-4V7.2h4Z" className="fill-cream stroke-outline" strokeWidth="1.3" strokeLinejoin="round" />
         </svg>
     );
 }
@@ -39,8 +44,7 @@ export function CloseRoom(): ReactNode {
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none">
             <path
                 d="M6.3 3.6L9 6.3L11.7 3.6L14.4 6.3L11.7 9L14.4 11.7L11.7 14.4L9 11.7L6.3 14.4L3.6 11.7L6.3 9L3.6 6.3Z"
-                fill="#ece7dc"
-                stroke={OUTLINE}
+                className="fill-cream stroke-outline"
                 strokeWidth="1.3"
                 strokeLinejoin="round"
             />

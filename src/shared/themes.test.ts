@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DEFAULT_THEME, THEMES, THEME_TOKENS, deriveTheme, isThemeId, serverOverride, themeById, themeFor, themeVars, type ThemeColors } from './themes.ts';
 import { NICK_COLOURS } from '../renderer/tools/nickColour.ts';
 
@@ -101,4 +104,32 @@ test('themeVars names every token as the variable styles.css reads', () => {
     assert.equal(Object.keys(vars).length, THEME_TOKENS.length);
     assert.equal(vars['--color-stone'], stone.stone);
     assert.equal(vars['--color-red-lit'], stone['red-lit']);
+});
+
+test("stone is styles.css's @theme block, token for token", () => {
+    const css = readFileSync(new URL('../renderer/styles.css', import.meta.url), 'utf8');
+    const block = /@theme\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+    const declared = Object.fromEntries([...block.matchAll(/--color-([a-z-]+):\s*(#[0-9a-f]{6});/g)].map(m => [m[1], m[2]]));
+    assert.deepEqual(declared, stone);
+});
+
+/** Black and white are the same in every theme: the glyph shadow, the inner shadows, the red button's label. */
+const NEUTRAL = new Set(['#fff', '#ffffff', '#000', '#000000']);
+
+test('the renderer paints no colour a theme cannot reach', () => {
+    const root = fileURLToPath(new URL('../renderer/', import.meta.url));
+    const found: string[] = [];
+    for (const entry of readdirSync(root, { recursive: true })) {
+        const file = String(entry);
+        // The nick palette is one fixed set by design, checked against every theme above.
+        if (!/\.(tsx?|css)$/.test(file) || file.endsWith('nickColour.ts')) continue;
+        // Comments go first: a comment citing a sampled value describes a colour rather than using one.
+        let text = readFileSync(join(root, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+        if (file.endsWith('.css')) text = text.replace(/@theme\s*\{[\s\S]*?\n\}/, '');
+        else text = text.replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+        for (const hex of text.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []) {
+            if (!NEUTRAL.has(hex.toLowerCase())) found.push(`${file}: ${hex}`);
+        }
+    }
+    assert.deepEqual(found, []);
 });
