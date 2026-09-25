@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import type { SettingsState } from '../shared/ipc';
 import Servers, { QuietButton } from './settings/Servers';
+import { applyTheme } from './theme';
 
 /**
  * The Settings window's page. One window for the whole app, so everything on
@@ -25,6 +26,11 @@ export default function Settings(): ReactNode {
             unsubscribe();
         };
     }, []);
+
+    // Settings wears the app theme: it belongs to no one server.
+    useLayoutEffect(() => {
+        if (state) applyTheme(state.appearance.colors);
+    }, [state]);
 
     return (
         <div className="tile flex h-full flex-col bg-ink text-cream">

@@ -1,10 +1,11 @@
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState } from '../shared/ipc';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from '../shared/panes';
 import { draggedFar, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { Caret, Gear, Plus } from './icons';
 import { playAlert } from './alertSound';
+import { applyTheme } from './theme';
 import DropIndicator from './dropIndicator';
 import Grip from './grip';
 import Launcher from './Launcher';
@@ -269,6 +270,11 @@ export default function Shell(): ReactNode {
             unsubscribe();
         };
     }, []);
+
+    // This window's theme, before paint, so a change never shows a frame of the old palette.
+    useLayoutEffect(() => {
+        if (state) applyTheme(state.theme);
+    }, [state]);
 
     /*
      * A timer's alert plays here, not in the Timers pane: the pane may be
