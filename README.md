@@ -378,8 +378,8 @@ decorative:
   every raised surface, inverted for every recess. CSS `outset` derives its
   edges from a single colour and always reads flat by comparison.
 - **Stone has grain.** Two layers of noise, a fine one and a slower blotch,
-  blended over the base colour. Overlay blending lightens as much as it
-  darkens, so the base sits below the sampled mid to compensate.
+  blended over the base colour. Overlay blending of this noise lightens more
+  than it darkens, so the base sits below the sampled mid to compensate.
 - **Every glyph has a hard black shadow.** The client does this, and without it
   text fights the grain and loses.
 

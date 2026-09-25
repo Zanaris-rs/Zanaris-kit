@@ -392,6 +392,14 @@ Every theme is dark, because the black glyph shadow and the grain's overlay
 blend assume it. Theme ids sit in `state.json` and will sit in theme files
 people share, so one once shipped is never renamed.
 
+**Every image the renderer draws is a file.** The shell's CSP refuses
+`data:` images with nothing on screen to say so. The grain was two `data:`
+SVGs, and every surface drew as its flat base until 2026-09-25 with no test
+failing. `assetsInlineLimit: 0` keeps Vite from
+inlining the small ones, and `csp.test.ts` fails on a `data:` image in the
+renderer while the CSP refuses them. Themes are checked on flat colours, so
+a change to the grain or a base is checked by `npm run capture`, not by a test.
+
 ## Commands
 
 | | |
