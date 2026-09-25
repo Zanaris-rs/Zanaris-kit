@@ -59,11 +59,7 @@ export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () =
             webSecurity: true
         }
     });
-    // The page is the kit's own, but the names and notes on it come from
-    // servers.json, which people edit by hand. React renders them as text;
-    // this is the line behind that.
-    win.webContents.on('will-navigate', event => event.preventDefault());
-    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    // `loadShell`, below, holds the page to itself, as it does a game window's shell.
     // Keep "Settings": the page's own <title> is the shell's.
     win.on('page-title-updated', event => event.preventDefault());
     win.once('ready-to-show', () => win.show());

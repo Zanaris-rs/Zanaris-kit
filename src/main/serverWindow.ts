@@ -395,6 +395,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         alwaysOnTop: deps.alwaysOnTop()
     });
 
+    // The one view here with the preload, and so with every call main answers
+    // as this window. `loadShell` holds it to its page.
     const shellView = new WebContentsView({
         webPreferences: {
             preload: preloadPath(),
@@ -540,7 +542,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             share: shared?.view() ?? null,
             sharingWithoutPane: sharingWithoutPane(host.trees(), linkLive()),
             timers: { clocks: clocks.view(), customsFull },
-            theme: deps.theme().colors
+            theme: { colors: deps.theme().colors, background: deps.theme().background }
         };
     }
 

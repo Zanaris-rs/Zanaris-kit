@@ -32,7 +32,54 @@ function fake(t: { after: (fn: () => void) => void }, mode: string, extraEnv: Re
     return { io, runs };
 }
 
-const OPTS = { binary: 'cloudflared', port: 45678, configPath: '/cf/quick.yml', registerTimeoutMs: 5_000, stopGraceMs: 2_000 };
+/**
+ * cloudflared as an object in this process: it prints its link just after it
+ * starts, never registers, and ends only when killed, a turn of the event loop
+ * after its first signal. Nothing in it runs on a clock, so the timeout or
+ * cancel a test is about has nothing to race. The fake binary does: under load
+ * Node can take longer to start it than a short timeout, and a process killed
+ * before it has started has recorded no run.
+ */
+function stalled(): { io: QuickTunnelIo; trace: string[]; announced: Promise<void>[] } {
+    const trace: string[] = [];
+    const announced: Promise<void>[] = [];
+    const io: QuickTunnelIo = {
+        env: {},
+        spawn: spec => {
+            trace.push('started');
+            // Not during spawn: a real process's first line comes after it, once the attempt is listening.
+            announced.push(
+                Promise.resolve().then(() => {
+                    spec.onLine('2026-09-16T10:00:00Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |');
+                    spec.onLine('2026-09-16T10:00:00Z INF |  https://brave-otter-lamp-test.trycloudflare.com  |');
+                })
+            );
+            let end!: (code: number | null) => void;
+            let signalled = false;
+            return {
+                exited: new Promise(resolve => {
+                    end = resolve;
+                }),
+                kill: () => {
+                    if (signalled) return;
+                    signalled = true;
+                    setImmediate(() => {
+                        trace.push('ended');
+                        end(null);
+                    });
+                }
+            };
+        }
+    };
+    return { io, trace, announced };
+}
+
+/**
+ * The kit's own timeouts, long enough that the fake binary reaches them only
+ * when something is broken, not when the machine is busy. A test whose subject
+ * is a timeout sets its own.
+ */
+const OPTS = { binary: 'cloudflared', port: 45678, configPath: '/cf/quick.yml' };
 
 function alive(pid: number): boolean {
     try {
@@ -127,12 +174,15 @@ test('two failed attempts give up with what cloudflared said', async t => {
     assert.equal(runs().length, 2);
 });
 
-test('a tunnel that never registers is killed, both times, and reported', async t => {
-    const { io, runs } = fake(t, 'no-register');
-    await assert.rejects(startQuickTunnel(io, { ...OPTS, registerTimeoutMs: 300 }), /did not connect/);
-    const all = runs();
-    assert.equal(all.length, 2);
-    for (const run of all) assert.equal(alive(run.pid), false, `pid ${run.pid}`);
+test('a tunnel that never registers is killed, both times, and reported', async () => {
+    const { io, trace } = stalled();
+    await assert.rejects(startQuickTunnel(io, { ...OPTS, registerTimeoutMs: 20 }), (err: unknown) => {
+        assert.ok(err instanceof TunnelError);
+        assert.match(err.message, /did not connect/);
+        // Read as it rejects: a rejection ahead of a kill would find that process still going.
+        assert.deepEqual(trace, ['started', 'ended', 'started', 'ended']);
+        return true;
+    });
 });
 
 test('a flood of output neither stalls the tunnel nor grows the kept log without bound', async t => {
@@ -160,15 +210,18 @@ test('a cloudflared that ignores the polite stop is killed after the grace perio
     assert.equal(alive(runs()[0]!.pid), false);
 });
 
-test('a start that is cancelled while connecting kills cloudflared and does not retry', async t => {
-    const { io, runs } = fake(t, 'no-register');
+test('a start that is cancelled while connecting kills cloudflared and does not retry', async () => {
+    const { io, trace, announced } = stalled();
     const controller = new AbortController();
     const pending = startQuickTunnel(io, { ...OPTS, signal: controller.signal });
-    setTimeout(() => controller.abort(), 150);
-    await assert.rejects(pending, /cancelled/);
-    const all = runs();
-    assert.equal(all.length, 1);
-    assert.equal(alive(all[0]!.pid), false);
+    await announced[0];
+    controller.abort();
+    await assert.rejects(pending, (err: unknown) => {
+        assert.ok(err instanceof TunnelError);
+        assert.match(err.message, /cancelled/);
+        assert.deepEqual(trace, ['started', 'ended']);
+        return true;
+    });
 });
 
 test('a binary that cannot be started at all is reported, not thrown past', async () => {

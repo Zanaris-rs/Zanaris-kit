@@ -57,9 +57,6 @@ switch (mode) {
         announce();
         fail();
         break;
-    case 'no-register':
-        announce();
-        break;
     case 'flood': {
         const junk = 'x'.repeat(199);
         for (let i = 0; i < 10_000; i++) say(junk);

@@ -133,6 +133,28 @@ that is gone. So removing a built-in is permanent short of deleting
 remove anything a caller hands it, because the rule about which callers may
 belongs at the one place that decides, not inside the primitive.
 
+## The pages with the preload
+
+Two pages carry the preload: each window's shell and Settings. Main answers
+the preload's calls by `event.sender`, so whatever page ends up in one of
+those views is answered as its window, with every call the bridge has.
+
+Both are loaded by `loadShell` (`src/main/renderer.ts`), and that is also
+what holds them there. It refuses every navigation they start except a
+reload of the page itself (`decideShellNavigation`, in `guard.ts`, pure and
+tested), and no window opens from either. The reload is let through because
+Vite's full reload is one. Settings' guard once refused it too, so in
+development an edit that needed a full reload never reached Settings. A page
+given the preload any other way has no guard, so a new one goes through
+`loadShell`.
+
+The shell view went without a guard until 2026-09-25, while Settings had
+one. A dropped link was the suspected way in, but Electron's
+`navigateOnDragDrop` is off by default, and a drop onto the shell does
+nothing. The way in that did reproduce was a middle click on a link: chat's
+links are strangers', a middle click never reaches their `onClick`, and
+Electron opened the link as a bare window with none of the kit's guards.
+
 ## Where logic is allowed to live
 
 `src/main/serverWindow.ts`, `src/main/index.ts` and the **entire renderer** have
@@ -380,17 +402,55 @@ behaviour, re-read the comments around it before you commit.
 Every colour the renderer paints is a `--color-*` token from `styles.css`'s
 `@theme` block, which a theme overrides at runtime (`src/shared/themes.ts`).
 A literal colour in the renderer is a defect — it does not follow the theme —
-and `themes.test.ts` fails on a hex, `rgb()` or `hsl()` one. It cannot see a
-named colour (`color: red`), so don't write those either. The exceptions are
-the chat nick palette in `nickColour.ts`, which the contrast test checks
-against every theme, and neutral black and white. The `stone` theme and the `@theme` block are the same
-values, and a test keeps them so.
+and `themes.test.ts` fails on a hex, `rgb()` or `hsl()` one anywhere under
+`src/renderer`. It cannot see a named colour (`color: red`), so don't write
+those either. Neutral black and white are the only exception. The chat nick
+palette is one fixed set, and lives in `themes.ts` beside the contrast check
+that holds every theme's wells to it. The `stone` theme and the `@theme`
+block are the same values, and a test keeps them so.
 
-A theme is derived from a ground and a trim colour sampled off the map, never
-typed in by hand; `scripts/sample-floors.mjs` is where the samples come from.
-Every theme is dark, because the black glyph shadow and the grain's overlay
-blend assume it. Theme ids sit in `state.json` and will sit in theme files
-people share, so one once shipped is never renamed.
+A built-in theme is derived from a ground and a trim colour sampled off the
+map, never typed in by hand; `scripts/sample-floors.mjs` is where the samples
+come from. Every built-in is dark, because the black glyph shadow and the
+grain's overlay blend assume it, and `contrastWarnings` finds nothing in any
+of them. A player's own theme can be anything: the editor shows its warnings,
+and saving is theirs. Built-in ids sit in `state.json` and theme files, so one
+once shipped is never renamed.
+
+**The grain has never rendered.** The CSP's `default-src 'self'` refuses the
+`data:` SVGs `--stone-grain` is drawn from; a stone capture's tab bar is one
+colour across 80,000 pixels. `img-src` adds `zanaris-bg:` and deliberately not
+`data:`: switching the grain on changes every surface in every theme, and is
+its own decision. Until it is made, the grain comments in `styles.css` and the
+README's "Stone has grain" each say, up front, that it is not drawn.
+
+## Theme pictures
+
+A theme's picture is somebody's file — theirs, or a stranger's inside a theme
+file — shown in the kit's own pages. Keep these true:
+
+- **Every picture goes through `PictureStore`** (`src/main/pictures.ts`). Its
+  type is read off its first bytes, only PNG, JPEG, WebP and GIF are kept —
+  never SVG, which carries script — and at most 10 MB and 5120×2880 pixels'
+  worth, read off the header: a tiny PNG can decode to gigabytes. It is named by its
+  sha-256, and `path` answers only for a name shaped that way, so no name
+  reaches outside `<userData>/backgrounds/`.
+- **`zanaris-bg:` is handled on the default session only**, where the shell and
+  Settings are. The game and page views are partitions of their own and must
+  never get it: a page could then read every picture by guessing nothing more
+  than a hash.
+- **The page never sends a path.** Choose picture… and Import theme… are
+  dialogs in main that answer a name; Export is a save dialog in main.
+- **Theme files are read strictly** (`themeFile.ts`) and are sized before they
+  are read. An import adds a theme and never replaces one. Base64 is checked as
+  one character class and a length, never a repeated group: a group repeated
+  over a 13 MB string overflows the regex engine's stack.
+- **A picture no theme names is pruned** at launch and after a save or a
+  delete. The editor is the only place a picture is chosen, and it saves or
+  cancels before anything else in Settings can prune. At launch only when
+  `appState.fromFile()`: a broken `state.json` is set aside with the themes
+  that name the pictures, and pruning against the empty state that replaced
+  it would delete every one.
 
 ## Commands
 
