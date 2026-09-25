@@ -160,36 +160,45 @@ let share: ShareService | null = null;
 /**
  * Always on Top belongs to the focused window rather than to the app: whether
  * it is pinned is asked of the window itself, for the reason `alwaysOnTop`
- * gives there.
+ * gives there. Server Theme belongs to the focused window's server.
  *
  * `focusedServerWindow()` is undefined with nothing focused and with Settings
  * focused alike — Settings is not a game window, so there is nothing there for
- * Always on Top to act on — and `canPin` is what the menu item's `enabled`
- * reads instead of working that out a second time.
+ * Always on Top or Server Theme to act on — and `canPin` and a null
+ * `serverTheme` are what the menu items' `enabled` read instead of working
+ * that out a second time.
  */
 function menuWindowState(): MenuWindowState {
     const focused = focusedServerWindow();
-    return { alwaysOnTop: focused?.alwaysOnTop() ?? false, canPin: focused !== undefined };
+    const serverId = focused?.state().server.id;
+    return {
+        alwaysOnTop: focused?.alwaysOnTop() ?? false,
+        canPin: focused !== undefined,
+        serverTheme: serverId === undefined ? null : { override: serverOverride(appState.appearance(), serverId) }
+    };
 }
 
 /** What the menu was last built with, so the rebuild below only runs when an item would actually change. */
-let menuWindow: MenuWindowState = { alwaysOnTop: false, canPin: false };
+let menuWindow: MenuWindowState = { alwaysOnTop: false, canPin: false, serverTheme: null };
 
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
     menuWindow = menuWindowState();
-    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow);
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow, appState.appearance().theme);
 }
 
 /**
- * One menu, many windows: Always on Top, and whether it can be reached at
- * all, both belong to whichever window has focus, so they are re-examined
- * when focus moves — including to or from Settings, which is not a game
- * window — and when a window closes out from under them.
+ * One menu, many windows: Always on Top and Server Theme, and whether they
+ * can be reached at all, belong to whichever window has focus, so they are
+ * re-examined when focus moves — including to or from Settings, which is not
+ * a game window — and when a window closes out from under them. Two windows
+ * of different servers wear different themes, so a move between them alone
+ * can change which radio is checked.
  */
 function syncMenuWindowItems(): void {
     const now = menuWindowState();
-    if (now.alwaysOnTop !== menuWindow.alwaysOnTop || now.canPin !== menuWindow.canPin) installAppMenu();
+    const themeMoved = (now.serverTheme === null) !== (menuWindow.serverTheme === null) || now.serverTheme?.override !== menuWindow.serverTheme?.override;
+    if (now.alwaysOnTop !== menuWindow.alwaysOnTop || now.canPin !== menuWindow.canPin || themeMoved) installAppMenu();
 }
 
 /**
@@ -596,6 +605,20 @@ const actions: MenuActions = {
     openSettings: () => openSettings(),
     setWarnOnSwitch,
     setAlwaysOnTop,
+    /**
+     * The focused window's server's theme. A no-op with no game window in
+     * front — the item disables itself for that, but a click is refused
+     * rather than trusted, as Always on Top's is.
+     */
+    setServerTheme: themeId => {
+        const sw = focusedServerWindow();
+        if (!sw) {
+            installAppMenu();
+            return;
+        }
+        appState.setServerTheme(sw.state().server.id, themeId);
+        appearanceChanged();
+    },
     splitPane: axis => {
         const sw = focusedServerWindow();
         if (sw) sw.splitPane(sw.state().panes.find(p => p.focused)?.paneId ?? '', axis);

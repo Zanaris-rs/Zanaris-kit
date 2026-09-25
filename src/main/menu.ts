@@ -2,6 +2,7 @@ import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
 import type { LatestRelease } from './update';
+import { THEMES, themeById } from '../shared/themes';
 
 export interface MenuActions {
     /** Another window of the focused window's server, or of the first server when none is focused. */
@@ -23,6 +24,8 @@ export interface MenuActions {
     setWarnOnSwitch(value: boolean): void;
     /** Pins the focused window above other apps, and remembers the choice for the windows opened after it. */
     setAlwaysOnTop(value: boolean): void;
+    /** Gives the focused window's server its own theme, or null to follow the app again. */
+    setServerTheme(themeId: string | null): void;
     /** Opens a web page in the system browser: the release page, the repository. */
     openExternal(url: string): void;
 }
@@ -33,29 +36,36 @@ export interface MenuActions {
  * Native menus follow the platform's Title Case; everything the renderer
  * draws is sentence case. Rebuilt whenever the catalog changes so the server
  * submenu stays current, whenever the switch warning is turned on or off so
- * its checkbox agrees, when either of the two window-scoped items below would
- * change, and once more when a newer release is found.
+ * its checkbox agrees, when any of the window-scoped items below would
+ * change, whenever a theme changes so Server Theme's radio agrees, and once
+ * more when a newer release is found.
  *
  * `window` holds the inputs that belong to a window rather than to the app:
- * there is one menu for every window, so it tracks whichever has focus. Both
- * fields read false with nothing focused or with Settings focused — Settings
- * is not a game window, so Always on Top has no window of that kind to act
- * on, and `canPin` says so. Everything else here is the app's and is the same
- * whatever is in front.
+ * there is one menu for every window, so it tracks whichever has focus. With
+ * nothing focused or with Settings focused, the two booleans read false and
+ * `serverTheme` null — Settings is not a game window, so neither Always on Top
+ * nor Server Theme has a window of that kind to act on. Everything else here,
+ * `appTheme` included, is the app's and is the same whatever is in front.
  */
 export interface MenuWindowState {
     /** Whether the focused window is pinned above other apps. */
     alwaysOnTop: boolean;
     /** Whether a game window has focus — Always on Top has nothing to act on otherwise. */
     canPin: boolean;
+    /** The focused game window's server's own theme, or null when it follows the app; null altogether when no game window has focus. */
+    serverTheme: { override: string | null } | null;
 }
+
+/** Native menus are Title Case; theme names are sentence case, as the renderer draws them. */
+const menuName = (name: string): string => name.replace(/(^|\s)\S/g, c => c.toUpperCase());
 
 export function installMenu(
     servers: readonly ServerDef[],
     actions: MenuActions,
     warnOnSwitch: boolean,
     update: LatestRelease | null,
-    window: MenuWindowState
+    window: MenuWindowState,
+    appTheme: string
 ): void {
     const isMac = process.platform === 'darwin';
     const serverItems = (): MenuItemConstructorOptions[] =>
@@ -134,6 +144,30 @@ export function installMenu(
                     checked: window.alwaysOnTop,
                     enabled: window.canPin,
                     click: item => actions.setAlwaysOnTop(item.checked)
+                },
+                // Acts on the focused window's server, so every window of that
+                // server restyles, not only the one in front — which is why it
+                // says Server. Disabled with no game window focused, as Always
+                // on Top is. The separator splits the radios into two groups;
+                // the menu is rebuilt after every change, so they never disagree.
+                {
+                    label: 'Server Theme',
+                    enabled: window.serverTheme !== null,
+                    submenu: [
+                        {
+                            label: `Same as App (${menuName(themeById(appTheme).name)})`,
+                            type: 'radio',
+                            checked: window.serverTheme?.override === null,
+                            click: () => actions.setServerTheme(null)
+                        },
+                        { type: 'separator' },
+                        ...THEMES.map(theme => ({
+                            label: menuName(theme.name),
+                            type: 'radio' as const,
+                            checked: window.serverTheme?.override === theme.id,
+                            click: () => actions.setServerTheme(theme.id)
+                        }))
+                    ]
                 },
                 { type: 'separator' },
                 { role: 'togglefullscreen' },
