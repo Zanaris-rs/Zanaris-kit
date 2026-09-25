@@ -58,6 +58,7 @@ import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timer
 import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
 import { appearanceView, deleteQuestion } from './appearance';
+import { devBranding } from './branding';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
 import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
 
@@ -151,6 +152,19 @@ for (const entry of migrationPlan(legacyUserData, userData, existsSync)) {
     }
 }
 if (migrated.length > 0) log(`[main] moved ${migrated.join(', ')} from ${legacyUserData} into ${userData}`);
+
+// ── the name and icon, for a run inside Electron's own bundle ─────────────
+//
+// After the userData move on purpose: the name it moves to is the package
+// name, and setName leaves getPath('userData') where Electron fixed it at
+// startup (probed on 2026-09-25), so the dev profile stays at zanaris-kit
+// whatever the app is called. What is set here has to be set before the menu
+// is built, which reads app.name. The Dock icon waits for ready, below.
+const branding = devBranding({ packaged: app.isPackaged, root: join(__dirname, '../..'), version: app.getVersion() });
+if (branding) {
+    app.setName(branding.name);
+    app.setAboutPanelOptions(branding.about);
+}
 
 /** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
 const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
@@ -2328,6 +2342,7 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    if (branding) app.dock?.setIcon(branding.dockIcon);
     // A picture no theme names — its theme deleted, or chosen in an editor that
     // was then closed — goes, and the scheme serves whatever is left. Only when
     // the state really was read: a state.json that could not be was set aside
