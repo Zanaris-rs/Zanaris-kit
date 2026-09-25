@@ -317,10 +317,10 @@ as it is for the pin.
   reference colour for both ground and trim gives back every stone token
   exactly.
 - **No literal colours in the renderer.** The same file scans `src/renderer`
-  for hex colours outside `nickColour.ts` and outside `styles.css`'s `@theme`
+  for hex, `rgb()` and `hsl()` colours outside `nickColour.ts` and outside `styles.css`'s `@theme`
   block, with comments stripped first: a comment citing a sampled value
-  describes a colour rather than using one. `#fff` and `#000` and their long
-  forms are allowed: neutral black and white are the same in every theme. A
+  describes a colour rather than using one. `#fff` and `#000`, their long
+  forms and their `rgb()` forms at any alpha are allowed: neutral black and white are the same in every theme. A
   new hardcoded colour fails CI rather than quietly ignoring the theme.
 - **`appState.test.ts`.** `readAppearance` drops an unknown theme id one entry
   at a time; the setters persist; removal clears an override.

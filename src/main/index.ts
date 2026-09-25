@@ -174,7 +174,12 @@ function menuWindowState(): MenuWindowState {
     return {
         alwaysOnTop: focused?.alwaysOnTop() ?? false,
         canPin: focused !== undefined,
-        serverTheme: serverId === undefined ? null : { override: serverOverride(appState.appearance(), serverId) }
+        // Null as well for a window whose server Settings has removed: it
+        // keeps its copy of the server, but a theme saved for an id the
+        // catalog no longer lists is one Settings could neither show nor
+        // clear, and a later add reusing the id would inherit it.
+        serverTheme:
+            serverId === undefined || !catalog.get(serverId) ? null : { override: serverOverride(appState.appearance(), serverId) }
     };
 }
 
@@ -452,6 +457,7 @@ function pushSettings(): void {
  */
 function appearanceChanged(): void {
     for (const sw of serverWindows.values()) sw.themeChanged();
+    settings.current()?.setBackground(themeFor(appState.appearance(), null).colors.window);
     pushSettings();
     installAppMenu();
 }
@@ -607,12 +613,13 @@ const actions: MenuActions = {
     setAlwaysOnTop,
     /**
      * The focused window's server's theme. A no-op with no game window in
-     * front — the item disables itself for that, but a click is refused
-     * rather than trusted, as Always on Top's is.
+     * front, or one whose server Settings has removed — the item disables
+     * itself for both, but a click is refused rather than trusted, as Always
+     * on Top's is, and by the same catalog check Settings' own handler makes.
      */
     setServerTheme: themeId => {
         const sw = focusedServerWindow();
-        if (!sw) {
+        if (!sw || !catalog.get(sw.state().server.id)) {
             installAppMenu();
             return;
         }
@@ -2001,12 +2008,20 @@ async function captureAndExit(dir: string): Promise<void> {
             await shootShell(`theme-${theme.id}`, first);
         }
         // Settings on Appearance, in the last theme. The section is the page's
-        // own state, so its tab is clicked as a person would click it.
+        // own state, so its tab is clicked as a person would click it — and
+        // then read back, since a missed click would still leave a shot that
+        // differs from every other, Servers in this theme, for the ledger to pass.
         {
             const settingsWindow = settings.open(first.window.getBounds());
             await settingsWindow.loaded;
-            await settingsWindow.window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent === 'Appearance')?.click()`);
-            await wait(500);
+            const contents = settingsWindow.window.webContents;
+            const open = (): Promise<string | null> => contents.executeJavaScript(`document.querySelector('button[aria-current="true"]')?.textContent ?? null`);
+            for (let tries = 0; tries < 20 && (await open()) !== 'Appearance'; tries++) {
+                await contents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent === 'Appearance')?.click()`);
+                await wait(250);
+            }
+            if ((await open()) !== 'Appearance') fault('settings-appearance: the Appearance tab could not be opened, so the shot would show another section');
+            await wait(250);
             await shootShell('settings-appearance', settingsWindow);
             log(`[capture] settings appearance: app ${settingsState().appearance.theme}, ${settingsState().appearance.themes.length} themes`);
             settingsWindow.window.close();

@@ -20,7 +20,8 @@
  * runtime — main sends each window a palette and the page sets every token
  * on :root (`shared/themes.ts`) — so nothing below may name a colour of its
  * own: a literal here would not follow the theme, and `themes.test.ts` fails
- * on one. Black and white are the exception, the same in every theme.
+ * on a hex, `rgb()` or `hsl()` one. Black and white are the exception, the
+ * same in every theme.
  */
 
 @font-face {

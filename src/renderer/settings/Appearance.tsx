@@ -10,10 +10,16 @@ import { NICK_COLOURS } from '../tools/nickColour';
  */
 /* A strip of tabs inside a card, smaller than `.tab`'s fixed 36x34. */
 const MINI_TAB: CSSProperties = { width: 22, height: 14 };
+/*
+ * The card's padding. A card is a <button>, and `styles.css` resets every
+ * button to `padding: 0` in unlayered CSS, which beats a `p-` utility — as
+ * `tab.tsx`'s PADDED says of its own buttons.
+ */
+const CARD: CSSProperties = { padding: 6 };
 /* The chosen card's border, over `.tile`'s bevel. */
 const CHOSEN: CSSProperties = { borderColor: 'var(--color-gold)' };
 /* Three of the era's chat colours on the log's own ground, under names from Lumbridge. */
-const NAMES = ['Hans', 'Bob', 'Doric'];
+const NAMES = ['Hans', 'Bob', 'Duke'];
 
 /**
  * One theme as a card: the kit's own classes under that theme's variables,
@@ -22,14 +28,14 @@ const NAMES = ['Hans', 'Bob', 'Doric'];
  * app theme.
  */
 function Swatch({ theme, chosen }: { theme: Theme; chosen: boolean }): ReactNode {
-    const style = { ...themeVars(theme.colors), ...(chosen ? CHOSEN : null) } as CSSProperties;
+    const style = { ...themeVars(theme.colors), ...CARD, ...(chosen ? CHOSEN : null) } as CSSProperties;
     return (
         <button
             type="button"
             aria-pressed={chosen}
             onClick={() => void window.zanaris.appearance.setTheme(theme.id)}
             style={style}
-            className="tile flex min-w-0 flex-col gap-1.5 p-1.5 text-left"
+            className="tile flex min-w-0 flex-col gap-1.5 text-left"
         >
             <span className="flex gap-[3px]">
                 <span className="tab tab-on" style={MINI_TAB} />

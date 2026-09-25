@@ -70,6 +70,12 @@ test("no theme reads worse than 2004 stone: every text-on-ground pair keeps 90% 
     }
 });
 
+test('the rule refuses anything but #rrggbb rather than looping on NaN', () => {
+    assert.throws(() => deriveTheme('#fff', '#504d3b'), /#rrggbb/);
+    assert.throws(() => deriveTheme('#504d3b', '#50zz3b'), /#rrggbb/);
+    assert.throws(() => deriveTheme('red', '#504d3b'), /#rrggbb/);
+});
+
 test('a derived theme darkens with a darker place and never lightens with a lighter one', () => {
     const wilderness = themeById('wilderness').colors;
     const alkharid = themeById('alkharid').colors;
@@ -115,6 +121,8 @@ test("stone is styles.css's @theme block, token for token", () => {
 
 /** Black and white are the same in every theme: the glyph shadow, the inner shadows, the red button's label. */
 const NEUTRAL = new Set(['#fff', '#ffffff', '#000', '#000000']);
+/** The same two as `rgb()`/`rgba()`, at any alpha. */
+const NEUTRAL_RGB = /^rgba?\(\s*(?:0\s*,\s*0\s*,\s*0|255\s*,\s*255\s*,\s*255)\s*[,)]/;
 
 test('the renderer paints no colour a theme cannot reach', () => {
     const root = fileURLToPath(new URL('../renderer/', import.meta.url));
@@ -129,6 +137,9 @@ test('the renderer paints no colour a theme cannot reach', () => {
         else text = text.replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
         for (const hex of text.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []) {
             if (!NEUTRAL.has(hex.toLowerCase())) found.push(`${file}: ${hex}`);
+        }
+        for (const fn of text.match(/\b(?:rgba?|hsla?)\([^)]*\)/g) ?? []) {
+            if (!NEUTRAL_RGB.test(fn)) found.push(`${file}: ${fn}`);
         }
     }
     assert.deepEqual(found, []);

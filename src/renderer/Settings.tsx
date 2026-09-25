@@ -42,6 +42,10 @@ export default function Settings(): ReactNode {
         if (state) applyTheme(state.appearance.colors);
     }, [state]);
 
+    // Nothing but ink until the first state, as the shell does: drawn before
+    // it, the frame would show 2004 stone for a beat under any other theme.
+    if (!state) return <div className="h-full bg-ink" />;
+
     return (
         <div className="tile flex h-full flex-col bg-ink text-cream">
             {/*
@@ -56,7 +60,7 @@ export default function Settings(): ReactNode {
 
             {section === 'servers' && (
                 <>
-                    {state && <Servers view={state.servers} />}
+                    <Servers view={state.servers} />
 
                     {/*
                      * The file behind the list, for the fields no form here exposes —
@@ -73,7 +77,7 @@ export default function Settings(): ReactNode {
                     </div>
                 </>
             )}
-            {section === 'appearance' && state && <Appearance view={state.appearance} />}
+            {section === 'appearance' && <Appearance view={state.appearance} />}
         </div>
     );
 }

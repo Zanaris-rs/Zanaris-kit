@@ -415,9 +415,10 @@ Each place is sampled rather than invented, like the stone.
 place by how much more of it they cover than of the whole map — by plain count
 almost everywhere is grass — and the theme takes a ground colour and a trim
 colour from the top of that list. One rule, in `src/shared/themes.ts`, turns
-the pair into every colour the frame uses: each keeps the stone's own
-lightness, so the grain and the text's contrast behave as they do on the
-stone, and takes the place's hue. Zanaris in 274 is brown floors and bright
+the pair into every colour the frame uses: each takes the place's hue and
+keeps the stone's own lightness — or goes darker where the place is darker
+than the stone, as the Wilderness's rock is, and never lighter — so the grain
+and the text's contrast behave as they do on the stone. Zanaris in 274 is brown floors and bright
 grass in black void, not the blue of later years. A test holds every theme to
 the stone's own contrast, pair by pair.
 

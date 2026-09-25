@@ -102,7 +102,13 @@ interface Lch {
 const linear = (v: number): number => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
 const gamma = (v: number): number => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
 
+/**
+ * Refuses anything but `#rrggbb` up front. A short or misspelt colour would
+ * parse to NaN, and `fromLch`'s gamut loop can never finish on NaN — a hang in
+ * main, once a colour can come from someone's own theme rather than this file.
+ */
 function toLch(hex: string): Lch {
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) throw new Error(`${JSON.stringify(hex)} is not a #rrggbb colour`);
     const [r, g, b] = [1, 3, 5].map(i => linear(parseInt(hex.slice(i, i + 2), 16) / 255)) as [number, number, number];
     const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
     const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);

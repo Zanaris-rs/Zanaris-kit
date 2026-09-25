@@ -10,7 +10,7 @@
  * Settings, and for `shared/themes.test.ts`, which holds every theme's chat
  * log ground to these.
  */
-export const NICK_COLOURS =['#9db8c3', '#faa8aa', '#c8a86a', '#90c040', '#c503fd', '#6fc9d8'];
+export const NICK_COLOURS = ['#9db8c3', '#faa8aa', '#c8a86a', '#90c040', '#c503fd', '#6fc9d8'];
 
 export function nickColour(nick: string, self: string | null): string {
     /* IRC nicks are case-insensitive, so Kev and kev are one person and one colour. */

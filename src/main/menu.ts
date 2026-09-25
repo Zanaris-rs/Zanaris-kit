@@ -52,7 +52,7 @@ export interface MenuWindowState {
     alwaysOnTop: boolean;
     /** Whether a game window has focus — Always on Top has nothing to act on otherwise. */
     canPin: boolean;
-    /** The focused game window's server's own theme, or null when it follows the app; null altogether when no game window has focus. */
+    /** The focused game window's server's own theme, or null when it follows the app; null altogether when no game window has focus, or its server is no longer in the catalog. */
     serverTheme: { override: string | null } | null;
 }
 
@@ -148,7 +148,8 @@ export function installMenu(
                 // Acts on the focused window's server, so every window of that
                 // server restyles, not only the one in front — which is why it
                 // says Server. Disabled with no game window focused, as Always
-                // on Top is. The separator splits the radios into two groups;
+                // on Top is, and for a window whose server Settings has
+                // removed. The separator splits the radios into two groups;
                 // the menu is rebuilt after every change, so they never disagree.
                 {
                     label: 'Server Theme',

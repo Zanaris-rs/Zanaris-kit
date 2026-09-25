@@ -380,9 +380,10 @@ behaviour, re-read the comments around it before you commit.
 Every colour the renderer paints is a `--color-*` token from `styles.css`'s
 `@theme` block, which a theme overrides at runtime (`src/shared/themes.ts`).
 A literal colour in the renderer is a defect — it does not follow the theme —
-and `themes.test.ts` fails on one. The exceptions are the chat nick palette in
-`nickColour.ts`, which the contrast test checks against every theme, and
-neutral black and white. The `stone` theme and the `@theme` block are the same
+and `themes.test.ts` fails on a hex, `rgb()` or `hsl()` one. It cannot see a
+named colour (`color: red`), so don't write those either. The exceptions are
+the chat nick palette in `nickColour.ts`, which the contrast test checks
+against every theme, and neutral black and white. The `stone` theme and the `@theme` block are the same
 values, and a test keeps them so.
 
 A theme is derived from a ground and a trim colour sampled off the map, never
