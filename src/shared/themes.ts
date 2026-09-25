@@ -332,7 +332,6 @@ export function readBackground(x: unknown): Background | null {
 export function readThemeName(x: unknown): string | null {
     if (typeof x !== 'string') return null;
     const name = x.trim();
-    // eslint-disable-next-line no-control-regex
     return name.length >= 1 && name.length <= THEME_NAME_MAX && !/[\u0000-\u001f\u007f]/.test(name) ? name : null;
 }
 
