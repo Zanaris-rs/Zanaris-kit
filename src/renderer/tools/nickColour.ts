@@ -5,8 +5,12 @@
  * one on arrival, so a person keeps their colour across restarts, looks the
  * same in every window, and is the same colour in the user list as in the log.
  * Your own nick is gold instead: the one voice you always want to find.
+ *
+ * One set in every theme rather than a token: exported for the swatches in
+ * Settings, and for `shared/themes.test.ts`, which holds every theme's chat
+ * log ground to these.
  */
-const NICK_COLOURS = ['#9db8c3', '#faa8aa', '#c8a86a', '#90c040', '#c503fd', '#6fc9d8'];
+export const NICK_COLOURS = ['#9db8c3', '#faa8aa', '#c8a86a', '#90c040', '#c503fd', '#6fc9d8'];
 
 export function nickColour(nick: string, self: string | null): string {
     /* IRC nicks are case-insensitive, so Kev and kev are one person and one colour. */

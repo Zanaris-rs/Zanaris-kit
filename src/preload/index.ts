@@ -117,6 +117,10 @@ const api: ZanarisApi = {
         },
         open: () => ipcRenderer.invoke(IPC.settingsOpen),
         editServers: () => ipcRenderer.invoke(IPC.settingsEditServers)
+    },
+    appearance: {
+        setTheme: id => ipcRenderer.invoke(IPC.appearanceTheme, id),
+        setServerTheme: (serverId, id) => ipcRenderer.invoke(IPC.appearanceServer, serverId, id)
     }
 };
 

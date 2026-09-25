@@ -11,6 +11,8 @@ export interface SettingsWindow extends SettingsHandle {
     readonly window: BrowserWindow;
     /** Sends Settings its state. A no-op once the page is gone. */
     push(state: SettingsState): void;
+    /** The app theme changed: the window's own ground follows, as a game window's does in `themeChanged`. */
+    setBackground(colour: string): void;
     /** Resolves once the page has loaded, for capture. */
     readonly loaded: Promise<void>;
     /** Whether the page paints, as a server window's `settle` answers for its shell: a page that is not painting would hand capture its last frame. */
@@ -27,14 +29,17 @@ export interface SettingsWindow extends SettingsHandle {
  * No parent: parented to a game window it would close with that window, and
  * it belongs to no one window.
  */
-export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () => void }): SettingsWindow {
+export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () => void; background: string }): SettingsWindow {
     const display = opts.anchor ? screen.getDisplayMatching(opts.anchor) : screen.getPrimaryDisplay();
     const win = new BrowserWindow({
         ...settingsBounds(opts.anchor, SIZE, display.workArea),
         minWidth: 380,
         minHeight: 420,
         title: 'Settings',
-        backgroundColor: '#17120d',
+        // The app theme's ground, which Settings wears: what shows before the
+        // page draws, and at an edge a resize has not yet repainted.
+        // `setBackground` keeps it to the theme after a change.
+        backgroundColor: opts.background,
         show: false,
         // No initial pin: `openSettings` in index.ts sets it right after this
         // returns, to match whichever window asked (or the app's remembered
@@ -81,6 +86,9 @@ export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () =
         push: state => {
             if (win.isDestroyed() || win.webContents.isDestroyed()) return;
             win.webContents.send(IPC.settingsState, state);
+        },
+        setBackground: colour => {
+            if (!win.isDestroyed()) win.setBackgroundColor(colour);
         }
     };
 }

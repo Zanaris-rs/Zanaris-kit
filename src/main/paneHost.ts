@@ -80,6 +80,8 @@ export interface PaneHostDeps {
     touched: () => void;
     /** A right-click landed on a pane, in window coordinates. */
     contextMenu: (paneId: string, x: number, y: number) => void;
+    /** The ground a page view shows before its page draws: the theme's `window`. A getter, since the theme can change while the window is open. */
+    background: () => string;
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
@@ -215,7 +217,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                 // nothing, and none of them has a loop that has to keep running.
             }
         });
-        view.setBackgroundColor('#17120d');
+        view.setBackgroundColor(deps.background());
         view.setVisible(false);
         deps.window.contentView.addChildView(view);
         pageViews.set(paneId, view);
@@ -568,6 +570,10 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             }
         },
 
+        repaintBackground(): void {
+            for (const view of pageViews.values()) view.setBackgroundColor(deps.background());
+        },
+
         destroy(): void {
             for (const paneId of [...pageViews.keys()]) destroyPageView(paneId);
         }
@@ -627,5 +633,7 @@ export interface PaneHost {
     dragSeam: (splitId: string, index: number, px: number) => number;
     pageWebContents: () => WebContentsView | null;
     go: (where: 'back' | 'forward' | 'reload') => void;
+    /** The theme changed: every page view takes the new ground. The next one made takes it too, through `deps.background`. */
+    repaintBackground: () => void;
     destroy: () => void;
 }

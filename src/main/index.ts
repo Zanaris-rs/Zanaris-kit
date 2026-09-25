@@ -11,6 +11,7 @@ import { normaliseName } from '../shared/hiscores';
 import { IPC, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
 import { NAME_INPUT_MAX } from '../shared/names';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
+import { DEFAULT_THEME, THEMES, isThemeId, serverOverride, themeFor } from '../shared/themes';
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { Catalog, slugify } from './catalog';
@@ -42,6 +43,7 @@ import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
+import { appearanceView } from './appearance';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -158,36 +160,50 @@ let share: ShareService | null = null;
 /**
  * Always on Top belongs to the focused window rather than to the app: whether
  * it is pinned is asked of the window itself, for the reason `alwaysOnTop`
- * gives there.
+ * gives there. Server Theme belongs to the focused window's server.
  *
  * `focusedServerWindow()` is undefined with nothing focused and with Settings
  * focused alike — Settings is not a game window, so there is nothing there for
- * Always on Top to act on — and `canPin` is what the menu item's `enabled`
- * reads instead of working that out a second time.
+ * Always on Top or Server Theme to act on — and `canPin` and a null
+ * `serverTheme` are what the menu items' `enabled` read instead of working
+ * that out a second time.
  */
 function menuWindowState(): MenuWindowState {
     const focused = focusedServerWindow();
-    return { alwaysOnTop: focused?.alwaysOnTop() ?? false, canPin: focused !== undefined };
+    const serverId = focused?.state().server.id;
+    return {
+        alwaysOnTop: focused?.alwaysOnTop() ?? false,
+        canPin: focused !== undefined,
+        // Null as well for a window whose server Settings has removed: it
+        // keeps its copy of the server, but a theme saved for an id the
+        // catalog no longer lists is one Settings could neither show nor
+        // clear, and a later add reusing the id would inherit it.
+        serverTheme:
+            serverId === undefined || !catalog.get(serverId) ? null : { override: serverOverride(appState.appearance(), serverId) }
+    };
 }
 
 /** What the menu was last built with, so the rebuild below only runs when an item would actually change. */
-let menuWindow: MenuWindowState = { alwaysOnTop: false, canPin: false };
+let menuWindow: MenuWindowState = { alwaysOnTop: false, canPin: false, serverTheme: null };
 
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
     menuWindow = menuWindowState();
-    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow);
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow, appState.appearance().theme);
 }
 
 /**
- * One menu, many windows: Always on Top, and whether it can be reached at
- * all, both belong to whichever window has focus, so they are re-examined
- * when focus moves — including to or from Settings, which is not a game
- * window — and when a window closes out from under them.
+ * One menu, many windows: Always on Top and Server Theme, and whether they
+ * can be reached at all, belong to whichever window has focus, so they are
+ * re-examined when focus moves — including to or from Settings, which is not
+ * a game window — and when a window closes out from under them. Two windows
+ * of different servers wear different themes, so a move between them alone
+ * can change which radio is checked.
  */
 function syncMenuWindowItems(): void {
     const now = menuWindowState();
-    if (now.alwaysOnTop !== menuWindow.alwaysOnTop || now.canPin !== menuWindow.canPin) installAppMenu();
+    const themeMoved = (now.serverTheme === null) !== (menuWindow.serverTheme === null) || now.serverTheme?.override !== menuWindow.serverTheme?.override;
+    if (now.alwaysOnTop !== menuWindow.alwaysOnTop || now.canPin !== menuWindow.canPin || themeMoved) installAppMenu();
 }
 
 /**
@@ -386,7 +402,8 @@ const windows = new ServerWindows(
                 timers: () => {
                     const state = appState.timers();
                     return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
-                }
+                },
+                theme: () => themeFor(appState.appearance(), spec.server.id)
             }
         );
         serverWindows.set(spec.id, sw);
@@ -415,16 +432,34 @@ function openServer(server: ServerDef): ServerWindow {
 // ── settings ──────────────────────────────────────────────────────────────
 
 /** The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this only builds it. */
-const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) => createSettingsWindow({ anchor, onClosed }));
+const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
+    createSettingsWindow({ anchor, onClosed, background: themeFor(appState.appearance(), null).colors.window })
+);
 
 /** What Settings draws, built when asked for, like a shell's state. */
 function settingsState(): SettingsState {
-    return { servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }) };
+    return {
+        servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
+        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list() })
+    };
 }
 
 /** Sends Settings its state when it is open. Every change to the catalog, the startup set or which windows are open comes through here. */
 function pushSettings(): void {
     settings.current()?.push(settingsState());
+}
+
+/**
+ * After the app theme or a server's changes. Every window restyles to what it
+ * now resolves to — working out which ones moved would only save repainting a
+ * few in the colours they already wear — Settings is sent its state, and the
+ * menu is rebuilt so View > Server Theme's radio agrees.
+ */
+function appearanceChanged(): void {
+    for (const sw of serverWindows.values()) sw.themeChanged();
+    settings.current()?.setBackground(themeFor(appState.appearance(), null).colors.window);
+    pushSettings();
+    installAppMenu();
 }
 
 /**
@@ -576,6 +611,21 @@ const actions: MenuActions = {
     openSettings: () => openSettings(),
     setWarnOnSwitch,
     setAlwaysOnTop,
+    /**
+     * The focused window's server's theme. A no-op with no game window in
+     * front, or one whose server Settings has removed — the item disables
+     * itself for both, but a click is refused rather than trusted, as Always
+     * on Top's is, and by the same catalog check Settings' own handler makes.
+     */
+    setServerTheme: themeId => {
+        const sw = focusedServerWindow();
+        if (!sw || !catalog.get(sw.state().server.id)) {
+            installAppMenu();
+            return;
+        }
+        appState.setServerTheme(sw.state().server.id, themeId);
+        appearanceChanged();
+    },
     splitPane: axis => {
         const sw = focusedServerWindow();
         if (sw) sw.splitPane(sw.state().panes.find(p => p.focused)?.paneId ?? '', axis);
@@ -634,6 +684,23 @@ ipcMain.handle(IPC.settingsOpen, event => {
  */
 ipcMain.handle(IPC.settingsEditServers, event => {
     if (settings.isSender(event.sender.id)) void openInSystem(catalog.file, 'the server list');
+});
+
+// ── appearance ────────────────────────────────────────────────────────────
+
+// Settings only, as the servers handlers are: the app theme is the app's, and
+// no game window's page has a control for it.
+ipcMain.handle(IPC.appearanceTheme, (event, id: unknown) => {
+    if (!settings.isSender(event.sender.id) || !isThemeId(id)) return;
+    appState.setTheme(id);
+    appearanceChanged();
+});
+
+ipcMain.handle(IPC.appearanceServer, (event, serverId: unknown, id: unknown) => {
+    if (!settings.isSender(event.sender.id) || typeof serverId !== 'string' || !catalog.get(serverId)) return;
+    if (id !== null && !isThemeId(id)) return;
+    appState.setServerTheme(serverId, id);
+    appearanceChanged();
 });
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
@@ -1388,9 +1455,14 @@ ipcMain.handle(IPC.serversRemove, (event, id: unknown): string | null => {
     if (!isRemovable(id)) return 'That server came with the kit and cannot be removed.';
     if (!catalog.remove(id)) return 'That server is no longer in the list.';
     // Otherwise a later add can reuse this id (`uniqueId` only avoids ids that
-    // currently exist) and inherit a tick nobody meant for it.
+    // currently exist) and inherit a tick nobody meant for it — or a theme.
+    // Its open windows keep their copy of the server but follow the app theme
+    // from here, since the one they wore is gone.
     appState.setStartupServer(id, false);
+    const hadTheme = serverOverride(appState.appearance(), id) !== null;
+    appState.setServerTheme(id, null);
     catalogChanged();
+    if (hadTheme) appearanceChanged();
     return null;
 });
 
@@ -1514,6 +1586,11 @@ async function captureAndExit(dir: string): Promise<void> {
 
     try {
         const started = Date.now();
+        // The capture profile persists between runs, and the theme pass below
+        // changes the theme: start from stone so the shots before it are the
+        // look they always were, even after a run that died mid-pass.
+        appState.setTheme(DEFAULT_THEME);
+        for (const id of Object.keys(appState.appearance().servers)) appState.setServerTheme(id, null);
         // Your world needs its build on disk. Where there is none the entry is
         // dropped rather than left to wait on a download — so a capture wants the
         // selected build already downloaded in the real profile.
@@ -1915,6 +1992,56 @@ async function captureAndExit(dir: string): Promise<void> {
             }
         } finally {
             rmSync(layoutPath, { force: true });
+        }
+
+        // Themes. Each as the app theme on the first window, with a tool
+        // opened beside what it already holds. Shell shots only: the game is
+        // never themed. The ledger flags a shot byte-identical to an earlier
+        // one, so a theme that failed to apply fails the run.
+        showTool(first, 'timers');
+        for (const theme of THEMES) {
+            appState.setTheme(theme.id);
+            appearanceChanged();
+            await wait(500);
+            const worn = first.state().theme;
+            log(`[capture] theme ${theme.id}: stone ${worn.stone}, stone-lit ${worn['stone-lit']}, well ${worn.well}`);
+            await shootShell(`theme-${theme.id}`, first);
+        }
+        // Settings on Appearance, in the last theme. The section is the page's
+        // own state, so its tab is clicked as a person would click it — and
+        // then read back, since a missed click would still leave a shot that
+        // differs from every other, Servers in this theme, for the ledger to pass.
+        {
+            const settingsWindow = settings.open(first.window.getBounds());
+            await settingsWindow.loaded;
+            const contents = settingsWindow.window.webContents;
+            const open = (): Promise<string | null> => contents.executeJavaScript(`document.querySelector('button[aria-current="true"]')?.textContent ?? null`);
+            for (let tries = 0; tries < 20 && (await open()) !== 'Appearance'; tries++) {
+                await contents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent === 'Appearance')?.click()`);
+                await wait(250);
+            }
+            if ((await open()) !== 'Appearance') fault('settings-appearance: the Appearance tab could not be opened, so the shot would show another section');
+            await wait(250);
+            await shootShell('settings-appearance', settingsWindow);
+            log(`[capture] settings appearance: app ${settingsState().appearance.theme}, ${settingsState().appearance.themes.length} themes`);
+            settingsWindow.window.close();
+        }
+        // An override: the first window's server in the Wilderness while the
+        // app wears Morytania. `second` is that server's other window and
+        // wears the override; a window of any other server wears the app's.
+        {
+            const own = first.state().server.id;
+            appState.setTheme('morytania');
+            appState.setServerTheme(own, 'wilderness');
+            appearanceChanged();
+            await wait(500);
+            await shootShell(`theme-override-${own}`, second);
+            const other = opened.find(sw => sw.state().server.id !== own);
+            if (other) await shootShell(`theme-override-${other.state().server.id}`, other);
+            log(`[capture] override: ${own} wears stone ${second.state().theme.stone}, ${other ? `${other.state().server.id} wears stone ${other.state().theme.stone}` : 'no other server open'}`);
+            appState.setServerTheme(own, null);
+            appState.setTheme(DEFAULT_THEME);
+            appearanceChanged();
         }
     } catch (err) {
         fault(`aborted: ${(err as Error).stack ?? String(err)}`);

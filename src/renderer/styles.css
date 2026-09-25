@@ -15,6 +15,13 @@
  * Every colour here was sampled from the 2004 client's own interface (quantised
  * region samples off a screenshot) rather than invented, so the shell reads as
  * the same object as the game it wraps.
+ *
+ * These are 2004 stone's values, and the fallback. A theme replaces them at
+ * runtime — main sends each window a palette and the page sets every token
+ * on :root (`shared/themes.ts`) — so nothing below may name a colour of its
+ * own: a literal here would not follow the theme, and `themes.test.ts` fails
+ * on a hex, `rgb()` or `hsl()` one. Black and white are the exception, the
+ * same in every theme.
  */
 
 @font-face {
@@ -47,6 +54,18 @@
     --color-red-edge: #570700;
     /* A clock past its threshold. --color-red is a button's ground, too dark to read as text on stone. */
     --color-alarm: #ff5a48;
+
+    /*
+     * Four that were literals until a theme needed to reach them: the red
+     * button's lit edge, the pressed tab, the outline every sprite shares, and
+     * the ground main paints behind the shell and the pages before they draw
+     * (listed here so this block and the stone theme in `shared/themes.ts`
+     * stay one list — `themes.test.ts` holds them to it).
+     */
+    --color-red-lit: #c8503f;
+    --color-tab-down: #332d24;
+    --color-outline: #3a3428;
+    --color-window: #17120d;
 
     /*
      * Two roles. The pixel face is the period voice and carries headings and
@@ -202,8 +221,8 @@ input {
 .btn-red {
     background-color: var(--color-red);
     border-color: var(--color-red-edge);
-    border-top-color: #c8503f;
-    border-left-color: #c8503f;
+    border-top-color: var(--color-red-lit);
+    border-left-color: var(--color-red-lit);
     color: #fff;
 }
 
@@ -219,7 +238,7 @@ input {
 }
 
 .btn-red:active:not(:disabled) {
-    border-color: #c8503f;
+    border-color: var(--color-red-lit);
     border-top-color: var(--color-red-edge);
     border-left-color: var(--color-red-edge);
 }
@@ -238,7 +257,7 @@ input {
 
 /* A tab is already sunk, so a press pushes it deeper rather than flipping it. */
 .tab:active {
-    background-color: #332d24;
+    background-color: var(--color-tab-down);
     box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.4);
 }
 
