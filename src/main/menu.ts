@@ -87,7 +87,7 @@ export function installMenu(
     const themeItems = (list: readonly Theme[]): MenuItemConstructorOptions[] =>
         list.map(theme => ({
             label: themeLabel(theme, isMac),
-            type: 'radio' as const,
+            type: 'checkbox' as const,
             checked: window.serverTheme?.override === theme.id,
             click: () => actions.setServerTheme(theme.id)
         }));
@@ -168,15 +168,18 @@ export function installMenu(
                 // server restyles, not only the one in front — which is why it
                 // says Server. Disabled with no game window focused, as Always
                 // on Top is, and for a window whose server Settings has
-                // removed. Separators split the radios into groups; the menu
-                // is rebuilt after every change, so they never disagree.
+                // removed. Checkboxes, not radios: Electron ticks the first
+                // item of any radio group with nothing ticked as the menu
+                // opens, and the separators here make groups — so radios
+                // showed two or three ticks at once. Exactly one of these is
+                // ticked, and the menu is rebuilt after every change.
                 {
                     label: 'Server Theme',
                     enabled: window.serverTheme !== null,
                     submenu: [
                         {
                             label: `Same as App (${themeLabel(themes.app, isMac)})`,
-                            type: 'radio',
+                            type: 'checkbox',
                             checked: window.serverTheme?.override === null,
                             click: () => actions.setServerTheme(null)
                         },

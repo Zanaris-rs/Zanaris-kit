@@ -178,11 +178,13 @@ test('with a picture, the surfaces let it through by show, and edges, text and w
     assert.equal(vars['--picture'], `url("${pictureUrl(PICTURE)}")`);
     assert.equal(vars['--picture-size'], 'cover');
     assert.equal(vars['--picture-repeat'], 'no-repeat');
-    const tiled = themeVars({ colors: stone, background: { picture: PICTURE, fit: 'tile', show: 0 } });
+    const tiled = themeVars({ colors: stone, background: { picture: PICTURE, fit: 'tile', show: 0.2 } });
     assert.equal(tiled['--picture-size'], 'auto');
     assert.equal(tiled['--picture-repeat'], 'repeat');
-    // Nothing shows through at 0, so the surfaces stay exactly what they were.
-    assert.equal(tiled['--color-stone'], stone.stone);
+    // At 0 nothing shows through, so there is no picture at all: not fetched, not decoded, not in the seams between panes.
+    const hidden = themeVars({ colors: stone, background: { picture: PICTURE, fit: 'cover', show: 0 } });
+    assert.equal(hidden['--picture'], 'none');
+    assert.equal(hidden['--color-stone'], stone.stone);
 });
 
 test('pictureUrl is the private scheme main serves', () => {

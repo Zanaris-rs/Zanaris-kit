@@ -400,7 +400,7 @@ once shipped is never renamed.
 colour across 80,000 pixels. `img-src` adds `zanaris-bg:` and deliberately not
 `data:`: switching the grain on changes every surface in every theme, and is
 its own decision. Until it is made, the grain comments in `styles.css` and the
-README describe a texture nobody sees.
+README's "Stone has grain" each say, up front, that it is not drawn.
 
 ## Theme pictures
 
@@ -409,7 +409,8 @@ file — shown in the kit's own pages. Keep these true:
 
 - **Every picture goes through `PictureStore`** (`src/main/pictures.ts`). Its
   type is read off its first bytes, only PNG, JPEG, WebP and GIF are kept —
-  never SVG, which carries script — and at most 10 MB. It is named by its
+  never SVG, which carries script — and at most 10 MB and 5120×2880 pixels'
+  worth, read off the header: a tiny PNG can decode to gigabytes. It is named by its
   sha-256, and `path` answers only for a name shaped that way, so no name
   reaches outside `<userData>/backgrounds/`.
 - **`zanaris-bg:` is handled on the default session only**, where the shell and
@@ -424,7 +425,10 @@ file — shown in the kit's own pages. Keep these true:
   over a 13 MB string overflows the regex engine's stack.
 - **A picture no theme names is pruned** at launch and after a save or a
   delete. The editor is the only place a picture is chosen, and it saves or
-  cancels before anything else in Settings can prune.
+  cancels before anything else in Settings can prune. At launch only when
+  `appState.fromFile()`: a broken `state.json` is set aside with the themes
+  that name the pictures, and pruning against the empty state that replaced
+  it would delete every one.
 
 ## Commands
 

@@ -11,11 +11,7 @@ import ThemeEditor from './ThemeEditor';
  */
 /* A strip of tabs inside a card, smaller than `.tab`'s fixed 36x34. */
 const MINI_TAB: CSSProperties = { width: 22, height: 14 };
-/*
- * The card's padding, on the `.tile` inside it. Inline because the card was
- * once the <button> itself, which `styles.css` resets to `padding: 0` in
- * unlayered CSS that beats a `p-` utility; the `.tile` keeps it the same way.
- */
+/* The card's padding, on the `.tile` inside it, set with the border it sits inside so the two read as one decision. */
 const CARD: CSSProperties = { padding: 6 };
 /* The chosen card's border, over `.tile`'s bevel. */
 const CHOSEN: CSSProperties = { borderColor: 'var(--color-gold)' };
@@ -38,24 +34,32 @@ function Card({ theme, chosen, onEdit }: { theme: ThemeCard; chosen: boolean; on
                 aria-pressed={chosen}
                 onClick={() => void window.zanaris.appearance.setTheme(theme.id)}
                 style={themeVars(theme) as CSSProperties}
-                className="picture flex min-w-0 flex-col bg-ink text-left"
+                className="flex min-w-0 flex-col text-left"
             >
-                <span style={{ ...CARD, ...(chosen ? CHOSEN : null) }} className="tile flex min-w-0 flex-col gap-1.5">
-                    <span className="flex gap-[3px]">
-                        <span className="tab tab-on" style={MINI_TAB} />
-                        <span className="tab" style={MINI_TAB} />
-                        <span className="tab" style={MINI_TAB} />
-                    </span>
-                    <span className="truncate font-pixel text-[14px] leading-none text-gold">{theme.name}</span>
-                    <span className="text-[11px] leading-tight text-cream">
-                        World 5 <span className="text-dim">· 43 ms</span>
-                    </span>
-                    <span className="sunk flex gap-1.5 px-1 text-[11px]">
-                        {NAMES.map((name, i) => (
-                            <span key={name} style={{ color: NICK_COLOURS[i] }}>
-                                {name}
-                            </span>
-                        ))}
+                {/*
+                 * The picture on a span of its own, over the solid window
+                 * colour, as a window's picture is: the base `button` rule
+                 * clears a button's own background, and the theme's ink is
+                 * see-through when it has a picture.
+                 */}
+                <span className="picture flex min-w-0 flex-col bg-window">
+                    <span style={{ ...CARD, ...(chosen ? CHOSEN : null) }} className="tile flex min-w-0 flex-col gap-1.5">
+                        <span className="flex gap-[3px]">
+                            <span className="tab tab-on" style={MINI_TAB} />
+                            <span className="tab" style={MINI_TAB} />
+                            <span className="tab" style={MINI_TAB} />
+                        </span>
+                        <span className="truncate font-pixel text-[14px] leading-none text-gold">{theme.name}</span>
+                        <span className="text-[11px] leading-tight text-cream">
+                            World 5 <span className="text-dim">· 43 ms</span>
+                        </span>
+                        <span className="sunk flex gap-1.5 px-1 text-[11px]">
+                            {NAMES.map((name, i) => (
+                                <span key={name} style={{ color: NICK_COLOURS[i] }}>
+                                    {name}
+                                </span>
+                            ))}
+                        </span>
                     </span>
                 </span>
             </button>
@@ -128,6 +132,8 @@ export default function Appearance({ view }: { view: AppearanceView }): ReactNod
             const answer = await window.zanaris.appearance.importTheme();
             if (answer === null) return;
             setSaid('error' in answer ? { text: answer.error, alert: true } : { text: `Added ${answer.name}. Click its card to wear it.`, alert: false });
+        } catch {
+            setSaid({ text: "That didn't work, and the kit couldn't say why. Its log may.", alert: true });
         } finally {
             setBusy(false);
         }

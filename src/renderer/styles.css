@@ -82,6 +82,12 @@
  * layers: a fine one for the tooth you see at arm's length, a coarse one at a
  * ~190px period so large panels do not visibly tile.
  *
+ * NOT DRAWN TODAY. The CSP in `index.html` refuses `data:` images, and these
+ * are `data:` SVGs, so every surface below paints as its flat base colour —
+ * measured: a stone tab bar is one colour across 80,000 pixels. What follows
+ * is the design as intended; letting the grain through lightens every surface
+ * in every theme, and is its own decision (CLAUDE.md, "Colours are tokens").
+ *
  * They are grey noise composited with `overlay`, which lightens wherever the
  * noise sits above mid-grey and darkens below it — and with fractal noise the
  * lightening wins, so the result reads brighter than its base. That is why the

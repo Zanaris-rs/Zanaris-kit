@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppState } from './appState.ts';
@@ -738,4 +738,38 @@ test('appearance() copies the custom themes too, so a caller cannot change the s
     copy.background.show = 0;
     assert.equal(state.appearance().custom[0]?.colors.stone, '#223344');
     assert.equal(state.appearance().custom[0]?.background?.show, 0.4);
+});
+
+test('a save that cannot be written leaves the custom themes as they were, so trying again makes no second copy', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    state.saveCustomTheme(night());
+    // A file that cannot be written, as on a full disk.
+    chmodSync(file, 0o400);
+    try {
+        assert.throws(() => state.saveCustomTheme(night('custom-0000000b', 'Second')));
+        assert.throws(() => state.deleteCustomTheme('custom-0000000a'));
+    } finally {
+        chmodSync(file, 0o600);
+    }
+    assert.deepEqual(
+        state.appearance().custom.map(t => t.id),
+        ['custom-0000000a']
+    );
+});
+
+test('fromFile says whether the state was read from its file: not when there was none, and not when it was broken', () => {
+    const file = tempFile();
+    const fresh = new AppState(file);
+    fresh.load();
+    assert.equal(fresh.fromFile(), false);
+    fresh.saveCustomTheme(night());
+    const read = new AppState(file);
+    read.load();
+    assert.equal(read.fromFile(), true);
+    writeFileSync(file, '{ broken');
+    const broken = new AppState(file);
+    broken.load();
+    assert.equal(broken.fromFile(), false);
 });

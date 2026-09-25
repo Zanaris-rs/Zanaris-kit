@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -15,6 +15,7 @@ import {
     CUSTOM_MAX,
     DEFAULT_THEME,
     PICTURE_SCHEME,
+    deriveTheme,
     THEMES,
     isThemeId,
     newCustomId as newThemeId,
@@ -766,7 +767,12 @@ ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } |
     }
     if (draft.background && pictures.read(draft.background.picture) === null) return { error: 'Its picture is no longer there. Choose it again.' };
     const placed = placeTheme(draft.name, draft.id);
-    if (!appState.saveCustomTheme({ ...placed, colors: draft.colors, background: draft.background })) return { error: TOO_MANY_THEMES };
+    try {
+        if (!appState.saveCustomTheme({ ...placed, colors: draft.colors, background: draft.background })) return { error: TOO_MANY_THEMES };
+    } catch (err) {
+        log(`[main] could not save a theme: ${(err as Error).message}`);
+        return { error: "Couldn't save the theme: the kit's settings file couldn't be written." };
+    }
     pictures.prune(keptPictures());
     appearanceChanged();
     return { id: placed.id };
@@ -785,7 +791,14 @@ ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<b
         defaultId: 1,
         cancelId: 1
     });
-    if (response !== 0 || !appState.deleteCustomTheme(id)) return false;
+    if (response !== 0) return false;
+    try {
+        if (!appState.deleteCustomTheme(id)) return false;
+    } catch (err) {
+        log(`[main] could not delete a theme: ${(err as Error).message}`);
+        await dialog.showMessageBox(win, { type: 'warning', message: "Couldn't delete the theme.", detail: "The kit's settings file couldn't be written." });
+        return false;
+    }
     pictures.prune(keptPictures());
     appearanceChanged();
     return true;
@@ -836,20 +849,26 @@ ipcMain.handle(IPC.appearanceImportTheme, async (event): Promise<{ name: string 
     }
     const read = readThemeFile(text);
     if (!read.ok) return { error: read.error };
-    let background: Background | null = null;
-    if (read.theme.background) {
-        const stored = pictures.add(read.theme.background.bytes);
-        if ('error' in stored) return stored;
-        background = { picture: stored.picture, fit: read.theme.background.fit, show: read.theme.background.show };
-    }
-    const placed = placeTheme(read.theme.name, null);
-    const theme: Theme = { ...placed, colors: read.theme.colors, background };
-    if (!appState.saveCustomTheme(theme)) {
+    try {
+        let background: Background | null = null;
+        if (read.theme.background) {
+            const stored = pictures.add(read.theme.background.bytes);
+            if ('error' in stored) return stored;
+            background = { picture: stored.picture, fit: read.theme.background.fit, show: read.theme.background.show };
+        }
+        const placed = placeTheme(read.theme.name, null);
+        const theme: Theme = { ...placed, colors: read.theme.colors, background };
+        if (!appState.saveCustomTheme(theme)) {
+            pictures.prune(keptPictures());
+            return { error: TOO_MANY_THEMES };
+        }
+        appearanceChanged();
+        return { name: placed.name };
+    } catch (err) {
+        log(`[main] could not import a theme: ${(err as Error).message}`);
         pictures.prune(keptPictures());
-        return { error: TOO_MANY_THEMES };
+        return { error: "Couldn't add the theme: the kit couldn't write it down." };
     }
-    appearanceChanged();
-    return { name: placed.name };
 });
 
 /** Export…: one of the player's themes as a file, its picture inline. */
@@ -1762,6 +1781,8 @@ async function captureAndExit(dir: string): Promise<void> {
         // look they always were, even after a run that died mid-pass.
         appState.setTheme(DEFAULT_THEME);
         for (const id of Object.keys(appState.appearance().servers)) appState.setServerTheme(id, null);
+        for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
+        pictures.prune(keptPictures());
         // Your world needs its build on disk. Where there is none the entry is
         // dropped rather than left to wait on a download — so a capture wants the
         // selected build already downloaded in the real profile.
@@ -2214,6 +2235,76 @@ async function captureAndExit(dir: string): Promise<void> {
             appState.setTheme(DEFAULT_THEME);
             appearanceChanged();
         }
+
+        // A custom theme with a picture, the way a player makes one: a picture
+        // stored through the store, a theme saved around it, worn as the app
+        // theme. The picture is drawn here — a dusk sky over a band of ground —
+        // so the run needs no file of its own. Then Settings on Appearance with
+        // the theme's card, and the editor open on it, each opened by clicking
+        // as a person would and read back before the shot.
+        {
+            const width = 480;
+            const height = 270;
+            const pixels = Buffer.alloc(width * height * 4);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const sky = y / height;
+                    const ground = y > height * 0.72;
+                    const glow = Math.max(0, 1 - Math.hypot(x - width * 0.7, y - height * 0.3) / 90);
+                    const i = (y * width + x) * 4;
+                    // BGRA, as createFromBitmap reads it.
+                    pixels[i] = ground ? 40 : Math.round(120 - 60 * sky + 120 * glow);
+                    pixels[i + 1] = ground ? 70 : Math.round(40 + 30 * sky + 150 * glow);
+                    pixels[i + 2] = ground ? 45 : Math.round(40 + 90 * sky + 120 * glow);
+                    pixels[i + 3] = 255;
+                }
+            }
+            const stored = pictures.add(nativeImage.createFromBitmap(pixels, { width, height }).toPNG());
+            if ('error' in stored) {
+                fault(`custom theme: the picture was refused: ${stored.error}`);
+            } else {
+                const id = 'custom-ca97e001';
+                const saved = appState.saveCustomTheme({
+                    id,
+                    name: 'Zanaris at dusk',
+                    colors: deriveTheme('#3a4a7a', '#9a5ab0'),
+                    background: { picture: stored.picture, fit: 'cover', show: 0.4 }
+                });
+                if (!saved) fault('custom theme: it would not save');
+                appState.setTheme(id);
+                appearanceChanged();
+                await wait(800);
+                log(`[capture] custom theme: ${first.state().theme.background?.picture ?? 'no picture'} at ${first.state().theme.background?.show ?? 0}`);
+                await shootShell('theme-custom', first);
+
+                const settingsWindow = settings.open(first.window.getBounds());
+                await settingsWindow.loaded;
+                const contents = settingsWindow.window.webContents;
+                const click = (label: string): Promise<boolean> =>
+                    contents.executeJavaScript(
+                        `(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`
+                    );
+                const heading = (): Promise<string[]> => contents.executeJavaScript(`[...document.querySelectorAll('h2')].map(h => h.textContent)`);
+                for (let tries = 0; tries < 20 && !(await heading()).includes('Theme'); tries++) {
+                    await click('Appearance');
+                    await wait(250);
+                }
+                await wait(500);
+                await shootShell('settings-appearance-custom', settingsWindow);
+                for (let tries = 0; tries < 20 && !(await heading()).includes('Edit theme'); tries++) {
+                    await click('Edit');
+                    await wait(250);
+                }
+                if (!(await heading()).includes('Edit theme')) fault('settings-editor: the editor could not be opened, so the shot would show the list');
+                await wait(500);
+                await shootShell('settings-editor', settingsWindow);
+                settingsWindow.window.close();
+            }
+            for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
+            appState.setTheme(DEFAULT_THEME);
+            pictures.prune(keptPictures());
+            appearanceChanged();
+        }
     } catch (err) {
         fault(`aborted: ${(err as Error).stack ?? String(err)}`);
     } finally {
@@ -2238,8 +2329,11 @@ app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
     // A picture no theme names — its theme deleted, or chosen in an editor that
-    // was then closed — goes, and the scheme serves whatever is left.
-    pictures.prune(keptPictures());
+    // was then closed — goes, and the scheme serves whatever is left. Only when
+    // the state really was read: a state.json that could not be was set aside
+    // with the themes that name these pictures in it, and the empty state
+    // standing in for it names none.
+    if (appState.fromFile()) pictures.prune(keptPictures());
     protocol.handle(PICTURE_SCHEME, request => {
         const url = new URL(request.url);
         const found = url.host === 'picture' ? pictures.read(decodeURIComponent(url.pathname.slice(1))) : null;

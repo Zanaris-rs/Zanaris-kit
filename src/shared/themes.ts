@@ -489,7 +489,8 @@ function seeThrough(hex: string, alpha: number): string {
  * With a picture showing, each surface lets `show` of it through. A surface
  * inside another stacks with it, so a list inside a panel shows less of the
  * picture than the panel's frame does: the wells, where the words are, stay
- * the most solid. Without one, every value is exactly the theme's colour.
+ * the most solid. Without one, or at a `show` of 0, there is no picture and
+ * every value is exactly the theme's colour.
  */
 export function themeVars(look: ThemeLook): Record<string, string> {
     const show = look.background?.show ?? 0;
@@ -497,7 +498,8 @@ export function themeVars(look: ThemeLook): Record<string, string> {
     for (const token of THEME_TOKENS) {
         vars[`--color-${token}`] = show > 0 && SURFACES.includes(token) ? seeThrough(look.colors[token], 1 - show) : look.colors[token];
     }
-    const background = look.background;
+    // At 0 nothing shows through: no picture at all, rather than one fetched and decoded to be seen only in the seams.
+    const background = show > 0 ? look.background : null;
     vars['--picture'] = background ? `url("${pictureUrl(background.picture)}")` : 'none';
     vars['--picture-size'] = background && background.fit !== 'tile' ? background.fit : 'auto';
     vars['--picture-repeat'] = background?.fit === 'tile' ? 'repeat' : 'no-repeat';

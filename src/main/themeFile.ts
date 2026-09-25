@@ -37,6 +37,31 @@ const isBase64 = (data: string): boolean => data.length % 4 === 0 && BASE64_CHAR
 
 type Read<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/** A theme file is three levels deep at most: the file, its colours or picture, nothing below. */
+const DEPTH_MAX = 4;
+
+/**
+ * Whether JSON text nests deeper than `limit`, found in one pass without
+ * parsing. `JSON.parse` takes seconds over a 16 MB file of brackets, on the
+ * main thread every window is drawn from, so a file that could never be a
+ * theme is refused before it gets there. Brackets inside strings are text.
+ */
+function nestsDeeper(text: string, limit: number): boolean {
+    let depth = 0;
+    let inString = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text.charCodeAt(i);
+        if (inString) {
+            if (c === 0x5c) i++; // a backslash escapes the next character
+            else if (c === 0x22) inString = false;
+        } else if (c === 0x22) inString = true;
+        else if (c === 0x5b || c === 0x7b) {
+            if (++depth > limit) return true;
+        } else if (c === 0x5d || c === 0x7d) depth--;
+    }
+    return false;
+}
+
 function readPicture(x: unknown): Read<ThemeFromFile['background']> {
     if (x === null || x === undefined) return { ok: true, value: null };
     if (typeof x !== 'object') return { ok: false, error: "That theme's picture can't be read." };
@@ -57,6 +82,7 @@ function readPicture(x: unknown): Read<ThemeFromFile['background']> {
 }
 
 export function readThemeFile(text: string): { ok: true; theme: ThemeFromFile } | { ok: false; error: string } {
+    if (nestsDeeper(text, DEPTH_MAX)) return { ok: false, error: NOT_A_THEME };
     let parsed: unknown;
     try {
         parsed = JSON.parse(text);

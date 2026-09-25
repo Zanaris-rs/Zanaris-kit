@@ -83,7 +83,8 @@ const FIRST_SHOW = 0.35;
  */
 function Preview({ look }: { look: ThemeLook }): ReactNode {
     return (
-        <div aria-hidden="true" style={themeVars(look) as CSSProperties} className="picture bg-ink">
+        // On the solid window colour, as a window's picture is: the preview's own ink is see-through when there is a picture.
+        <div aria-hidden="true" style={themeVars(look) as CSSProperties} className="picture bg-window">
             <div className="tile flex items-center gap-[5px] px-1.5 py-1" style={{ borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>
                 <span className="tab tab-on" style={PREVIEW_TAB}>
                     Game
@@ -175,11 +176,14 @@ export default function ThemeEditor({ initial, onClose }: { initial: ThemeDraft;
 
     const setColor = (token: ThemeToken, value: string): void => setDraft(d => ({ ...d, colors: { ...d.colors, [token]: value } as ThemeColors }));
 
+    /** One request to main at a time. One that fails outright — rather than answering why not — still says so. */
     const run = async <T,>(request: Promise<T>, then: (answer: T) => void): Promise<void> => {
         setBusy(true);
         setSaid(null);
         try {
             then(await request);
+        } catch {
+            setSaid({ text: "That didn't work, and the kit couldn't say why. Its log may.", alert: true });
         } finally {
             setBusy(false);
         }

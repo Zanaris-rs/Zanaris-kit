@@ -109,16 +109,23 @@ checked:
 
 - by its first bytes, never its name, as PNG, JPEG, WebP or GIF (`pictureType`);
 - no SVG, which can carry script;
-- at most 10 MB.
+- at most 10 MB;
+- at most a 5K screen's worth of pixels (5120×2880), and no side past 8192,
+  read off its header without decoding (`pictureSize`). The file limit says
+  nothing about this: a single-colour PNG of 20000×20000 fits in 10 MB and
+  decodes to 1.6 GB in every page that shows it.
 
 Storing the same picture twice keeps one file, because the name is the
 content. `PictureStore.path(name)` answers only for a name matching
 `^[0-9a-f]{64}\.(png|jpg|webp|gif)$`, so no name can reach outside the
 folder.
 
-**Pruning.** `prune(keep)` deletes every file no custom theme names. It runs:
+**Pruning.** `prune(keep)` deletes every file no custom theme names, and
+never throws: one it cannot delete stays until the next prune. It runs:
 
-- at launch;
+- at launch, but only when `state.json` was read. One that could not be read
+  was set aside holding the themes that name these pictures, and the empty
+  state standing in for it names none;
 - after a custom theme is saved or deleted, when a picture chosen in an
   editor that was then cancelled goes too.
 
@@ -226,7 +233,9 @@ server, no layout, no id.
 - a picture that is not valid base64, not one of the four types by its bytes,
   or over 10 MB.
 
-A file over 16 MB is refused before it is read.
+A file over 16 MB is refused before it is read, and one nested deeper than a
+theme ever is before it is parsed: `JSON.parse` spends seconds on 16 MB of
+brackets, on the main thread.
 
 **Import** is a dialog in main from Settings. It stores the picture, gives
 the theme a new id and a unique name, and refuses past 32 themes. It never
@@ -251,7 +260,9 @@ inline.
 - **`ShellState.theme`** becomes `{ colors, background }`. `AppearanceView`
   lists every theme with `custom: boolean` and its background.
 - **View > Server Theme** lists the customs after the built-ins, behind a
-  separator, by their own names. Built-in names are title-cased as before.
+  separator, by their own names. Its items are checkboxes, exactly one ticked:
+  Electron ticks the first item of any radio group with none ticked as a menu
+  opens, and the separators make groups. Built-in names are title-cased as before.
   On Windows and Linux an `&` is doubled so it is not read as a mnemonic.
 
 ### Capture
@@ -280,7 +291,7 @@ After the theme pass, capture:
 | `src/main/serverWindow.ts` | `ShellState.theme` as a look |
 | `src/shared/ipc.ts`, `src/preload/index.ts` | Channels and shapes |
 | `src/renderer/index.html` | `img-src` |
-| `src/renderer/styles.css` | `body` paints the picture |
+| `src/renderer/styles.css` | `.picture`, which the shell's root and Settings' paint the picture with |
 | `src/renderer/theme.ts` | Applies a look |
 | `src/renderer/settings/Appearance.tsx` | Cards for customs, Customise and Edit, Import |
 | `src/renderer/settings/ThemeEditor.tsx` | **New.** The editor |

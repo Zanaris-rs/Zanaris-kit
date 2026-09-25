@@ -217,6 +217,8 @@ export class AppState {
     private startup: string[] = [];
     // The look the kit has always had, until asked otherwise.
     private appearanceState: Appearance = defaultAppearance();
+    // Whether the last load read a file, rather than starting empty for want of one that would read.
+    private readFile = false;
 
     constructor(file: string) {
         this.file = file;
@@ -234,6 +236,7 @@ export class AppState {
         this.timersState = emptyTimersState();
         this.startup = [];
         this.appearanceState = defaultAppearance();
+        this.readFile = false;
         if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
@@ -254,9 +257,20 @@ export class AppState {
             this.timersState = readTimers(parsed?.timers);
             this.startup = readStartup(parsed?.startup);
             this.appearanceState = readAppearance(parsed?.appearance);
+            this.readFile = true;
         } catch {
             renameSync(this.file, `${this.file}.broken-${Date.now()}`);
         }
+    }
+
+    /**
+     * Whether the last load read the state from its file. False with no file
+     * and with one that could not be read — which was set aside, holding what
+     * the player had, so nothing should be thrown away on the strength of the
+     * empty state that replaced it: pictures its themes named, above all.
+     */
+    fromFile(): boolean {
+        return this.readFile;
     }
 
     world(serverId: string): RememberedWorld | null {
@@ -447,8 +461,7 @@ export class AppState {
         if (at >= 0) custom[at] = read;
         else if (custom.length < CUSTOM_MAX) custom.push(read);
         else return false;
-        this.appearanceState = { ...this.appearanceState, custom };
-        this.save();
+        this.commitAppearance({ ...this.appearanceState, custom });
         return true;
     }
 
@@ -456,13 +469,28 @@ export class AppState {
     deleteCustomTheme(id: string): boolean {
         const { theme, servers, custom } = this.appearanceState;
         if (!custom.some(t => t.id === id)) return false;
-        this.appearanceState = {
+        this.commitAppearance({
             theme: theme === id ? DEFAULT_THEME : theme,
             servers: Object.fromEntries(Object.entries(servers).filter(([, worn]) => worn !== id)),
             custom: custom.filter(t => t.id !== id)
-        };
-        this.save();
+        });
         return true;
+    }
+
+    /**
+     * Takes a new appearance only once it is written. A custom theme that
+     * could not be saved must not be kept in memory regardless: the editor
+     * says it failed, and a second Save would then add a copy beside it.
+     */
+    private commitAppearance(next: Appearance): void {
+        const before = this.appearanceState;
+        this.appearanceState = next;
+        try {
+            this.save();
+        } catch (err) {
+            this.appearanceState = before;
+            throw err;
+        }
     }
 
     save(): void {

@@ -78,3 +78,16 @@ test('themeFileName is the name made safe for any platform, as a .zktheme', () =
     assert.equal(themeFileName('a/b:c?'), 'a b c.zktheme');
     assert.equal(themeFileName('...'), 'Theme.zktheme');
 });
+
+test('a file nested deeper than any theme is refused before it is parsed, and quickly', () => {
+    // As big as a theme file may be: 16 MB of brackets, which JSON.parse takes seconds over on the main thread.
+    const deep = `${'['.repeat(8_000_000)}${']'.repeat(8_000_000)}`;
+    const started = Date.now();
+    const read = readThemeFile(deep);
+    assert.equal(read.ok, false);
+    assert.ok(Date.now() - started < 1_000, `took ${Date.now() - started}ms`);
+    // Brackets inside a string are text, not nesting.
+    const named = readThemeFile(file({ name: '[[[[[[[[[[[[' }));
+    assert.ok(named.ok);
+    assert.equal(named.theme.name, '[[[[[[[[[[[[');
+});
