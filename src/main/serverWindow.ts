@@ -9,6 +9,7 @@ import type { YourWorldView } from '../shared/yourworld';
 import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
+import type { Theme } from '../shared/themes';
 import type { ListedTimer } from './timers/defs';
 import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
@@ -181,6 +182,13 @@ export interface ServerWindowDeps {
      * app-wide definitions move, and the window reads them again.
      */
     timers: () => { listed: ListedTimer[]; customsFull: boolean };
+    /**
+     * The theme this window wears: its server's own, or the app's. A getter:
+     * either can change while the window is open, and main calls
+     * `themeChanged` when one does. It reads the app's state and nothing of
+     * this window's — never `state()`, which reads it.
+     */
+    theme: () => Theme;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -261,6 +269,8 @@ export interface ServerWindow extends ServerWindowHandle {
     state(): ShellState;
     /** Sends the current state to the shell. For app-wide changes main hears about, not the window. */
     pushState(): void;
+    /** The app theme or this server's changed: repaint the native grounds and send the shell its new palette. Nothing reloads. */
+    themeChanged(): void;
     /** Resolves when the most recent load finished, or failed over to the offline page. */
     whenGameLoaded(): Promise<LoadResult>;
     switchWorld(world: number): Promise<LoadResult | 'unknown'>;
@@ -377,7 +387,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         useContentSize: true,
         ...(deps.position ?? {}),
         title: spec.title,
-        backgroundColor: '#17120d',
+        // The theme's ground, which shows only until the shell draws.
+        backgroundColor: deps.theme().colors.window,
         show: false,
         // The last choice made anywhere, so a window opened while the app is
         // pinned comes up pinned rather than needing the menu again.
@@ -393,7 +404,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             webSecurity: true
         }
     });
-    shellView.setBackgroundColor('#17120d');
+    shellView.setBackgroundColor(deps.theme().colors.window);
 
     /**
      * Builds the game view and puts it in the window.
@@ -468,7 +479,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT, content.game),
         changed: () => applyLayout(),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
-        touched: () => pushState()
+        touched: () => pushState(),
+        background: () => deps.theme().colors.window
     });
 
     // ── labels ───────────────────────────────────────────────────────────
@@ -527,7 +539,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             yourWorld: single?.view() ?? null,
             share: shared?.view() ?? null,
             sharingWithoutPane: sharingWithoutPane(host.trees(), linkLive()),
-            timers: { clocks: clocks.view(), customsFull }
+            timers: { clocks: clocks.view(), customsFull },
+            theme: deps.theme().colors
         };
     }
 
@@ -538,6 +551,20 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         } catch (err) {
             deps.log(`${tag} could not push state: ${(err as Error).message}`);
         }
+    }
+
+    /**
+     * Repaints what main paints — the window, the shell view and every page
+     * view, in the theme's ground — and sends the shell its palette. The game
+     * view keeps its black: that is the game's own ground, never themed.
+     */
+    function themeChanged(): void {
+        if (win.isDestroyed()) return;
+        const ground = deps.theme().colors.window;
+        win.setBackgroundColor(ground);
+        shellView.setBackgroundColor(ground);
+        host.repaintBackground();
+        pushState();
     }
 
     // ── layout ───────────────────────────────────────────────────────────
@@ -1423,6 +1450,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         relayout: applyLayout,
         state,
         pushState,
+        themeChanged,
         whenGameLoaded: () => loadPromise,
         switchWorld: async world => {
             if (!worldSwitch || !deps.worlds) return 'unknown';

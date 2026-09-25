@@ -12,6 +12,8 @@ import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 import type { ServersView } from '../main/servers.ts';
+import type { AppearanceView } from '../main/appearance.ts';
+import type { ThemeColors } from './themes';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -84,7 +86,9 @@ export const IPC = {
     settingsGet: 'zanaris:settings-get',
     settingsState: 'zanaris:settings-state',
     settingsOpen: 'zanaris:settings-open',
-    settingsEditServers: 'zanaris:settings-edit-servers'
+    settingsEditServers: 'zanaris:settings-edit-servers',
+    appearanceTheme: 'zanaris:appearance-theme',
+    appearanceServer: 'zanaris:appearance-server'
 } as const;
 
 /**
@@ -156,6 +160,8 @@ export interface ShellState {
     sharingWithoutPane: boolean;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
+    /** The palette this window wears: its server's theme, or the app's. Resolved in main, so the shell only applies it. */
+    theme: ThemeColors;
 }
 
 /**
@@ -164,6 +170,8 @@ export interface ShellState {
  */
 export interface SettingsState {
     servers: ServersView;
+    /** The Appearance section: the app theme, every theme's palette, and each server's own. */
+    appearance: AppearanceView;
 }
 
 export interface ZanarisApi {
@@ -393,5 +401,11 @@ export interface ZanarisApi {
         open(): Promise<void>;
         /** Opens `servers.json` in whatever the system opens it with. Safe with the kit running: it is re-read on focus. */
         editServers(): Promise<void>;
+    };
+    appearance: {
+        /** The app theme. Settings only: main ignores it from anywhere else. */
+        setTheme(id: string): Promise<void>;
+        /** A server's own theme, or null to follow the app. Settings only. */
+        setServerTheme(serverId: string, id: string | null): Promise<void>;
     };
 }

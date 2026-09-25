@@ -27,14 +27,16 @@ export interface SettingsWindow extends SettingsHandle {
  * No parent: parented to a game window it would close with that window, and
  * it belongs to no one window.
  */
-export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () => void }): SettingsWindow {
+export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () => void; background: string }): SettingsWindow {
     const display = opts.anchor ? screen.getDisplayMatching(opts.anchor) : screen.getPrimaryDisplay();
     const win = new BrowserWindow({
         ...settingsBounds(opts.anchor, SIZE, display.workArea),
         minWidth: 380,
         minHeight: 420,
         title: 'Settings',
-        backgroundColor: '#17120d',
+        // The app theme's ground, which Settings wears. It shows only before
+        // the page draws, and the page itself follows a theme change live.
+        backgroundColor: opts.background,
         show: false,
         // No initial pin: `openSettings` in index.ts sets it right after this
         // returns, to match whichever window asked (or the app's remembered

@@ -11,6 +11,7 @@ import { normaliseName } from '../shared/hiscores';
 import { IPC, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
 import { NAME_INPUT_MAX } from '../shared/names';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
+import { DEFAULT_THEME, THEMES, isThemeId, serverOverride, themeFor } from '../shared/themes';
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { Catalog, slugify } from './catalog';
@@ -42,6 +43,7 @@ import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
+import { appearanceView } from './appearance';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -386,7 +388,8 @@ const windows = new ServerWindows(
                 timers: () => {
                     const state = appState.timers();
                     return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
-                }
+                },
+                theme: () => themeFor(appState.appearance(), spec.server.id)
             }
         );
         serverWindows.set(spec.id, sw);
@@ -415,16 +418,33 @@ function openServer(server: ServerDef): ServerWindow {
 // ── settings ──────────────────────────────────────────────────────────────
 
 /** The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this only builds it. */
-const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) => createSettingsWindow({ anchor, onClosed }));
+const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
+    createSettingsWindow({ anchor, onClosed, background: themeFor(appState.appearance(), null).colors.window })
+);
 
 /** What Settings draws, built when asked for, like a shell's state. */
 function settingsState(): SettingsState {
-    return { servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }) };
+    return {
+        servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
+        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list() })
+    };
 }
 
 /** Sends Settings its state when it is open. Every change to the catalog, the startup set or which windows are open comes through here. */
 function pushSettings(): void {
     settings.current()?.push(settingsState());
+}
+
+/**
+ * After the app theme or a server's changes. Every window restyles to what it
+ * now resolves to — working out which ones moved would only save repainting a
+ * few in the colours they already wear — Settings is sent its state, and the
+ * menu is rebuilt so View > Server Theme's radio agrees.
+ */
+function appearanceChanged(): void {
+    for (const sw of serverWindows.values()) sw.themeChanged();
+    pushSettings();
+    installAppMenu();
 }
 
 /**
@@ -634,6 +654,23 @@ ipcMain.handle(IPC.settingsOpen, event => {
  */
 ipcMain.handle(IPC.settingsEditServers, event => {
     if (settings.isSender(event.sender.id)) void openInSystem(catalog.file, 'the server list');
+});
+
+// ── appearance ────────────────────────────────────────────────────────────
+
+// Settings only, as the servers handlers are: the app theme is the app's, and
+// no game window's page has a control for it.
+ipcMain.handle(IPC.appearanceTheme, (event, id: unknown) => {
+    if (!settings.isSender(event.sender.id) || !isThemeId(id)) return;
+    appState.setTheme(id);
+    appearanceChanged();
+});
+
+ipcMain.handle(IPC.appearanceServer, (event, serverId: unknown, id: unknown) => {
+    if (!settings.isSender(event.sender.id) || typeof serverId !== 'string' || !catalog.get(serverId)) return;
+    if (id !== null && !isThemeId(id)) return;
+    appState.setServerTheme(serverId, id);
+    appearanceChanged();
 });
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
@@ -1388,9 +1425,14 @@ ipcMain.handle(IPC.serversRemove, (event, id: unknown): string | null => {
     if (!isRemovable(id)) return 'That server came with the kit and cannot be removed.';
     if (!catalog.remove(id)) return 'That server is no longer in the list.';
     // Otherwise a later add can reuse this id (`uniqueId` only avoids ids that
-    // currently exist) and inherit a tick nobody meant for it.
+    // currently exist) and inherit a tick nobody meant for it — or a theme.
+    // Its open windows keep their copy of the server but follow the app theme
+    // from here, since the one they wore is gone.
     appState.setStartupServer(id, false);
+    const hadTheme = serverOverride(appState.appearance(), id) !== null;
+    appState.setServerTheme(id, null);
     catalogChanged();
+    if (hadTheme) appearanceChanged();
     return null;
 });
 
@@ -1514,6 +1556,11 @@ async function captureAndExit(dir: string): Promise<void> {
 
     try {
         const started = Date.now();
+        // The capture profile persists between runs, and the theme pass below
+        // changes the theme: start from stone so the shots before it are the
+        // look they always were, even after a run that died mid-pass.
+        appState.setTheme(DEFAULT_THEME);
+        for (const id of Object.keys(appState.appearance().servers)) appState.setServerTheme(id, null);
         // Your world needs its build on disk. Where there is none the entry is
         // dropped rather than left to wait on a download — so a capture wants the
         // selected build already downloaded in the real profile.
