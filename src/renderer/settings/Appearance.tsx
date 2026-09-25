@@ -1,7 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { AppearanceView, ServerThemeRow } from '../../main/appearance.ts';
-import { themeVars, type Theme } from '../../shared/themes.ts';
-import { NICK_COLOURS } from '../tools/nickColour';
+import { NICK_COLOURS, themeVars, type Theme } from '../../shared/themes.ts';
 
 /*
  * `.tab` and `.tile` are unlayered CSS, which beats a Tailwind utility of
@@ -28,7 +27,7 @@ const NAMES = ['Hans', 'Bob', 'Duke'];
  * app theme.
  */
 function Swatch({ theme, chosen }: { theme: Theme; chosen: boolean }): ReactNode {
-    const style = { ...themeVars(theme.colors), ...CARD, ...(chosen ? CHOSEN : null) } as CSSProperties;
+    const style = { ...themeVars(theme), ...CARD, ...(chosen ? CHOSEN : null) } as CSSProperties;
     return (
         <button
             type="button"

@@ -39,7 +39,7 @@ export default function Settings(): ReactNode {
 
     // Settings wears the app theme: it belongs to no one server.
     useLayoutEffect(() => {
-        if (state) applyTheme(state.appearance.colors);
+        if (state) applyTheme(state.appearance.look);
     }, [state]);
 
     // Nothing but ink until the first state, as the shell does: drawn before

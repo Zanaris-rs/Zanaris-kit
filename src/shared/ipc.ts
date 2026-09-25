@@ -13,7 +13,7 @@ import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 import type { ServersView } from '../main/servers.ts';
 import type { AppearanceView } from '../main/appearance.ts';
-import type { ThemeColors } from './themes';
+import type { ThemeLook } from './themes';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -160,8 +160,8 @@ export interface ShellState {
     sharingWithoutPane: boolean;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
-    /** The palette this window wears: its server's theme, or the app's. Resolved in main, so the shell only applies it. */
-    theme: ThemeColors;
+    /** The look this window wears — its server's theme, or the app's — palette and picture. Resolved in main, so the shell only applies it. */
+    theme: ThemeLook;
 }
 
 /**

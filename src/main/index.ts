@@ -2003,7 +2003,7 @@ async function captureAndExit(dir: string): Promise<void> {
             appState.setTheme(theme.id);
             appearanceChanged();
             await wait(500);
-            const worn = first.state().theme;
+            const worn = first.state().theme.colors;
             log(`[capture] theme ${theme.id}: stone ${worn.stone}, stone-lit ${worn['stone-lit']}, well ${worn.well}`);
             await shootShell(`theme-${theme.id}`, first);
         }
@@ -2038,7 +2038,7 @@ async function captureAndExit(dir: string): Promise<void> {
             await shootShell(`theme-override-${own}`, second);
             const other = opened.find(sw => sw.state().server.id !== own);
             if (other) await shootShell(`theme-override-${other.state().server.id}`, other);
-            log(`[capture] override: ${own} wears stone ${second.state().theme.stone}, ${other ? `${other.state().server.id} wears stone ${other.state().theme.stone}` : 'no other server open'}`);
+            log(`[capture] override: ${own} wears stone ${second.state().theme.colors.stone}, ${other ? `${other.state().server.id} wears stone ${other.state().theme.colors.stone}` : 'no other server open'}`);
             appState.setServerTheme(own, null);
             appState.setTheme(DEFAULT_THEME);
             appearanceChanged();

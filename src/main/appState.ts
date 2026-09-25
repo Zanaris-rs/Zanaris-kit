@@ -8,7 +8,7 @@ import type { YourWorldSettings } from '../shared/yourworld.ts';
 import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
 import { readYourWorldBuild, readYourWorldSettings } from './yourworld/settings.ts';
-import { DEFAULT_THEME, isThemeId, type Appearance } from '../shared/themes.ts';
+import { CUSTOM_MAX, DEFAULT_THEME, isThemeId, readCustomTheme, type Appearance, type Theme } from '../shared/themes.ts';
 
 interface StateFile {
     version: 1;
@@ -27,7 +27,7 @@ interface StateFile {
     timers: TimersState;
     /** Which servers a launch opens, in the order they were ticked. Empty, or absent, means the first catalog entry — what a launch has always done. */
     startup: string[];
-    /** The app's theme and the servers given their own, by theme id (`shared/themes.ts`). */
+    /** The app's theme and the servers given their own, by theme id, and the player's own themes (`shared/themes.ts`). */
     appearance: Appearance;
 }
 
@@ -143,22 +143,43 @@ function readStartup(x: unknown): string[] {
     return startup;
 }
 
+/** Nothing chosen: the look the kit has always had. */
+function defaultAppearance(): Appearance {
+    return { theme: DEFAULT_THEME, servers: {}, custom: [] };
+}
+
+/** A copy deep enough that nothing a caller does to it reaches the stored one. */
+function copyTheme(theme: Theme): Theme {
+    return { ...theme, colors: { ...theme.colors }, background: theme.background ? { ...theme.background } : null };
+}
+
 /**
  * Reads a stored appearance block one entry at a time, for the same reason as
- * readChat and readHiscores. A theme id the kit does not know is dropped: the
- * app theme falls back to stone, and a server to following the app. Server
- * ids are not checked against the catalog here, for the reason readStartup
- * gives. Built through a Map and `Object.fromEntries`, which defines keys
- * rather than assigning them, so a hand-edited `__proto__` stays a plain key.
+ * readChat and readHiscores. The custom themes come first, each read on its
+ * own, so one that cannot be read costs only itself; a second with the same
+ * id is dropped. Then a theme id the kit does not know — a custom theme that
+ * did not read included — is dropped: the app theme falls back to stone, and
+ * a server to following the app. Server ids are not checked against the
+ * catalog here, for the reason readStartup gives. Built through a Map and
+ * `Object.fromEntries`, which defines keys rather than assigning them, so a
+ * hand-edited `__proto__` stays a plain key.
  */
 function readAppearance(x: unknown): Appearance {
-    if (typeof x !== 'object' || x === null) return { theme: DEFAULT_THEME, servers: {} };
+    if (typeof x !== 'object' || x === null) return defaultAppearance();
     const a = x as Record<string, unknown>;
+    const custom: Theme[] = [];
+    if (Array.isArray(a.custom)) {
+        for (const stored of a.custom) {
+            if (custom.length >= CUSTOM_MAX) break;
+            const theme = readCustomTheme(stored);
+            if (theme && !custom.some(t => t.id === theme.id)) custom.push(theme);
+        }
+    }
     const servers = new Map<string, string>();
     if (typeof a.servers === 'object' && a.servers !== null) {
-        for (const [id, theme] of Object.entries(a.servers)) if (id !== '' && isThemeId(theme)) servers.set(id, theme);
+        for (const [id, theme] of Object.entries(a.servers)) if (id !== '' && isThemeId(theme, custom)) servers.set(id, theme);
     }
-    return { theme: isThemeId(a.theme) ? a.theme : DEFAULT_THEME, servers: Object.fromEntries(servers) };
+    return { theme: isThemeId(a.theme, custom) ? a.theme : DEFAULT_THEME, servers: Object.fromEntries(servers), custom };
 }
 
 /**
@@ -195,7 +216,7 @@ export class AppState {
     private timersState: TimersState = emptyTimersState();
     private startup: string[] = [];
     // The look the kit has always had, until asked otherwise.
-    private appearanceState: Appearance = { theme: DEFAULT_THEME, servers: {} };
+    private appearanceState: Appearance = defaultAppearance();
 
     constructor(file: string) {
         this.file = file;
@@ -212,7 +233,7 @@ export class AppState {
         this.onTop = false;
         this.timersState = emptyTimersState();
         this.startup = [];
-        this.appearanceState = { theme: DEFAULT_THEME, servers: {} };
+        this.appearanceState = defaultAppearance();
         if (!existsSync(this.file)) return;
         try {
             const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
@@ -388,26 +409,60 @@ export class AppState {
         this.save();
     }
 
-    /** The app's theme and the servers given their own. A copy: changes go through setTheme and setServerTheme. */
+    /** The app's theme, the servers given their own, and the player's own themes. A copy: changes go through the setters below. */
     appearance(): Appearance {
-        return { theme: this.appearanceState.theme, servers: { ...this.appearanceState.servers } };
+        const { theme, servers, custom } = this.appearanceState;
+        return { theme, servers: { ...servers }, custom: custom.map(copyTheme) };
     }
 
     /** The app's theme: what Settings wears, and every server not given its own. An id the kit does not know changes nothing. */
     setTheme(id: string): void {
-        if (!isThemeId(id)) return;
+        if (!isThemeId(id, this.appearanceState.custom)) return;
         this.appearanceState = { ...this.appearanceState, theme: id };
         this.save();
     }
 
     /** A server's own theme, or null to follow the app again. An id the kit does not know changes nothing. */
     setServerTheme(serverId: string, id: string | null): void {
-        if (serverId === '' || (id !== null && !isThemeId(id))) return;
+        if (serverId === '' || (id !== null && !isThemeId(id, this.appearanceState.custom))) return;
         const servers = new Map(Object.entries(this.appearanceState.servers));
         if (id === null) servers.delete(serverId);
         else servers.set(serverId, id);
         this.appearanceState = { ...this.appearanceState, servers: Object.fromEntries(servers) };
         this.save();
+    }
+
+    /**
+     * Stores one of the player's own themes: in place of the one with its id,
+     * or after the rest while there are fewer than `CUSTOM_MAX`. Read back
+     * through `readCustomTheme` on the way in, as a file would be, so nothing
+     * stored here can be something a later load would drop. False when it
+     * would not read back, or when there is no room.
+     */
+    saveCustomTheme(theme: Theme): boolean {
+        const read = readCustomTheme(copyTheme(theme));
+        if (read === null) return false;
+        const custom = [...this.appearanceState.custom];
+        const at = custom.findIndex(t => t.id === read.id);
+        if (at >= 0) custom[at] = read;
+        else if (custom.length < CUSTOM_MAX) custom.push(read);
+        else return false;
+        this.appearanceState = { ...this.appearanceState, custom };
+        this.save();
+        return true;
+    }
+
+    /** Removes one of the player's own themes. The app goes back to stone if it wore it, and each server that wore it follows the app again. False when there was no such theme. */
+    deleteCustomTheme(id: string): boolean {
+        const { theme, servers, custom } = this.appearanceState;
+        if (!custom.some(t => t.id === id)) return false;
+        this.appearanceState = {
+            theme: theme === id ? DEFAULT_THEME : theme,
+            servers: Object.fromEntries(Object.entries(servers).filter(([, worn]) => worn !== id)),
+            custom: custom.filter(t => t.id !== id)
+        };
+        this.save();
+        return true;
     }
 
     save(): void {
