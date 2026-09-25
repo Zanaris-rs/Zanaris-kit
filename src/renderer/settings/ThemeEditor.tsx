@@ -13,6 +13,14 @@ const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 const PREVIEW_TAB: CSSProperties = { width: 'auto', height: 20, padding: '0 8px', fontSize: 12 };
 /* The preview's own buttons are drawings, not controls, at the size of the real ones. */
 const PREVIEW_BUTTON: CSSProperties = { fontSize: 13, padding: '1px 8px' };
+/*
+ * A hex field: `FIELD`'s sunk box at a fixed width. Its own class list rather
+ * than `FIELD` plus a width, since `FIELD` carries `w-full` and two width
+ * utilities on one element are settled by stylesheet order, not by which was
+ * written last — which is how the field once took the whole row and hid its
+ * label.
+ */
+const HEX_FIELD = 'sunk w-[84px] shrink-0 px-[7px] py-[3px] font-mono text-[13px] text-cream';
 /* The slider and the colour wells wear the gold the client's own accents do. */
 const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
 
@@ -142,7 +150,7 @@ function ColorRow({ token, label, value, onChange }: { token: ThemeToken; label:
                     if (/^#[0-9a-f]{6}$/i.test(e.target.value)) onChange(e.target.value.toLowerCase());
                 }}
                 onBlur={() => setTyped(value)}
-                className={`${FIELD} w-[84px] shrink-0 font-mono`}
+                className={HEX_FIELD}
             />
         </li>
     );
