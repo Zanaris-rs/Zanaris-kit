@@ -19,6 +19,7 @@ import {
     readBackground,
     readColors,
     readCustomTheme,
+    readThemeDraft,
     serverOverride,
     themeById,
     themeFor,
@@ -238,4 +239,15 @@ test('the renderer paints no colour a theme cannot reach', () => {
         }
     }
     assert.deepEqual(found, []);
+});
+
+test('readThemeDraft takes what the editor sends: a new theme has no id yet, and a picture that cannot be read refuses the draft', () => {
+    const draft = { id: null, name: 'Night', colors: { stone: '#112233' }, background: { picture: PICTURE, fit: 'contain', show: 0.2 } };
+    assert.deepEqual(readThemeDraft(draft), { id: null, name: 'Night', colors: { ...stone, stone: '#112233' }, background: { picture: PICTURE, fit: 'contain', show: 0.2 } });
+    assert.equal(readThemeDraft({ ...draft, id: 'custom-0a1b2c3d' })?.id, 'custom-0a1b2c3d');
+    assert.equal(readThemeDraft({ ...draft, background: null })?.background, null);
+    assert.equal(readThemeDraft({ ...draft, id: 'zanaris' }), null);
+    assert.equal(readThemeDraft({ ...draft, background: { picture: '../x', fit: 'cover', show: 0 } }), null);
+    assert.equal(readThemeDraft({ ...draft, name: '  ' }), null);
+    assert.equal(readThemeDraft('Night'), null);
 });

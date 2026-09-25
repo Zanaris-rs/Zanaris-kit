@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appearanceView } from './appearance.ts';
+import { appearanceView, deleteQuestion } from './appearance.ts';
 import { DEFAULT_SERVERS } from './catalog.ts';
 import { THEMES, themeById, type Theme } from '../shared/themes.ts';
 import type { ServerDef } from '../shared/catalog.ts';
@@ -63,4 +63,20 @@ test('custom themes come after the built-ins, marked as custom, with their pictu
     assert.equal(view.theme, 'custom-0000000a');
     assert.deepEqual(view.look, { colors: night.colors, background: night.background });
     assert.equal(view.servers.find(s => s.id === 'lostcity')?.theme, 'custom-0000000a');
+});
+
+test('the delete question says who wears the theme and what they will wear instead', () => {
+    const labs = catalog.find(s => s.id === 'lostcitylabs')!;
+    const lostcity = catalog.find(s => s.id === 'lostcity')!;
+    const zanaris = catalog.find(s => s.id === 'zanaris')!;
+    const worn = { theme: 'custom-0000000a', servers: { lostcity: 'custom-0000000a', zanaris: 'custom-0000000a', lostcitylabs: 'stone' }, custom: [night] };
+    const asked = deleteQuestion({ appearance: worn, catalog, id: 'custom-0000000a' });
+    assert.equal(asked?.message, 'Delete Night?');
+    assert.match(asked!.detail, /It is the app theme: Settings, and every server without its own, will wear 2004 stone\./);
+    assert.ok(asked!.detail.includes(`${lostcity.name} and ${zanaris.name} wear it, and will follow the app theme.`));
+    assert.ok(!asked!.detail.includes(labs.name));
+    const one = deleteQuestion({ appearance: { theme: 'stone', servers: { zanaris: 'custom-0000000a' }, custom: [night] }, catalog, id: 'custom-0000000a' });
+    assert.ok(one?.detail.startsWith(`${zanaris.name} wears it`));
+    assert.match(deleteQuestion({ appearance: { theme: 'stone', servers: {}, custom: [night] }, catalog, id: 'custom-0000000a' })!.detail, /^Nothing wears it\./);
+    assert.equal(deleteQuestion({ appearance: { theme: 'stone', servers: {}, custom: [] }, catalog, id: 'custom-0000000a' }), null);
 });

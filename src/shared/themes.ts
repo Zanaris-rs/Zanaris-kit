@@ -346,6 +346,32 @@ export function readCustomTheme(x: unknown): Theme | null {
     return { id: t.id, name, colors, background: readBackground(t.background) };
 }
 
+/** What the editor sends on Save: a theme, with no id yet when it is a new one. */
+export interface ThemeDraft {
+    id: string | null;
+    name: string;
+    colors: ThemeColors;
+    background: Background | null;
+}
+
+/**
+ * A draft as main receives it from the editor, read as strictly as a stored
+ * theme — except that a picture which cannot be read refuses the draft
+ * rather than being dropped from it: saving must never quietly lose the
+ * picture somebody just chose.
+ */
+export function readThemeDraft(x: unknown): ThemeDraft | null {
+    if (typeof x !== 'object' || x === null) return null;
+    const t = x as Record<string, unknown>;
+    if (t.id !== null && (typeof t.id !== 'string' || !CUSTOM_ID.test(t.id))) return null;
+    const name = readThemeName(t.name);
+    const colors = readColors(t.colors);
+    if (name === null || colors === null) return null;
+    const background = t.background === null || t.background === undefined ? null : readBackground(t.background);
+    if (t.background !== null && t.background !== undefined && background === null) return null;
+    return { id: t.id, name, colors, background };
+}
+
 /** A custom id no theme has. `random` answers 8 hex digits; main's comes from `crypto`. */
 export function newCustomId(taken: readonly string[], random: () => string): string {
     for (;;) {
@@ -434,9 +460,12 @@ export function contrastWarnings(colors: ThemeColors): string[] {
 
 // ── putting a look on a page ──────────────────────────────────────────────
 
-/** Where the page asks for a stored picture: the private scheme main serves from the pictures folder, and only to the kit's own pages. */
+/** The private scheme main serves stored pictures on, to the kit's own pages only. */
+export const PICTURE_SCHEME = 'zanaris-bg';
+
+/** Where the page asks for a stored picture. */
 export function pictureUrl(picture: string): string {
-    return `zanaris-bg://picture/${picture}`;
+    return `${PICTURE_SCHEME}://picture/${picture}`;
 }
 
 /**

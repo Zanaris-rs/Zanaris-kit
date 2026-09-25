@@ -1,6 +1,6 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { ServerDef } from '../shared/catalog';
 import { SERVER_LOG, type ChatLine, type ChatView } from '../shared/chat';
@@ -11,7 +11,20 @@ import { normaliseName } from '../shared/hiscores';
 import { IPC, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
 import { NAME_INPUT_MAX } from '../shared/names';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
-import { DEFAULT_THEME, THEMES, isThemeId, serverOverride, themeFor } from '../shared/themes';
+import {
+    CUSTOM_MAX,
+    DEFAULT_THEME,
+    PICTURE_SCHEME,
+    THEMES,
+    isThemeId,
+    newCustomId as newThemeId,
+    readThemeDraft,
+    serverOverride,
+    themeFor,
+    uniqueName,
+    type Background,
+    type Theme
+} from '../shared/themes';
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { Catalog, slugify } from './catalog';
@@ -43,7 +56,9 @@ import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
-import { appearanceView } from './appearance';
+import { appearanceView, deleteQuestion } from './appearance';
+import { MIME, PICTURE_MAX, PictureStore } from './pictures';
+import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
 
 const log = (msg: string): void => console.log(msg);
 
@@ -83,6 +98,15 @@ const REAL_USER_DATA = app.getPath('userData');
 if (process.env.ZANARIS_CAPTURE) app.setPath('userData', join(app.getPath('appData'), 'zanaris-kit-capture'));
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
+
+/**
+ * Theme pictures reach the kit's own pages through a private scheme, and
+ * nowhere else. The shell and Settings are on the default session, where it
+ * is handled (at ready, below); the game and page views are in partitions of
+ * their own, where it does not exist. A privileged scheme has to be
+ * registered before ready, so it is registered here.
+ */
+protocol.registerSchemesAsPrivileged([{ scheme: PICTURE_SCHEME, privileges: { standard: true, secure: true } }]);
 
 // ── the userData move, from the old name to this one ──────────────────────
 //
@@ -141,6 +165,13 @@ const catalog = new Catalog(join(userData, 'servers.json'), { yourWorldRevision:
 // single-instance lock and Chromium's own data as well. Keeping both split a
 // capture's state across two places for no remaining reason.
 const appState = new AppState(join(userData, 'state.json'));
+/** The pictures custom themes carry, by content. See `pictures.ts`. */
+const pictures = new PictureStore(join(userData, 'backgrounds'));
+
+/** Every picture a custom theme names: what pruning keeps. */
+function keptPictures(): Set<string> {
+    return new Set(appState.appearance().custom.flatMap(theme => (theme.background ? [theme.background.picture] : [])));
+}
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
 /** One hiscores lookup per server, shared the same way, so a name looked up in one window is on the table in the others. */
@@ -189,7 +220,8 @@ let menuWindow: MenuWindowState = { alwaysOnTop: false, canPin: false, serverThe
 /** The one way the menu is (re)built, so every rebuild carries the same inputs. */
 function installAppMenu(): void {
     menuWindow = menuWindowState();
-    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow, appState.appearance().theme);
+    const appearance = appState.appearance();
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow, { app: themeFor(appearance, null), custom: appearance.custom });
 }
 
 /**
@@ -691,16 +723,155 @@ ipcMain.handle(IPC.settingsEditServers, event => {
 // Settings only, as the servers handlers are: the app theme is the app's, and
 // no game window's page has a control for it.
 ipcMain.handle(IPC.appearanceTheme, (event, id: unknown) => {
-    if (!settings.isSender(event.sender.id) || !isThemeId(id)) return;
+    if (!settings.isSender(event.sender.id) || !isThemeId(id, appState.appearance().custom)) return;
     appState.setTheme(id);
     appearanceChanged();
 });
 
 ipcMain.handle(IPC.appearanceServer, (event, serverId: unknown, id: unknown) => {
     if (!settings.isSender(event.sender.id) || typeof serverId !== 'string' || !catalog.get(serverId)) return;
-    if (id !== null && !isThemeId(id)) return;
+    if (id !== null && !isThemeId(id, appState.appearance().custom)) return;
     appState.setServerTheme(serverId, id);
     appearanceChanged();
+});
+
+/** Settings' window, or null when a call came from anywhere else: every handler below writes, asks or opens a dialog, and only Settings may. */
+function settingsWindowFor(sender: WebContents): BrowserWindow | null {
+    return settings.isSender(sender.id) ? (settings.current()?.window ?? null) : null;
+}
+
+const TOO_MANY_THEMES = `The kit keeps up to ${CUSTOM_MAX} themes of your own. Delete one to make another.`;
+
+/** A fresh custom id and a name no other theme has, for a theme about to be added or renamed. `except` is the theme's own id when it is already stored. */
+function placeTheme(name: string, except: string | null): { id: string; name: string } {
+    const { custom } = appState.appearance();
+    const others = [...THEMES, ...custom].filter(theme => theme.id !== except).map(theme => theme.name);
+    const id = except ?? newThemeId(custom.map(theme => theme.id), () => randomBytes(4).toString('hex'));
+    return { id, name: uniqueName(name, others) };
+}
+
+/**
+ * The editor's Save. Read as strictly as a stored theme; a new theme gets an
+ * id, and any theme a name no other has. Windows wearing it restyle, and a
+ * picture chosen and then replaced, or chosen in an editor that was then
+ * cancelled, is pruned here. Save changes what nothing wears: a new theme is
+ * chosen from its card like any other.
+ */
+ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } | { error: string } => {
+    if (!settings.isSender(event.sender.id)) return { error: 'Only Settings saves themes.' };
+    const draft = readThemeDraft(raw);
+    if (!draft) return { error: "That theme can't be saved: its name or one of its colours isn't one the kit can keep." };
+    if (draft.id !== null && !appState.appearance().custom.some(theme => theme.id === draft.id)) {
+        return { error: 'That theme is no longer there: it was deleted while it was open.' };
+    }
+    if (draft.background && pictures.read(draft.background.picture) === null) return { error: 'Its picture is no longer there. Choose it again.' };
+    const placed = placeTheme(draft.name, draft.id);
+    if (!appState.saveCustomTheme({ ...placed, colors: draft.colors, background: draft.background })) return { error: TOO_MANY_THEMES };
+    pictures.prune(keptPictures());
+    appearanceChanged();
+    return { id: placed.id };
+});
+
+ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<boolean> => {
+    const win = settingsWindowFor(event.sender);
+    if (!win || typeof id !== 'string') return false;
+    const question = deleteQuestion({ appearance: appState.appearance(), catalog: catalog.list(), id });
+    if (!question) return false;
+    const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        message: question.message,
+        detail: question.detail,
+        buttons: ['Delete', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1
+    });
+    if (response !== 0 || !appState.deleteCustomTheme(id)) return false;
+    pictures.prune(keptPictures());
+    appearanceChanged();
+    return true;
+});
+
+/** The editor's Choose picture…: a dialog here, never a path from the page. The picture is stored at once and answered by name; Save is what keeps it. */
+ipcMain.handle(IPC.appearanceChoosePicture, async (event): Promise<{ picture: string } | { error: string } | null> => {
+    const win = settingsWindowFor(event.sender);
+    if (!win) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: 'Choose a picture',
+        buttonLabel: 'Choose',
+        filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+        properties: ['openFile']
+    });
+    const path = filePaths[0];
+    if (canceled || path === undefined) return null;
+    try {
+        // Sized before it is read, so a huge file costs nothing to refuse.
+        if (statSync(path).size > PICTURE_MAX) return { error: 'That picture is over 10 MB. A theme can carry one of up to 10 MB.' };
+        return pictures.add(readFileSync(path));
+    } catch (err) {
+        log(`[main] could not read a picture: ${(err as Error).message}`);
+        return { error: `Couldn't read ${basename(path)}.` };
+    }
+});
+
+/** Import theme…: a theme file becomes a new theme, beside whatever is already there and never over it. */
+ipcMain.handle(IPC.appearanceImportTheme, async (event): Promise<{ name: string } | { error: string } | null> => {
+    const win = settingsWindowFor(event.sender);
+    if (!win) return null;
+    if (appState.appearance().custom.length >= CUSTOM_MAX) return { error: TOO_MANY_THEMES };
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: 'Import a theme',
+        buttonLabel: 'Import',
+        filters: [{ name: 'Zanaris Kit themes', extensions: [THEME_FILE_EXTENSION] }],
+        properties: ['openFile']
+    });
+    const path = filePaths[0];
+    if (canceled || path === undefined) return null;
+    let text: string;
+    try {
+        if (statSync(path).size > THEME_FILE_MAX) return { error: "That file is too big to be a Zanaris Kit theme." };
+        text = readFileSync(path, 'utf8');
+    } catch (err) {
+        log(`[main] could not read a theme file: ${(err as Error).message}`);
+        return { error: `Couldn't read ${basename(path)}.` };
+    }
+    const read = readThemeFile(text);
+    if (!read.ok) return { error: read.error };
+    let background: Background | null = null;
+    if (read.theme.background) {
+        const stored = pictures.add(read.theme.background.bytes);
+        if ('error' in stored) return stored;
+        background = { picture: stored.picture, fit: read.theme.background.fit, show: read.theme.background.show };
+    }
+    const placed = placeTheme(read.theme.name, null);
+    const theme: Theme = { ...placed, colors: read.theme.colors, background };
+    if (!appState.saveCustomTheme(theme)) {
+        pictures.prune(keptPictures());
+        return { error: TOO_MANY_THEMES };
+    }
+    appearanceChanged();
+    return { name: placed.name };
+});
+
+/** Export…: one of the player's themes as a file, its picture inline. */
+ipcMain.handle(IPC.appearanceExportTheme, async (event, id: unknown): Promise<string | null> => {
+    const win = settingsWindowFor(event.sender);
+    if (!win || typeof id !== 'string') return null;
+    const theme = appState.appearance().custom.find(t => t.id === id);
+    if (!theme) return 'That theme is no longer there.';
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        title: 'Export theme',
+        buttonLabel: 'Export',
+        defaultPath: join(app.getPath('documents'), themeFileName(theme.name)),
+        filters: [{ name: 'Zanaris Kit themes', extensions: [THEME_FILE_EXTENSION] }]
+    });
+    if (canceled || !filePath) return null;
+    try {
+        writeFileSync(filePath, writeThemeFile(theme, theme.background ? pictures.read(theme.background.picture) : null));
+        return null;
+    } catch (err) {
+        log(`[main] could not write ${filePath}: ${(err as Error).message}`);
+        return `Couldn't write ${basename(filePath)}.`;
+    }
 });
 
 ipcMain.handle(IPC.worldsRefresh, event => windowFor(event.sender)?.refreshWorlds());
@@ -2066,6 +2237,17 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // A picture no theme names — its theme deleted, or chosen in an editor that
+    // was then closed — goes, and the scheme serves whatever is left.
+    pictures.prune(keptPictures());
+    protocol.handle(PICTURE_SCHEME, request => {
+        const url = new URL(request.url);
+        const found = url.host === 'picture' ? pictures.read(decodeURIComponent(url.pathname.slice(1))) : null;
+        if (!found) return new Response(null, { status: 404 });
+        return new Response(new Uint8Array(found.bytes), {
+            headers: { 'content-type': MIME[found.type], 'x-content-type-options': 'nosniff', 'cache-control': 'max-age=31536000, immutable' }
+        });
+    });
     // A timeout does not count the time asleep, so on a wake every window's clocks are judged at once rather than when theirs fires.
     powerMonitor.on('resume', () => {
         for (const sw of serverWindows.values()) sw.settleTimers();

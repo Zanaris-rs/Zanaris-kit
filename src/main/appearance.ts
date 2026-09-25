@@ -27,6 +27,27 @@ export interface AppearanceView {
     servers: ServerThemeRow[];
 }
 
+/** "A", "A and B", "A, B and C". */
+function listed(names: readonly string[]): string {
+    return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
+/**
+ * What Delete asks, before it goes: the theme by name, and who wears it and
+ * what each will wear instead. Null when there is no such custom theme.
+ */
+export function deleteQuestion(opts: { appearance: Appearance; catalog: readonly ServerDef[]; id: string }): { message: string; detail: string } | null {
+    const theme = opts.appearance.custom.find(t => t.id === opts.id);
+    if (!theme) return null;
+    const wearing = opts.catalog.filter(server => serverOverride(opts.appearance, server.id) === opts.id).map(server => server.name);
+    const lines: string[] = [];
+    if (wearing.length > 0) lines.push(`${listed(wearing)} ${wearing.length === 1 ? 'wears' : 'wear'} it, and will follow the app theme.`);
+    if (opts.appearance.theme === opts.id) lines.push('It is the app theme: Settings, and every server without its own, will wear 2004 stone.');
+    if (lines.length === 0) lines.push('Nothing wears it.');
+    lines.push('Export it first to keep a copy: this cannot be undone.');
+    return { message: `Delete ${theme.name}?`, detail: lines.join(' ') };
+}
+
 /** Pure, beside `serversView`: main builds it with every Settings push. */
 export function appearanceView(opts: { appearance: Appearance; catalog: readonly ServerDef[] }): AppearanceView {
     const app = themeFor(opts.appearance, null);

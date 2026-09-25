@@ -13,7 +13,7 @@ import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 import type { ServersView } from '../main/servers.ts';
 import type { AppearanceView } from '../main/appearance.ts';
-import type { ThemeLook } from './themes';
+import type { ThemeDraft, ThemeLook } from './themes';
 
 export const IPC = {
     shellState: 'zanaris:shell-state',
@@ -88,7 +88,12 @@ export const IPC = {
     settingsOpen: 'zanaris:settings-open',
     settingsEditServers: 'zanaris:settings-edit-servers',
     appearanceTheme: 'zanaris:appearance-theme',
-    appearanceServer: 'zanaris:appearance-server'
+    appearanceServer: 'zanaris:appearance-server',
+    appearanceSaveCustom: 'zanaris:appearance-save-custom',
+    appearanceDeleteCustom: 'zanaris:appearance-delete-custom',
+    appearanceChoosePicture: 'zanaris:appearance-choose-picture',
+    appearanceImportTheme: 'zanaris:appearance-import-theme',
+    appearanceExportTheme: 'zanaris:appearance-export-theme'
 } as const;
 
 /**
@@ -407,5 +412,15 @@ export interface ZanarisApi {
         setTheme(id: string): Promise<void>;
         /** A server's own theme, or null to follow the app. Settings only. */
         setServerTheme(serverId: string, id: string | null): Promise<void>;
+        /** Saves the editor's theme: a new one when its id is null. Answers its id, or why not. Settings only, as is everything below. */
+        saveCustom(draft: ThemeDraft): Promise<{ id: string } | { error: string }>;
+        /** Asks in a dialog of main's, naming who wears it, then deletes. True when it went. */
+        deleteCustom(id: string): Promise<boolean>;
+        /** A picture from a file, picked in a dialog of main's and stored: its name — a hash, never a path — or why not, or null when cancelled. */
+        choosePicture(): Promise<{ picture: string } | { error: string } | null>;
+        /** A theme file, picked in a dialog of main's, added as a new theme: its name, or why not, or null when cancelled. */
+        importTheme(): Promise<{ name: string } | { error: string } | null>;
+        /** Writes one of the player's themes to a file they pick. Null when written or cancelled; otherwise why not. */
+        exportTheme(id: string): Promise<string | null>;
     };
 }
