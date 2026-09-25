@@ -148,6 +148,16 @@ input {
     outline: none;
 }
 
+/*
+ * A colour well opens the system's colour picker, and a swatch alone does not
+ * say so: the pointer does. The one control in the frame that gets it — the
+ * rest keep the default arrow of a native app. A rule here rather than a
+ * `cursor-pointer` utility, which the unlayered `input` rule above outranks.
+ */
+input[type='color'] {
+    cursor: pointer;
+}
+
 :focus-visible {
     outline: 1px solid var(--color-gold);
     outline-offset: -2px;

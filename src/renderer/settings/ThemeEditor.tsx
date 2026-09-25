@@ -140,7 +140,7 @@ function ColorRow({ token, label, value, onChange }: { token: ThemeToken; label:
             <label htmlFor={id} className="min-w-0 flex-1 truncate text-[12px] text-cream">
                 {label}
             </label>
-            <input type="color" aria-label={`${label}: pick`} value={value} style={ACCENT} onChange={e => onChange(e.target.value)} className="h-[22px] w-[34px] shrink-0 cursor-pointer" />
+            <input type="color" aria-label={`${label}: pick`} value={value} style={ACCENT} onChange={e => onChange(e.target.value)} className="h-[22px] w-[34px] shrink-0" />
             <input
                 id={id}
                 data-token={token}
