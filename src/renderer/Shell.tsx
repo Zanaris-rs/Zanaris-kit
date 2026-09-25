@@ -351,7 +351,7 @@ export default function Shell(): ReactNode {
     const { rects } = state;
 
     return (
-        <div className="relative h-full overflow-hidden bg-ink text-cream">
+        <div className="picture relative h-full overflow-hidden bg-ink text-cream">
             <div style={at(rects.tabBar)} className="flex flex-col">
                 {/*
                  * Tabs and the control that makes one, then Settings and Add

@@ -2,7 +2,7 @@ import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
 import type { LatestRelease } from './update';
-import { THEMES, themeById } from '../shared/themes';
+import { THEMES, type Theme } from '../shared/themes';
 
 export interface MenuActions {
     /** Another window of the focused window's server, or of the first server when none is focused. */
@@ -56,8 +56,18 @@ export interface MenuWindowState {
     serverTheme: { override: string | null } | null;
 }
 
-/** Native menus are Title Case; theme names are sentence case, as the renderer draws them. */
+/** Native menus are Title Case; a built-in's name is sentence case, as the renderer draws it. */
 const menuName = (name: string): string => name.replace(/(^|\s)\S/g, c => c.toUpperCase());
+
+/**
+ * A theme as the menu names it: a built-in title-cased, a player's own as they
+ * typed it. Windows and Linux read an `&` in a label as the mark for the next
+ * letter's shortcut, so a typed one is doubled there to show as itself.
+ */
+function themeLabel(theme: Theme, isMac: boolean): string {
+    if (THEMES.some(builtIn => builtIn.id === theme.id)) return menuName(theme.name);
+    return isMac ? theme.name : theme.name.replace(/&/g, '&&');
+}
 
 export function installMenu(
     servers: readonly ServerDef[],
@@ -65,13 +75,22 @@ export function installMenu(
     warnOnSwitch: boolean,
     update: LatestRelease | null,
     window: MenuWindowState,
-    appTheme: string
+    /** The app's theme, which Same as App names, and the player's own themes, listed after the built-ins. */
+    themes: { app: Theme; custom: readonly Theme[] }
 ): void {
     const isMac = process.platform === 'darwin';
     const serverItems = (): MenuItemConstructorOptions[] =>
         servers.length === 0
             ? [{ label: 'No servers in the list', enabled: false }]
             : servers.map(server => ({ label: serverMenuLabel(server), click: () => actions.newWindowFor(server.id) }));
+
+    const themeItems = (list: readonly Theme[]): MenuItemConstructorOptions[] =>
+        list.map(theme => ({
+            label: themeLabel(theme, isMac),
+            type: 'checkbox' as const,
+            checked: window.serverTheme?.override === theme.id,
+            click: () => actions.setServerTheme(theme.id)
+        }));
 
     const settingsItem: MenuItemConstructorOptions = { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => actions.openSettings() };
     // Spelled out rather than `role: 'appMenu'`, which cannot take an item of
@@ -149,25 +168,24 @@ export function installMenu(
                 // server restyles, not only the one in front — which is why it
                 // says Server. Disabled with no game window focused, as Always
                 // on Top is, and for a window whose server Settings has
-                // removed. The separator splits the radios into two groups;
-                // the menu is rebuilt after every change, so they never disagree.
+                // removed. Checkboxes, not radios: Electron ticks the first
+                // item of any radio group with nothing ticked as the menu
+                // opens, and the separators here make groups — so radios
+                // showed two or three ticks at once. Exactly one of these is
+                // ticked, and the menu is rebuilt after every change.
                 {
                     label: 'Server Theme',
                     enabled: window.serverTheme !== null,
                     submenu: [
                         {
-                            label: `Same as App (${menuName(themeById(appTheme).name)})`,
-                            type: 'radio',
+                            label: `Same as App (${themeLabel(themes.app, isMac)})`,
+                            type: 'checkbox',
                             checked: window.serverTheme?.override === null,
                             click: () => actions.setServerTheme(null)
                         },
                         { type: 'separator' },
-                        ...THEMES.map(theme => ({
-                            label: menuName(theme.name),
-                            type: 'radio' as const,
-                            checked: window.serverTheme?.override === theme.id,
-                            click: () => actions.setServerTheme(theme.id)
-                        }))
+                        ...themeItems(THEMES),
+                        ...(themes.custom.length > 0 ? [{ type: 'separator' as const }, ...themeItems(themes.custom)] : [])
                     ]
                 },
                 { type: 'separator' },
