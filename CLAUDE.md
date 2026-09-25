@@ -107,7 +107,8 @@ the pane that used it, the day they tried to open it here.
 ## The Settings window
 
 One window is not a game window: Settings, which holds what belongs to the
-app rather than to any one window — today the catalog and the startup set.
+app rather than to any one window — today the catalog, the startup set and
+the themes.
 `SettingsWindowSlot` (`src/main/settingsWindow.ts`) keeps it to one, and
 opening it again brings the open one forward, because two would be two
 copies of one thing. It has no parent window, since a parent would close it
@@ -118,8 +119,8 @@ are native views stacked above the shell's HTML: anything the shell drew
 over them would sit underneath. It takes its state on its own channel,
 `settings.get` and `settings.onState`, never through `ShellState`. No game
 window's `state()` builds anything for it, which is how `windowCounts()` once
-came to recurse through `state()`. Only Settings may call the servers
-handlers.
+came to recurse through `state()`. Only Settings may call the servers and
+appearance handlers.
 
 A catalog entry the kit ships with cannot be removed from Settings,
 for a plain reason: `Catalog.load` never puts a missing built-in back. At file
@@ -373,6 +374,22 @@ scrollbar-hiding rule caused clipping behaviour that `overflow: auto` produces o
 its own, and a user-facing string that told the player the page had scaled the
 game down when the page does no such thing at the default. If you change
 behaviour, re-read the comments around it before you commit.
+
+## Colours are tokens
+
+Every colour the renderer paints is a `--color-*` token from `styles.css`'s
+`@theme` block, which a theme overrides at runtime (`src/shared/themes.ts`).
+A literal colour in the renderer is a defect — it does not follow the theme —
+and `themes.test.ts` fails on one. The exceptions are the chat nick palette in
+`nickColour.ts`, which the contrast test checks against every theme, and
+neutral black and white. The `stone` theme and the `@theme` block are the same
+values, and a test keeps them so.
+
+A theme is derived from a ground and a trim colour sampled off the map, never
+typed in by hand; `scripts/sample-floors.mjs` is where the samples come from.
+Every theme is dark, because the black glyph shadow and the grain's overlay
+blend assume it. Theme ids sit in `state.json` and will sit in theme files
+people share, so one once shipped is never renamed.
 
 ## Commands
 

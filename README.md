@@ -55,7 +55,8 @@ closing the last window quits, since the menu lives in the window.
 The catalog lives in **Settings**, one window for the whole app, opened from
 the gear at the right of every window's tab bar or from Settings…
 (Cmd/Ctrl+,); opening it again brings the open one forward rather than making
-another. Its Servers section lists every server with how many of its windows
+another. It has two sections, Servers and Appearance, which holds the themes
+(see How it looks). Its Servers section lists every server with how many of its windows
 are open, an Open button that starts another, and a checkbox for whether a
 launch opens it: tick two servers and relaunching opens both, untick every row
 and a launch falls back to the catalog's first entry, exactly what an empty
@@ -399,6 +400,26 @@ sit in a band set by where you live, so colouring them all by absolute
 thresholds painted the whole column orange and said nothing. Green marks a
 world worth switching to, orange one that is genuinely far, and everything
 between is left as a plain number.
+
+**Themes.** The frame can wear one of six: 2004 stone, which is the look
+described here, and five places in the 2004 world — Zanaris, the Wilderness,
+Al Kharid, Morytania and Lumbridge. Settings > Appearance sets the app's theme,
+which Settings and every server wear; any server can wear its own instead,
+set there or from View > Server Theme, which acts on the window in front and
+restyles every window of its server. A change applies at once and reloads
+nothing. The game and the reference pages are the servers' own, and are never
+themed.
+
+Each place is sampled rather than invented, like the stone.
+`scripts/sample-floors.mjs` reads the 274 map and ranks the floors laid in a
+place by how much more of it they cover than of the whole map — by plain count
+almost everywhere is grass — and the theme takes a ground colour and a trim
+colour from the top of that list. One rule, in `src/shared/themes.ts`, turns
+the pair into every colour the frame uses: each keeps the stone's own
+lightness, so the grain and the text's contrast behave as they do on the
+stone, and takes the place's hue. Zanaris in 274 is brown floors and bright
+grass in black void, not the blue of later years. A test holds every theme to
+the stone's own contrast, pair by pair.
 
 The mockups this was ported from live in `design/`: `build.mjs` generates the
 artboards, and `seed-canvas.mjs` from the design skill packages them into a

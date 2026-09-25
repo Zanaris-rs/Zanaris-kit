@@ -1986,6 +1986,48 @@ async function captureAndExit(dir: string): Promise<void> {
         } finally {
             rmSync(layoutPath, { force: true });
         }
+
+        // Themes. Each as the app theme on the first window, with a tool
+        // opened beside what it already holds. Shell shots only: the game is
+        // never themed. The ledger flags a shot byte-identical to an earlier
+        // one, so a theme that failed to apply fails the run.
+        showTool(first, 'timers');
+        for (const theme of THEMES) {
+            appState.setTheme(theme.id);
+            appearanceChanged();
+            await wait(500);
+            const worn = first.state().theme;
+            log(`[capture] theme ${theme.id}: stone ${worn.stone}, stone-lit ${worn['stone-lit']}, well ${worn.well}`);
+            await shootShell(`theme-${theme.id}`, first);
+        }
+        // Settings on Appearance, in the last theme. The section is the page's
+        // own state, so its tab is clicked as a person would click it.
+        {
+            const settingsWindow = settings.open(first.window.getBounds());
+            await settingsWindow.loaded;
+            await settingsWindow.window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent === 'Appearance')?.click()`);
+            await wait(500);
+            await shootShell('settings-appearance', settingsWindow);
+            log(`[capture] settings appearance: app ${settingsState().appearance.theme}, ${settingsState().appearance.themes.length} themes`);
+            settingsWindow.window.close();
+        }
+        // An override: the first window's server in the Wilderness while the
+        // app wears Morytania. `second` is that server's other window and
+        // wears the override; a window of any other server wears the app's.
+        {
+            const own = first.state().server.id;
+            appState.setTheme('morytania');
+            appState.setServerTheme(own, 'wilderness');
+            appearanceChanged();
+            await wait(500);
+            await shootShell(`theme-override-${own}`, second);
+            const other = opened.find(sw => sw.state().server.id !== own);
+            if (other) await shootShell(`theme-override-${other.state().server.id}`, other);
+            log(`[capture] override: ${own} wears stone ${second.state().theme.stone}, ${other ? `${other.state().server.id} wears stone ${other.state().theme.stone}` : 'no other server open'}`);
+            appState.setServerTheme(own, null);
+            appState.setTheme(DEFAULT_THEME);
+            appearanceChanged();
+        }
     } catch (err) {
         fault(`aborted: ${(err as Error).stack ?? String(err)}`);
     } finally {
