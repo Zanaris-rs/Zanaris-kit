@@ -133,6 +133,28 @@ that is gone. So removing a built-in is permanent short of deleting
 remove anything a caller hands it, because the rule about which callers may
 belongs at the one place that decides, not inside the primitive.
 
+## The pages with the preload
+
+Two pages carry the preload: each window's shell and Settings. Main answers
+the preload's calls by `event.sender`, so whatever page ends up in one of
+those views is answered as its window, with every call the bridge has.
+
+Both are loaded by `loadShell` (`src/main/renderer.ts`), and that is also
+what holds them there. It refuses every navigation they start except a
+reload of the page itself (`decideShellNavigation`, in `guard.ts`, pure and
+tested), and no window opens from either. The reload is let through because
+Vite's full reload is one. Settings' guard once refused it too, so in
+development an edit that needed a full reload never reached Settings. A page
+given the preload any other way has no guard, so a new one goes through
+`loadShell`.
+
+The shell view went without a guard until 2026-09-25, while Settings had
+one. A dropped link was the suspected way in, but Electron's
+`navigateOnDragDrop` is off by default, and a drop onto the shell does
+nothing. The way in that did reproduce was a middle click on a link: chat's
+links are strangers', a middle click never reaches their `onClick`, and
+Electron opened the link as a bare window with none of the kit's guards.
+
 ## Where logic is allowed to live
 
 `src/main/serverWindow.ts`, `src/main/index.ts` and the **entire renderer** have

@@ -870,9 +870,15 @@ forward gestures are blocked, and web links open in the system browser. The
 one exception is our own offline page returning to the page main asked for.
 The only way the game view changes page is main calling `loadURL`, which is
 how a world switch happens, and the history is cleared after every load so
-nothing can walk back through worlds. The preload exposes exactly the shell
-and worlds calls in `src/shared/ipc.ts`, and IPC handlers identify a window
-from `event.sender`, never from a value the renderer supplies.
+nothing can walk back through worlds. The preload exposes exactly the calls
+`ZanarisApi` declares in `src/shared/ipc.ts`, and IPC handlers identify a
+window from `event.sender`, never from a value the renderer supplies. So the
+two pages that carry it, each window's shell and Settings, stay where they
+are: a page brought into either would be answered as its window. `loadShell`
+refuses every navigation they start except a reload of the page itself, which
+is how Vite's full reload arrives in development, and lets neither open a
+window. A link or file dropped on the shell does nothing: Electron's
+`navigateOnDragDrop` is off by default, and the kit leaves it off.
 
 **Sharing** exposes one thing: a loopback relay in the main process, which
 forwards `GET`, `HEAD` and the game's websocket upgrade to the world's web port
@@ -955,7 +961,7 @@ src/main/settingsView.ts    builds the Settings window; holds no rules, as paneH
                             does for panes
 src/main/menu.ts            application menu: new windows, the server list, the pane
                             gestures, the switch warning
-src/main/renderer.ts        preload path; load the shell
+src/main/renderer.ts        preload path; load the shell and hold it to its page
 src/main/index.ts           wiring, world services, IPC handlers, capture mode
 src/preload/index.ts        the window.zanaris bridge
 src/renderer/Shell.tsx      the tab bar, Add pane, and every pane where main put it

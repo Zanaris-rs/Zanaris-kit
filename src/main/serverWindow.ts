@@ -395,6 +395,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         alwaysOnTop: deps.alwaysOnTop()
     });
 
+    // The one view here with the preload, and so with every call main answers
+    // as this window. `loadShell` holds it to its page.
     const shellView = new WebContentsView({
         webPreferences: {
             preload: preloadPath(),
