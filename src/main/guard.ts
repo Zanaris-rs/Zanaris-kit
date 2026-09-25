@@ -75,3 +75,23 @@ export function decidePageNavigation(nav: { target: string; hosts: readonly stri
     const host = target.host.toLowerCase();
     return nav.hosts.some(allowed => allowed.toLowerCase() === host) ? 'allow' : 'open-external';
 }
+
+/**
+ * What to do with a navigation one of the kit's own pages started: a game
+ * window's shell, or Settings.
+ *
+ * Both carry the preload, and main answers its calls by `event.sender`, so
+ * whatever a navigation brought into the view would be answered as that
+ * window. Both show writing that is not the kit's, too: chat's lines are
+ * strangers', and Settings' names and notes come from a servers.json people
+ * edit by hand. React renders it all as text; this is the line behind that.
+ *
+ * So nothing replaces the page but the page itself. A reload keeps the URL it
+ * has, and in development it is how Vite's full reload arrives, so it is let
+ * through. Anything else is dropped, not sent to the system browser: the
+ * shell's one kind of link, chat's, already goes there through
+ * `chat.openLink`, which main checks.
+ */
+export function decideShellNavigation(nav: { current: string; target: string }): 'allow' | 'block' {
+    return nav.target === nav.current ? 'allow' : 'block';
+}

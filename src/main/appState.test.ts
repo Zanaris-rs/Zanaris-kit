@@ -1,10 +1,11 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppState } from './appState.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
+import { CUSTOM_MAX, themeById, type Theme } from '../shared/themes.ts';
 
 const dirs: string[] = [];
 const tempFile = (): string => {
@@ -599,12 +600,12 @@ test('the app theme starts as stone with no server themes, and both survive a ro
     const file = tempFile();
     const a = new AppState(file);
     a.load();
-    assert.deepEqual(a.appearance(), { theme: 'stone', servers: {} });
+    assert.deepEqual(a.appearance(), { theme: 'stone', servers: {}, custom: [] });
     a.setTheme('zanaris');
     a.setServerTheme('lostcity', 'wilderness');
     const b = new AppState(file);
     b.load();
-    assert.deepEqual(b.appearance(), { theme: 'zanaris', servers: { lostcity: 'wilderness' } });
+    assert.deepEqual(b.appearance(), { theme: 'zanaris', servers: { lostcity: 'wilderness' }, custom: [] });
 });
 
 test('an unknown theme costs only itself: the app theme falls back, a bad server entry is dropped, the rest stays', () => {
@@ -615,7 +616,7 @@ test('an unknown theme costs only itself: the app theme falls back, a bad server
     );
     const state = new AppState(file);
     state.load();
-    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'morytania' } });
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'morytania' }, custom: [] });
     assert.deepEqual(state.world('lostcity'), REMEMBERED);
 });
 
@@ -624,7 +625,7 @@ test('an appearance block that is not an object, or a file without one, starts a
     writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, appearance: 'zanaris' }));
     const state = new AppState(file);
     state.load();
-    assert.deepEqual(state.appearance(), { theme: 'stone', servers: {} });
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: {}, custom: [] });
 });
 
 test('setServerTheme with null clears an override, and an unknown id changes nothing', () => {
@@ -634,10 +635,10 @@ test('setServerTheme with null clears an override, and an unknown id changes not
     state.setServerTheme('lostcity', 'lumbridge');
     state.setServerTheme('lostcity', 'parchment');
     state.setTheme('parchment');
-    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'lumbridge' } });
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'lumbridge' }, custom: [] });
     state.setServerTheme('lostcity', null);
-    assert.deepEqual(state.appearance(), { theme: 'stone', servers: {} });
-    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).appearance, { theme: 'stone', servers: {} });
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: {}, custom: [] });
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).appearance, { theme: 'stone', servers: {}, custom: [] });
 });
 
 test('appearance() hands out a copy, so a caller cannot change the stored state', () => {
@@ -647,7 +648,7 @@ test('appearance() hands out a copy, so a caller cannot change the stored state'
     const copy = state.appearance() as { theme: string; servers: Record<string, string> };
     copy.servers.lostcity = 'wilderness';
     copy.theme = 'wilderness';
-    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'zanaris' } });
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { lostcity: 'zanaris' }, custom: [] });
 });
 
 test('a server id of __proto__ in a hand-edited file is a plain entry, not a prototype', () => {
@@ -657,4 +658,118 @@ test('a server id of __proto__ in a hand-edited file is a plain entry, not a pro
     state.load();
     assert.deepEqual(Object.keys(state.appearance().servers), ['__proto__']);
     assert.equal(Object.getPrototypeOf(state.appearance().servers), Object.prototype);
+});
+
+const PICTURE = `${'cd'.repeat(32)}.jpg`;
+const night = (id = 'custom-0000000a', name = 'Night'): Theme => ({
+    id,
+    name,
+    colors: { ...themeById('stone').colors, stone: '#223344' },
+    background: { picture: PICTURE, fit: 'cover', show: 0.4 }
+});
+
+test('custom themes survive a round trip, and the app and a server can wear one', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.saveCustomTheme(night());
+    a.setTheme('custom-0000000a');
+    a.setServerTheme('lostcity', 'custom-0000000a');
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.appearance(), { theme: 'custom-0000000a', servers: { lostcity: 'custom-0000000a' }, custom: [night()] });
+});
+
+test('a custom theme that cannot be read costs only itself, and whatever wore it falls back', () => {
+    const file = tempFile();
+    const broken = { ...night('custom-0000000b', 'Broken'), colors: { stone: 'nope' } };
+    writeFileSync(
+        file,
+        JSON.stringify({
+            version: 1,
+            worlds: {},
+            appearance: { theme: 'custom-0000000b', servers: { lostcity: 'custom-0000000b', zanaris: 'custom-0000000a' }, custom: [night(), broken, 'junk', night()] }
+        })
+    );
+    const state = new AppState(file);
+    state.load();
+    const read = state.appearance();
+    assert.deepEqual(
+        read.custom.map(t => t.id),
+        ['custom-0000000a']
+    );
+    assert.equal(read.theme, 'stone');
+    assert.deepEqual(read.servers, { zanaris: 'custom-0000000a' });
+});
+
+test('saveCustomTheme replaces by id, appends a new one, and refuses past the cap or a theme that would not read back', () => {
+    const state = new AppState(tempFile());
+    state.load();
+    assert.equal(state.saveCustomTheme(night()), true);
+    assert.equal(state.saveCustomTheme({ ...night(), name: 'Night, again' }), true);
+    assert.deepEqual(
+        state.appearance().custom.map(t => t.name),
+        ['Night, again']
+    );
+    assert.equal(state.saveCustomTheme({ ...night('custom-0000000c'), name: '' }), false);
+    for (let i = 1; i < CUSTOM_MAX; i++) assert.equal(state.saveCustomTheme(night(`custom-${(0x10000000 + i).toString(16)}`, `N${i}`)), true);
+    assert.equal(state.appearance().custom.length, CUSTOM_MAX);
+    assert.equal(state.saveCustomTheme(night('custom-ffffffff', 'One too many')), false);
+});
+
+test('deleteCustomTheme clears the app theme and every server that wore it', () => {
+    const state = new AppState(tempFile());
+    state.load();
+    state.saveCustomTheme(night());
+    state.setTheme('custom-0000000a');
+    state.setServerTheme('lostcity', 'custom-0000000a');
+    state.setServerTheme('zanaris', 'wilderness');
+    assert.equal(state.deleteCustomTheme('custom-0000000a'), true);
+    assert.deepEqual(state.appearance(), { theme: 'stone', servers: { zanaris: 'wilderness' }, custom: [] });
+    assert.equal(state.deleteCustomTheme('custom-0000000a'), false);
+});
+
+test('appearance() copies the custom themes too, so a caller cannot change the stored ones', () => {
+    const state = new AppState(tempFile());
+    state.load();
+    state.saveCustomTheme(night());
+    const copy = state.appearance().custom[0] as Theme & { colors: Record<string, string>; background: { show: number } };
+    copy.colors.stone = '#ffffff';
+    copy.background.show = 0;
+    assert.equal(state.appearance().custom[0]?.colors.stone, '#223344');
+    assert.equal(state.appearance().custom[0]?.background?.show, 0.4);
+});
+
+test('a save that cannot be written leaves the custom themes as they were, so trying again makes no second copy', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    state.saveCustomTheme(night());
+    // A file that cannot be written, as on a full disk.
+    chmodSync(file, 0o400);
+    try {
+        assert.throws(() => state.saveCustomTheme(night('custom-0000000b', 'Second')));
+        assert.throws(() => state.deleteCustomTheme('custom-0000000a'));
+    } finally {
+        chmodSync(file, 0o600);
+    }
+    assert.deepEqual(
+        state.appearance().custom.map(t => t.id),
+        ['custom-0000000a']
+    );
+});
+
+test('fromFile says whether the state was read from its file: not when there was none, and not when it was broken', () => {
+    const file = tempFile();
+    const fresh = new AppState(file);
+    fresh.load();
+    assert.equal(fresh.fromFile(), false);
+    fresh.saveCustomTheme(night());
+    const read = new AppState(file);
+    read.load();
+    assert.equal(read.fromFile(), true);
+    writeFileSync(file, '{ broken');
+    const broken = new AppState(file);
+    broken.load();
+    assert.equal(broken.fromFile(), false);
 });

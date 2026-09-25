@@ -115,6 +115,21 @@ body {
     overflow: hidden;
 }
 
+/*
+ * A theme's picture, painted on the one element that spans a page — the
+ * shell's root, Settings' — and on each card and preview that shows a theme.
+ * `themeVars` sets these, to `none` when a theme has no picture, and every
+ * surface over it lets `show` of it through (`shared/themes.ts`). Painted as
+ * the element's own image, over its ink, rather than on the page behind it:
+ * behind an inked root it would show through one surface more everywhere.
+ */
+.picture {
+    background-image: var(--picture, none);
+    background-size: var(--picture-size, auto);
+    background-repeat: var(--picture-repeat, no-repeat);
+    background-position: center;
+}
+
 button {
     font: inherit;
     color: inherit;
@@ -128,6 +143,16 @@ input {
     user-select: text;
     cursor: text;
     outline: none;
+}
+
+/*
+ * A colour well opens the system's colour picker, and a swatch alone does not
+ * say so: the pointer does. The one control in the frame that gets it — the
+ * rest keep the default arrow of a native app. A rule here rather than a
+ * `cursor-pointer` utility, which the unlayered `input` rule above outranks.
+ */
+input[type='color'] {
+    cursor: pointer;
 }
 
 :focus-visible {

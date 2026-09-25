@@ -120,7 +120,12 @@ const api: ZanarisApi = {
     },
     appearance: {
         setTheme: id => ipcRenderer.invoke(IPC.appearanceTheme, id),
-        setServerTheme: (serverId, id) => ipcRenderer.invoke(IPC.appearanceServer, serverId, id)
+        setServerTheme: (serverId, id) => ipcRenderer.invoke(IPC.appearanceServer, serverId, id),
+        saveCustom: draft => ipcRenderer.invoke(IPC.appearanceSaveCustom, draft),
+        deleteCustom: id => ipcRenderer.invoke(IPC.appearanceDeleteCustom, id),
+        choosePicture: () => ipcRenderer.invoke(IPC.appearanceChoosePicture),
+        importTheme: () => ipcRenderer.invoke(IPC.appearanceImportTheme),
+        exportTheme: id => ipcRenderer.invoke(IPC.appearanceExportTheme, id)
     }
 };
 

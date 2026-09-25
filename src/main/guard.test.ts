@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideNavigation, decidePageNavigation } from './guard.ts';
+import { decideNavigation, decidePageNavigation, decideShellNavigation } from './guard.ts';
 
 const GAME = 'https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1';
 const OFFLINE = 'file:///app/static/offline.html?url=' + encodeURIComponent(GAME);
@@ -70,4 +70,29 @@ test("the starting page's download is a kit navigation too, and only from a kit 
     assert.equal(decideNavigation({ current: 'http://127.0.0.1:40001/rs2.cgi', target: 'file:///app/static/starting.html?download=1', expected }), 'block');
     assert.equal(decideNavigation({ current, target: 'file:///app/static/starting.html?download=yes', expected }), 'block');
     assert.equal(decideNavigation({ current, target: 'file:///app/static/other.html?download=1', expected }), 'block');
+});
+
+const SHELL = 'file:///Applications/Zanaris%20Kit.app/Contents/Resources/app.asar/out/renderer/index.html';
+const DEV_SHELL = 'http://localhost:5173/';
+
+test("a kit page may reload itself, which is how Vite's full reload reaches it in development", () => {
+    assert.equal(decideShellNavigation({ current: SHELL, target: SHELL }), 'allow');
+    assert.equal(decideShellNavigation({ current: DEV_SHELL, target: DEV_SHELL }), 'allow');
+    assert.equal(decideShellNavigation({ current: `${DEV_SHELL}#settings`, target: `${DEV_SHELL}#settings` }), 'allow');
+});
+
+test('a kit page may go nowhere else, however close to home', () => {
+    const refused: [current: string, target: string][] = [
+        [SHELL, 'https://example.com/'],
+        [SHELL, `${SHELL}?x=1`],
+        [SHELL, SHELL.replace('index.html', 'other.html')],
+        [SHELL, 'file:///etc/passwd'],
+        [SHELL, 'javascript:alert(1)'],
+        [DEV_SHELL, 'http://localhost:5173/other'],
+        [DEV_SHELL, 'http://localhost:5174/'],
+        [`${DEV_SHELL}#settings`, DEV_SHELL]
+    ];
+    for (const [current, target] of refused) {
+        assert.equal(decideShellNavigation({ current, target }), 'block', `${current} → ${target}`);
+    }
 });
