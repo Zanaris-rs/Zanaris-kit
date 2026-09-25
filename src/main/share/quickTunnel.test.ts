@@ -74,7 +74,12 @@ function stalled(): { io: QuickTunnelIo; trace: string[]; announced: Promise<voi
     return { io, trace, announced };
 }
 
-const OPTS = { binary: 'cloudflared', port: 45678, configPath: '/cf/quick.yml', registerTimeoutMs: 5_000, stopGraceMs: 2_000 };
+/**
+ * The kit's own timeouts, long enough that the fake binary reaches them only
+ * when something is broken, not when the machine is busy. A test whose subject
+ * is a timeout sets its own.
+ */
+const OPTS = { binary: 'cloudflared', port: 45678, configPath: '/cf/quick.yml' };
 
 function alive(pid: number): boolean {
     try {
