@@ -242,9 +242,10 @@ as it is for the pin.
   (`zanaris:appearance-server`, null to follow the app). Both are accepted
   only from Settings, through the same `settings.isSender` check the servers
   handlers use. The menu calls main directly.
-- Every change goes through `AppState`, is saved, and fans out: each window
-  whose theme changed gets `themeChanged()`, Settings gets its state again,
-  and the menu is rebuilt.
+- Every change goes through `AppState`, is saved, and fans out: every window
+  gets `themeChanged()` — working out which ones moved would save repainting
+  a few windows in the colours they already wear — Settings gets its state
+  again, and the menu is rebuilt.
 - `ShellState` gains `theme: ThemeColors`, the resolved palette, so the shell
   never looks anything up. `SettingsState` gains `appearance:
   AppearanceView`: the app theme's id, every theme as `{ id, name, colors }`,
@@ -311,8 +312,8 @@ as it is for the pin.
   **Contrast:** for each of `cream`, `dim`, `faint`, `gold`, `link`, `good`,
   `warn` and `alarm` on each of `ink`, `stone`, `stone-lit`, `tab` and
   `well`, and each nick colour on `well`, every theme reaches at least 90% of
-  stone's own ratio. `themeFor` for an override, the app theme, an unknown id
-  and a missing block. `themeVars` names every token. `deriveTheme` of the
+  stone's own ratio. `themeFor` for an override, the app theme and an unknown
+  id. `themeVars` names every token. `deriveTheme` of the
   reference colour for both ground and trim gives back every stone token
   exactly.
 - **No literal colours in the renderer.** The same file scans `src/renderer`
