@@ -28,6 +28,8 @@ import {
 } from '../shared/themes';
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
+import { roomFor } from './windowRoom';
+import { COLUMN_PREFERRED_WIDTH, SEAM } from '../shared/layout';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
@@ -1794,9 +1796,11 @@ const shotOfThePage =
  * prove a tab switch did not reload it; a second instance of the first
  * server (slots and partitions), with a setup saved and opened into a new tab
  * and the game left behind another tab; every theme, Settings on Appearance,
- * a server's own theme and a custom theme with a picture and its editor. Last
- * comes a built-in setup opened on the first window and its tools column
- * closed, the window sized around the game both ways.
+ * a server's own theme and a custom theme with a picture and its editor, with
+ * a draft typed there worn by the first window and cancelled; a built-in
+ * setup opened on the first window, its tools column closed and the setup
+ * opened again, the window sized around the game each way. Last comes
+ * Settings' close question, left up while the run quits.
  *
  * A shell that never paints, or a shell shot with the same bytes as an
  * earlier one, is a shot that does not show its step while the log reports it
@@ -2458,12 +2462,15 @@ async function captureAndExit(dir: string): Promise<void> {
             appearanceChanged();
         }
 
-        // A built-in setup opened, then its tools column closed pane by pane:
-        // the window should grow or shrink to hold the column when the setup
-        // opens and give the column back when its last pane closes, and the
-        // game keep its width through both. On the first window, whose tab in
-        // front holds the game; skipped, and said, when it does not. Widths
-        // are the window's frame, as the pane-closed line above reads them.
+        // A built-in setup opened, then its tools column closed pane by pane,
+        // then the setup opened again: the window should grow or shrink to
+        // hold the column when the setup opens, give the column back when its
+        // last pane closes, and grow by the column and its seam when it opens
+        // again from the game over chat — as far as the display has room for
+        // — and the game keep its width through all three. On the first
+        // window, whose tab in front holds the game; skipped, and said, when
+        // it does not. Widths are the window's frame, as the pane-closed line
+        // above reads them.
         {
             const gamePane = (): { rect: { width: number; height: number } } | undefined => first.state().panes.find(p => p.content.kind === 'game');
             const game = (): string => {
@@ -2490,6 +2497,25 @@ async function captureAndExit(dir: string): Promise<void> {
                 if (during.game !== before.game || after.game !== before.game) fault(`setups: the game did not keep its width (${before.game}, ${during.game}, ${after.game})`);
                 if (after.window >= during.window) fault(`setups: closing the tools column did not give the window its width back (${during.window}px -> ${after.window}px)`);
                 await shootShell('setup-closed', first);
+
+                const frame = first.window.getBounds();
+                const room = roomFor(frame, screen.getDisplayMatching(frame).workArea).width;
+                const column = COLUMN_PREFERRED_WIDTH + SEAM;
+                const reopened = await first.openBuiltInSetup('game-chat-tools');
+                await wait(800);
+                const grown = { window: width(), game: gamePane()?.rect.width ?? 0, size: game() };
+                log(
+                    `[capture] setup Game, Chat and Tools again: ${reopened} — window ${after.window}px -> ${grown.window}px (grew ${grown.window - after.window}px; the column and its seam are ${column}px, the display had room for ${room}px), game ${after.size} -> ${grown.size}`
+                );
+                if (first.window.isMaximized() || first.window.isFullScreen()) {
+                    log('[capture] setups: the window is maximised or full screen, which a setup does not resize; the growth was not checked');
+                } else if (room < column) {
+                    log(`[capture] setups: the display had room for ${room}px of the ${column}px column, so the growth was capped and not checked`);
+                } else {
+                    if (Math.abs(grown.window - after.window - column) > 2) fault(`setups: opening Game, Chat and Tools again did not grow the window by the column (${after.window}px -> ${grown.window}px, expected +${column}px)`);
+                    if (grown.game !== after.game) fault(`setups: the game did not keep its width as the window grew (${after.game}px -> ${grown.game}px)`);
+                }
+                await shootShell('setup-grown', first);
             }
         }
 
