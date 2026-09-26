@@ -437,7 +437,7 @@ a fix; the way to wear one is a theme's picture.
 ## Theme pictures
 
 A theme's picture is somebody's file — theirs, or a stranger's inside a theme
-file — shown in the kit's own pages. Keep these true:
+file — shown in the kit's own pages, or one of the kit's own. Keep these true:
 
 - **Every picture goes through `PictureStore`** (`src/main/pictures.ts`). Its
   type is read off its first bytes, only PNG, JPEG, WebP and GIF are kept —
@@ -452,14 +452,16 @@ file — shown in the kit's own pages. Keep these true:
   into a path, and stores the file through `PictureStore` like any other, so
   no theme names a preset and no preset id is ever saved: the set can change
   between releases. `zanaris-bg://preset/<id>` serves the thumbnails from the
-  same lookup. `presets.test.ts` holds the folder to the list, and every file
+  same lookup (`presetFile`), straight from `static/` rather than through the
+  store: they are the app's own files, and nothing is kept. `presets.test.ts` holds the folder to the list, and every file
   to what the store keeps.
 - **`zanaris-bg:` is handled on the default session only**, where the shell and
   Settings are. The game and page views are partitions of their own and must
   never get it: a page could then read every picture by guessing nothing more
   than a hash.
-- **The page never sends a path.** Choose picture… and Import theme… are
-  dialogs in main that answer a name; Export is a save dialog in main.
+- **The page never sends a path.** Choose your own… and Import theme… are
+  dialogs in main that answer a name; a gallery picture is an id main looks
+  up; Export is a save dialog in main.
 - **Theme files are read strictly** (`themeFile.ts`) and are sized before they
   are read. An import adds a theme and never replaces one. Base64 is checked as
   one character class and a length, never a repeated group: a group repeated

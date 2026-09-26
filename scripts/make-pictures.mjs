@@ -5,6 +5,10 @@
 // and the pictures offered cannot disagree; presets.test.ts fails on a file
 // the list does not name.
 //
+// The checkout must be at the 274 recipe's content commit, which is what the
+// list says the pictures are made from: the stage script moves the one
+// checkout between recipes, and 289's would make other pictures quietly.
+//
 // Run under Electron rather than Node, for nativeImage: title.jpg is a JPEG,
 // and nothing in Node decodes one. Electron's Node strips the list's types on
 // import. No top-level await: an ESM entry that awaits app.whenReady() at its
@@ -15,7 +19,8 @@
 // kept there for historical preservation, as the launcher's sprites are.
 // Spec: docs/superpowers/specs/2026-09-26-kit-pictures-design.md.
 import { app, nativeImage } from 'electron';
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PRESETS } from '../src/main/presets.ts';
@@ -23,6 +28,7 @@ import { PRESETS } from '../src/main/presets.ts';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const content = resolve(process.argv[2] ?? join(root, '.engine-work', 'content'));
 const out = join(root, 'static', 'pictures');
+const pin = JSON.parse(readFileSync(join(root, 'engines', 'lostcity-274.json'), 'utf8')).content.commit;
 
 /** One pixel from `src` at `from` to `dst` at `to`, both BGRA, as toBitmap gives and createFromBitmap takes. */
 function pixel(src, from, dst, to) {
@@ -57,6 +63,8 @@ function double(image) {
 app.dock?.hide();
 app.whenReady().then(() => {
     try {
+        const at = execFileSync('git', ['-C', content, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+        if (at !== pin) throw new Error(`${content} is at ${at}, not the 274 content pin ${pin}: npm run stage:engine -- lostcity-274 puts it there`);
         mkdirSync(out, { recursive: true });
         // A preset dropped from the list takes its file with it.
         for (const file of readdirSync(out)) if (!PRESETS.some(p => p.file === file)) rmSync(join(out, file));

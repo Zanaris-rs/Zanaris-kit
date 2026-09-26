@@ -6,15 +6,17 @@ import { PICTURE_NAME } from '../shared/themes.ts';
 /**
  * The pictures themes carry, kept in `<userData>/backgrounds/`.
  *
- * A picture comes from a file the player picked, or from a theme file
- * somebody else made, so nothing about it is taken on trust. Its type is read
- * off its first bytes rather than its name, and only four types are kept:
- * PNG, JPEG, WebP and GIF. SVG never is, since an SVG can carry script. Each
- * is stored under its sha-256, so the same picture twice is one file, and a
- * name is all anything outside this file ever holds — the page asks for a
- * picture by name through the `zanaris-bg:` scheme, and `path` answers only
- * for a name shaped exactly as this store makes them, so no name can reach
- * outside the folder.
+ * A picture comes from a file the player picked, from a theme file somebody
+ * else made, or from the kit's own (`presets.ts`). The first two are
+ * strangers' bytes, so nothing about a picture is taken on trust, and the
+ * kit's own go through the same checks rather than a way in of their own. Its
+ * type is read off its first bytes rather than its name, and only four types
+ * are kept: PNG, JPEG, WebP and GIF. SVG never is, since an SVG can carry
+ * script. Each is stored under its sha-256, so the same picture twice is one
+ * file, and a name is all anything outside this file ever holds — the page
+ * asks for a picture by name through the `zanaris-bg:` scheme, and `path`
+ * answers only for a name shaped exactly as this store makes them, so no name
+ * can reach outside the folder.
  * Spec: docs/superpowers/specs/2026-09-25-custom-themes-and-pictures-design.md.
  */
 

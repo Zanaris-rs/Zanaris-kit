@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Fit } from '../shared/themes.ts';
-import { pictureName } from './pictures.ts';
+import { pictureName, pictureType, type PictureType } from './pictures.ts';
 
 /**
  * The kit's own pictures: what a theme's picture can be without a file of the
@@ -74,6 +74,13 @@ export function readPreset(dir: string, id: unknown): Uint8Array | null {
     } catch {
         return null;
     }
+}
+
+/** A preset's bytes and the type they say they are, for the scheme's `preset` host, which draws the gallery's thumbnails. Null for an id the list does not have, or a file that is not a picture. */
+export function presetFile(dir: string, id: unknown): { bytes: Uint8Array; type: PictureType } | null {
+    const bytes = readPreset(dir, id);
+    const type = bytes && pictureType(bytes);
+    return bytes && type ? { bytes, type } : null;
 }
 
 /** Every preset whose file reads as a picture, as Settings draws it. One whose file is missing is left out, rather than offered and then refused. */

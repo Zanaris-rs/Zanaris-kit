@@ -159,7 +159,10 @@ function Gallery({ presets, chosen, busy, onPick }: { presets: readonly PresetCa
                             }}
                             className="sunk aspect-square w-full"
                         />
-                        <span className={`truncate text-center text-[11px] ${on ? 'text-cream' : 'text-dim'}`}>{preset.name}</span>
+                        {/* The button carries the name for a screen reader; this is for the eye. */}
+                        <span aria-hidden="true" className={`truncate text-center text-[11px] ${on ? 'text-cream' : 'text-dim'}`}>
+                            {preset.name}
+                        </span>
                     </li>
                 );
             })}

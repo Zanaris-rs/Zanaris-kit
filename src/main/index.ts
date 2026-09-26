@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -59,8 +59,8 @@ import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
 import { appearanceView, deleteQuestion } from './appearance';
 import { devBranding } from './branding';
-import { MIME, PICTURE_MAX, PictureStore, pictureType } from './pictures';
-import { presetCards, readPreset, type PresetCard } from './presets';
+import { MIME, PICTURE_MAX, PictureStore } from './pictures';
+import { presetCards, presetFile, readPreset, type PresetCard } from './presets';
 import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
 
 const log = (msg: string): void => console.log(msg);
@@ -823,7 +823,7 @@ ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<b
     return true;
 });
 
-/** The editor's Choose picture…: a dialog here, never a path from the page. The picture is stored at once and answered by name; Save is what keeps it. */
+/** The editor's Choose your own…: a dialog here, never a path from the page. The picture is stored at once and answered by name; Save is what keeps it. */
 ipcMain.handle(IPC.appearanceChoosePicture, async (event): Promise<{ picture: string } | { error: string } | null> => {
     const win = settingsWindowFor(event.sender);
     if (!win) return null;
@@ -2377,13 +2377,18 @@ app.whenReady().then(async () => {
     if (appState.fromFile()) pictures.prune(keptPictures());
     protocol.handle(PICTURE_SCHEME, request => {
         const url = new URL(request.url);
-        const name = decodeURIComponent(url.pathname.slice(1));
+        let name: string;
+        try {
+            name = decodeURIComponent(url.pathname.slice(1));
+        } catch {
+            // A malformed escape names nothing.
+            return new Response(null, { status: 404 });
+        }
         if (url.host === 'preset') {
             // The gallery's thumbnails, by id. Not marked immutable: unlike a stored picture, named by its content, an id's file can change between releases.
-            const bytes = readPreset(PRESET_DIR, name);
-            const type = bytes && pictureType(bytes);
-            if (!bytes || !type) return new Response(null, { status: 404 });
-            return new Response(new Uint8Array(bytes), { headers: { 'content-type': MIME[type], 'x-content-type-options': 'nosniff' } });
+            const preset = presetFile(PRESET_DIR, name);
+            if (!preset) return new Response(null, { status: 404 });
+            return new Response(new Uint8Array(preset.bytes), { headers: { 'content-type': MIME[preset.type], 'x-content-type-options': 'nosniff' } });
         }
         const found = url.host === 'picture' ? pictures.read(name) : null;
         if (!found) return new Response(null, { status: 404 });

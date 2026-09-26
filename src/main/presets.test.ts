@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FITS } from '../shared/themes.ts';
 import { PictureStore, pictureType } from './pictures.ts';
-import { PRESETS, presetCards, readPreset } from './presets.ts';
+import { PRESETS, presetCards, presetFile, readPreset } from './presets.ts';
 
 /** Where the pictures ship from: main reads them at `../../static/pictures` from its bundle, the same folder. */
 const shipped = fileURLToPath(new URL('../../static/pictures/', import.meta.url));
@@ -21,7 +21,9 @@ const inTemp = (use: (dir: string) => void): void => {
 };
 
 test('every preset has its file in static/pictures, and nothing else is there', () => {
-    assert.deepEqual(readdirSync(shipped).sort(), PRESETS.map(p => p.file).sort());
+    // Dotfiles aside: Finder leaves a .DS_Store in any folder it has shown.
+    const files = readdirSync(shipped).filter(file => !file.startsWith('.'));
+    assert.deepEqual(files.sort(), PRESETS.map(p => p.file).sort());
 });
 
 test("each preset's bytes are the type its file's name says", () => {
@@ -61,6 +63,14 @@ test('an id the list does not have reads nothing, however it is shaped', () => {
     for (const id of ['', 'nope', '../package.json', 'title.jpg', 'Title', '__proto__', 'constructor', null, undefined, 7]) {
         assert.equal(readPreset(shipped, id), null, String(id));
     }
+});
+
+test("presetFile answers a preset's bytes and type for the scheme, and nothing for an id the list does not have", () => {
+    const lava = presetFile(shipped, 'lava');
+    assert.equal(lava?.type, 'png');
+    assert.deepEqual(lava?.bytes, readPreset(shipped, 'lava'));
+    assert.equal(presetFile(shipped, 'title')?.type, 'jpg');
+    for (const id of ['nope', '../package.json', 'lava.png']) assert.equal(presetFile(shipped, id), null, id);
 });
 
 test('a preset whose file is missing is left out of what Settings is sent', () => {

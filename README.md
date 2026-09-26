@@ -369,7 +369,10 @@ The client is dressed as the game it launches. The 2004 interface is built from
 warm olive stone: panels around `#443d31`, tabs cut into it at `#342e24`, lists
 recessed to `#37311f`, gold headings, cream text and yellow-green values. Those
 numbers were sampled out of a screenshot of the running client, quantising each
-region so the stone separated from the text, rather than guessed.
+region so the stone separated from the text, rather than guessed. The panels
+sit a little below the client's own panel mid, `#504d3b`–`#565344`: they were
+set for a grain of noise to lighten, and with the grain gone the stone is flat
+and a shade darker than the client's.
 
 Two things carry the period feel, and both are load-bearing rather than
 decorative:
