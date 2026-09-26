@@ -58,7 +58,7 @@ be shown. What a tab close takes with it is `tabs.closingTab`, pure and tested;
 
 Everything else about the layout is `src/main/paneTree.ts`: a tab is a tree of
 leaves and n-ary splits, and one recursive walk turns it into a rect per pane.
-Four properties in there are load-bearing and easy to break —
+Six properties in there are load-bearing and easy to break —
 
 - Shares are distributed by **largest remainder**, so children sum to their
   container exactly. A round per child leaves a hairline of shell showing
@@ -81,21 +81,32 @@ Four properties in there are load-bearing and easy to break —
   window is growing to (`arrangedAt`). Left to `refit`, it would be fitted from
   the last frame's size, the growth would read as a resize, and the game would
   be held at the size the new pane squeezed it to while the window grew around
-  it. A pane **closed** in the game's own row or column gives its room back
-  to the screen (`closeGivingBack`): the window shrinks by the pane and its
-  seam, from that pane's own side, so the game keeps its pixels and stays
-  where it is. A pane closed anywhere else — a column that does not hold the
-  game, say — costs the window nothing, its room going to its siblings as it
-  always did. Only the explicit close does this — a drop also closes a pane
-  on its way to moving it, and must never resize the window, so `closePane`
-  is untouched. A **setup** opened from the tab bar's Setups menu, when it
-  holds the game and carries a size, sizes the window to hold the game at its
-  pixels and every other pane at the ones the setup was saved with
-  (`arrangeForGame`, through `sizeWindow`): it grows as far as its display
+  it.
+- A pane **closed** in the game's own row or column **gives its room back to
+  the screen** (`closeGivingBack`): the window shrinks by the pane and its
+  seam, from that pane's own side, as far as it may — not at all while it is
+  maximised or full screen, and no further than the panes left can be drawn
+  at. Where it shrinks the whole way, the game keeps its pixels and stays
+  where it is; whatever it cannot give up is shared by the closed pane's
+  siblings as `closePane` shares it, and the game takes its part. When it
+  shrinks, the tree is recorded as arranged at the smaller size
+  (`arrangedAt`). A pane closed anywhere else — a column that does not hold
+  the game, say — costs the window nothing, its room going to its siblings as
+  it always did. Only the explicit close does this — a drop also closes a pane
+  on its way to moving it, and must never resize the window, so `closePane` is
+  untouched.
+- A **setup** opened from the tab bar's Setups menu, when it holds the game
+  and carries a size, **sizes the window around the game** (`arrangeForGame`,
+  through `sizeWindow`): the game at its pixels and every other pane at the
+  ones the setup was saved with. The window grows as far as its display
   allows and shrinks as far as the tree's floor, and the tree is recorded as
-  arranged at that size, as an added pane's is. One with no game or no size
-  is fitted to the tab by its fractions and leaves the window alone. Nothing
-  else resizes the window — not Reset Game Size, not a drop.
+  arranged at that size, as an added pane's is. A maximised or full-screen
+  window is not resized at all; the tree is fitted to it from that size, as a
+  resize is, holding the game. One with no game or no size is fitted to the
+  tab by its fractions and leaves the window alone.
+
+Those three are the only things that resize the window — not Reset Game Size,
+not a drop.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file
 carries tool ids between people — that is the whole point of saving one — and
