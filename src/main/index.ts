@@ -57,7 +57,7 @@ import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
-import { appearanceView, deleteQuestion } from './appearance';
+import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing, type Editing } from './appearance';
 import { devBranding } from './branding';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
 import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
@@ -182,6 +182,14 @@ const catalog = new Catalog(join(userData, 'servers.json'), { yourWorldRevision:
 const appState = new AppState(join(userData, 'state.json'));
 /** The pictures custom themes carry, by content. See `pictures.ts`. */
 const pictures = new PictureStore(join(userData, 'backgrounds'));
+
+/**
+ * The theme open in Settings' editor, worn by every window until the editor
+ * closes (`appearance.lookFor`). Held here only and never written: a draft is
+ * kept by Save, and ends with Save, Cancel, Delete, Settings closing, or
+ * Settings' page loading again.
+ */
+let editing: Editing | null = null;
 
 /** Every picture a custom theme names: what pruning keeps. */
 function keptPictures(): Set<string> {
@@ -450,7 +458,7 @@ const windows = new ServerWindows(
                     const state = appState.timers();
                     return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
                 },
-                theme: () => themeFor(appState.appearance(), spec.server.id)
+                theme: () => lookFor(appState.appearance(), spec.server.id, editing)
             }
         );
         serverWindows.set(spec.id, sw);
@@ -478,16 +486,30 @@ function openServer(server: ServerDef): ServerWindow {
 
 // ── settings ──────────────────────────────────────────────────────────────
 
-/** The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this only builds it. */
+/**
+ * The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this
+ * only builds it. `onClosed()` runs first so the slot is empty, and
+ * `endEditing`'s push goes nowhere.
+ */
 const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
-    createSettingsWindow({ anchor, onClosed, background: themeFor(appState.appearance(), null).colors.window })
+    createSettingsWindow({
+        anchor,
+        onClosed: () => {
+            onClosed();
+            endEditing();
+        },
+        background: lookFor(appState.appearance(), null, editing).colors.window,
+        closeQuestion: () => closeQuestion(editing, quitting),
+        onDiscard: endEditing,
+        onReload: endEditing
+    })
 );
 
 /** What Settings draws, built when asked for, like a shell's state. */
 function settingsState(): SettingsState {
     return {
         servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
-        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list() })
+        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list(), editing })
     };
 }
 
@@ -497,16 +519,36 @@ function pushSettings(): void {
 }
 
 /**
+ * Every game window restyled to what it now wears, and Settings' own ground
+ * with it; Settings' page follows when it is next pushed its state. All of
+ * them, since working out which ones moved would only save repainting a few
+ * in the colours they already wear.
+ */
+function restyle(): void {
+    for (const sw of serverWindows.values()) sw.themeChanged();
+    settings.current()?.setBackground(lookFor(appState.appearance(), null, editing).colors.window);
+}
+
+/**
  * After the app theme or a server's changes. Every window restyles to what it
- * now resolves to — working out which ones moved would only save repainting a
- * few in the colours they already wear — Settings is sent its state, and the
- * menu is rebuilt so View > Server Theme's radio agrees.
+ * now resolves to, Settings is sent its state, and the menu is rebuilt so
+ * View > Server Theme's radio agrees.
  */
 function appearanceChanged(): void {
-    for (const sw of serverWindows.values()) sw.themeChanged();
-    settings.current()?.setBackground(themeFor(appState.appearance(), null).colors.window);
+    restyle();
     pushSettings();
     installAppMenu();
+}
+
+/**
+ * Ends the draft, when there is one: every window goes back to what it wears.
+ * The menu is left alone, since a draft never changed what anything wears.
+ */
+function endEditing(): void {
+    if (!editing) return;
+    editing = null;
+    restyle();
+    pushSettings();
 }
 
 /**
@@ -750,6 +792,25 @@ ipcMain.handle(IPC.appearanceServer, (event, serverId: unknown, id: unknown) => 
     appearanceChanged();
 });
 
+/**
+ * The editor's draft, reported on every change while it is open and as null
+ * when it closes. Every window wears it until then. The menu is not rebuilt:
+ * View > Server Theme says what each server wears, which a draft never
+ * changes, and a colour well reports on every step of a drag.
+ */
+ipcMain.handle(IPC.appearanceEditing, (event, raw: unknown) => {
+    if (!settings.isSender(event.sender.id)) return;
+    if (raw === null) {
+        endEditing();
+        return;
+    }
+    const next = readEditing(raw);
+    if (!next) return;
+    editing = next;
+    restyle();
+    pushSettings();
+});
+
 /** Settings' window, or null when a call came from anywhere else: every handler below writes, asks or opens a dialog, and only Settings may. */
 function settingsWindowFor(sender: WebContents): BrowserWindow | null {
     return settings.isSender(sender.id) ? (settings.current()?.window ?? null) : null;
@@ -769,8 +830,10 @@ function placeTheme(name: string, except: string | null): { id: string; name: st
  * The editor's Save. Read as strictly as a stored theme; a new theme gets an
  * id, and any theme a name no other has. Windows wearing it restyle, and a
  * picture chosen and then replaced, or chosen in an editor that was then
- * cancelled, is pruned here. Save changes what nothing wears: a new theme is
- * chosen from its card like any other.
+ * cancelled, is pruned here. Save makes the theme the app theme and ends the
+ * draft (Decision 2 of the 2026-09-26 spec). Every window has been wearing
+ * it, and one that flipped back the moment it was kept would read as Save
+ * undoing the work. A server with its own theme goes back to that one.
  */
 ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } | { error: string } => {
     if (!settings.isSender(event.sender.id)) return { error: 'Only Settings saves themes.' };
@@ -783,15 +846,22 @@ ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } |
     const placed = placeTheme(draft.name, draft.id);
     try {
         if (!appState.saveCustomTheme({ ...placed, colors: draft.colors, background: draft.background })) return { error: TOO_MANY_THEMES };
+        appState.setTheme(placed.id);
     } catch (err) {
         log(`[main] could not save a theme: ${(err as Error).message}`);
         return { error: "Couldn't save the theme: the kit's settings file couldn't be written." };
     }
+    editing = null;
     pictures.prune(keptPictures());
     appearanceChanged();
     return { id: placed.id };
 });
 
+/**
+ * The editor's Delete, after asking. Only the editor offers it, on the theme
+ * it holds, so a delete that goes ends the draft, and ends it before the
+ * prune: a draft is never worn over a picture that is already gone.
+ */
 ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<boolean> => {
     const win = settingsWindowFor(event.sender);
     if (!win || typeof id !== 'string') return false;
@@ -813,6 +883,7 @@ ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<b
         await dialog.showMessageBox(win, { type: 'warning', message: "Couldn't delete the theme.", detail: "The kit's settings file couldn't be written." });
         return false;
     }
+    editing = null;
     pictures.prune(keptPictures());
     appearanceChanged();
     return true;
@@ -885,21 +956,27 @@ ipcMain.handle(IPC.appearanceImportTheme, async (event): Promise<{ name: string 
     }
 });
 
-/** Export…: one of the player's themes as a file, its picture inline. */
-ipcMain.handle(IPC.appearanceExportTheme, async (event, id: unknown): Promise<string | null> => {
+/**
+ * Export…: the editor's theme as a file, its picture inline — saved or not,
+ * since the file is whatever the editor holds. Read as strictly as Save
+ * reads it.
+ */
+ipcMain.handle(IPC.appearanceExportTheme, async (event, raw: unknown): Promise<string | null> => {
     const win = settingsWindowFor(event.sender);
-    if (!win || typeof id !== 'string') return null;
-    const theme = appState.appearance().custom.find(t => t.id === id);
-    if (!theme) return 'That theme is no longer there.';
+    if (!win) return null;
+    const draft = readThemeDraft(raw);
+    if (!draft) return "That theme can't be exported: its name or one of its colours isn't one the kit can keep.";
+    const picture = draft.background ? pictures.read(draft.background.picture) : null;
+    if (draft.background && picture === null) return 'Its picture is no longer there. Choose it again.';
     const { canceled, filePath } = await dialog.showSaveDialog(win, {
         title: 'Export theme',
         buttonLabel: 'Export',
-        defaultPath: join(app.getPath('documents'), themeFileName(theme.name)),
+        defaultPath: join(app.getPath('documents'), themeFileName(draft.name)),
         filters: [{ name: 'Zanaris Kit themes', extensions: [THEME_FILE_EXTENSION] }]
     });
     if (canceled || !filePath) return null;
     try {
-        writeFileSync(filePath, writeThemeFile(theme, theme.background ? pictures.read(theme.background.picture) : null));
+        writeFileSync(filePath, writeThemeFile(draft, picture));
         return null;
     } catch (err) {
         log(`[main] could not write ${filePath}: ${(err as Error).message}`);

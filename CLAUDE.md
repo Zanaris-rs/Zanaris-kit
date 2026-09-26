@@ -114,6 +114,11 @@ opening it again brings the open one forward, because two would be two
 copies of one thing. It has no parent window, since a parent would close it
 along with a game window, and it never holds up a quit.
 
+Closing Settings while its theme editor holds changes asks first, Keep
+Editing or Discard, since every window wearing the draft goes back with it
+(`appearance.closeQuestion`). Quitting never asks, so Settings still never
+holds up a quit.
+
 It is a window rather than a pane or a popover because the game and pages
 are native views stacked above the shell's HTML: anything the shell drew
 over them would sit underneath. It takes its state on its own channel,
@@ -417,6 +422,13 @@ of them. A player's own theme can be anything: the editor shows its warnings,
 and saving is theirs. Built-in ids sit in `state.json` and theme files, so one
 once shipped is never renamed.
 
+**A draft is worn by every window.** While Settings' editor is open, Settings
+and every game window wear the theme being edited, whatever each would
+otherwise wear (`appearance.lookFor`). Main holds it in memory only, never in
+`state.json`. It ends on Save, which also makes it the app theme, on Cancel
+or Delete, on Settings closing, and on Settings' page loading again. A new
+place a draft could outlive its editor needs `endEditing` too.
+
 **Every image the renderer draws is a file.** The shell's CSP takes images
 from `'self'` and, for theme pictures, `zanaris-bg:`, and refuses a `data:`
 one with nothing on screen to say so. The grain was two `data:` SVGs, and
@@ -457,10 +469,11 @@ file — shown in the kit's own pages. Keep these true:
   over a 13 MB string overflows the regex engine's stack.
 - **A picture no theme names is pruned** at launch and after a save or a
   delete. The editor is the only place a picture is chosen, and it saves or
-  cancels before anything else in Settings can prune. At launch only when
-  `appState.fromFile()`: a broken `state.json` is set aside with the themes
-  that name the pictures, and pruning against the empty state that replaced
-  it would delete every one.
+  cancels before anything else in Settings can prune. Save and Delete end the
+  draft before they prune, so no window wears a picture that has gone. At
+  launch only when `appState.fromFile()`: a broken `state.json` is set aside
+  with the themes that name the pictures, and pruning against the empty
+  state that replaced it would delete every one.
 
 ## Commands
 

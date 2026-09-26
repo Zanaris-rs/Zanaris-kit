@@ -203,7 +203,7 @@ export default function ThemeEditor({ initial, onClose }: { initial: ThemeDraft;
         });
 
     const exportTheme = (): Promise<void> =>
-        run(window.zanaris.appearance.exportTheme(initial.id ?? ''), refused => {
+        run(window.zanaris.appearance.exportTheme(draft), refused => {
             if (refused !== null) setSaid({ text: refused, alert: true });
         });
 

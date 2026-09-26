@@ -12,7 +12,7 @@ import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 import type { ServersView } from '../main/servers.ts';
-import type { AppearanceView } from '../main/appearance.ts';
+import type { AppearanceView, Editing } from '../main/appearance.ts';
 import type { ThemeDraft, ThemeLook } from './themes';
 
 export const IPC = {
@@ -93,7 +93,8 @@ export const IPC = {
     appearanceDeleteCustom: 'zanaris:appearance-delete-custom',
     appearanceChoosePicture: 'zanaris:appearance-choose-picture',
     appearanceImportTheme: 'zanaris:appearance-import-theme',
-    appearanceExportTheme: 'zanaris:appearance-export-theme'
+    appearanceExportTheme: 'zanaris:appearance-export-theme',
+    appearanceEditing: 'zanaris:appearance-editing'
 } as const;
 
 /**
@@ -165,7 +166,12 @@ export interface ShellState {
     sharingWithoutPane: boolean;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
-    /** The look this window wears — its server's theme, or the app's — palette and picture. Resolved in main, so the shell only applies it. */
+    /**
+     * The look this window wears — the theme being edited while Settings'
+     * editor is open, and otherwise its server's theme or the app's — palette
+     * and picture. Resolved in main (`appearance.lookFor`), so the shell only
+     * applies it.
+     */
     theme: ThemeLook;
 }
 
@@ -420,7 +426,13 @@ export interface ZanarisApi {
         choosePicture(): Promise<{ picture: string } | { error: string } | null>;
         /** A theme file, picked in a dialog of main's, added as a new theme: its name, or why not, or null when cancelled. */
         importTheme(): Promise<{ name: string } | { error: string } | null>;
-        /** Writes one of the player's themes to a file they pick. Null when written or cancelled; otherwise why not. */
-        exportTheme(id: string): Promise<string | null>;
+        /** Writes the editor's theme, saved or not, to a file the player picks. Null when written or cancelled; otherwise why not. */
+        exportTheme(draft: ThemeDraft): Promise<string | null>;
+        /**
+         * The theme being edited, reported on every change while the editor
+         * is open and as null when it closes. Every window wears it until
+         * then; nothing is kept until Save. Settings only.
+         */
+        editing(report: Editing | null): Promise<void>;
     };
 }

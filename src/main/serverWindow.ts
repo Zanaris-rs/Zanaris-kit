@@ -9,7 +9,7 @@ import type { YourWorldView } from '../shared/yourworld';
 import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
-import type { Theme } from '../shared/themes';
+import type { ThemeLook } from '../shared/themes';
 import type { ListedTimer } from './timers/defs';
 import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
@@ -183,12 +183,14 @@ export interface ServerWindowDeps {
      */
     timers: () => { listed: ListedTimer[]; customsFull: boolean };
     /**
-     * The theme this window wears: its server's own, or the app's. A getter:
-     * either can change while the window is open, and main calls
-     * `themeChanged` when one does. It reads the app's state and nothing of
-     * this window's — never `state()`, which reads it.
+     * The look this window wears: the theme being edited while Settings'
+     * editor is open, and otherwise its server's own or the app's
+     * (`appearance.lookFor`). A getter: any of those can change while the
+     * window is open, and main calls `themeChanged` when one does. It reads
+     * the app's state and nothing of this window's — never `state()`, which
+     * reads it.
      */
-    theme: () => Theme;
+    theme: () => ThemeLook;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -269,7 +271,7 @@ export interface ServerWindow extends ServerWindowHandle {
     state(): ShellState;
     /** Sends the current state to the shell. For app-wide changes main hears about, not the window. */
     pushState(): void;
-    /** The app theme or this server's changed: repaint the native grounds and send the shell its new palette. Nothing reloads. */
+    /** What this window wears changed — the app theme, this server's, or the theme being edited: repaint the native grounds and send the shell its new palette. Nothing reloads. */
     themeChanged(): void;
     /** Resolves when the most recent load finished, or failed over to the offline page. */
     whenGameLoaded(): Promise<LoadResult>;

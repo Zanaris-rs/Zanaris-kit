@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, type NativeImage } from 'electron';
+import { BrowserWindow, dialog, screen, type NativeImage } from 'electron';
 import { IPC, type Rect, type SettingsState } from '../shared/ipc';
 import { loadShell, preloadPath } from './renderer';
 import { paintsFrames } from './serverWindow';
@@ -11,7 +11,7 @@ export interface SettingsWindow extends SettingsHandle {
     readonly window: BrowserWindow;
     /** Sends Settings its state. A no-op once the page is gone. */
     push(state: SettingsState): void;
-    /** The app theme changed: the window's own ground follows, as a game window's does in `themeChanged`. */
+    /** What Settings wears changed — the app theme, or the theme being edited: the window's own ground follows, as a game window's does in `themeChanged`. */
     setBackground(colour: string): void;
     /** Resolves once the page has loaded, for capture. */
     readonly loaded: Promise<void>;
@@ -28,17 +28,30 @@ export interface SettingsWindow extends SettingsHandle {
  *
  * No parent: parented to a game window it would close with that window, and
  * it belongs to no one window.
+ *
+ * `closeQuestion` is what closing asks first, or null to close at once;
+ * `onDiscard` runs when the answer is Discard, before the window closes.
+ * `onReload` runs each time the page finishes loading, the first time
+ * included.
  */
-export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () => void; background: string }): SettingsWindow {
+export function createSettingsWindow(opts: {
+    anchor: Rect | null;
+    onClosed: () => void;
+    background: string;
+    closeQuestion: () => { message: string; detail: string } | null;
+    onDiscard: () => void;
+    onReload: () => void;
+}): SettingsWindow {
     const display = opts.anchor ? screen.getDisplayMatching(opts.anchor) : screen.getPrimaryDisplay();
     const win = new BrowserWindow({
         ...settingsBounds(opts.anchor, SIZE, display.workArea),
         minWidth: 380,
         minHeight: 420,
         title: 'Settings',
-        // The app theme's ground, which Settings wears: what shows before the
-        // page draws, and at an edge a resize has not yet repainted.
-        // `setBackground` keeps it to the theme after a change.
+        // The ground of what Settings wears — the app theme, or the theme
+        // being edited: what shows before the page draws, and at an edge a
+        // resize has not yet repainted. `setBackground` keeps it to the theme
+        // after a change.
         backgroundColor: opts.background,
         show: false,
         // No initial pin: `openSettings` in index.ts sets it right after this
@@ -64,6 +77,37 @@ export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () =
     win.on('page-title-updated', event => event.preventDefault());
     win.once('ready-to-show', () => win.show());
     win.on('closed', opts.onClosed);
+    // Asked here and decided in `appearance.closeQuestion`: a draft with
+    // changes asks before it is thrown away, since every window reverts with
+    // it. Prevented synchronously, as `close` must be, and closed again once
+    // the answer is Discard. A close while the question is up — Cmd/Ctrl+W
+    // again — is refused rather than asked twice.
+    let discarded = false;
+    let asking = false;
+    win.on('close', event => {
+        if (discarded) return;
+        if (asking) {
+            event.preventDefault();
+            return;
+        }
+        const question = opts.closeQuestion();
+        if (!question) return;
+        event.preventDefault();
+        asking = true;
+        void dialog
+            .showMessageBox(win, { type: 'question', buttons: ['Keep Editing', 'Discard'], defaultId: 0, cancelId: 0, message: question.message, detail: question.detail })
+            .then(({ response }) => {
+                asking = false;
+                if (response !== 1 || win.isDestroyed()) return;
+                discarded = true;
+                opts.onDiscard();
+                win.close();
+            });
+    });
+    // A page that loads again has no editor open, so a draft left behind would
+    // be worn by every window with nothing on screen to end it: Vite's full
+    // reload in development, or a reload from the developer tools.
+    win.webContents.on('did-finish-load', opts.onReload);
     // Read now: once the window closes its contents are destroyed and the id with them.
     const contentsId = win.webContents.id;
     const loaded = new Promise<void>(resolve => win.webContents.once('did-finish-load', () => resolve()));
