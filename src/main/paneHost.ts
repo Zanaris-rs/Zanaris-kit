@@ -120,9 +120,10 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     /**
      * Until when a page's renderer going is one the kit asked for: a reload
      * of a hung page kills its renderer first, which reports as gone, and
-     * that is not a crash to say anything about.
+     * that is not a crash to say anything about. Once only, so a fresh
+     * renderer that crashes for real inside those seconds is still reported.
      */
-    const recovering = new Map<string, number>();
+    const expectGone = new Map<string, number>();
     let rects = new Map<string, Rect>();
     /** The rect the active tab was last laid out in. A drop is judged against it, since whether a pane can be halved depends on its size. */
     let bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -227,7 +228,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         pageViews.delete(paneId);
         pageStates.delete(paneId);
         pageTrouble.delete(paneId);
-        recovering.delete(paneId);
+        expectGone.delete(paneId);
         if (!deps.window.isDestroyed()) deps.window.contentView.removeChildView(view);
         if (!view.webContents.isDestroyed()) view.webContents.close();
     }
@@ -284,25 +285,31 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.log(`pane ${paneId} could not load ${failed}: ${description} (${code})`);
         });
         wc.on('focus', () => focus(paneId));
-        const troubled = (trouble: PaneTrouble | null): void => {
-            if (trouble) pageTrouble.set(paneId, trouble);
-            else if (!pageTrouble.delete(paneId)) return;
+        const troubled = (trouble: PaneTrouble): void => {
+            pageTrouble.set(paneId, trouble);
             place();
             deps.touched();
         };
         wc.on('render-process-gone', (_event, details) => {
             if (details.reason === 'clean-exit' || pageViews.get(paneId) !== view) return;
-            if ((recovering.get(paneId) ?? 0) > Date.now()) return;
+            const expected = expectGone.get(paneId) ?? 0;
+            expectGone.delete(paneId);
+            if (expected > Date.now()) return;
             deps.log(`pane ${paneId}'s page stopped: ${details.reason}`);
             troubled({ kind: 'crashed', reason: details.reason });
         });
+        // No `responsive` handler, unlike the game's. Hiding a page is itself
+        // what Chromium answers with `responsive` — a hidden view's hang timer
+        // is stopped, and stopping it reports the page as answering again — so
+        // a notice cleared by it would clear the moment it went up, and show
+        // the hung page again. A page's notice ends with Wait or a reload. The
+        // game keeps its handler: its view has `backgroundThrottling: false`,
+        // which spares it being treated as hidden (the reason a game plays on
+        // in a background tab), so its `responsive` means what it says.
         wc.on('unresponsive', () => {
             if (pageTrouble.has(paneId)) return;
             deps.log(`pane ${paneId}'s page stopped responding`);
             troubled({ kind: 'unresponsive' });
-        });
-        wc.on('responsive', () => {
-            if (pageTrouble.get(paneId)?.kind === 'unresponsive') troubled(null);
         });
         // A right-click on a page never reaches the shell — this view is
         // stacked above it — so the pane menu is raised from here instead, with
@@ -648,7 +655,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                 // A hung renderer is killed before it is reloaded, as Electron
                 // documents: a reload asked of it would wait on the hang.
                 if (trouble.kind === 'unresponsive') {
-                    recovering.set(paneId, Date.now() + 5_000);
+                    expectGone.set(paneId, Date.now() + 5_000);
                     view.webContents.forcefullyCrashRenderer();
                 }
                 view.webContents.reload();

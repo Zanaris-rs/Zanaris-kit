@@ -573,14 +573,17 @@ export default function Shell(): ReactNode {
                          * so the two read as the same object: a bevelled panel
                          * with its list sunk into it. A game or page pane keeps
                          * the ink, since a native view covers all of it but
-                         * the header.
+                         * the header — or, while it has stopped, the notice
+                         * drawn where the hidden view was, which reads on ink
+                         * as the view's own ground.
                          */
                         className={`flex flex-col overflow-hidden bg-ink${pane.content.kind === 'tool' || pane.content.kind === 'empty' ? ' tile' : ''}`}
                     >
                         {/*
                          * Every pane, including the two whose bodies are holes
                          * for a native view: the header is the only part of a
-                         * game or page pane the shell draws, and the only place
+                         * running game or page pane the shell draws (one that
+                         * has stopped also gets its notice), and the only place
                          * either can say what it is — and so the only place
                          * any pane can say it is the focused one. The dot is
                          * shown only when there is a choice: a tab's lone pane

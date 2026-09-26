@@ -636,9 +636,12 @@ export class IrcClient {
 
     /**
      * The server has banned us — a K-, G-, Z- or D-line, or a 465. The pane
-     * says so with the reason: the ERROR's when it has one, since a 465 before
-     * it is often a network's standing message ("email us for help") and the
-     * ERROR says why. Both stay in Status as they were written.
+     * says so with the reason: the ERROR's when it has one and arrives in the
+     * same read as the 465, since a 465 is often a network's standing message
+     * ("email us for help") and the ERROR says why. The service hangs up at
+     * the end of the read that turned us away, so an ERROR in a later one is
+     * never heard, and the 465's reason stands. Whatever arrived stays in
+     * Status as it was written.
      */
     private banned(reason: string, fromError: boolean): void {
         const why = reason.trim().replace(/[.\s]+$/, '');

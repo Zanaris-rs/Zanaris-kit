@@ -818,13 +818,16 @@ in `shared/paneNotice.ts`), with a way back beside it:
   says a reload is a fresh login, because it is. Closing a crashed game's pane
   does not ask, since there is no login left to lose.
 - One that stops responding is hidden the same way, with **Wait**, which shows
-  it again, and a reload, which kills the hung renderer first. It clears itself
-  if the page comes back.
+  it again, and a reload, which kills the hung renderer first. The game's
+  clears itself if the game comes back; a page's waits for Wait, since hiding a
+  page is itself what makes Chromium call it responsive again.
 - A tool that throws while drawing shows its own notice with **Open again** and
   **Close pane**, rather than taking the tab bar and every other pane with it.
 - The shell and Settings are reloaded by themselves when their renderer goes,
   up to three times a minute; the game under a shell keeps running through it.
-  A page-wide throw shows the same notice over the whole window, with Reload.
+  A page-wide throw shows the same notice with Reload — across the whole of
+  Settings, and in a game window in the tab bar's strip, the one part of it no
+  game or page view ever covers.
 
 ## Running it
 

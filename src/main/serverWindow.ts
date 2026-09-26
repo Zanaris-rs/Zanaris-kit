@@ -399,8 +399,13 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * frame or an empty pane — the layout invariant's "obviously suspended".
      */
     let gameTrouble: PaneTrouble | null = null;
-    /** Until when the game's renderer going is one the kit asked for, by killing a hung one to reload it. */
-    let recoveringGameUntil = 0;
+    /**
+     * The game's renderer is about to go because the kit killed a hung one to
+     * reload it, so the next `render-process-gone` is not a crash. Once only,
+     * and only within a few seconds: a fresh renderer that then crashes for
+     * real is reported like any other.
+     */
+    let expectGameGoneUntil = 0;
     let failedOver = false;
     let loadWaiter: ((result: LoadResult) => void) | null = null;
     let loadPromise: Promise<LoadResult> = Promise.resolve('loaded');
@@ -508,6 +513,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     win.contentView.addChildView(shellView);
+    // A shell that goes mid-drag is reloaded (`loadShell`) with no drag of its
+    // own to end, and every native view stays hidden until one ends — the
+    // game out of sight with nothing saying why. So its going ends the drag.
+    shellView.webContents.on('render-process-gone', () => host.endDrag());
     gameView = makeGameView();
 
     /**
@@ -552,16 +561,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function worldsView(): WorldsView | null {
         if (!worldSwitch || !deps.worlds || !server.worlds) return null;
         return { ...deps.worlds.view(), current: worldSwitch.world, detail: worldSwitch.detail, showDetail: server.worlds.detail };
-    }
-
-    /** Which tools are placed in a pane in the active tab, so the Worlds probe runs only while there is a list to show. */
-    function openTools(): ToolId[] {
-        const tree = host.tree();
-        const placed = paneIds(tree)
-            .map(id => contentOf(tree, id))
-            .filter(content => content?.kind === 'tool')
-            .map(content => (content as { kind: 'tool'; tool: ToolId }).tool);
-        return tools.filter(id => placed.includes(id));
     }
 
     /** Whether anyone with the link can reach this world right now. Before `live` the link does not work yet, so there is nothing to mark. */
@@ -666,10 +665,19 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     let panelProbe: NodeJS.Timeout | null = null;
 
-    /** The whole list is probed only while a Worlds pane is open somewhere in this window: once as it opens, then every `PROBE_EVERY_MS`. */
+    /**
+     * The whole list is probed only while a Worlds pane is open somewhere in
+     * this window, in any tab: once as it opens, then every `PROBE_EVERY_MS`.
+     * Any tab rather than the one in front, so switching tabs neither starts a
+     * pass nor leaves a Worlds pane unmeasured when its tab comes back.
+     */
     function syncPanelProbe(): void {
         const worlds = deps.worlds;
-        const wanted = openTools().includes('worlds') && worldSwitch !== null && worlds !== null;
+        const anywhere = host.trees().some(tree => paneIds(tree).some(id => {
+            const content = contentOf(tree, id);
+            return content?.kind === 'tool' && content.tool === 'worlds';
+        }));
+        const wanted = anywhere && worldSwitch !== null && worlds !== null;
         if (wanted && worlds && !panelProbe) {
             const probeAll = (): void => {
                 void worlds.probeAll(worldSwitch!.detail);
@@ -1036,11 +1044,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             return;
         }
         if (gameTrouble.kind === 'unresponsive') {
-            recoveringGameUntil = Date.now() + 5_000;
+            expectGameGoneUntil = Date.now() + 5_000;
             gameView.webContents.forcefullyCrashRenderer();
         }
         deps.log(`${tag} reloading the game after it stopped`);
-        gameTrouble = null;
+        // The load below ends the trouble, as any load into the view does.
         if (single) {
             // Forgotten, both, so the page the world is on is loaded again
             // rather than recognised as already showing.
@@ -1050,6 +1058,17 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         } else {
             void loadGame(expected);
         }
+    }
+
+    /**
+     * A load into the game view ends whatever it was in trouble with: a
+     * reload from the notice, and equally a world picked in Worlds or Your
+     * world's page changing, either of which would otherwise load into a view
+     * still hidden under "The game stopped".
+     */
+    function troubleEnds(): void {
+        if (!gameTrouble) return;
+        gameTrouble = null;
         applyLayout();
     }
 
@@ -1287,6 +1306,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * load's result rather than left hanging.
      */
     function loadGame(url: string): Promise<LoadResult> {
+        troubleEnds();
         expected = url;
         failedOver = false;
         gameLoadPending = true;
@@ -1337,6 +1357,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // did-finish-load settles nothing, so the waiter would wait forever.
         if (gameLoadPending) settleLoad('failed');
         failedOver = true;
+        troubleEnds();
         void gameView?.webContents.loadFile(STARTING_PAGE, { query });
     }
     /** The query of the starting page last loaded, so an identical one is not loaded again. */
@@ -1383,9 +1404,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // until the player chooses what to do (`paneNotice`). Only this view's,
         // and only while it is still the window's game.
         wc.on('render-process-gone', (_event, details) => {
-            if (details.reason === 'clean-exit' || view !== gameView || Date.now() < recoveringGameUntil) return;
+            if (details.reason === 'clean-exit' || view !== gameView) return;
+            if (Date.now() < expectGameGoneUntil) {
+                expectGameGoneUntil = 0;
+                return;
+            }
             deps.log(`${tag} the game stopped: ${details.reason}`);
             if (gameLoadPending) settleLoad('failed');
+            // The login went with the renderer, and its idle timer with it.
+            clocks.gameGone();
             setGameTrouble({ kind: 'crashed', reason: details.reason });
         });
         wc.on('unresponsive', () => {
