@@ -92,6 +92,7 @@ export const IPC = {
     appearanceSaveCustom: 'zanaris:appearance-save-custom',
     appearanceDeleteCustom: 'zanaris:appearance-delete-custom',
     appearanceChoosePicture: 'zanaris:appearance-choose-picture',
+    appearancePresetPicture: 'zanaris:appearance-preset-picture',
     appearanceImportTheme: 'zanaris:appearance-import-theme',
     appearanceExportTheme: 'zanaris:appearance-export-theme'
 } as const;
@@ -437,6 +438,8 @@ export interface ZanarisApi {
         deleteCustom(id: string): Promise<boolean>;
         /** A picture from a file, picked in a dialog of main's and stored: its name — a hash, never a path — or why not, or null when cancelled. */
         choosePicture(): Promise<{ picture: string } | { error: string } | null>;
+        /** One of the kit's own pictures, by its id, stored as a chosen file is: its name, or why not. Null from anywhere but Settings. */
+        presetPicture(id: string): Promise<{ picture: string } | { error: string } | null>;
         /** A theme file, picked in a dialog of main's, added as a new theme: its name, or why not, or null when cancelled. */
         importTheme(): Promise<{ name: string } | { error: string } | null>;
         /** Writes one of the player's themes to a file they pick. Null when written or cancelled; otherwise why not. */

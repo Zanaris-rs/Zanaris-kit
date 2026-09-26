@@ -16,6 +16,7 @@ import {
     isThemeId,
     newCustomId,
     pictureUrl,
+    presetUrl,
     readBackground,
     readColors,
     readCustomTheme,
@@ -166,6 +167,8 @@ test('themeVars names every token as the variable styles.css reads, and a look w
     const vars = themeVars({ colors: stone, background: null });
     for (const token of THEME_TOKENS) assert.equal(vars[`--color-${token}`], stone[token]);
     assert.equal(vars['--picture'], 'none');
+    // The tokens and the picture, and nothing else: the stone has no grain for a look to switch.
+    assert.deepEqual(Object.keys(vars).sort(), [...THEME_TOKENS.map(token => `--color-${token}`), '--picture', '--picture-repeat', '--picture-size'].sort());
 });
 
 test('with a picture, the surfaces let it through by show, and edges, text and window stay solid', () => {
@@ -189,6 +192,10 @@ test('with a picture, the surfaces let it through by show, and edges, text and w
 
 test('pictureUrl is the private scheme main serves', () => {
     assert.equal(pictureUrl(PICTURE), `zanaris-bg://picture/${PICTURE}`);
+});
+
+test("presetUrl is the same scheme's host for the kit's own pictures, by id", () => {
+    assert.equal(presetUrl('lava'), 'zanaris-bg://preset/lava');
 });
 
 test('newCustomId never hands out one already taken', () => {

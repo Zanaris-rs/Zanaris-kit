@@ -48,7 +48,7 @@ const BUTTON: CSSProperties = { height: 22, width: 24 };
 /**
  * The focused pane's mark. A disc rather than a pixel square, because at 6px a
  * square reads as a stray glyph beside pixel type, and it carries the same hard
- * black shadow the stone puts under every letter so it sits on the grain the
+ * black shadow the stone puts under every letter so it sits on the stone the
  * way the name beside it does.
  */
 const DOT: CSSProperties = { width: 6, height: 6, boxShadow: '1px 1px 0 rgba(0, 0, 0, 0.78)' };

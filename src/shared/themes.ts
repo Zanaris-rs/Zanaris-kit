@@ -195,10 +195,8 @@ const TEXT: readonly ThemeToken[] = ['cream', 'dim', 'faint'];
  * replacing the hue keeps the small differences between stone's own tokens,
  * so the rule applied to the reference gives stone back exactly.
  *
- * Lightness stays stone's, token by token. That keeps the grain's
- * compensation true — each base sits below its sampled mid by what the
- * overlay blend adds back — and keeps contrast close to stone's by
- * construction; `themes.test.ts` is what holds it. A place darker than the
+ * Lightness stays stone's, token by token, which keeps contrast close to
+ * stone's by construction; `themes.test.ts` is what holds it. A place darker than the
  * reference darkens the frame by that much, and a lighter one never lightens
  * it, since the black glyph shadow needs a dark ground.
  *
@@ -460,12 +458,17 @@ export function contrastWarnings(colors: ThemeColors): string[] {
 
 // ── putting a look on a page ──────────────────────────────────────────────
 
-/** The private scheme main serves stored pictures on, to the kit's own pages only. */
+/** The private scheme main serves stored pictures on, and the kit's own, to the kit's own pages only. */
 export const PICTURE_SCHEME = 'zanaris-bg';
 
 /** Where the page asks for a stored picture. */
 export function pictureUrl(picture: string): string {
     return `${PICTURE_SCHEME}://picture/${picture}`;
+}
+
+/** Where the page asks for one of the kit's own pictures, by its id: the editor's gallery draws its thumbnails from here. */
+export function presetUrl(id: string): string {
+    return `${PICTURE_SCHEME}://preset/${id}`;
 }
 
 /**

@@ -44,11 +44,11 @@ const LAST = 'pr-2';
 /*
  * The header stays put while the rows scroll under it. It carries its own
  * background because a sticky row is painted over the ones passing beneath
- * it — flat well rather than the stone's grain, which is a 70px tile that
- * cannot be lined up with the scrolled copy behind it anyway, and at this
- * height nobody can tell.
+ * it: the well's colour, on the `thead` rather than each cell, so it is one
+ * band with no seam between columns.
  */
-const HEAD = `${CELL} sticky top-0 bg-well text-[12px] font-normal text-dim`;
+const HEAD_GROUP = 'sticky top-0 bg-well';
+const HEAD = `${CELL} text-[12px] font-normal text-dim`;
 
 /** One skill's line. Overall is picked out in gold, as the client picks out a total. */
 function Row({ skill }: { skill: PlayerSkill }): ReactNode {
@@ -147,9 +147,9 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
                         <col className={COL_LEVEL} />
                         <col className={COL_XP} />
                     </colgroup>
-                    <thead>
+                    <thead className={HEAD_GROUP}>
                         <tr>
-                            <th scope="col" className={`${HEAD} ${FIRST} text-left`}>
+                            <th scope="col" className={`${HEAD} ${FIRST} truncate text-left`}>
                                 Skill
                             </th>
                             <th scope="col" className={`${HEAD} text-right`}>

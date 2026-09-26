@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -15,12 +15,12 @@ import {
     CUSTOM_MAX,
     DEFAULT_THEME,
     PICTURE_SCHEME,
-    deriveTheme,
     THEMES,
     isThemeId,
     newCustomId as newThemeId,
     readThemeDraft,
     serverOverride,
+    themeById,
     themeFor,
     uniqueName,
     type Background,
@@ -61,6 +61,7 @@ import { isRemovable, readNewServerInput, serversView, startupServers } from './
 import { appearanceView, deleteQuestion } from './appearance';
 import { devBranding } from './branding';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
+import { presetCards, presetFile, readPreset, type PresetCard } from './presets';
 import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
 
 const log = (msg: string): void => console.log(msg);
@@ -183,6 +184,10 @@ const catalog = new Catalog(join(userData, 'servers.json'), { yourWorldRevision:
 const appState = new AppState(join(userData, 'state.json'));
 /** The pictures custom themes carry, by content. See `pictures.ts`. */
 const pictures = new PictureStore(join(userData, 'backgrounds'));
+/** The kit's own pictures, found from the bundle the way the rest of `static/` is. See `presets.ts`. */
+const PRESET_DIR = join(__dirname, '../../static/pictures');
+/** What Settings is sent for them, read and hashed once: the files are the app's own, and do not change while it runs. */
+let presetView: PresetCard[] | undefined;
 
 /** Every picture a custom theme names: what pruning keeps. */
 function keptPictures(): Set<string> {
@@ -489,7 +494,7 @@ function settingsState(): SettingsState {
     const win = settings.current()?.window;
     return {
         servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
-        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list() }),
+        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list(), presets: (presetView ??= presetCards(PRESET_DIR)) }),
         frame: windowFrame(process.platform, win !== undefined && !win.isDestroyed() && win.isFullScreen())
     };
 }
@@ -821,7 +826,7 @@ ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<b
     return true;
 });
 
-/** The editor's Choose picture…: a dialog here, never a path from the page. The picture is stored at once and answered by name; Save is what keeps it. */
+/** The editor's Choose your own…: a dialog here, never a path from the page. The picture is stored at once and answered by name; Save is what keeps it. */
 ipcMain.handle(IPC.appearanceChoosePicture, async (event): Promise<{ picture: string } | { error: string } | null> => {
     const win = settingsWindowFor(event.sender);
     if (!win) return null;
@@ -840,6 +845,24 @@ ipcMain.handle(IPC.appearanceChoosePicture, async (event): Promise<{ picture: st
     } catch (err) {
         log(`[main] could not read a picture: ${(err as Error).message}`);
         return { error: `Couldn't read ${basename(path)}.` };
+    }
+});
+
+/**
+ * A picture from the editor's gallery: one of the kit's own, stored as a file
+ * of the player's is and answered by name, so the theme that keeps it names a
+ * stored picture and never a preset. Only an id comes from the page, and it
+ * is looked up in the list, never made into a path.
+ */
+ipcMain.handle(IPC.appearancePresetPicture, (event, id: unknown): { picture: string } | { error: string } | null => {
+    if (!settingsWindowFor(event.sender)) return null;
+    const bytes = readPreset(PRESET_DIR, id);
+    if (bytes === null) return { error: "That picture isn't one the kit has." };
+    try {
+        return pictures.add(bytes);
+    } catch (err) {
+        log(`[main] could not store a preset picture: ${(err as Error).message}`);
+        return { error: "Couldn't keep that picture: the kit's data folder couldn't be written." };
     }
 });
 
@@ -2253,38 +2276,25 @@ async function captureAndExit(dir: string): Promise<void> {
             appearanceChanged();
         }
 
-        // A custom theme with a picture, the way a player makes one: a picture
-        // stored through the store, a theme saved around it, worn as the app
-        // theme. The picture is drawn here — a dusk sky over a band of ground —
-        // so the run needs no file of its own. Then Settings on Appearance with
-        // the theme's card, and the editor open on it, each opened by clicking
-        // as a person would and read back before the shot.
+        // A custom theme with one of the kit's own pictures, the way a player
+        // makes one: the Title screen stored through the store, a theme saved
+        // around it, worn as the app theme. Then Settings on Appearance with
+        // the theme's card, and the editor open on it with the gallery marking
+        // the Title screen, each opened by clicking as a person would and read
+        // back before the shot. Then Cobbles clicked in the gallery and the
+        // theme saved from the page — main's handler, the store and Save, as
+        // a player's click takes them — and the window shot wearing it, tiled.
         {
-            const width = 480;
-            const height = 270;
-            const pixels = Buffer.alloc(width * height * 4);
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const sky = y / height;
-                    const ground = y > height * 0.72;
-                    const glow = Math.max(0, 1 - Math.hypot(x - width * 0.7, y - height * 0.3) / 90);
-                    const i = (y * width + x) * 4;
-                    // BGRA, as createFromBitmap reads it.
-                    pixels[i] = ground ? 40 : Math.round(120 - 60 * sky + 120 * glow);
-                    pixels[i + 1] = ground ? 70 : Math.round(40 + 30 * sky + 150 * glow);
-                    pixels[i + 2] = ground ? 45 : Math.round(40 + 90 * sky + 120 * glow);
-                    pixels[i + 3] = 255;
-                }
-            }
-            const stored = pictures.add(nativeImage.createFromBitmap(pixels, { width, height }).toPNG());
+            const title = readPreset(PRESET_DIR, 'title');
+            const stored = title ? pictures.add(title) : { error: `the Title screen is not in ${PRESET_DIR}` };
             if ('error' in stored) {
                 fault(`custom theme: the picture was refused: ${stored.error}`);
             } else {
                 const id = 'custom-ca97e001';
                 const saved = appState.saveCustomTheme({
                     id,
-                    name: 'Zanaris at dusk',
-                    colors: deriveTheme('#3a4a7a', '#9a5ab0'),
+                    name: 'Title screen',
+                    colors: themeById(DEFAULT_THEME).colors,
                     background: { picture: stored.picture, fit: 'cover', show: 0.4 }
                 });
                 if (!saved) fault('custom theme: it would not save');
@@ -2315,7 +2325,23 @@ async function captureAndExit(dir: string): Promise<void> {
                 if (!(await heading()).includes('Edit theme')) fault('settings-editor: the editor could not be opened, so the shot would show the list');
                 await wait(500);
                 await shootShell('settings-editor', settingsWindow);
+                // The gallery, as a person uses it: Cobbles clicked, the draft read back, then Save.
+                const cobbles = `document.querySelector('button[aria-label="Cobbles"]')`;
+                if (!(await contents.executeJavaScript(`(() => { const b = ${cobbles}; if (!b) return false; b.click(); return true; })()`))) {
+                    fault('settings-editor-preset: the gallery has no Cobbles to click');
+                }
+                for (let tries = 0; tries < 20 && !(await contents.executeJavaScript(`${cobbles}?.getAttribute('aria-pressed') === 'true'`)); tries++) await wait(250);
+                await wait(500);
+                await shootShell('settings-editor-preset', settingsWindow);
+                await click('Save');
+                const worn = (): Background | null | undefined => appState.appearance().custom.find(theme => theme.id === id)?.background;
+                for (let tries = 0; tries < 20 && worn()?.fit !== 'tile'; tries++) await wait(250);
+                const tiled = worn();
+                if (tiled?.fit !== 'tile') fault('theme-preset-tile: Cobbles, picked and saved, never reached the theme');
                 settingsWindow.window.close();
+                await wait(800);
+                log(`[capture] preset theme: ${tiled?.picture ?? 'no picture'}, ${tiled?.fit ?? 'no fit'}`);
+                await shootShell('theme-preset-tile', first);
             }
             for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
             appState.setTheme(DEFAULT_THEME);
@@ -2354,7 +2380,20 @@ app.whenReady().then(async () => {
     if (appState.fromFile()) pictures.prune(keptPictures());
     protocol.handle(PICTURE_SCHEME, request => {
         const url = new URL(request.url);
-        const found = url.host === 'picture' ? pictures.read(decodeURIComponent(url.pathname.slice(1))) : null;
+        let name: string;
+        try {
+            name = decodeURIComponent(url.pathname.slice(1));
+        } catch {
+            // A malformed escape names nothing.
+            return new Response(null, { status: 404 });
+        }
+        if (url.host === 'preset') {
+            // The gallery's thumbnails, by id. Not marked immutable: unlike a stored picture, named by its content, an id's file can change between releases.
+            const preset = presetFile(PRESET_DIR, name);
+            if (!preset) return new Response(null, { status: 404 });
+            return new Response(new Uint8Array(preset.bytes), { headers: { 'content-type': MIME[preset.type], 'x-content-type-options': 'nosniff' } });
+        }
+        const found = url.host === 'picture' ? pictures.read(name) : null;
         if (!found) return new Response(null, { status: 404 });
         return new Response(new Uint8Array(found.bytes), {
             headers: { 'content-type': MIME[found.type], 'x-content-type-options': 'nosniff', 'cache-control': 'max-age=31536000, immutable' }
