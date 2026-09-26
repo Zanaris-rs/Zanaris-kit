@@ -412,6 +412,14 @@ export class AppState {
         return [...this.startup];
     }
 
+    /** The whole list at once, as `servers.nextStartup` answers it, capped as a stored list is. */
+    setStartup(ids: readonly string[]): void {
+        const next = readStartup(ids);
+        if (next.length === this.startup.length && next.every((id, i) => id === this.startup[i])) return;
+        this.startup = next;
+        this.save();
+    }
+
     setStartupServer(id: string, on: boolean): void {
         const at = this.startup.indexOf(id);
         if (on && at < 0) {

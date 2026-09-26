@@ -556,6 +556,19 @@ test('setting a server off removes it, and setting one on twice does not duplica
     assert.deepEqual(a.startupIds(), []);
 });
 
+test('setStartup replaces the whole list, de-duplicated and capped as a stored one is', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setStartup(['lostcity', 'zanaris', 'lostcity']);
+    assert.deepEqual(a.startupIds(), ['lostcity', 'zanaris']);
+    a.setStartup(Array.from({ length: 20 }, (_unused, i) => `s${i}`));
+    assert.equal(a.startupIds().length, 16);
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.startupIds(), a.startupIds());
+});
+
 test('a hand-edited startup entry that is not a string costs its own row and not the file', () => {
     const file = tempFile();
     writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, startup: ['zanaris', 7, '', 'lostcity'] }));

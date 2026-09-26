@@ -59,16 +59,17 @@ the gear at the right of every window's tab bar or from Settings…
 another. It has two sections, Servers and Appearance, which holds the themes
 (see How it looks). Its Servers section lists every server with how many of its windows
 are open, an Open button that starts another, and a checkbox for whether a
-launch opens it: tick two servers and relaunching opens both, untick every row
-and a launch falls back to the catalog's first entry, exactly what an empty
-list has always done. The same section adds a server through a short form and
-removes one — except the handful the kit ships with, which nothing in the app
-can put back once gone, so it does not offer to take them out. Below the list,
+launch opens it: tick two servers and relaunching opens both. A launch always
+opens one, the catalog's first entry — Lost City — when nothing else is
+chosen, so that one starts ticked, and the last box ticked cannot be unticked
+until another is. The same section adds a server through a short form and
+removes one, after asking, since the address and notes typed into it go with
+it — except the handful the kit ships with, which nothing in the app can put
+back once gone, so it does not offer to take them out. Below the list,
 Edit server list… opens `servers.json` itself, for the fields no form here
 exposes — a server's worlds source, its bookmarks, its map — and the kit
 re-reads that file whenever a window regains focus, so it is safe to edit with
-the kit running. Settings opens when you ask for it and never on its own; a
-launch with nothing ticked opens Lost City, as it always has. It is a window
+the kit running. Settings opens when you ask for it and never on its own. It is a window
 rather than a pane or a popover because the game is a
 native view drawn above the tab bar's own page, so anything that page drew
 over the game would sit underneath it.

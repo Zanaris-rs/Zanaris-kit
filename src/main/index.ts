@@ -60,7 +60,7 @@ import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
-import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
+import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversView, startupServers } from './servers';
 import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing, type Editing } from './appearance';
 import { APP_ID, APP_NAME, devBranding } from './branding';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
@@ -1762,7 +1762,7 @@ ipcMain.handle(IPC.serversOpen, (event, id: unknown) => {
 ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {
     if (!mayManageServers(event.sender) || typeof id !== 'string' || typeof on !== 'boolean') return;
     if (!catalog.get(id)) return;
-    appState.setStartupServer(id, on);
+    appState.setStartup(nextStartup(appState.startupIds(), catalog.list(), id, on));
     pushSettings();
 });
 
@@ -1781,12 +1781,27 @@ ipcMain.handle(IPC.serversAdd, (event, raw: unknown): string | null => {
     return null;
 });
 
-ipcMain.handle(IPC.serversRemove, (event, id: unknown): string | null => {
-    if (!mayManageServers(event.sender)) return null;
+ipcMain.handle(IPC.serversRemove, async (event, id: unknown): Promise<string | null> => {
+    const win = settingsWindowFor(event.sender);
+    if (!win) return null;
     if (typeof id !== 'string') return 'That is not a server.';
     // The guard is here and in the row's `removable`, both from `isRemovable`:
     // nothing in the app puts a removed built-in back.
     if (!isRemovable(id)) return 'That server came with the kit and cannot be removed.';
+    const server = catalog.get(id);
+    if (!server) return 'That server is no longer in the list.';
+    // Asked first, since nothing puts it back (`servers.removeQuestion`).
+    // Cancel is an answer with nothing to say, as a remove that went is.
+    const question = removeQuestion(server, windowCounts().get(id) ?? 0);
+    const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        message: question.message,
+        detail: question.detail,
+        buttons: ['Remove', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1
+    });
+    if (response !== 0) return null;
     if (!catalog.remove(id)) return 'That server is no longer in the list.';
     // Otherwise a later add can reuse this id (`uniqueId` only avoids ids that
     // currently exist) and inherit a tick nobody meant for it — or a theme.
