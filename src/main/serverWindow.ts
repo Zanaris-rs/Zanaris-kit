@@ -1,5 +1,5 @@
 import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage, type WebContents } from 'electron';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
@@ -20,7 +20,7 @@ import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, typ
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, windowFrame } from './windowFrame';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
-import { layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
+import { SETUP_PANES_MAX, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, type BuiltInSetupId } from './setups';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
@@ -65,6 +65,8 @@ const FRAME_ALLOWANCE = 40;
  */
 const PROBE_EVERY_MS = 15 * 60_000;
 const PROBE_TIMEOUT_MS = 3_000;
+/** Past this a file in the setups folder is refused unread. Ten panes of the longest bookmark come to a few kilobytes. */
+const SETUP_FILE_MAX = 256 * 1024;
 
 /**
  * Injected into every game page. The stock client is `body{overflow:auto}` around
@@ -1055,6 +1057,18 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     async function saveSetupAs(tabId: string): Promise<void> {
         const label = host.tabs().find(tab => tab.id === tabId)?.label;
         if (label === undefined) return;
+        // Refused before the dialog, not after: a file of more panes than a
+        // setup holds is one no kit would open (`layoutFile.SETUP_PANES_MAX`).
+        const tree = host.treeOf(tabId);
+        const panes = tree ? paneIds(tree).length : 0;
+        if (panes > SETUP_PANES_MAX) {
+            await dialog.showMessageBox(win, {
+                type: 'info',
+                message: `A setup holds up to ${SETUP_PANES_MAX} panes, and this tab has ${panes}.`,
+                detail: 'Close a few of its panes, then save it again.'
+            });
+            return;
+        }
         try {
             mkdirSync(deps.setupsDir, { recursive: true });
             const { canceled, filePath } = await dialog.showSaveDialog(win, {
@@ -1105,6 +1119,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     async function openSetupFrom(tabId: string, path: string): Promise<'opened' | 'unreadable' | 'cancelled' | 'missing'> {
         let text: string;
         try {
+            // Sized before it is read: a setup is a few kilobytes, and anything
+            // dropped into the folder is listed.
+            if (statSync(path).size > SETUP_FILE_MAX) throw new Error('far larger than any setup');
             text = readFileSync(path, 'utf8');
         } catch (err) {
             deps.log(`${tag} could not read ${path}: ${(err as Error).message}`);

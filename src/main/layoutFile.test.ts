@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, leaf, paneIds, split, type PaneNode } from './paneTree.ts';
-import { instantiateLayout, layoutEntries, layoutFileName, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
+import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
 const LINKS = [
@@ -124,4 +124,26 @@ test('a size that is there and wrong refuses the whole file', () => {
     for (const size of [null, 'big', { width: 0, height: 600 }, { width: 800 }, { width: 800.5, height: 600 }, { width: 800, height: 16385 }, { width: -1, height: 600 }, { width: '800', height: 600 }]) {
         assert.equal(readSetup(file(good, { size })), null, `expected size ${JSON.stringify(size)} to be refused`);
     }
+});
+
+test(`a setup holds at most ${SETUP_PANES_MAX} panes`, () => {
+    const row = (n: number): StoredNode => ({
+        kind: 'split',
+        axis: 'x',
+        children: Array.from({ length: n }, (): StoredNode => ({ kind: 'leaf', content: { kind: 'empty' } })),
+        fractions: Array.from({ length: n }, () => 1)
+    });
+    assert.ok(readSetup(file(row(SETUP_PANES_MAX))), 'the most a setup holds');
+    assert.equal(readSetup(file(row(SETUP_PANES_MAX + 1))), null, 'one more');
+    assert.equal(readSetup(file(row(500))), null, 'a file shared to open five hundred renderers');
+});
+
+test('a file nested deeper than its panes could be is refused before it is walked', () => {
+    // Written out as text: a tree this deep is past what JSON.stringify can walk.
+    const empty = JSON.stringify({ kind: 'leaf', content: { kind: 'empty' } });
+    const depth = 50000;
+    const open = '{"kind":"split","axis":"x","fractions":[1,1],"children":['.repeat(depth);
+    const close = `,${empty}]}`.repeat(depth);
+    const text = `{"kind":"zanaris-kit-layout","version":1,"server":"lostcity","tree":${open}${empty}${close}}`;
+    assert.equal(readSetup(text), null);
 });

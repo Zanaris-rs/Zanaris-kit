@@ -772,6 +772,11 @@ The window used to save its arrangement after every split and seam drag, which
 made the last accident the thing the next window opened with, and left nothing
 to hand anyone.
 
+A setup holds up to ten panes. It is passed between people, and every page in
+one is a browser process of its own, so a file of hundreds would start hundreds
+the moment it opened; a tab with more than ten is refused when it is saved,
+with a sheet saying so, rather than written into a file no kit would open.
+
 A setup file holds no pane or split ids — the window hands out its own when it
 opens one — and is validated whole and refused whole, with a sheet saying the
 file is not a setup and the tab left as it was. A setup made on another server

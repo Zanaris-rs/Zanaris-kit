@@ -57,6 +57,18 @@ export function writeLayout(tree: PaneNode, serverId: string, size?: Size): stri
 const SIZE_MAX = 16384;
 
 /**
+ * The most panes a setup holds. A setup is passed between people, and every
+ * page in one is a browser process of its own — so a file of five hundred
+ * panes, shared once, was five hundred renderers the moment it was opened.
+ * Ten is more than any arrangement anyone plays in, and more than a window
+ * has room to draw at a pane's floor; the built-ins hold at most six.
+ *
+ * A tab with more is refused when it is saved, rather than written into a
+ * file no kit would open.
+ */
+export const SETUP_PANES_MAX = 10;
+
+/**
  * A setup file's tree and the size it was saved at, or null when anything at
  * all about it is wrong.
  *
@@ -65,7 +77,8 @@ const SIZE_MAX = 16384;
  * while a refusal can say "that isn't a setup" and leave the tab as it was.
  *
  * The refusals that are not merely shape: at most one game, because the window
- * has exactly one game view and a second leaf would point at nothing; and a
+ * has exactly one game view and a second leaf would point at nothing; at most
+ * `SETUP_PANES_MAX` panes, nested no deeper than that many could be; and a
  * version newer than this kit knows, because a later kit may mean something by
  * it that this one would silently get wrong. A file with no size is a setup
  * saved before sizes were, and reads with a null one; a size that is there
@@ -84,7 +97,11 @@ export function readSetup(text: string): { tree: StoredNode; size: Size | null }
     const size = file.size === undefined ? null : readSize(file.size);
     if (file.size !== undefined && size === null) return null;
     let games = 0;
-    const tree = readNode(file.tree, () => games++);
+    let panes = 0;
+    const tree = readNode(file.tree, 0, content => {
+        if (content.kind === 'game') games++;
+        return ++panes <= SETUP_PANES_MAX;
+    });
     return tree && games <= 1 ? { tree, size } : null;
 }
 
@@ -95,14 +112,21 @@ function readSize(x: unknown): Size | null {
     return side(width) && side(height) ? { width, height } : null;
 }
 
-function readNode(x: unknown, countGame: () => void): StoredNode | null {
+/**
+ * One node. `pane` counts each leaf and answers whether there is room for it.
+ * `depth` is checked on the way down, before any leaf is reached: every split
+ * holds two children at least, so a tree of `SETUP_PANES_MAX` leaves is never
+ * deeper than that, and a file nested far past it would otherwise be walked to
+ * the bottom first.
+ */
+function readNode(x: unknown, depth: number, pane: (content: PaneContent) => boolean): StoredNode | null {
+    if (depth > SETUP_PANES_MAX) return null;
     if (typeof x !== 'object' || x === null) return null;
     const node = x as Record<string, unknown>;
 
     if (node.kind === 'leaf') {
         const content = readContent(node.content);
-        if (!content) return null;
-        if (content.kind === 'game') countGame();
+        if (!content || !pane(content)) return null;
         return { kind: 'leaf', content };
     }
 
@@ -117,7 +141,7 @@ function readNode(x: unknown, countGame: () => void): StoredNode | null {
     if (!fractions.every(f => typeof f === 'number' && Number.isFinite(f) && f > 0)) return null;
     const read: StoredNode[] = [];
     for (const child of children) {
-        const node = readNode(child, countGame);
+        const node = readNode(child, depth + 1, pane);
         if (!node) return null;
         read.push(node);
     }
