@@ -146,6 +146,11 @@ const ROOM_FOR_REVISION = 300;
  * while the world and the latency beside it are the whole reason to look — so
  * it is the half worth losing. The title attribute keeps the full read-out
  * reachable however narrow the pane gets.
+ *
+ * Your world is the exception. Its label carries the revision itself, before
+ * the world's status, since a switch of build changes it under an open window
+ * (`revisionOf`), so nothing is added after it and nothing is dropped: a
+ * narrow pane cuts the label from its end, status first.
  */
 function GameReadout({ state, width }: { state: ShellState; width: number }): ReactNode {
     const revision = revisionOf(state);

@@ -103,8 +103,9 @@ export function decideShellNavigation(nav: { current: string; target: string }):
  * prompt, so the answer here is no unless there is a reason. There are two,
  * both a game's: the full-screen button in the controls strip under the
  * client, which worked before there was a handler and must keep working, and
- * copying to the clipboard, which writes nothing but text and reads nothing
- * back. Everything else a browser would ask about is refused:
+ * copying to the clipboard, which puts only what the browser has sanitised
+ * there and reads nothing back. Everything else a browser would ask about is
+ * refused:
  * reading the clipboard, where players paste passwords; notifications that
  * would appear as the kit's; the camera, microphone and location, which the
  * OS would ask for in the kit's name; and `openExternal`, which is how a
