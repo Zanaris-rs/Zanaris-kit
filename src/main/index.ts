@@ -29,6 +29,7 @@ import {
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { roomFor } from './windowRoom';
+import { allowPermission } from './guard';
 import { COLUMN_PREFERRED_WIDTH, SEAM } from '../shared/layout';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
@@ -2688,7 +2689,10 @@ app.whenReady().then(async () => {
     // did not ask for, and none of the permissions a browser would prompt over.
     const pages = session.fromPartition('persist:pages');
     pages.on('will-download', event => event.preventDefault());
-    pages.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    pages.setPermissionRequestHandler((_contents, permission, callback) => callback(allowPermission(permission, 'page')));
+    // Asked without a request by some APIs — `Notification.permission`, a
+    // permissions query — which a request handler alone never sees.
+    pages.setPermissionCheckHandler((_contents, permission) => allowPermission(permission, 'page'));
     // Offline until a nick is set, which is why a capture run — whose profile has
     // none — never opens a socket. The password is opened here, after ready,
     // because the OS store is not available before it.

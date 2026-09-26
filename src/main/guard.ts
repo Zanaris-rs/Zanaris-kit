@@ -95,3 +95,24 @@ export function decidePageNavigation(nav: { target: string; hosts: readonly stri
 export function decideShellNavigation(nav: { current: string; target: string }): 'allow' | 'block' {
     return nav.target === nav.current ? 'allow' : 'block';
 }
+
+/**
+ * Whether a game or reference page may have a web permission it asked for.
+ *
+ * Electron grants every permission a session has no handler for, without a
+ * prompt, so the answer here is no unless there is a reason. There are two,
+ * both a game's: the full-screen button in the controls strip under the
+ * client, which worked before there was a handler and must keep working, and
+ * copying to the clipboard, which writes nothing but text and reads nothing
+ * back. Everything else a browser would ask about is refused:
+ * reading the clipboard, where players paste passwords; notifications that
+ * would appear as the kit's; the camera, microphone and location, which the
+ * OS would ask for in the kit's name; and `openExternal`, which is how a
+ * frame could hand a URL of any scheme to whatever app the OS has for it.
+ *
+ * Reference pages get nothing, as they always have: they are somebody
+ * else's pages, shown with the web and nothing more.
+ */
+export function allowPermission(permission: string, view: 'game' | 'page'): boolean {
+    return view === 'game' && (permission === 'fullscreen' || permission === 'clipboard-sanitized-write');
+}

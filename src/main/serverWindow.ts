@@ -13,7 +13,7 @@ import type { ThemeLook } from '../shared/themes';
 import type { ListedTimer } from './timers/defs';
 import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
-import { decideNavigation } from './guard';
+import { allowPermission, decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
@@ -1286,6 +1286,16 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      */
     function wireGameView(view: WebContentsView): void {
         const wc = view.webContents;
+        // The game's partition has no handler until this one, and a session
+        // with none grants every permission unasked (`guard.allowPermission`).
+        // Set again for each game view, which replaces rather than adds: the
+        // partition is this window's slot, and outlives any one view.
+        wc.session.setPermissionRequestHandler((_contents, permission, callback) => {
+            const allowed = allowPermission(permission, 'game');
+            if (!allowed) deps.log(`${tag} refused the game's request for ${permission}`);
+            callback(allowed);
+        });
+        wc.session.setPermissionCheckHandler((_contents, permission) => allowPermission(permission, 'game'));
         // Nothing the page does may replace the game. The one exception is our
         // own offline page returning to the page main asked for.
         wc.on('will-navigate', (event, url) => {

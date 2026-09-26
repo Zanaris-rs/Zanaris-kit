@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideNavigation, decidePageNavigation, decideShellNavigation } from './guard.ts';
+import { allowPermission, decideNavigation, decidePageNavigation, decideShellNavigation } from './guard.ts';
 
 const GAME = 'https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1';
 const OFFLINE = 'file:///app/static/offline.html?url=' + encodeURIComponent(GAME);
@@ -94,5 +94,19 @@ test('a kit page may go nowhere else, however close to home', () => {
     ];
     for (const [current, target] of refused) {
         assert.equal(decideShellNavigation({ current, target }), 'block', `${current} → ${target}`);
+    }
+});
+
+test('a game may go full screen and copy to the clipboard, and have nothing else', () => {
+    assert.equal(allowPermission('fullscreen', 'game'), true);
+    assert.equal(allowPermission('clipboard-sanitized-write', 'game'), true);
+    for (const permission of ['openExternal', 'clipboard-read', 'notifications', 'geolocation', 'media', 'pointerLock', 'midiSysex', 'hid', 'serial', 'usb', 'unknown']) {
+        assert.equal(allowPermission(permission, 'game'), false, permission);
+    }
+});
+
+test('a reference page gets no permission at all', () => {
+    for (const permission of ['clipboard-sanitized-write', 'openExternal', 'clipboard-read', 'notifications', 'fullscreen']) {
+        assert.equal(allowPermission(permission, 'page'), false, permission);
     }
 });
