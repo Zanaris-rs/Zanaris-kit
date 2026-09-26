@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PICTURE_MAX, PICTURE_PIXELS_MAX, PictureStore, pictureSize, pictureType } from './pictures.ts';
+import { PICTURE_MAX, PICTURE_PIXELS_MAX, PictureStore, pictureName, pictureSize, pictureType } from './pictures.ts';
 
 const dirs: string[] = [];
 const tempDir = (): string => {
@@ -65,6 +65,13 @@ test('add names a picture by its sha-256 and its type, and the same picture twic
     assert.deepEqual(store.add(PNG), first);
     assert.deepEqual(readdirSync(store.dir), [`${sha(PNG)}.png`]);
     assert.deepEqual(store.add(WEBP), { picture: `${sha(WEBP)}.webp` });
+});
+
+test('pictureName is the name add keeps a picture under, and null for a type the store does not keep', () => {
+    const store = new PictureStore(tempDir());
+    assert.equal(pictureName(PNG), `${createHash('sha256').update(PNG).digest('hex')}.png`);
+    assert.deepEqual(store.add(PNG), { picture: pictureName(PNG) });
+    assert.equal(pictureName(Uint8Array.from([0x3c, 0x73, 0x76, 0x67, 0x20])), null);
 });
 
 test('add refuses what is not a picture, and a picture over the limit, storing nothing', () => {

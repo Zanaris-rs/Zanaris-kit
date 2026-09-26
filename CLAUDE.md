@@ -411,33 +411,33 @@ block are the same values, and a test keeps them so.
 
 A built-in theme is derived from a ground and a trim colour sampled off the
 map, never typed in by hand; `scripts/sample-floors.mjs` is where the samples
-come from. Every built-in is dark, because the black glyph shadow and the
-grain's overlay blend assume it, and `contrastWarnings` finds nothing in any
-of them. A player's own theme can be anything: the editor shows its warnings,
+come from. Every built-in is dark, because the black glyph shadow assumes
+it, and `contrastWarnings` finds nothing in any of them. A player's own theme can be anything: the editor shows its warnings,
 and saving is theirs. Built-in ids sit in `state.json` and theme files, so one
 once shipped is never renamed.
 
 **Every image the renderer draws is a file.** The shell's CSP takes images
 from `'self'` and, for theme pictures, `zanaris-bg:`, and refuses a `data:`
-one with nothing on screen to say so. The grain was two `data:` SVGs, and
-every surface drew as its flat base until 2026-09-25 with no test failing.
-`assetsInlineLimit: 0` keeps Vite from inlining the small ones, and
-`csp.test.ts` fails on a `data:` image in the renderer while the CSP refuses
-them. Themes are checked on flat colours, so a change to the grain or a base
-is checked by `npm run capture`, not by a test.
+one with nothing on screen to say so. The stone's grain, since removed, was
+two `data:` SVGs, and every surface drew as its flat base until 2026-09-25
+with no test failing. `assetsInlineLimit: 0` keeps Vite from inlining the
+small ones, and `csp.test.ts` fails on a `data:` image in the renderer while
+the CSP refuses them. Themes are checked on flat colours, so a change to a
+base, or to how a picture shows through the stone, is checked by
+`npm run capture`, not by a test.
 
-**Over a picture the grain is off.** Every surface wears it as
-`var(--grain, var(--stone-grain))`, and `themeVars` sets `--grain` to `none`
-when a picture shows through, `initial` otherwise, so a theme change always
-resets it. The noise has an alpha of its own and blends only with the
-surface's colour, so on a see-through surface it paints grey over the
-picture: at `show` 0.4 the capture's dusk sky all but disappeared. A new
-grained surface uses the same `var()`, or it greys every picture theme.
+**The stone is flat.** A grain of noise drew over the shell's stone for one
+day, 2026-09-25 — the offline and starting pages, which have no CSP, had
+drawn theirs all along — and went from both on the owner's call on
+2026-09-26: they prefer the flat stone the shell had shown every day before. The bases are still the values
+set for a grain to lighten, a little below the sampled panel mid, because
+flat they are that look. A texture on the stone is the owner's decision, not
+a fix; the way to wear one is a theme's picture.
 
 ## Theme pictures
 
 A theme's picture is somebody's file — theirs, or a stranger's inside a theme
-file — shown in the kit's own pages. Keep these true:
+file — shown in the kit's own pages, or one of the kit's own. Keep these true:
 
 - **Every picture goes through `PictureStore`** (`src/main/pictures.ts`). Its
   type is read off its first bytes, only PNG, JPEG, WebP and GIF are kept —
@@ -445,12 +445,23 @@ file — shown in the kit's own pages. Keep these true:
   worth, read off the header: a tiny PNG can decode to gigabytes. It is named by its
   sha-256, and `path` answers only for a name shaped that way, so no name
   reaches outside `<userData>/backgrounds/`.
+- **The kit's own pictures are asked for by id.** The gallery's twelve are
+  files in `static/pictures/`, made by `npm run make:pictures` from the
+  content checkout and listed in `PRESETS` (`src/main/presets.ts`), which the
+  script reads too. The page sends an id; main looks it up, never joins it
+  into a path, and stores the file through `PictureStore` like any other, so
+  no theme names a preset and no preset id is ever saved: the set can change
+  between releases. `zanaris-bg://preset/<id>` serves the thumbnails from the
+  same lookup (`presetFile`), straight from `static/` rather than through the
+  store: they are the app's own files, and nothing is kept. `presets.test.ts` holds the folder to the list, and every file
+  to what the store keeps.
 - **`zanaris-bg:` is handled on the default session only**, where the shell and
   Settings are. The game and page views are partitions of their own and must
   never get it: a page could then read every picture by guessing nothing more
   than a hash.
-- **The page never sends a path.** Choose picture… and Import theme… are
-  dialogs in main that answer a name; Export is a save dialog in main.
+- **The page never sends a path.** Choose your own… and Import theme… are
+  dialogs in main that answer a name; a gallery picture is an id main looks
+  up; Export is a save dialog in main.
 - **Theme files are read strictly** (`themeFile.ts`) and are sized before they
   are read. An import adds a theme and never replaces one. Base64 is checked as
   one character class and a length, never a repeated group: a group repeated
@@ -473,6 +484,7 @@ file — shown in the kit's own pages. Keep these true:
 | `npm run fresh` | set the profile aside so the next launch is a first launch, keeping the builds and the characters |
 | `npm run stage:engine -- <id>` | stage a recipe into `engine-dist/` and `engine-<id>.tar.gz` |
 | `npm run pin:engine -- <id>` | write a published build's size and digest into its recipe |
+| `npm run make:pictures [-- <content-dir>]` | make the kit's own pictures into `static/pictures/` from the content checkout, under Electron for `nativeImage` |
 | `npm run dist` | electron-builder output |
 
 **The capture hazard.** `npm run capture` opens real windows and makes real

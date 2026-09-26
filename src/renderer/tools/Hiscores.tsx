@@ -44,13 +44,10 @@ const LAST = 'pr-2';
 /*
  * The header stays put while the rows scroll under it. It carries its own
  * background because a sticky row is painted over the ones passing beneath
- * it: the well's colour and grain, so it does not read as a flat band. Both
- * sit on the `thead` rather than each cell, or the grain would start again at
- * every column. The thead's corner is the well's, and a scroller's own
- * background stays put while its rows move, so the two grains line up at any
- * scroll and the header has no edge.
+ * it: the well's colour, on the `thead` rather than each cell, so it is one
+ * band with no seam between columns.
  */
-const HEAD_GROUP = 'sticky top-0 bg-well bg-[image:var(--grain,var(--stone-grain))] bg-blend-overlay';
+const HEAD_GROUP = 'sticky top-0 bg-well';
 const HEAD = `${CELL} text-[12px] font-normal text-dim`;
 
 /** One skill's line. Overall is picked out in gold, as the client picks out a total. */

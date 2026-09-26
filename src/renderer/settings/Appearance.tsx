@@ -123,7 +123,7 @@ export default function Appearance({ view }: { view: AppearanceView }): ReactNod
     const [said, setSaid] = useState<{ text: string; alert: boolean } | null>(null);
     const [busy, setBusy] = useState(false);
 
-    if (editing) return <ThemeEditor initial={editing} onClose={() => setEditing(null)} />;
+    if (editing) return <ThemeEditor initial={editing} presets={view.presets} onClose={() => setEditing(null)} />;
 
     const importTheme = async (): Promise<void> => {
         setBusy(true);

@@ -17,6 +17,6 @@ export default defineConfig({
     main: { plugins: [externalizeDepsPlugin()], define: { __ENGINE_RECIPES__: JSON.stringify(recipes) } },
     preload: { plugins: [externalizeDepsPlugin()] },
     // Every asset ships as a file: the shell's CSP refuses data: images, so a
-    // small sprite, or the stone's grain, inlined as one would draw nothing.
+    // small sprite inlined as one would draw nothing.
     renderer: { plugins: [react(), tailwindcss()], build: { assetsInlineLimit: 0 } }
 });
