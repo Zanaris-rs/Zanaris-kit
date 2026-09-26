@@ -220,25 +220,26 @@ export function labelOfTab(tree: PaneNode, links: readonly PaneLink[] = []): str
 }
 
 /**
- * Loading a saved layout into one tab, and what that costs.
+ * Opening a setup — a built-in or a saved one — into one tab, and what that
+ * costs.
  *
- * The tab's panes are replaced by the layout's, and the tab is brought to the
+ * The tab's panes are replaced by the setup's, and the tab is brought to the
  * front, since that is where the player asked for it. The game is the one thing
  * that needs care, because the window has one game view and the tab being
- * replaced may hold it, or the layout may want it, or both:
+ * replaced may hold it, or the setup may want it, or both:
  *
- * - **The layout has a game pane.** The game moves into it from wherever it
+ * - **The setup has a game pane.** The game moves into it from wherever it
  *   was — this tab or another — the same move `moveGame` makes, so it costs no
  *   reload and no login. Any other tab's game leaf is emptied in the same
  *   breath, or the window would claim two games and have one view.
- * - **This tab held the game and the layout has none.** The game's leaf goes
+ * - **This tab held the game and the setup has none.** The game's leaf goes
  *   with the old panes, which is closing the game: `dropsGame` says so, and the
  *   window asks first and destroys the view, exactly as a tab close does. It
  *   must never drop the leaf and keep the view.
  * - **Neither.** The game stays wherever it is, untouched.
  *
- * Focus lands on the game when the layout brought it — that is what the player
- * is about to look at — and otherwise on the layout's first pane.
+ * Focus lands on the game when the setup brought it — that is what the player
+ * is about to look at — and otherwise on the setup's first pane.
  *
  * Null when there is no such tab.
  */

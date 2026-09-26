@@ -58,6 +58,7 @@ const api: ZanarisApi = {
         selectTab: tabId => ipcRenderer.invoke(IPC.tabSelect, tabId),
         tabMenu: (tabId, x, y) => ipcRenderer.invoke(IPC.tabContextMenu, tabId, x, y),
         addPaneMenu: (x, y) => ipcRenderer.invoke(IPC.tabAddPaneMenu, x, y),
+        setupsMenu: (x, y) => ipcRenderer.invoke(IPC.tabSetupsMenu, x, y),
         showYourWorld: () => ipcRenderer.invoke(IPC.tabShowYourWorld),
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
     },
@@ -126,7 +127,8 @@ const api: ZanarisApi = {
         choosePicture: () => ipcRenderer.invoke(IPC.appearanceChoosePicture),
         presetPicture: id => ipcRenderer.invoke(IPC.appearancePresetPicture, id),
         importTheme: () => ipcRenderer.invoke(IPC.appearanceImportTheme),
-        exportTheme: id => ipcRenderer.invoke(IPC.appearanceExportTheme, id)
+        exportTheme: draft => ipcRenderer.invoke(IPC.appearanceExportTheme, draft),
+        editing: report => ipcRenderer.invoke(IPC.appearanceEditing, report)
     }
 };
 

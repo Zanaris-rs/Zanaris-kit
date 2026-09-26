@@ -20,7 +20,7 @@ export default function Friends({ view, worldReady }: { view: ShareView; worldRe
 
     if (!view.available) {
         return (
-            <section aria-label="Play with friends" className="px-2.5 pt-2.5">
+            <section aria-label="Play with friends">
                 <p className="text-[12px] text-dim">Playing with friends is not available on this computer: Cloudflare makes no tunnel program for it.</p>
             </section>
         );
@@ -33,7 +33,7 @@ export default function Friends({ view, worldReady }: { view: ShareView; worldRe
     );
 
     return (
-        <section aria-label="Play with friends" className="min-h-0 flex-1 overflow-y-auto px-2.5 pt-2.5">
+        <section aria-label="Play with friends" className="min-h-0 flex-1 overflow-y-auto">
             {view.status === 'off' && (
                 <div className="flex items-center gap-2">
                     <button type="button" onClick={() => void window.zanaris.share.start()} className="btn shrink-0">

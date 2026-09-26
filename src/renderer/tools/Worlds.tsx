@@ -28,6 +28,18 @@ function latencyClass(ms: number | null): string {
 const MUTED: CSSProperties = { color: 'var(--color-dim)' };
 const SPENT: CSSProperties = { color: 'var(--color-faint)' };
 
+/*
+ * A row is a bare `<button>`, and the base `button` rule in styles.css is
+ * unlayered CSS too — the same rule `.btn`/`.sunk`/`.tile` beat a utility of
+ * equal specificity with, so `px-2 py-[5px]` on the button itself was a
+ * silent no-op: `padding: 0` always won, and the row's content sat flush
+ * against the well's own border. That is what let the latency figure reach
+ * it. `background: none` beats a background utility the same way, so the
+ * current-world and hover highlight moved to the `<li>`, which carries no
+ * such reset.
+ */
+const ROW_PADDING: CSSProperties = { padding: '5px 8px' };
+
 function DetailSwitch({ detail }: { detail: Detail }): ReactNode {
     const option = (value: Detail, label: string): ReactNode => (
         <button
@@ -50,12 +62,13 @@ function DetailSwitch({ detail }: { detail: Detail }): ReactNode {
 
 function Row({ world, current }: { world: WorldRow; current: boolean }): ReactNode {
     return (
-        <li>
+        <li className={current ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}>
             <button
                 type="button"
                 aria-current={current ? 'true' : undefined}
                 onClick={() => !current && void window.zanaris.worlds.switch(world.id)}
-                className={`flex w-full items-center gap-2.5 px-2 py-[5px] text-left ${current ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}
+                style={ROW_PADDING}
+                className="flex w-full items-center gap-2.5 text-left"
             >
                 <span className={`w-[32px] shrink-0 ${current ? 'text-gold' : 'text-dim'}`}>W{world.id}</span>
                 <span className="min-w-0 flex-1">
@@ -84,14 +97,10 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
 
     const loading = view.status === 'loading';
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            {view.showDetail && (
-                <div className="px-2.5 pb-[7px]">
-                    <DetailSwitch detail={view.detail} />
-                </div>
-            )}
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            {view.showDetail && <DetailSwitch detail={view.detail} />}
 
-            <ul className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto">
+            <ul className="sunk min-h-0 flex-1 overflow-y-auto">
                 {view.worlds.map(world => (
                     <Row key={world.id} world={world} current={world.id === view.current} />
                 ))}
@@ -106,7 +115,7 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
             </ul>
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
-            <div className="flex items-center gap-2 px-2.5 pt-2 pb-1.5">
+            <div className="flex items-center gap-2">
                 <button
                     type="button"
                     onClick={() => void window.zanaris.worlds.refresh()}
@@ -125,7 +134,7 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
                 </p>
             </div>
 
-            <p className="px-2.5 pb-2 text-[12px] text-dim">Switching reloads the game and logs you out.</p>
+            <p className="text-[12px] text-dim">Switching reloads the game and logs you out.</p>
         </div>
     );
 }

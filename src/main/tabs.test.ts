@@ -158,7 +158,7 @@ test('split ids carry on too, so a split made inside the opening one cannot shar
 const games = (set: { tabs: { tree: Parameters<typeof paneIds>[0] }[] }): string[] =>
     set.tabs.flatMap(tab => paneIds(tab.tree).filter(id => contentOf(tab.tree, id)?.kind === 'game'));
 
-test("loading a layout replaces that tab's panes, brings it to the front and leaves the other tabs alone", () => {
+test("opening a setup replaces that tab's panes, brings it to the front and leaves the other tabs alone", () => {
     const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'tool', tool: 'chat' }), 'tab-2', 'pane-2');
     const layout = split('split-9', 'x', [leaf('pane-8', { kind: 'tool', tool: 'worlds' }), leaf('pane-9', { kind: 'empty' })], [0.5, 0.5]);
     const loaded = loadingLayout({ ...set, activeId: 'tab-2' }, 'tab-1', layout)!;
@@ -169,7 +169,7 @@ test("loading a layout replaces that tab's panes, brings it to the front and lea
     assert.equal(loaded.dropsGame, false);
 });
 
-test('a layout with a game pane takes the game from whichever tab had it, and focuses it', () => {
+test('a setup with a game pane takes the game from whichever tab had it, and focuses it', () => {
     const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
     const layout = split('split-9', 'y', [leaf('pane-8', { kind: 'tool', tool: 'chat' }), leaf('pane-9', { kind: 'game' })], [0.5, 0.5]);
     const loaded = loadingLayout(set, 'tab-2', layout)!;
@@ -179,21 +179,21 @@ test('a layout with a game pane takes the game from whichever tab had it, and fo
     assert.equal(loaded.dropsGame, false, 'a move, not a close — nothing to ask');
 });
 
-test('a layout with a game pane loaded over the tab holding the game keeps the game', () => {
+test('a setup with a game pane opened over the tab holding the game keeps the game', () => {
     const set = openTabs('tab-1', 'pane-1', { kind: 'game' });
     const loaded = loadingLayout(set, 'tab-1', leaf('pane-8', { kind: 'game' }))!;
     assert.equal(loaded.dropsGame, false);
     assert.deepEqual(games(loaded.set), ['pane-8']);
 });
 
-test('a layout with no game, loaded over the tab holding it, is closing the game and says so', () => {
+test('a setup with no game, opened over the tab holding it, is closing the game and says so', () => {
     const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
     const loaded = loadingLayout(set, 'tab-1', leaf('pane-8', { kind: 'tool', tool: 'chat' }))!;
     assert.equal(loaded.dropsGame, true, 'the window must ask and destroy the view, never keep it with nowhere to show it');
     assert.deepEqual(games(loaded.set), []);
 });
 
-test('a layout with no game, loaded over some other tab, leaves the game where it is', () => {
+test('a setup with no game, opened over some other tab, leaves the game where it is', () => {
     const set = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2');
     const loaded = loadingLayout(set, 'tab-2', leaf('pane-8', { kind: 'tool', tool: 'chat' }))!;
     assert.equal(loaded.dropsGame, false);

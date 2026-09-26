@@ -94,8 +94,8 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
     const close = (): void => setOpen(null);
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <ul className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <ul className="sunk min-h-0 flex-1 overflow-y-auto">
                 {view.clocks.map(clock => {
                     const editing = open?.kind === 'clock' && open.id === clock.def.id;
                     return (
@@ -114,7 +114,7 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
             </ul>
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
-            <div className="flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-1.5">
+            <div className="flex flex-wrap items-center gap-2">
                 {open === null && !view.customsFull ? (
                     <button type="button" onClick={() => setOpen({ kind: 'new' })} style={BUTTON_SIZE} className="btn">
                         Add countdown or timer
@@ -126,7 +126,7 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
                 )}
                 {view.customsFull && <span className="text-[12px] text-dim">{CUSTOM_TIMERS_MAX} of your own is the most.</span>}
             </div>
-            <p className="px-2.5 pb-2 text-[12px] text-dim">Timers run with the panel closed.</p>
+            <p className="text-[12px] text-dim">Timers run with the panel closed.</p>
         </div>
     );
 }

@@ -1,16 +1,19 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { AppearanceView, ServerThemeRow, ThemeCard } from '../../main/appearance.ts';
 import { NICK_COLOURS, themeVars, type ThemeDraft } from '../../shared/themes.ts';
+import type { ThemeEditing } from '../Settings';
 import { QuietButton } from './Servers';
 import ThemeEditor from './ThemeEditor';
 
 /*
- * `.tab` and `.tile` are unlayered CSS, which beats a Tailwind utility of
- * equal specificity whatever the order, so the places below that contradict
- * them say so inline.
+ * `.btn`, `.tab` and `.tile` are unlayered CSS, which beats a Tailwind
+ * utility of equal specificity whatever the order, so the places below that
+ * contradict them say so inline.
  */
 /* A strip of tabs inside a card, smaller than `.tab`'s fixed 36x34. */
 const MINI_TAB: CSSProperties = { width: 22, height: 14 };
+/* Customise and Edit: a raised button the card's width, sized as Settings' other buttons are. */
+const EDIT_BUTTON: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 /* The card's padding, on the `.tile` inside it, set with the border it sits inside so the two read as one decision. */
 const CARD: CSSProperties = { padding: 6 };
 /* The chosen card's border, over `.tile`'s bevel. */
@@ -23,12 +26,12 @@ const NAMES = ['Hans', 'Bob', 'Duke'];
  * set inline on the card, so a card is the real `.tile`, `.tab` and `.sunk`
  * and cannot drift from what a window shows. A theme with a picture shows it
  * behind the stone, see-through as the theme sets it. A click makes it the
- * app theme; the text button under it — a sibling, since a button cannot
- * hold a button — opens the editor.
+ * app theme; the button under it — a sibling, since a button cannot hold a
+ * button — opens the editor.
  */
 function Card({ theme, chosen, onEdit }: { theme: ThemeCard; chosen: boolean; onEdit: () => void }): ReactNode {
     return (
-        <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex min-w-0 flex-col gap-1">
             <button
                 type="button"
                 aria-pressed={chosen}
@@ -63,8 +66,9 @@ function Card({ theme, chosen, onEdit }: { theme: ThemeCard; chosen: boolean; on
                     </span>
                 </span>
             </button>
-            <button type="button" onClick={onEdit} className="group self-start">
-                <span className="text-[12px] text-dim underline-offset-2 group-hover:text-cream group-hover:underline">{theme.custom ? 'Edit' : 'Customise'}</span>
+            {/* Capture clicks the button whose `textContent` is exactly `Edit`, so the label stays a lone text node in the span. */}
+            <button type="button" onClick={onEdit} style={EDIT_BUTTON} className="btn group w-full">
+                <span className="text-cream group-hover:text-gold">{theme.custom ? 'Edit' : 'Customise'}</span>
             </button>
         </div>
     );
@@ -114,16 +118,34 @@ function draftOf(theme: ThemeCard): ThemeDraft {
 /**
  * Settings' Appearance section: the app theme as a card per theme, the
  * player's own after the built-ins, then a theme per server. The editor takes
- * the section's place while it is open. A change applies at once to every
- * window it touches and reloads nothing: the game and the pages are never
- * themed.
+ * the section's place while it is open, on the draft Settings holds. A change
+ * applies at once to every window it touches and reloads nothing: the game
+ * and the pages are never themed. While the editor is open, every window
+ * wears the draft.
  */
-export default function Appearance({ view }: { view: AppearanceView }): ReactNode {
-    const [editing, setEditing] = useState<ThemeDraft | null>(null);
+export default function Appearance({
+    view,
+    editing,
+    setEditing
+}: {
+    view: AppearanceView;
+    editing: ThemeEditing | null;
+    setEditing: Dispatch<SetStateAction<ThemeEditing | null>>;
+}): ReactNode {
     const [said, setSaid] = useState<{ text: string; alert: boolean } | null>(null);
     const [busy, setBusy] = useState(false);
 
-    if (editing) return <ThemeEditor initial={editing} presets={view.presets} onClose={() => setEditing(null)} />;
+    if (editing) {
+        return (
+            <ThemeEditor
+                initial={editing.initial}
+                draft={editing.draft}
+                presets={view.presets}
+                onChange={update => setEditing(e => (e ? { ...e, draft: update(e.draft) } : e))}
+                onClose={() => setEditing(null)}
+            />
+        );
+    }
 
     const importTheme = async (): Promise<void> => {
         setBusy(true);
@@ -144,7 +166,15 @@ export default function Appearance({ view }: { view: AppearanceView }): ReactNod
             <h2 className="px-2.5 pb-1.5 font-pixel text-[15px] text-gold">Theme</h2>
             <div className="grid grid-cols-3 gap-2 px-2.5">
                 {view.themes.map(theme => (
-                    <Card key={theme.id} theme={theme} chosen={theme.id === view.theme} onEdit={() => setEditing(draftOf(theme))} />
+                    <Card
+                        key={theme.id}
+                        theme={theme}
+                        chosen={theme.id === view.theme}
+                        onEdit={() => {
+                            const draft = draftOf(theme);
+                            setEditing({ initial: draft, draft });
+                        }}
+                    />
                 ))}
             </div>
             <p className="px-2.5 pt-1.5 text-[12px] text-dim">

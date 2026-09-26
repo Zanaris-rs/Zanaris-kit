@@ -12,7 +12,7 @@ import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 import type { ServersView } from '../main/servers.ts';
-import type { AppearanceView } from '../main/appearance.ts';
+import type { AppearanceView, Editing } from '../main/appearance.ts';
 import type { ThemeDraft, ThemeLook } from './themes';
 
 export const IPC = {
@@ -35,6 +35,7 @@ export const IPC = {
     tabSelect: 'zanaris:tab-select',
     tabContextMenu: 'zanaris:tab-context-menu',
     tabAddPaneMenu: 'zanaris:tab-add-pane-menu',
+    tabSetupsMenu: 'zanaris:tab-setups-menu',
     tabShowYourWorld: 'zanaris:tab-show-your-world',
     paneOpenExternal: 'zanaris:pane-open-external',
     worldsRefresh: 'zanaris:worlds-refresh',
@@ -94,7 +95,8 @@ export const IPC = {
     appearanceChoosePicture: 'zanaris:appearance-choose-picture',
     appearancePresetPicture: 'zanaris:appearance-preset-picture',
     appearanceImportTheme: 'zanaris:appearance-import-theme',
-    appearanceExportTheme: 'zanaris:appearance-export-theme'
+    appearanceExportTheme: 'zanaris:appearance-export-theme',
+    appearanceEditing: 'zanaris:appearance-editing'
 } as const;
 
 /**
@@ -183,7 +185,12 @@ export interface ShellState {
     sharingWithoutPane: boolean;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
-    /** The look this window wears — its server's theme, or the app's — palette and picture. Resolved in main, so the shell only applies it. */
+    /**
+     * The look this window wears — the theme being edited while Settings'
+     * editor is open, and otherwise its server's theme or the app's — palette
+     * and picture. Resolved in main (`appearance.lookFor`), so the shell only
+     * applies it.
+     */
     theme: ThemeLook;
 }
 
@@ -320,9 +327,9 @@ export interface ZanarisApi {
         closeTab(tabId: string): Promise<void>;
         selectTab(tabId: string): Promise<void>;
         /**
-         * Raises a tab's menu, for a right-click on it: save its panes as a
-         * layout, load one into it, open the layouts folder. Native and built in
-         * main like the pane menus. Coordinates are the window's.
+         * Raises a tab's menu, for a right-click on it, which is Close Tab.
+         * Setups moved to the tab bar's Setups menu. Native and built in main
+         * like the pane menus. Coordinates are the window's.
          */
         tabMenu(tabId: string, x: number, y: number): Promise<void>;
         /**
@@ -333,6 +340,14 @@ export interface ZanarisApi {
          * Coordinates are the window's.
          */
         addPaneMenu(x: number, y: number): Promise<void>;
+        /**
+         * Raises the tab bar's Setups menu: the built-in setups, the saved
+         * ones, and saving the active tab as one. Choosing a setup replaces
+         * the active tab's panes and, when the setup holds the game and has a
+         * size, sizes the window around the game. Native and built in main
+         * like the pane menus. Coordinates are the window's.
+         */
+        setupsMenu(x: number, y: number): Promise<void>;
         /**
          * The bar's Sharing button, shown while a link is live and no pane
          * shows Your world: opens its pane as a column down the active tab's
@@ -442,7 +457,13 @@ export interface ZanarisApi {
         presetPicture(id: string): Promise<{ picture: string } | { error: string } | null>;
         /** A theme file, picked in a dialog of main's, added as a new theme: its name, or why not, or null when cancelled. */
         importTheme(): Promise<{ name: string } | { error: string } | null>;
-        /** Writes one of the player's themes to a file they pick. Null when written or cancelled; otherwise why not. */
-        exportTheme(id: string): Promise<string | null>;
+        /** Writes the editor's theme, saved or not, to a file the player picks. Null when written or cancelled; otherwise why not. */
+        exportTheme(draft: ThemeDraft): Promise<string | null>;
+        /**
+         * The theme being edited, reported on every change while the editor
+         * is open and as null when it closes. Every window wears it until
+         * then; nothing is kept until Save. Settings only.
+         */
+        editing(report: Editing | null): Promise<void>;
     };
 }

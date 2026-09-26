@@ -1,8 +1,8 @@
-import type { Rect, Size } from './paneTree.ts';
+import type { Edge, Rect, Size } from './paneTree.ts';
 
 /**
- * How a window grows to hold a pane it has just been given, on the display it
- * is on.
+ * How a window grows to hold a pane it has just been given, shrinks to give a
+ * closed one's room back, or is sized around a setup, on the display it is on.
  *
  * Pure, for the reason `CLAUDE.md` gives: `serverWindow` cannot be tested, so
  * the geometry it acts on is worked out here, and all it does is ask the
@@ -28,7 +28,9 @@ export function roomFor(frame: Rect, workArea: Rect): Size {
  *
  * A window already hanging off the left or the top is left there rather than
  * pulled further: the player put it there, and moving it is for keeping the
- * new pane on screen, not for tidying the window.
+ * new pane on screen, not for tidying the window. A negative `by` shrinks it
+ * from the right and the bottom, where it is (`serverWindow.sizeWindow` relies
+ * on this).
  */
 export function grownFrame(frame: Rect, workArea: Rect, by: Size): Rect {
     const width = frame.width + by.width;
@@ -38,5 +40,33 @@ export function grownFrame(frame: Rect, workArea: Rect, by: Size): Rect {
         y: Math.max(Math.min(frame.y, workArea.y + workArea.height - height), Math.min(frame.y, workArea.y)),
         width,
         height
+    };
+}
+
+/**
+ * How much a window whose tab is `tree` has to change for its tab to be `want`
+ * — what opening a setup sizes it by (`paneTree.arrangeForGame`), for
+ * `grownFrame` to act on.
+ *
+ * Each side grows no further than `room`, the display's (`roomFor`), and
+ * shrinks as far as `want` asks: shrinking always fits. A negative answer is
+ * a shrink, which `grownFrame` takes from the right and the bottom.
+ */
+export function sizedBy(tree: Size, want: Size, room: Size): Size {
+    return { width: Math.min(want.width - tree.width, room.width), height: Math.min(want.height - tree.height, room.height) };
+}
+
+/**
+ * `frame` less `by`, taken off at `edge`: the window giving back a closed
+ * pane's room (`paneTree.closeGivingBack`). A pane that was left of the game, or
+ * above it, moves the window's left or top edge in, so the game stays where it
+ * was on screen; one right of it or below moves the right or bottom edge.
+ */
+export function shrunkFrame(frame: Rect, by: Size, edge: Edge): Rect {
+    return {
+        x: edge === 'left' ? frame.x + by.width : frame.x,
+        y: edge === 'top' ? frame.y + by.height : frame.y,
+        width: frame.width - by.width,
+        height: frame.height - by.height
     };
 }

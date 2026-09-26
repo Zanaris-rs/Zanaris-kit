@@ -28,6 +28,7 @@ These were taken while designing, and override anything below that disagrees.
 3. **Windows change on Save.** The editor has its own live preview. Windows
    wearing the theme restyle when Save is pressed, and Cancel changes
    nothing.
+   *Replaced on 2026-09-26: every window wears the draft while the editor is open, and the preview is gone — see 2026-09-26-live-themes-padding-and-setups-design.md.*
 4. **Pictures reach the page through a private scheme.** The approach is
    `zanaris-bg:`, served only from the kit's own picture folder, and only to
    the kit's own pages. The owner chose it over `data:` URLs sent over IPC.

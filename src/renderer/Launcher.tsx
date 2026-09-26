@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import type { Bookmark } from '../shared/worlds';
 import type { PaneContentItem } from '../shared/panes';
 import { OpenExternal } from './icons';
@@ -26,14 +26,28 @@ import { gameSprite, linkSprite, toolSprite } from './sprites';
  * the rule and the links below it start their names on the same line; a row
  * with no escape hatch keeps the hatch's width empty for the same reason.
  */
+
+/*
+ * The row's label is a bare `<button>`, and the base `button` rule in
+ * styles.css is unlayered CSS too — the same rule `.btn`/`.sunk`/`.tile` beat
+ * a utility of equal specificity with (`tab.tsx`'s `PADDED` is the same fix
+ * for the same reason), so `px-2 py-[6px]` on the button itself was a silent
+ * no-op and the label sat flush against the well's own border. `background:
+ * none` beats a background utility the same way, so the open/hover highlight
+ * moved to the `<li>`, which carries no such reset — and now covers the
+ * escape hatch beside the button too, which reads as one row.
+ */
+const ROW_PADDING: CSSProperties = { padding: '6px 8px' };
+
 function Row({ sprite, label, open, onOpen, link }: { sprite: ReactNode; label: string; open: boolean; onOpen: () => void; link?: Bookmark }): ReactNode {
     return (
-        <li className="flex items-stretch">
+        <li className={`flex items-stretch ${open ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}>
             <button
                 type="button"
                 aria-current={open ? 'true' : undefined}
                 onClick={onOpen}
-                className={`flex min-w-0 flex-1 items-center gap-2.5 px-2 py-[6px] text-left ${open ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}
+                style={ROW_PADDING}
+                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
             >
                 <span className="shrink-0">{sprite}</span>
                 <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -90,8 +104,8 @@ export default function Launcher({
     const fill = (item: PaneContentItem): void => void window.zanaris.panes.setContent(paneId, item.content);
     const bookmarks = new Map(links.map(link => [link.url, link]));
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <ul className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto p-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <ul className="sunk min-h-0 flex-1 overflow-y-auto p-1">
                 {contents.map((item, i) => {
                     const link = item.content.kind === 'page' ? bookmarks.get(item.content.bookmark) : undefined;
                     // The one line the stone draws rather than main: this
@@ -108,7 +122,7 @@ export default function Launcher({
                 })}
             </ul>
 
-            <p className="px-2.5 pt-2 pb-2 text-[12px] text-dim">
+            <p className="text-[12px] text-dim">
                 Add pane, at the top right, opens more beside this. Links off these sites open in your browser.
             </p>
         </div>

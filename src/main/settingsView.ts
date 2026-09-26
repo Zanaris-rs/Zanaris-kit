@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, type NativeImage } from 'electron';
+import { BrowserWindow, dialog, screen, type NativeImage } from 'electron';
 import { IPC, type Rect, type SettingsState } from '../shared/ipc';
 import { loadShell, preloadPath } from './renderer';
 import { paintsFrames } from './serverWindow';
@@ -12,7 +12,7 @@ export interface SettingsWindow extends SettingsHandle {
     readonly window: BrowserWindow;
     /** Sends Settings its state. A no-op once the page is gone. */
     push(state: SettingsState): void;
-    /** The app theme changed: the window's own ground follows, as a game window's does in `themeChanged`. */
+    /** What Settings wears changed — the app theme, or the theme being edited: the window's own ground follows, as a game window's does in `themeChanged`. */
     setBackground(colour: string): void;
     /** Resolves once the page has loaded, for capture. */
     readonly loaded: Promise<void>;
@@ -29,6 +29,12 @@ export interface SettingsWindow extends SettingsHandle {
  *
  * No parent: parented to a game window it would close with that window, and
  * it belongs to no one window.
+ *
+ * `closeQuestion` is what closing asks first, or null to close at once;
+ * `onDiscard` runs when the answer is Discard, before the window closes.
+ * `onPageReset` runs whenever the page is left holding nothing it held
+ * before: each time it finishes loading, the first load included, and when
+ * its renderer is gone.
  */
 export function createSettingsWindow(opts: {
     anchor: Rect | null;
@@ -36,6 +42,9 @@ export function createSettingsWindow(opts: {
     /** Full screen came or went, which on macOS takes the window buttons off the row of sections or puts them back (`windowFrame`). */
     onFrameChanged: () => void;
     background: string;
+    closeQuestion: () => { message: string; detail: string } | null;
+    onDiscard: () => void;
+    onPageReset: () => void;
 }): SettingsWindow {
     const display = opts.anchor ? screen.getDisplayMatching(opts.anchor) : screen.getPrimaryDisplay();
     const win = new BrowserWindow({
@@ -46,9 +55,10 @@ export function createSettingsWindow(opts: {
         // No title bar on macOS: the row of sections stands in for it, as a
         // game window's tab bar does (`windowFrame.ts`).
         ...frameOptions(process.platform),
-        // The app theme's ground, which Settings wears: what shows before the
-        // page draws, and at an edge a resize has not yet repainted.
-        // `setBackground` keeps it to the theme after a change.
+        // The ground of what Settings wears — the app theme, or the theme
+        // being edited: what shows before the page draws, and at an edge a
+        // resize has not yet repainted. `setBackground` keeps it to the theme
+        // after a change.
         backgroundColor: opts.background,
         show: false,
         // No initial pin: `openSettings` in index.ts sets it right after this
@@ -74,6 +84,47 @@ export function createSettingsWindow(opts: {
     win.on('page-title-updated', event => event.preventDefault());
     win.once('ready-to-show', () => win.show());
     win.on('closed', opts.onClosed);
+    // Asked here and decided in `appearance.closeQuestion`: a draft with
+    // changes asks before it is thrown away, since every window reverts with
+    // it. Prevented synchronously, as `close` must be, and closed again once
+    // the answer is Discard. The question is asked for first, and only a
+    // close that has one is held: `closeQuestion` has none while the app
+    // quits, so the close a quit sends goes through even with the question on
+    // screen. A second close that has one — Cmd/Ctrl+W again — is refused
+    // rather than asked twice, until the question on screen is answered.
+    let discarded = false;
+    let asking = false;
+    win.on('close', event => {
+        if (discarded) return;
+        const question = opts.closeQuestion();
+        if (!question) return;
+        event.preventDefault();
+        if (asking) return;
+        asking = true;
+        void dialog
+            .showMessageBox(win, { type: 'question', buttons: ['Keep Editing', 'Discard'], defaultId: 0, cancelId: 0, message: question.message, detail: question.detail })
+            .finally(() => {
+                asking = false;
+            })
+            .then(
+                ({ response }) => {
+                    if (response !== 1 || win.isDestroyed()) return;
+                    discarded = true;
+                    opts.onDiscard();
+                    win.close();
+                },
+                // A question that could not be shown closes nothing; the next close asks again.
+                () => undefined
+            );
+    });
+    // A page that loads again has no editor open, so a draft left behind would
+    // be worn by every window with nothing on screen to end it: Vite's full
+    // reload in development, or a reload from the developer tools. A page
+    // whose renderer is gone — crashed, killed, out of memory — has nothing
+    // on screen either, and nothing in the kit reloads it, so that ends the
+    // draft too.
+    win.webContents.on('did-finish-load', opts.onPageReset);
+    win.webContents.on('render-process-gone', () => opts.onPageReset());
     win.on('enter-full-screen', opts.onFrameChanged);
     win.on('leave-full-screen', opts.onFrameChanged);
     // Read now: once the window closes its contents are destroyed and the id with them.
@@ -92,7 +143,9 @@ export function createSettingsWindow(opts: {
         settle: () => paintsFrames(win.webContents),
         captureShell: () => win.webContents.capturePage(),
         push: state => {
-            if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+            // A crashed page is gone as well: ending a draft on
+            // `render-process-gone` pushes, and there is nothing to send it to.
+            if (win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
             win.webContents.send(IPC.settingsState, state);
         },
         setBackground: colour => {

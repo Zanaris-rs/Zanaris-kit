@@ -261,8 +261,9 @@ export function makeRoom(before: PaneNode, after: PaneNode, size: Size, room: Si
  * Works through the same splits `keepGame` does, taking the difference from the
  * panes beside the game down to their floors, so the game gets as close to
  * `want` as there is room for. It never reaches past the tab: along an axis the
- * game spans alone there is nobody to trade with, and a reset does not resize
- * the window — only a pane being added does that (`makeRoom`).
+ * game spans alone there is nobody to trade with, and a reset never resizes
+ * the window — unlike a pane added (`makeRoom`), one closed in the game's
+ * own row or column (`closeGivingBack`), or a setup opened (`arrangeForGame`).
  *
  * Returns the tree itself when the game would not move — already at its size,
  * alone in its tab, or not in this tab — so a menu can grey the item by
@@ -676,10 +677,15 @@ function findSplit(node: PaneNode, splitId: string): (PaneNode & { kind: 'split'
  * standing in, which is the only split whose seams they can see moving.
  */
 export function parentSplitOf(node: PaneNode, paneId: string): string | null {
+    return parentOf(node, paneId)?.splitId ?? null;
+}
+
+/** The split holding `paneId` as a direct child, or null when the pane is the whole tree or not in it. */
+function parentOf(node: PaneNode, paneId: string): Extract<PaneNode, { kind: 'split' }> | null {
     if (node.kind === 'leaf') return null;
-    if (node.children.some(child => child.kind === 'leaf' && child.paneId === paneId)) return node.splitId;
+    if (node.children.some(child => child.kind === 'leaf' && child.paneId === paneId)) return node;
     for (const child of node.children) {
-        const found = parentSplitOf(child, paneId);
+        const found = parentOf(child, paneId);
         if (found) return found;
     }
     return null;
@@ -716,4 +722,134 @@ export function swapPanes(node: PaneNode, a: string, b: string): PaneNode {
         return n;
     };
     return traded(node);
+}
+
+/** A side of the window: the one that moves when a close gives space back. */
+export type Edge = 'left' | 'right' | 'top' | 'bottom';
+
+/**
+ * Closes a pane and, when that would have grown the game, gives the space back
+ * to the screen instead — the explicit close's counterpart to `makeRoom`.
+ *
+ * `closePane` hands a closed pane's share to its siblings, and when the game is
+ * one of them it grows: a canvas of fixed pixels in a bigger pane is a border of
+ * nothing, and the player has to drag a seam back to where it was. So along the
+ * closed pane's split, the window shrinks by the pane and its seam, and every
+ * pane left keeps the pixels it had. `edge` is the side of the window that moves
+ * in — the closed pane's own side of the game — so the game stays where it was
+ * on screen, and null when nothing shrank.
+ *
+ * `room` is how far the window may shrink, per axis: nothing while it is
+ * maximised or full screen. The shrink stops at the tree's own floor too. What
+ * the window cannot give up is shared by the closed pane's siblings in
+ * proportion, exactly as `closePane` shares it, so with no room at all the
+ * answer is `closePane`'s own tree.
+ *
+ * Only the gesture that says "close" comes here. A drop also closes a pane on
+ * its way to moving it, and a drop must never resize the window, so
+ * `closePane` itself stays as it is.
+ *
+ * The tree returned is arranged at `size` less `shrunk` (`arrangedAt`).
+ */
+export function closeGivingBack(node: PaneNode, paneId: string, size: Size, room: Size): { tree: PaneNode; shrunk: Size; edge: Edge | null } {
+    const after = closePane(node, paneId);
+    const none = { tree: after, shrunk: { width: 0, height: 0 }, edge: null };
+    const parent = parentOf(node, paneId);
+    const was = gameSize(node, size);
+    const now = gameSize(after, size);
+    if (!parent || !was || !now) return none;
+    const across = parent.axis === 'x';
+    if ((across ? now.width - was.width : now.height - was.height) <= 0) return none;
+
+    const panes = layoutTree(node, { x: 0, y: 0, width: size.width, height: size.height }).panes;
+    const closed = panes.get(paneId)!;
+    const game = panes.get(paneIds(node).find(id => contentOf(node, id)?.kind === 'game')!)!;
+    const extent = (across ? closed.width : closed.height) + SEAM;
+    const floor = (across ? size.width : size.height) - minimumOf(after, parent.axis);
+    const shrink = Math.max(0, Math.min(extent, across ? room.width : room.height, floor));
+    if (shrink === 0) return none;
+
+    const to = across ? { width: size.width - shrink, height: size.height } : { width: size.width, height: size.height - shrink };
+    const before = across ? closed.x < game.x : closed.y < game.y;
+    return {
+        tree: closePane(payFrom(node, paneId, size, to), paneId),
+        shrunk: { width: size.width - to.width, height: size.height - to.height },
+        edge: across ? (before ? 'left' : 'right') : before ? 'top' : 'bottom'
+    };
+}
+
+/**
+ * `node` arranged at `to` rather than `from`, with the whole difference taken
+ * from the named pane: down its path, each split's child on the path gives up
+ * the difference along that split's axis and every other child keeps the pixels
+ * it had.
+ *
+ * The pane about to be closed is the one named, so its share can end up at
+ * nothing or a seam's width below it — a size no pane is ever drawn at, and
+ * none is, since `closePane` removes it before anything lays the tree out. What
+ * closing it then hands its siblings is exactly what is left of it, which is
+ * nothing when the window gave up the whole pane and its seam.
+ */
+function payFrom(node: PaneNode, paneId: string, from: Size, to: Size): PaneNode {
+    if (node.kind === 'leaf') return node;
+    const at = node.children.findIndex(child => paneIds(child).includes(paneId));
+    if (at < 0) return node;
+    const across = node.axis === 'x';
+    const seams = SEAM * (node.children.length - 1);
+    const had = allocate(
+        node.fractions,
+        (across ? from.width : from.height) - seams,
+        node.children.map(child => minimumOf(child, node.axis))
+    );
+    const gross = (across ? to.width : to.height) - seams;
+    const lost = (across ? from.width : from.height) - (across ? to.width : to.height);
+    const sizes = had.map((px, i) => (i === at ? px - lost : px));
+    const resized = (size: Size, px: number): Size => (across ? { width: px, height: size.height } : { width: size.width, height: px });
+    const child = payFrom(node.children[at]!, paneId, resized(from, had[at]!), resized(to, sizes[at]!));
+    return { ...node, children: node.children.map((c, i) => (i === at ? child : c)), fractions: sizes.map(px => px / gross) };
+}
+
+/**
+ * A setup's tree made for the game as it is now, and the size of tab that
+ * holds it — what opening a setup sizes the window to.
+ *
+ * `saved` is the tab size the setup was made at, and `want` the game's pixels
+ * now, or null when no game is running, when the setup's own game size stands.
+ * The game's side of every split is moved by the difference, the same walk
+ * `keepGame` makes, so every other pane keeps the pixels it was saved with and
+ * the tab grows or shrinks by exactly what the game did. Raised to the tree's
+ * own floor, where the other panes take up the slack.
+ *
+ * A `saved` size below the tree's floor — a tab saved from a window squeezed
+ * past its panes' minimums, or a file edited by hand — is read as the floor.
+ * Measured at the size it says, `allocate` would scale every pane down, the
+ * game would read as smaller than it is anywhere the tree fits, and the tab
+ * would come out too small to hold it at `want`.
+ *
+ * A null size — the setup has no game, or no size was saved with it — means the
+ * tree is to be fitted to the tab as it is, by its fractions, as a setup
+ * always was before sizes were saved.
+ */
+export function arrangeForGame(tree: PaneNode, saved: Size | null, want: Size | null): { tree: PaneNode; size: Size | null } {
+    if (!saved) return { tree, size: null };
+    const floor = { width: minimumOf(tree, 'x'), height: minimumOf(tree, 'y') };
+    const from = { width: Math.max(saved.width, floor.width), height: Math.max(saved.height, floor.height) };
+    const had = gameSize(tree, from);
+    if (!had) return { tree, size: null };
+    const game = want ?? had;
+    const delta = { width: game.width - had.width, height: game.height - had.height };
+    const size = {
+        width: Math.max(from.width + delta.width, floor.width),
+        height: Math.max(from.height + delta.height, floor.height)
+    };
+    return { tree: holdGame(tree, from, size, delta), size };
+}
+
+/** The game's pixels in whichever of `trees` holds it, laid out at `size`, or null when none does. */
+export function gameSizeIn(trees: readonly PaneNode[], size: Size): Size | null {
+    for (const tree of trees) {
+        const found = gameSize(tree, size);
+        if (found) return found;
+    }
+    return null;
 }

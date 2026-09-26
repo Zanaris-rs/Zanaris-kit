@@ -123,8 +123,8 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
     const passwordPlaceholder = forget ? 'Forgotten when you save' : saved.hasPassword ? 'Saved — type to replace' : 'Optional';
 
     return (
-        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-            <div className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5 leading-[1.45]">
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="sunk min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5 leading-[1.45]">
                 {view.needsNick && (
                     <p className="mb-2.5">
                         Everyone playing shares these channels. Pick a name for chat — the other players will see it.{' '}
@@ -246,7 +246,7 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
             </div>
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
-            <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-2">
+            <div className="flex flex-wrap items-center gap-1.5">
                 {connected ? (
                     <>
                         <button type="submit" disabled={!changed || !valid || busy} style={changed && valid ? BUTTON_SIZE : SPENT} className="btn">

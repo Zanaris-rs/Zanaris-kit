@@ -80,8 +80,22 @@ function tabTitle(tab: TabView): string {
  * the header, so the shell leaves the rest of the pane empty exactly as it left
  * the old content rect empty. A page's back, forward and reload moved up into
  * the header with everything else that names a pane rather than works in one.
+ *
+ * Every pane the shell draws itself — a tool, and the launcher an empty pane
+ * shows — is inset by the same 10px on every side, here and only here, so no
+ * tool can drift from another. A tool no longer insets its own edge; it spaces
+ * its own top-level blocks with one `gap-2` instead.
  */
 function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
+    if (pane.content.kind === 'game' || pane.content.kind === 'page') return null;
+    return (
+        <div className="flex min-h-0 flex-1 flex-col p-2.5">
+            <PaneContentBody pane={pane} state={state} />
+        </div>
+    );
+}
+
+function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
     switch (pane.content.kind) {
         case 'empty':
             return <Launcher paneId={pane.paneId} links={state.server.bookmarks} contents={pane.contents ?? []} />;
@@ -353,28 +367,35 @@ export default function Shell(): ReactNode {
         <div className="picture relative h-full overflow-hidden bg-ink text-cream">
             <TopBar frame={state.frame} style={at(rects.tabBar)}>
                 {/*
-                 * Tabs and the control that makes one, then Settings and Add
-                 * pane at the far end, and nothing else. The game's read-out
-                 * used to sit at this bar's left on the grounds that it was
-                 * the window's rather than any tab's — true, but it left the
-                 * bar reading as two unrelated things, and a read-out about
-                 * the game is easiest to believe beside the game. It is in
-                 * the game pane's own header now.
+                 * Tabs and the control that makes one, then Sharing while a
+                 * live link has no pane to mark, and Settings, Setups and Add
+                 * pane at the far end, and nothing else. The game's
+                 * read-out used to sit at this bar's left on the grounds that
+                 * it was the window's rather than any tab's — true, but it
+                 * left the bar reading as two unrelated things, and a read-out
+                 * about the game is easiest to believe beside the game. It is
+                 * in the game pane's own header now.
                  */}
-            {/*
-                 * The tablist is its own box so Add pane, a menu button
-                 * rather than a tab, sits outside it. `min-w-0` is what lets
-                 * the tabs give way to it as they multiply.
+                {/*
+                 * The tablist is its own box so Setups and Add pane, menu
+                 * buttons rather than tabs, sit outside it. `min-w-0` is
+                 * what lets the tabs give way to them as they multiply,
+                 * and `overflow-hidden` keeps what still does not fit
+                 * inside the box: on a window narrower than the bar's
+                 * buttons, which closing a pane beside the game can now
+                 * make, the tabs and the new-tab plus are cut off at its
+                 * edge instead of painting over the gear.
                  */}
-                <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px]">
+                <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px] overflow-hidden">
                     {/*
                      * A tab and its close are one object: the close sits inside
                      * the tab it shuts, so it reads as part of that workspace
                      * rather than as another piece of the bar's furniture. Main
                      * asks first when the tab holds the game. A right-click
-                     * raises the tab's own menu — save its panes as a layout,
-                     * load one, open the folder — which main builds, as it does
-                     * every pane menu.
+                     * raises the tab's own menu, which offers Close Tab and
+                     * which main builds, as it does every pane menu. Setups
+                     * are the bar's Setups menu, which opens into the tab in
+                     * front.
                      */}
                     {state.tabs.map(tab => (
                         <Tab
@@ -434,6 +455,27 @@ export default function Shell(): ReactNode {
                     className="btn shrink-0 justify-center"
                 >
                     <Gear />
+                </button>
+                {/*
+                 * Setups: a set of panes in a shape, one click away. Main's
+                 * menu, as Add pane's is, since it drops down over the panes;
+                 * a setup chosen from it replaces the panes of the tab in
+                 * front and, when it holds the game and has a size, sizes
+                 * the window around the game.
+                 */}
+                <button
+                    type="button"
+                    title="Open this tab in a setup, or save it as one"
+                    aria-haspopup="menu"
+                    onClick={event => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        void window.zanaris.panes.setupsMenu(box.left, box.bottom);
+                    }}
+                    style={ADD_PANE_BOX}
+                    className="btn shrink-0 gap-[3px]"
+                >
+                    Setups
+                    <Caret />
                 </button>
                 {/*
                  * How a pane gets added, at the far end of the bar from the

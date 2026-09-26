@@ -28,6 +28,8 @@ import {
 } from '../shared/themes';
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
+import { roomFor } from './windowRoom';
+import { COLUMN_PREFERRED_WIDTH, SEAM } from '../shared/layout';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
@@ -58,7 +60,7 @@ import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
-import { appearanceView, deleteQuestion } from './appearance';
+import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing, type Editing } from './appearance';
 import { devBranding } from './branding';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
 import { presetCards, presetFile, readPreset, type PresetCard } from './presets';
@@ -188,6 +190,14 @@ const pictures = new PictureStore(join(userData, 'backgrounds'));
 const PRESET_DIR = join(__dirname, '../../static/pictures');
 /** What Settings is sent for them, read and hashed once: the files are the app's own, and do not change while it runs. */
 let presetView: PresetCard[] | undefined;
+
+/**
+ * The theme open in Settings' editor, worn by every window until the editor
+ * closes (`appearance.lookFor`). Held here only and never written: a draft is
+ * kept by Save, and ends with Save, Cancel, Delete, Settings closing,
+ * Settings' page loading again, or its renderer going away.
+ */
+let editing: Editing | null = null;
 
 /** Every picture a custom theme names: what pruning keeps. */
 function keptPictures(): Set<string> {
@@ -446,7 +456,7 @@ const windows = new ServerWindows(
                 chat: chatView,
                 alwaysOnTop: () => appState.alwaysOnTop(),
                 confirmCloseGame: via => confirmCloseGame(spec, via),
-                layoutsDir: join(userData, 'layouts', slugify(spec.server.id)),
+                setupsDir: join(userData, 'setups', slugify(spec.server.id)),
                 remembered: appState.world(spec.server.id),
                 remember: remembered => appState.setWorld(spec.server.id, remembered),
                 probe: probeLatency,
@@ -456,7 +466,7 @@ const windows = new ServerWindows(
                     const state = appState.timers();
                     return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
                 },
-                theme: () => themeFor(appState.appearance(), spec.server.id)
+                theme: () => lookFor(appState.appearance(), spec.server.id, editing)
             }
         );
         serverWindows.set(spec.id, sw);
@@ -484,9 +494,24 @@ function openServer(server: ServerDef): ServerWindow {
 
 // ── settings ──────────────────────────────────────────────────────────────
 
-/** The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this only builds it. */
+/**
+ * The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this
+ * only builds it. `onClosed()` runs first so the slot is empty, and
+ * `endEditing`'s push goes nowhere.
+ */
 const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
-    createSettingsWindow({ anchor, onClosed, onFrameChanged: pushSettings, background: themeFor(appState.appearance(), null).colors.window })
+    createSettingsWindow({
+        anchor,
+        onClosed: () => {
+            onClosed();
+            endEditing();
+        },
+        onFrameChanged: pushSettings,
+        background: lookFor(appState.appearance(), null, editing).colors.window,
+        closeQuestion: () => closeQuestion(editing, quitting),
+        onDiscard: endEditing,
+        onPageReset: endEditing
+    })
 );
 
 /** What Settings draws, built when asked for, like a shell's state. */
@@ -494,7 +519,7 @@ function settingsState(): SettingsState {
     const win = settings.current()?.window;
     return {
         servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
-        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list(), presets: (presetView ??= presetCards(PRESET_DIR)) }),
+        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list(), presets: (presetView ??= presetCards(PRESET_DIR)), editing }),
         frame: windowFrame(process.platform, win !== undefined && !win.isDestroyed() && win.isFullScreen())
     };
 }
@@ -505,16 +530,38 @@ function pushSettings(): void {
 }
 
 /**
+ * Every game window restyled to what it now wears, and Settings' own ground
+ * with it; Settings' page follows when it is next pushed its state. All of
+ * them, since working out which ones moved would only save repainting a few
+ * in the colours they already wear.
+ */
+function restyle(): void {
+    for (const sw of serverWindows.values()) sw.themeChanged();
+    settings.current()?.setBackground(lookFor(appState.appearance(), null, editing).colors.window);
+}
+
+/**
  * After the app theme or a server's changes. Every window restyles to what it
- * now resolves to — working out which ones moved would only save repainting a
- * few in the colours they already wear — Settings is sent its state, and the
- * menu is rebuilt so View > Server Theme's radio agrees.
+ * now resolves to, Settings is sent its state, and the menu is rebuilt so
+ * View > Server Theme's radio agrees.
  */
 function appearanceChanged(): void {
-    for (const sw of serverWindows.values()) sw.themeChanged();
-    settings.current()?.setBackground(themeFor(appState.appearance(), null).colors.window);
+    restyle();
     pushSettings();
     installAppMenu();
+}
+
+/**
+ * Ends the draft, when there is one: every window goes back to the theme it
+ * is set to wear. The menu is left alone: it shows what each window is set to
+ * wear — the app theme and each server's own, the stored choices — and a
+ * draft never changes those.
+ */
+function endEditing(): void {
+    if (!editing) return;
+    editing = null;
+    restyle();
+    pushSettings();
 }
 
 /**
@@ -758,6 +805,26 @@ ipcMain.handle(IPC.appearanceServer, (event, serverId: unknown, id: unknown) => 
     appearanceChanged();
 });
 
+/**
+ * The editor's draft, reported on every change while it is open and as null
+ * when it closes. Every window wears it until then. The menu is not rebuilt:
+ * View > Server Theme shows the theme each server is set to wear, its stored
+ * choice, which a draft never changes, and a colour well reports on every
+ * step of a drag.
+ */
+ipcMain.handle(IPC.appearanceEditing, (event, raw: unknown) => {
+    if (!settings.isSender(event.sender.id)) return;
+    if (raw === null) {
+        endEditing();
+        return;
+    }
+    const next = readEditing(raw);
+    if (!next) return;
+    editing = next;
+    restyle();
+    pushSettings();
+});
+
 /** Settings' window, or null when a call came from anywhere else: every handler below writes, asks or opens a dialog, and only Settings may. */
 function settingsWindowFor(sender: WebContents): BrowserWindow | null {
     return settings.isSender(sender.id) ? (settings.current()?.window ?? null) : null;
@@ -777,8 +844,16 @@ function placeTheme(name: string, except: string | null): { id: string; name: st
  * The editor's Save. Read as strictly as a stored theme; a new theme gets an
  * id, and any theme a name no other has. Windows wearing it restyle, and a
  * picture chosen and then replaced, or chosen in an editor that was then
- * cancelled, is pruned here. Save changes what nothing wears: a new theme is
- * chosen from its card like any other.
+ * cancelled, is pruned here. Save makes the theme the app theme and ends the
+ * draft (Decision 2 of the 2026-09-26 spec). Every window has been wearing
+ * it, and one that flipped back the moment it was kept would read as Save
+ * undoing the work. A server with its own theme goes back to that one.
+ *
+ * Making it the app theme is a second write, after the theme is already
+ * kept, so a failure there is only logged: answering that the save failed
+ * would be untrue, and a second Save of a new theme would add a copy of it.
+ * The app wears it for the rest of the session either way, since `setTheme`
+ * takes the choice before it writes; only the next launch would not.
  */
 ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } | { error: string } => {
     if (!settings.isSender(event.sender.id)) return { error: 'Only Settings saves themes.' };
@@ -795,11 +870,22 @@ ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } |
         log(`[main] could not save a theme: ${(err as Error).message}`);
         return { error: "Couldn't save the theme: the kit's settings file couldn't be written." };
     }
+    try {
+        appState.setTheme(placed.id);
+    } catch (err) {
+        log(`[main] saved ${placed.id} but could not write it down as the app theme: ${(err as Error).message}`);
+    }
+    editing = null;
     pictures.prune(keptPictures());
     appearanceChanged();
     return { id: placed.id };
 });
 
+/**
+ * The editor's Delete, after asking. Only the editor offers it, on the theme
+ * it holds, so a delete that goes ends the draft, and ends it before the
+ * prune: a draft is never worn over a picture that is already gone.
+ */
 ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<boolean> => {
     const win = settingsWindowFor(event.sender);
     if (!win || typeof id !== 'string') return false;
@@ -821,6 +907,7 @@ ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<b
         await dialog.showMessageBox(win, { type: 'warning', message: "Couldn't delete the theme.", detail: "The kit's settings file couldn't be written." });
         return false;
     }
+    editing = null;
     pictures.prune(keptPictures());
     appearanceChanged();
     return true;
@@ -911,21 +998,27 @@ ipcMain.handle(IPC.appearanceImportTheme, async (event): Promise<{ name: string 
     }
 });
 
-/** Export…: one of the player's themes as a file, its picture inline. */
-ipcMain.handle(IPC.appearanceExportTheme, async (event, id: unknown): Promise<string | null> => {
+/**
+ * Export…: the editor's theme as a file, its picture inline — saved or not,
+ * since the file is whatever the editor holds. Read as strictly as Save
+ * reads it.
+ */
+ipcMain.handle(IPC.appearanceExportTheme, async (event, raw: unknown): Promise<string | null> => {
     const win = settingsWindowFor(event.sender);
-    if (!win || typeof id !== 'string') return null;
-    const theme = appState.appearance().custom.find(t => t.id === id);
-    if (!theme) return 'That theme is no longer there.';
+    if (!win) return null;
+    const draft = readThemeDraft(raw);
+    if (!draft) return "That theme can't be exported: its name or one of its colours isn't one the kit can keep.";
+    const picture = draft.background ? pictures.read(draft.background.picture) : null;
+    if (draft.background && picture === null) return 'Its picture is no longer there. Choose it again.';
     const { canceled, filePath } = await dialog.showSaveDialog(win, {
         title: 'Export theme',
         buttonLabel: 'Export',
-        defaultPath: join(app.getPath('documents'), themeFileName(theme.name)),
+        defaultPath: join(app.getPath('documents'), themeFileName(draft.name)),
         filters: [{ name: 'Zanaris Kit themes', extensions: [THEME_FILE_EXTENSION] }]
     });
     if (canceled || !filePath) return null;
     try {
-        writeFileSync(filePath, writeThemeFile(theme, theme.background ? pictures.read(theme.background.picture) : null));
+        writeFileSync(filePath, writeThemeFile(draft, picture));
         return null;
     } catch (err) {
         log(`[main] could not write ${filePath}: ${(err as Error).message}`);
@@ -1116,6 +1209,12 @@ ipcMain.handle(IPC.tabAddPaneMenu, (event, x: unknown, y: unknown) => {
     if (typeof x !== 'number' || typeof y !== 'number') return;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     windowFor(event.sender)?.showAddPaneMenu(x, y);
+});
+
+ipcMain.handle(IPC.tabSetupsMenu, (event, x: unknown, y: unknown) => {
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showSetupsMenu(x, y);
 });
 
 ipcMain.handle(IPC.tabShowYourWorld, event => windowFor(event.sender)?.showYourWorld());
@@ -1361,15 +1460,15 @@ ipcMain.handle(IPC.chatDisconnect, () => {
 // ── your world ─────────────────────────────────────────────────────────
 
 /**
- * Ask before closing the game — its pane, or a tab holding it — which destroys
- * the view and disconnects the player.
+ * Ask before closing the game — its pane, a tab holding it, or a setup opened
+ * over the tab holding it — which destroys the view and disconnects the player.
  *
  * The same shape as `confirmSwitch`: a sheet on the window rather than an
  * app-modal box, so other windows keep running, and the same "don't ask again"
  * the switch warning uses — it is the same preference, since it answers the same
  * question about the same cost. Capture mode never arrives here.
  */
-async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'layout'): Promise<boolean> {
+async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'setup'): Promise<boolean> {
     const sw = serverWindows.get(spec.id);
     if (!sw || quitting) return true;
     if (!appState.warnOnSwitch()) return true;
@@ -1378,7 +1477,7 @@ async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'layout'
         buttons: ['Close', 'Cancel'],
         defaultId: 1,
         cancelId: 1,
-        message: via === 'tab' ? 'Close this tab and the game in it?' : via === 'layout' ? 'Load this layout and close the game?' : 'Close the game?',
+        message: via === 'tab' ? 'Close this tab and the game in it?' : via === 'setup' ? 'Open this setup and close the game?' : 'Close the game?',
         detail: `Zanaris Kit disconnects from ${spec.server.name} straight away, whether or not you are logged in. If you are in game, that logs you out. Opening the game again is a fresh login.`,
         checkboxLabel: "Don't ask again",
         checkboxChecked: false
@@ -1712,13 +1811,23 @@ const shotOfThePage =
 /**
  * Open every catalog server, wait for each game to load (or fail over to the
  * offline page), let the clients draw, then write each window's shell and game
- * views as PNGs. Then open the panel on a loaded window and capture it again
- * (the layout engine), and open a second instance of that server (slots and
- * partitions). A window's own webContents holds nothing, so the views are
+ * views as PNGs. A window's own webContents holds nothing, so the views are
  * captured one by one, and a view with no frame yet is skipped rather than
- * allowed to abort the run. Last comes the reference pane: the Guides list,
- * two pages open beside the game, and the first of them brought back to prove
- * a tab switch did not reload it.
+ * allowed to abort the run.
+ *
+ * Then, in this order: Settings; a split, a swap and a move on the first
+ * loaded window; the Worlds tool, maximised, a world switch and a split down;
+ * Hiscores on each server that has it; Timers; a seam dragged and a pane
+ * closed giving its room back; the Your world tool; the reference pane — the
+ * launcher, two pages beside the game, and the first of them brought back to
+ * prove a tab switch did not reload it; a second instance of the first
+ * server (slots and partitions), with a setup saved and opened into a new tab
+ * and the game left behind another tab; every theme, Settings on Appearance,
+ * a server's own theme and a custom theme with a picture and its editor, with
+ * a draft typed there worn by the first window and cancelled; a built-in
+ * setup opened on the first window, its tools column closed and the setup
+ * opened again, the window sized around the game each way. Last comes
+ * Settings' close question, left up while the run quits.
  *
  * A shell that never paints, or a shell shot with the same bytes as an
  * earlier one, is a shot that does not show its step while the log reports it
@@ -2074,13 +2183,18 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] ${first.state().title}: seam asked for ${asked}px of ${seam.gross}, got ${applied}${applied === asked ? '' : ' (clamped)'}`);
             await shoot(`${first.state().server.id}-seam-dragged`, first);
 
-            // And closed again: the sibling takes the space back and the split
-            // collapses, which is the half of the tree's behaviour no shot
-            // above evidences.
+            // And closed again: the focused pane is Timers, appended into the
+            // same row the game sits in (by the Hiscores loop above, or by
+            // `showTool` a few lines up if that loop skipped this server), so
+            // the window gives that room back to the screen instead of
+            // handing it to a sibling (`closeGivingBack`) — the half of the
+            // tree's behaviour no shot above evidences.
+            const widthBefore = first.window.getBounds().width;
             await first.closePane(focused(first));
             await wait(500);
             const closed = first.state();
-            log(`[capture] ${closed.title}: after close — ${closed.panes.length} pane(s), ${closed.seams.length} seam(s)`);
+            const widthAfter = first.window.getBounds().width;
+            log(`[capture] ${closed.title}: after close — ${closed.panes.length} pane(s), ${closed.seams.length} seam(s), window ${widthBefore}px -> ${widthAfter}px`);
             await shoot(`${closed.server.id}-pane-closed`, first);
         } else {
             log('[capture] seam drag skipped: the window had no split to drag');
@@ -2190,26 +2304,26 @@ async function captureAndExit(dir: string): Promise<void> {
         await wait(Math.min(settleMs, 8_000));
         await shoot(`${first.state().server.id}-2`, second);
 
-        // A layout saved and loaded, driven on the window rather than through
-        // the tab menu — the save and open dialogs are native sheets nothing
+        // A setup saved and opened, driven on the window rather than through
+        // the Setups menu — the save and open dialogs are native sheets nothing
         // here can click. The fresh window's game-and-chat tab is written to a
-        // file, a new empty tab is opened, and the file loaded into it: the
+        // file, a new empty tab is opened, and the file opened into it: the
         // game should move into the new tab's game pane without a reload, and
         // the first tab's game pane should be left empty. Written to the temp
-        // directory and removed, so a run leaves nothing in the layouts folder.
+        // directory and removed, so a run leaves nothing in the setups folder.
         const activeTab = (sw: ServerWindow): string => sw.state().tabs.find(tab => tab.active)?.id ?? '';
         const panesOf = (sw: ServerWindow): string => sw.state().panes.map(p => (p.content.kind === 'tool' ? p.content.tool : p.content.kind)).join(' over ');
-        const layoutPath = join(app.getPath('temp'), `zanaris-kit-capture-${Date.now()}.json`);
+        const setupPath = join(app.getPath('temp'), `zanaris-kit-capture-setup-${Date.now()}.json`);
         try {
             const saved = panesOf(second);
-            second.saveLayoutTo(activeTab(second), layoutPath);
+            second.saveSetupTo(activeTab(second), setupPath);
             second.newTab();
             await wait(300);
-            const result = await second.loadLayoutFrom(activeTab(second), layoutPath);
+            const result = await second.openSetupFrom(activeTab(second), setupPath);
             await wait(500);
             const tabs = second.state().tabs.map(tab => tab.label).join(', ');
-            log(`[capture] ${second.state().title}: saved "${saved}", loaded into a new tab: ${result} — now "${panesOf(second)}", tabs ${tabs}`);
-            await shoot(`${first.state().server.id}-layout-loaded`, second);
+            log(`[capture] ${second.state().title}: saved setup "${saved}", opened into a new tab: ${result} — now "${panesOf(second)}", tabs ${tabs}`);
+            await shoot(`${first.state().server.id}-setup-loaded`, second);
 
             // The game is in the second tab now, so bringing the first one to
             // the front hides it: the second tab should carry the game's flag,
@@ -2223,7 +2337,7 @@ async function captureAndExit(dir: string): Promise<void> {
                 await shoot(`${first.state().server.id}-game-behind`, second);
             }
         } finally {
-            rmSync(layoutPath, { force: true });
+            rmSync(setupPath, { force: true });
         }
 
         // Themes. Each as the app theme on the first window, with a tool
@@ -2281,9 +2395,11 @@ async function captureAndExit(dir: string): Promise<void> {
         // around it, worn as the app theme. Then Settings on Appearance with
         // the theme's card, and the editor open on it with the gallery marking
         // the Title screen, each opened by clicking as a person would and read
-        // back before the shot. Then Cobbles clicked in the gallery and the
-        // theme saved from the page — main's handler, the store and Save, as
-        // a player's click takes them — and the window shot wearing it, tiled.
+        // back before the shot. Then a colour typed into the editor, worn by
+        // every window, and cancelled; the editor opened again; and Cobbles
+        // clicked in the gallery and the theme saved from the page — main's
+        // handler, the store and Save, as a player's click takes them — and
+        // the window shot wearing it, tiled.
         {
             const title = readPreset(PRESET_DIR, 'title');
             const stored = title ? pictures.add(title) : { error: `the Title screen is not in ${PRESET_DIR}` };
@@ -2325,6 +2441,43 @@ async function captureAndExit(dir: string): Promise<void> {
                 if (!(await heading()).includes('Edit theme')) fault('settings-editor: the editor could not be opened, so the shot would show the list');
                 await wait(500);
                 await shootShell('settings-editor', settingsWindow);
+
+                // The live draft: Settings.tsx reports every change through
+                // appearance.editing, main reads it into `editing`, and
+                // `lookFor` resolves every window's theme from it while the
+                // editor is open — the path from a typed hex to a repainted
+                // window, worn by nothing but the shots above until now.
+                // Typed as a person would: a native input event, since React
+                // only hears one.
+                const stoneBefore = first.state().theme.colors.stone;
+                const draftStone = '#7a2a2a';
+                const typed = await contents.executeJavaScript(
+                    `(() => { const el = document.querySelector('input[data-token="stone"]'); if (!el) return false;
+                      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(draftStone)});
+                      el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
+                );
+                if (!typed) fault('theme-draft: the stone field could not be found, so no draft was typed');
+                await wait(800);
+                const stoneDuring = first.state().theme.colors.stone;
+                const settingsStoneDuring = settingsState().appearance.look.colors.stone;
+                if (stoneDuring !== draftStone) fault(`theme-draft: the first window did not wear the draft (stone ${stoneDuring}, expected ${draftStone})`);
+                if (settingsStoneDuring !== draftStone) fault(`theme-draft: Settings did not wear the draft (stone ${settingsStoneDuring}, expected ${draftStone})`);
+                await shootShell('theme-draft', first);
+
+                await click('Cancel');
+                await wait(800);
+                const stoneAfter = first.state().theme.colors.stone;
+                if (stoneAfter !== stoneBefore) fault(`theme-draft: Cancel did not restore the first window's stone (before ${stoneBefore}, after ${stoneAfter})`);
+                log(`[capture] draft: stone ${stoneBefore} -> during ${stoneDuring} -> after Cancel ${stoneAfter}`);
+
+                // Cancel closed the editor with the draft; the gallery below
+                // needs it open again, on the theme as it was saved.
+                for (let tries = 0; tries < 20 && !(await heading()).includes('Edit theme'); tries++) {
+                    await click('Edit');
+                    await wait(250);
+                }
+                if (!(await heading()).includes('Edit theme')) fault('settings-editor-preset: the editor could not be opened again after Cancel');
+                await wait(500);
                 // The gallery, as a person uses it: Cobbles clicked, the draft read back, then Save.
                 const cobbles = `document.querySelector('button[aria-label="Cobbles"]')`;
                 if (!(await contents.executeJavaScript(`(() => { const b = ${cobbles}; if (!b) return false; b.click(); return true; })()`))) {
@@ -2347,6 +2500,112 @@ async function captureAndExit(dir: string): Promise<void> {
             appState.setTheme(DEFAULT_THEME);
             pictures.prune(keptPictures());
             appearanceChanged();
+        }
+
+        // A built-in setup opened, then its tools column closed pane by pane,
+        // then the setup opened again: the window should grow or shrink to
+        // hold the column when the setup opens, give the column back when its
+        // last pane closes, and grow by the column and its seam when it opens
+        // again from the game over chat — as far as the display has room for
+        // — and the game keep its width through all three. On the first
+        // window, whose tab in front holds the game; skipped, and said, when
+        // it does not. Widths are the window's frame, as the pane-closed line
+        // above reads them.
+        {
+            const gamePane = (): { rect: { width: number; height: number } } | undefined => first.state().panes.find(p => p.content.kind === 'game');
+            const game = (): string => {
+                const rect = gamePane()?.rect;
+                return rect ? `${rect.width}x${rect.height}` : 'none';
+            };
+            const width = (): number => first.window.getBounds().width;
+            if (!gamePane()) {
+                log('[capture] setups: the first window has no game in its tab in front; the setup and close check was skipped');
+            } else {
+                const before = { window: width(), game: gamePane()!.rect.width, size: game() };
+                const opened = await first.openBuiltInSetup('game-chat-tools');
+                await wait(800);
+                const during = { window: width(), game: gamePane()?.rect.width ?? 0, size: game() };
+                log(`[capture] setup Game, Chat and Tools: ${opened} — window ${before.window}px -> ${during.window}px, game ${before.size} -> ${during.size}, panes ${first.state().panes.map(p => (p.content.kind === 'tool' ? p.content.tool : p.content.kind)).join(' · ')}`);
+                await shootShell('setup-tools', first);
+                for (const pane of first.state().panes.filter(p => p.content.kind === 'tool' && p.content.tool !== 'chat')) {
+                    await first.closePane(pane.paneId);
+                    await wait(300);
+                }
+                await wait(500);
+                const after = { window: width(), game: gamePane()?.rect.width ?? 0, size: game() };
+                log(`[capture] setups: tools column closed — window ${during.window}px -> ${after.window}px, game ${during.size} -> ${after.size}`);
+                if (during.game !== before.game || after.game !== before.game) fault(`setups: the game did not keep its width (${before.game}, ${during.game}, ${after.game})`);
+                if (after.window >= during.window) fault(`setups: closing the tools column did not give the window its width back (${during.window}px -> ${after.window}px)`);
+                await shootShell('setup-closed', first);
+
+                const frame = first.window.getBounds();
+                const room = roomFor(frame, screen.getDisplayMatching(frame).workArea).width;
+                const column = COLUMN_PREFERRED_WIDTH + SEAM;
+                const reopened = await first.openBuiltInSetup('game-chat-tools');
+                await wait(800);
+                const grown = { window: width(), game: gamePane()?.rect.width ?? 0, size: game() };
+                log(
+                    `[capture] setup Game, Chat and Tools again: ${reopened} — window ${after.window}px -> ${grown.window}px (grew ${grown.window - after.window}px; the column and its seam are ${column}px, the display had room for ${room}px), game ${after.size} -> ${grown.size}`
+                );
+                if (first.window.isMaximized() || first.window.isFullScreen()) {
+                    log('[capture] setups: the window is maximised or full screen, which a setup does not resize; the growth was not checked');
+                } else if (room < column) {
+                    log(`[capture] setups: the display had room for ${room}px of the ${column}px column, so the growth was capped and not checked`);
+                } else {
+                    if (Math.abs(grown.window - after.window - column) > 2) fault(`setups: opening Game, Chat and Tools again did not grow the window by the column (${after.window}px -> ${grown.window}px, expected +${column}px)`);
+                    if (grown.game !== after.game) fault(`setups: the game did not keep its width as the window grew (${after.game}px -> ${grown.game}px)`);
+                }
+                await shootShell('setup-grown', first);
+            }
+        }
+
+        // The close question, and a quit while it is still on screen. This
+        // must be the run's last act: nothing after it can shoot or log,
+        // since the process is meant to exit with the sheet up. Settings
+        // never holds up a quit (Decision 3 of the live-themes design) —
+        // `closeQuestion` answers null once `quitting` is true, whatever the
+        // draft — so the run's own `app.quit()` below, in `finally`, must
+        // still go through with this window's question unanswered: the case
+        // commit 2f34b03's fix exists for. If it does not, the run hangs.
+        {
+            const settingsWindow = settings.open(first.window.getBounds());
+            await settingsWindow.loaded;
+            const contents = settingsWindow.window.webContents;
+            const click = (label: string): Promise<boolean> =>
+                contents.executeJavaScript(
+                    `(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`
+                );
+            const heading = (): Promise<string[]> => contents.executeJavaScript(`[...document.querySelectorAll('h2')].map(h => h.textContent)`);
+            const openSection = (): Promise<string | null> => contents.executeJavaScript(`document.querySelector('button[aria-current="true"]')?.textContent ?? null`);
+            for (let tries = 0; tries < 20 && (await openSection()) !== 'Appearance'; tries++) {
+                await click('Appearance');
+                await wait(250);
+            }
+            for (let tries = 0; tries < 20 && !(await heading()).some(h => h === 'Edit theme' || h === 'New theme'); tries++) {
+                await click('Customise');
+                await wait(250);
+            }
+            const editorOpen = (await heading()).some(h => h === 'Edit theme' || h === 'New theme');
+            if (!editorOpen) fault('close-question: the editor could not be opened on a built-in, so the close question was never tried');
+            const typed = await contents.executeJavaScript(
+                `(() => { const el = document.querySelector('input[data-token="stone"]'); if (!el) return false;
+                  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '#2a5a7a');
+                  el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
+            );
+            if (!typed) fault('close-question: the stone field could not be found, so no unsaved change was made');
+            await wait(800);
+            settingsWindow.window.close();
+            await wait(800);
+            const held = settings.current() === settingsWindow;
+            log(`[capture] close-question: closing Settings with an unsaved draft ${held ? 'was held — the window is still open with the question up' : 'was NOT held — the window closed'}`);
+            if (!held) fault('close-question: closing Settings with unsaved changes did not ask');
+
+            // Teardown must not leave the draft, or a theme it was never
+            // asked to save, behind: a Customise draft that is only ever
+            // Cancelled or discarded creates nothing on disk.
+            const customLeft = appState.appearance().custom.length;
+            log(`[capture] close-question: ${customLeft} custom theme(s) saved before quit, with the question still on screen`);
+            if (customLeft > 0) fault(`close-question: a Customise draft that was never saved left ${customLeft} custom theme(s) behind`);
         }
     } catch (err) {
         fault(`aborted: ${(err as Error).stack ?? String(err)}`);

@@ -58,7 +58,7 @@ be shown. What a tab close takes with it is `tabs.closingTab`, pure and tested;
 
 Everything else about the layout is `src/main/paneTree.ts`: a tab is a tree of
 leaves and n-ary splits, and one recursive walk turns it into a rect per pane.
-Four properties in there are load-bearing and easy to break —
+Six properties in there are load-bearing and easy to break —
 
 - Shares are distributed by **largest remainder**, so children sum to their
   container exactly. A round per child leaves a hairline of shell showing
@@ -81,15 +81,39 @@ Four properties in there are load-bearing and easy to break —
   window is growing to (`arrangedAt`). Left to `refit`, it would be fitted from
   the last frame's size, the growth would read as a resize, and the game would
   be held at the size the new pane squeezed it to while the window grew around
-  it. The window grows itself for nothing else — not Reset Game Size, not a
-  drop — and never shrinks itself back.
+  it.
+- A pane **closed** in the game's own row or column **gives its room back to
+  the screen** (`closeGivingBack`): the window shrinks by the pane and its
+  seam, from that pane's own side, as far as it may — not at all while it is
+  maximised or full screen, and no further than the panes left can be drawn
+  at. Where it shrinks the whole way, the game keeps its pixels and stays
+  where it is; whatever it cannot give up is shared by the closed pane's
+  siblings as `closePane` shares it, and the game takes its part. When it
+  shrinks, the tree is recorded as arranged at the smaller size
+  (`arrangedAt`). A pane closed anywhere else — a column that does not hold
+  the game, say — costs the window nothing, its room going to its siblings as
+  it always did. Only the explicit close does this — a drop also closes a pane
+  on its way to moving it, and must never resize the window, so `closePane` is
+  untouched.
+- A **setup** opened from the tab bar's Setups menu, when it holds the game
+  and carries a size, **sizes the window around the game** (`arrangeForGame`,
+  through `sizeWindow`): the game at its pixels and every other pane at the
+  ones the setup was saved with. The window grows as far as its display
+  allows and shrinks as far as the tree's floor, and the tree is recorded as
+  arranged at that size, as an added pane's is. A maximised or full-screen
+  window is not resized at all; the tree is fitted to it from that size, as a
+  resize is, holding the game. One with no game or no size is fitted to the
+  tab by its fractions and leaves the window alone.
 
-`TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved layout file
+Those three are the only things that resize the window — not Reset Game Size,
+not a drop.
+
+`TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file
 carries tool ids between people — that is the whole point of saving one — and
 `readContent` checks every leaf's id against `TOOL_IDS` before the tree is
 trusted at all. One leaf naming an id the array no longer holds sinks the
-whole read: `readLayout` refuses the entire file rather than that one pane,
-and whoever tried to open it sees "That file isn't a Zanaris Kit layout" over
+whole read: `readSetup` refuses the entire file rather than that one pane,
+and whoever tried to open it sees "That file isn't a Zanaris Kit setup" over
 a tab left exactly as it was. `instantiateLayout`'s own empty-pane fallback
 is a different, narrower thing — a tool `TOOL_IDS` still recognises but this
 particular window does not currently offer, Hiscores on a server with none or
@@ -113,6 +137,11 @@ the themes.
 opening it again brings the open one forward, because two would be two
 copies of one thing. It has no parent window, since a parent would close it
 along with a game window, and it never holds up a quit.
+
+Closing Settings while its theme editor holds changes asks first, Keep
+Editing or Discard, since every window wearing the draft goes back with it
+(`appearance.closeQuestion`). Quitting never asks, so Settings still never
+holds up a quit.
 
 It is a window rather than a pane or a popover because the game and pages
 are native views stacked above the shell's HTML: anything the shell drew
@@ -257,7 +286,7 @@ The name changed on 2026-09-20: the feature runs a world on your machine and
 Friends shares it by link, so "single player" said the opposite of what it
 does. Three stored keys did not change, because they sit in files that already
 exist and nothing shows them — the catalog entry's `id` and `kind`
-(`singleplayer`), `TOOL_IDS`' `singleplayer`, which saved layouts carry between
+(`singleplayer`), `TOOL_IDS`' `singleplayer`, which saved setups carry between
 people, and `state.json`'s `singlePlayer` block. Renaming one of those is a
 migration, not a rename. Everything else reads "your world".
 
@@ -416,6 +445,14 @@ it, and `contrastWarnings` finds nothing in any of them. A player's own theme ca
 and saving is theirs. Built-in ids sit in `state.json` and theme files, so one
 once shipped is never renamed.
 
+**A draft is worn by every window.** While Settings' editor is open, Settings
+and every game window wear the theme being edited, whatever each would
+otherwise wear (`appearance.lookFor`). Main holds it in memory only, never in
+`state.json`. It ends on Save, which also makes it the app theme, on Cancel
+or Delete, on Settings closing, and on Settings' page loading again or its
+renderer going away. A new place a draft could outlive its editor needs
+`endEditing` too.
+
 **Every image the renderer draws is a file.** The shell's CSP takes images
 from `'self'` and, for theme pictures, `zanaris-bg:`, and refuses a `data:`
 one with nothing on screen to say so. The stone's grain, since removed, was
@@ -468,10 +505,11 @@ file — shown in the kit's own pages, or one of the kit's own. Keep these true:
   over a 13 MB string overflows the regex engine's stack.
 - **A picture no theme names is pruned** at launch and after a save or a
   delete. The editor is the only place a picture is chosen, and it saves or
-  cancels before anything else in Settings can prune. At launch only when
-  `appState.fromFile()`: a broken `state.json` is set aside with the themes
-  that name the pictures, and pruning against the empty state that replaced
-  it would delete every one.
+  cancels before anything else in Settings can prune. Save and Delete end the
+  draft before they prune, so no window wears a picture that has gone. At
+  launch only when `appState.fromFile()`: a broken `state.json` is set aside
+  with the themes that name the pictures, and pruning against the empty
+  state that replaced it would delete every one.
 
 ## Commands
 

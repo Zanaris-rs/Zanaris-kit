@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { grownFrame, roomFor } from './windowRoom.ts';
+import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom.ts';
 
 /** A laptop display's work area, below a 25px menu bar. */
 const workArea = { x: 0, y: 25, width: 1440, height: 875 };
@@ -31,4 +31,33 @@ test('a window that would run off its display moves back onto it', () => {
 test('a window already hanging off the left or top is not pulled any further off', () => {
     const frame = { x: -50, y: 0, width: 765, height: 500 };
     assert.deepEqual(grownFrame(frame, workArea, { width: 100, height: 100 }), { x: -50, y: 0, width: 865, height: 600 });
+});
+
+test('a pane closed right of the game, or below it, takes the right or bottom edge in', () => {
+    const frame = { x: 100, y: 50, width: 1089, height: 839 };
+    assert.deepEqual(shrunkFrame(frame, { width: 324, height: 0 }, 'right'), { x: 100, y: 50, width: 765, height: 839 });
+    assert.deepEqual(shrunkFrame(frame, { width: 0, height: 236 }, 'bottom'), { x: 100, y: 50, width: 1089, height: 603 });
+});
+
+test('a pane closed left of the game, or above it, moves the left or top edge in, so the game stays put', () => {
+    const frame = { x: 100, y: 50, width: 1089, height: 839 };
+    assert.deepEqual(shrunkFrame(frame, { width: 324, height: 0 }, 'left'), { x: 424, y: 50, width: 765, height: 839 });
+    assert.deepEqual(shrunkFrame(frame, { width: 0, height: 236 }, 'top'), { x: 100, y: 286, width: 1089, height: 603 });
+});
+
+test('a window grown by a negative amount shrinks from its right and bottom, where it is', () => {
+    const frame = { x: 100, y: 50, width: 1089, height: 839 };
+    assert.deepEqual(grownFrame(frame, workArea, { width: -324, height: -36 }), { x: 100, y: 50, width: 765, height: 803 });
+});
+
+test('a setup bigger than the tab grows the window by the difference', () => {
+    assert.deepEqual(sizedBy({ width: 765, height: 803 }, { width: 1089, height: 803 }, { width: 675, height: 36 }), { width: 324, height: 0 });
+});
+
+test('a setup smaller than the tab shrinks the window by the difference, whatever the room', () => {
+    assert.deepEqual(sizedBy({ width: 1482, height: 803 }, { width: 732, height: 567 }, { width: 0, height: 0 }), { width: -750, height: -236 });
+});
+
+test('a setup the display cannot fit grows the window only as far as its room', () => {
+    assert.deepEqual(sizedBy({ width: 765, height: 803 }, { width: 1089, height: 900 }, { width: 200, height: 36 }), { width: 200, height: 36 });
 });

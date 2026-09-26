@@ -101,8 +101,8 @@ export default function Builds({ view }: { view: YourWorldView }): ReactNode {
     };
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <div className="sunk mx-2.5 mt-2.5 min-h-0 flex-1 overflow-y-auto px-2 py-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="sunk min-h-0 flex-1 overflow-y-auto px-2 py-1">
                 <ul>
                     {view.builds.map(line => (
                         <Row key={line.id} line={line} inUse={line.id === view.selected} running={running} busy={busy} act={act} />
@@ -110,12 +110,12 @@ export default function Builds({ view }: { view: YourWorldView }): ReactNode {
                 </ul>
             </div>
             {notice !== null && (
-                <p role="alert" className="mx-2.5 mt-1.5 text-[12px] text-warn">
+                <p role="alert" className="text-[12px] text-warn">
                     {notice}
                 </p>
             )}
-            <p className="px-2.5 pt-1.5 text-[12px] text-dim">Each revision keeps its own characters. Characters can copy one from this revision to another.</p>
-            <p className="px-2.5 pt-1 pb-2 text-[12px] text-dim">Builds download from the kit's releases on GitHub, and each is checked against the digest this version of the kit carries before it runs.</p>
+            <p className="text-[12px] text-dim">Each revision keeps its own characters. Characters can copy one from this revision to another.</p>
+            <p className="text-[12px] text-dim">Builds download from the kit's releases on GitHub, and each is checked against the digest this version of the kit carries before it runs.</p>
         </div>
     );
 }

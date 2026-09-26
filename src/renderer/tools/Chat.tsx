@@ -37,7 +37,7 @@ function Status({ view, onSettings }: { view: ChatView; onSettings: boolean }): 
     const quiet = view.status === 'offline' && (onSettings || view.needsNick);
     const note = quiet ? null : STATUS_NOTE[view.status];
     return (
-        <div aria-live="polite" className="px-2.5 pb-1.5 text-[12px] empty:hidden">
+        <div aria-live="polite" className="text-[12px] empty:hidden">
             {note !== null && <p className="text-dim">{note}</p>}
             {view.error !== null && <p className="text-warn">{view.error}</p>}
         </div>
@@ -133,7 +133,7 @@ function ChatTabs({
             ref={group}
             role="group"
             aria-label="Chat"
-            className="flex min-w-0 flex-wrap items-center gap-[5px] px-1.5 py-[3px]"
+            className="flex min-w-0 flex-wrap items-center gap-[5px]"
         >
             <Tab role="button" label="Settings" open={onSettings} onSelect={showSettings} />
             {view.channels.map(channel => {
@@ -254,7 +254,7 @@ function TopicBar({ channel, wide, usersOpen, toggleUsers }: { channel: ViewChan
     const setBy = topic?.setBy ? `Set by ${topic.setBy}${topic.setAt !== null ? ` on ${new Date(topic.setAt).toLocaleString()}` : ''}` : null;
     const count = channel.users.length;
     return (
-        <div className="mx-2.5 mb-1.5 flex min-w-0 items-center gap-1.5 text-[12px]">
+        <div className="flex min-w-0 items-center gap-1.5 text-[12px]">
             <p title={topic === null ? undefined : [topic.text, setBy].filter(Boolean).join('\n')} className="min-w-0 flex-1 truncate">
                 {topic === null ? (
                     <span className="text-faint">No topic set</span>
@@ -400,10 +400,10 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
     };
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
             {channel !== null && <TopicBar channel={channel} wide={wide} usersOpen={usersOpen} toggleUsers={() => setUsersOpen(!usersOpen)} />}
 
-            <div className="mx-2.5 flex min-h-0 flex-1 gap-[5px]">
+            <div className="flex min-h-0 flex-1 gap-[5px]">
                 {listInstead && channel !== null ? (
                     <ChatUsers channel={channel} self={view.nick} mention={mention} className="min-w-0 flex-1" />
                 ) : (
@@ -434,7 +434,7 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
             </div>
 
             {behind && !listInstead && (
-                <div className="px-2.5 pt-1">
+                <div>
                     {/* The size inline: `button { font: inherit }` is unlayered, and beats a text- utility. */}
                     <button type="button" onClick={toBottom} style={{ fontSize: 12 }} className="link">
                         More below — jump to the latest
@@ -443,7 +443,7 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
             )}
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
-            <form onSubmit={send} className="flex items-center gap-1.5 px-2.5 py-2">
+            <form onSubmit={send} className="flex items-center gap-1.5">
                 <input
                     ref={box}
                     value={draft}
@@ -493,7 +493,7 @@ export default function Chat({ view, width }: { view: ChatView; width: number })
     const onSettings = page === 'settings' || view.needsNick || view.channels.length === 0;
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
             <ChatTabs
                 view={view}
                 onSettings={onSettings}

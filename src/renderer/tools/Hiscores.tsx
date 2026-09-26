@@ -116,8 +116,8 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
     const rows = [...view.skills].sort((a, b) => a.type - b.type);
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <form onSubmit={submit} className="flex items-center gap-1.5 px-2.5 pb-[7px]">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <form onSubmit={submit} className="flex items-center gap-1.5">
                 <input
                     value={draft}
                     onChange={event => setDraft(event.target.value)}
@@ -134,12 +134,12 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
             </form>
 
             {shown !== null && (
-                <p className="px-2.5 pb-[5px] text-[12px] text-dim">
+                <p className="text-[12px] text-dim">
                     Showing <span className="text-cream">{shown}</span>
                 </p>
             )}
 
-            <div className="sunk mx-2.5 min-h-0 flex-1 overflow-y-auto">
+            <div className="sunk min-h-0 flex-1 overflow-y-auto">
                 <table className="w-full table-fixed">
                     <colgroup>
                         <col />
@@ -181,7 +181,7 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
             </div>
 
             {/* What the last lookup came to, under the table it belongs to, in the words the service chose for it. */}
-            <p className="px-2.5 pt-2 pb-1.5 text-[12px]" aria-live="polite">
+            <p className="text-[12px]" aria-live="polite">
                 {view.error ? (
                     /* A name nobody holds and a lookup that failed both land here; the service has already told them apart. */
                     <span className="text-warn">{view.error}</span>
@@ -191,7 +191,7 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
             </p>
 
             {view.site && (
-                <p className="px-2.5 pb-2 text-[12px]">
+                <p className="text-[12px]">
                     {/*
                      * This leaves the kit, and not for want of somewhere to put it:
                      * the reference pane could hold it, but the pane shows the

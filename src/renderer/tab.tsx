@@ -67,7 +67,7 @@ export default function Tab({
     onClose?: () => void;
     /** What the close is announced as. Names the tab rather than the act, since "Close" alone says nothing about which one. */
     closeLabel?: string;
-    /** A right-click anywhere on the tab, close included. The window strip's tabs raise their layout menu with it; chat's tabs have none. */
+    /** A right-click anywhere on the tab, close included. The window strip's tabs raise their tab menu (Close Tab) with it; chat's tabs have none. */
     onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 }): ReactNode {
     /*

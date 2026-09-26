@@ -1,19 +1,15 @@
 import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
 import type { PresetCard } from '../../main/presets.ts';
-import { FITS, NICK_COLOURS, SHOW_MAX, contrastWarnings, presetUrl, themeVars, type Fit, type ThemeColors, type ThemeDraft, type ThemeLook, type ThemeToken } from '../../shared/themes.ts';
+import { FITS, SHOW_MAX, contrastWarnings, presetUrl, type Fit, type ThemeColors, type ThemeDraft, type ThemeToken } from '../../shared/themes.ts';
 import { FIELD, QuietButton } from './Servers';
 
 /*
- * `.btn`, `.tab` and the base `button` rule are unlayered CSS, which beats a
- * Tailwind utility of equal specificity whatever the order, so the places
- * below that contradict them say so inline.
+ * `.btn` and the base `button` rule are unlayered CSS, which beats a Tailwind
+ * utility of equal specificity whatever the order, so the places below that
+ * contradict them say so inline.
  */
 /* Save: the section's one gold button, sized as Servers' are. */
 const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
-/* A text tab inside the preview, rather than `.tab`'s fixed 36x34 square. */
-const PREVIEW_TAB: CSSProperties = { width: 'auto', height: 20, padding: '0 8px', fontSize: 12 };
-/* The preview's own buttons are drawings, not controls, at the size of the real ones. */
-const PREVIEW_BUTTON: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 /*
  * A hex field: `FIELD`'s sunk box at a fixed width. Its own class list rather
  * than `FIELD` plus a width, since `FIELD` carries `w-full` and two width
@@ -76,58 +72,6 @@ const FIT_LABELS: Readonly<Record<Fit, string>> = { cover: 'Fill the window', co
 
 /** A new picture starts showing this much, which leaves every word on solid enough stone. */
 const FIRST_SHOW = 0.35;
-
-/**
- * A small frame drawn with the kit's own classes under the draft's variables
- * and picture, set inline on the box: tabs, a panel with every kind of text,
- * a well with chat names and a link, and the two kinds of button. It follows
- * every change as it is made, since it is only this page's; the windows
- * change on Save.
- */
-function Preview({ look }: { look: ThemeLook }): ReactNode {
-    return (
-        // On the solid window colour, as a window's picture is: the preview's own ink is see-through when there is a picture.
-        <div aria-hidden="true" style={themeVars(look) as CSSProperties} className="picture bg-window">
-            <div className="tile flex items-center gap-[5px] px-1.5 py-1" style={{ borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>
-                <span className="tab tab-on" style={PREVIEW_TAB}>
-                    Game
-                </span>
-                <span className="tab text-dim" style={PREVIEW_TAB}>
-                    Guides
-                </span>
-            </div>
-            <div className="flex gap-1.5 p-1.5">
-                <div className="tile flex min-w-0 flex-1 flex-col gap-1 p-1.5">
-                    <span className="font-pixel text-[14px] leading-none text-gold">Timers</span>
-                    <span className="text-[13px] text-cream">AFK · 0:46</span>
-                    <span className="text-[12px] text-dim">Countdown, 15s warning</span>
-                    <span className="text-[12px] text-faint">Runs with the panel closed.</span>
-                    <span className="text-[12px] text-alarm">Thieving · 0:00</span>
-                </div>
-                <div className="tile flex min-w-0 flex-1 flex-col gap-1.5 p-1.5">
-                    <span className="sunk flex flex-wrap gap-x-1.5 px-1 py-0.5 text-[12px]">
-                        {['Hans', 'Bob', 'Duke'].map((name, i) => (
-                            <span key={name} style={{ color: NICK_COLOURS[i] }}>
-                                {name}
-                            </span>
-                        ))}
-                        <span className="link">a link</span>
-                        <span className="text-good">W7 50 ms</span>
-                        <span className="text-warn">W1 300 ms</span>
-                    </span>
-                    <span className="flex gap-1.5">
-                        <span className="btn" style={PREVIEW_BUTTON}>
-                            Refresh
-                        </span>
-                        <span className="btn btn-red" style={PREVIEW_BUTTON}>
-                            Delete
-                        </span>
-                    </span>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 /**
  * The kit's own pictures, as thumbnails six to a row, each named under it.
@@ -203,13 +147,32 @@ function ColorRow({ token, label, value, onChange }: { token: ThemeToken; label:
 
 /**
  * The theme editor, in place of the Appearance section while it is open.
+ *
+ * The draft is Settings' own (`Settings.tsx`), so a trip to Servers and back
+ * keeps it, and every window wears it while the editor is open: the changes
+ * are seen on the app itself, not on a picture of it. Nothing is kept until
+ * Save, which also makes it the app theme; Cancel puts every window back.
  * Every colour is the player's to set; the warnings say when a pair reads
  * worse than 2004 stone's, and saving is still their call. A picture is one
- * of the kit's own, from the gallery, or a file chosen in a dialog of
- * main's; either way main stores it and answers its stored name.
+ * of the kit's own, from the gallery, or a file chosen in a dialog of main's;
+ * either way main stores it and answers its stored name.
+ *
+ * The actions sit in a bar pinned under the fields, which scroll on their own,
+ * so Save is never a scroll away from the colour just changed.
  */
-export default function ThemeEditor({ initial, presets, onClose }: { initial: ThemeDraft; presets: readonly PresetCard[]; onClose: () => void }): ReactNode {
-    const [draft, setDraft] = useState<ThemeDraft>(initial);
+export default function ThemeEditor({
+    initial,
+    draft,
+    presets,
+    onChange: setDraft,
+    onClose
+}: {
+    initial: ThemeDraft;
+    draft: ThemeDraft;
+    presets: readonly PresetCard[];
+    onChange: (update: (draft: ThemeDraft) => ThemeDraft) => void;
+    onClose: () => void;
+}): ReactNode {
     const [busy, setBusy] = useState(false);
     const [said, setSaid] = useState<{ text: string; alert: boolean } | null>(null);
     const nameId = useId();
@@ -256,7 +219,7 @@ export default function ThemeEditor({ initial, presets, onClose }: { initial: Th
         });
 
     const exportTheme = (): Promise<void> =>
-        run(window.zanaris.appearance.exportTheme(initial.id ?? ''), refused => {
+        run(window.zanaris.appearance.exportTheme(draft), refused => {
             if (refused !== null) setSaid({ text: refused, alert: true });
         });
 
@@ -266,131 +229,136 @@ export default function ThemeEditor({ initial, presets, onClose }: { initial: Th
         });
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <h2 className="px-2.5 pb-1.5 font-pixel text-[15px] text-gold">{saved ? 'Edit theme' : 'New theme'}</h2>
+        <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto pb-2.5">
+                <h2 className="px-2.5 pb-1.5 font-pixel text-[15px] text-gold">{saved ? 'Edit theme' : 'New theme'}</h2>
 
-            <div className="flex flex-col gap-0.5 px-2.5">
-                <label htmlFor={nameId} className="text-[12px] text-dim">
-                    Name
-                </label>
-                <input id={nameId} value={draft.name} maxLength={40} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} className={FIELD} />
-            </div>
-
-            <div className="px-2.5 pt-2.5">
-                <Preview look={draft} />
-            </div>
-
-            {warnings.length > 0 && (
-                <div role="status" className="px-2.5 pt-2 text-[12px] text-warn">
-                    <p>Some pairs read worse than they do in 2004 stone:</p>
-                    <ul className="list-disc pl-5">
-                        {warnings.map(w => (
-                            <li key={w}>{w}</li>
-                        ))}
-                    </ul>
+                <div className="flex flex-col gap-0.5 px-2.5">
+                    <label htmlFor={nameId} className="text-[12px] text-dim">
+                        Name
+                    </label>
+                    <input
+                        id={nameId}
+                        value={draft.name}
+                        maxLength={40}
+                        onChange={e => {
+                            const name = e.target.value;
+                            setDraft(d => ({ ...d, name }));
+                        }}
+                        className={FIELD}
+                    />
                 </div>
-            )}
 
-            <h3 className="px-2.5 pt-3 pb-1 font-pixel text-[14px] text-gold">Picture</h3>
-            <div className="flex flex-col gap-1.5 px-2.5">
-                {presets.length > 0 && <Gallery presets={presets} chosen={draft.background?.picture ?? null} busy={busy} onPick={preset => void pickPreset(preset)} />}
-                <div className="flex items-center gap-2">
-                    <QuietButton disabled={busy} onClick={() => void choosePicture()}>
-                        Choose your own…
-                    </QuietButton>
-                    {draft.background && (
-                        <QuietButton disabled={busy} onClick={() => setDraft(d => ({ ...d, background: null }))}>
-                            Remove
+                {warnings.length > 0 && (
+                    <div role="status" className="px-2.5 pt-2 text-[12px] text-warn">
+                        <p>Some pairs read worse than they do in 2004 stone:</p>
+                        <ul className="list-disc pl-5">
+                            {warnings.map(w => (
+                                <li key={w}>{w}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                <h3 className="px-2.5 pt-3 pb-1 font-pixel text-[14px] text-gold">Picture</h3>
+                <div className="flex flex-col gap-1.5 px-2.5">
+                    {presets.length > 0 && <Gallery presets={presets} chosen={draft.background?.picture ?? null} busy={busy} onPick={preset => void pickPreset(preset)} />}
+                    <div className="flex items-center gap-2">
+                        <QuietButton disabled={busy} onClick={() => void choosePicture()}>
+                            Choose your own…
                         </QuietButton>
+                        {draft.background && (
+                            <QuietButton disabled={busy} onClick={() => setDraft(d => ({ ...d, background: null }))}>
+                                Remove
+                            </QuietButton>
+                        )}
+                    </div>
+                    {draft.background ? (
+                        <>
+                            <div className="flex items-center gap-2">
+                                <label htmlFor={fitId} className="w-[110px] shrink-0 text-[12px] text-dim">
+                                    Fit
+                                </label>
+                                <select
+                                    id={fitId}
+                                    value={draft.background.fit}
+                                    onChange={e => {
+                                        const fit = FITS.find(f => f === e.target.value);
+                                        if (fit) setDraft(d => (d.background ? { ...d, background: { ...d.background, fit } } : d));
+                                    }}
+                                    className="sunk px-1 py-[2px] font-sans text-[13px] text-cream"
+                                >
+                                    {FITS.map(fit => (
+                                        <option key={fit} value={fit}>
+                                            {FIT_LABELS[fit]}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <label htmlFor={showId} className="w-[110px] shrink-0 text-[12px] text-dim">
+                                    Show through
+                                </label>
+                                <input
+                                    id={showId}
+                                    type="range"
+                                    min={0}
+                                    max={Math.round(SHOW_MAX * 100)}
+                                    step={5}
+                                    value={Math.round(draft.background.show * 100)}
+                                    style={ACCENT}
+                                    onChange={e => {
+                                        const show = Number(e.target.value) / 100;
+                                        setDraft(d => (d.background ? { ...d, background: { ...d.background, show } } : d));
+                                    }}
+                                    className="min-w-0 flex-1"
+                                />
+                                <span className="w-[36px] shrink-0 text-right text-[12px] text-cream">{Math.round(draft.background.show * 100)}%</span>
+                            </div>
+                            <p className="text-[12px] text-faint">The picture shows across the whole window, through the stone. The game and the pages cover it.</p>
+                        </>
+                    ) : (
+                        <p className="text-[12px] text-faint">One of the kit&apos;s, or a PNG, JPEG, WebP or GIF of your own of up to 10 MB, shown across the whole window through the stone.</p>
                     )}
                 </div>
-                {draft.background ? (
-                    <>
-                        <div className="flex items-center gap-2">
-                            <label htmlFor={fitId} className="w-[110px] shrink-0 text-[12px] text-dim">
-                                Fit
-                            </label>
-                            <select
-                                id={fitId}
-                                value={draft.background.fit}
-                                onChange={e => {
-                                    const fit = FITS.find(f => f === e.target.value);
-                                    if (fit) setDraft(d => (d.background ? { ...d, background: { ...d.background, fit } } : d));
-                                }}
-                                className="sunk px-1 py-[2px] font-sans text-[13px] text-cream"
-                            >
-                                {FITS.map(fit => (
-                                    <option key={fit} value={fit}>
-                                        {FIT_LABELS[fit]}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <label htmlFor={showId} className="w-[110px] shrink-0 text-[12px] text-dim">
-                                Show through
-                            </label>
-                            <input
-                                id={showId}
-                                type="range"
-                                min={0}
-                                max={Math.round(SHOW_MAX * 100)}
-                                step={5}
-                                value={Math.round(draft.background.show * 100)}
-                                style={ACCENT}
-                                onChange={e => {
-                                    const show = Number(e.target.value) / 100;
-                                    setDraft(d => (d.background ? { ...d, background: { ...d.background, show } } : d));
-                                }}
-                                className="min-w-0 flex-1"
-                            />
-                            <span className="w-[36px] shrink-0 text-right text-[12px] text-cream">{Math.round(draft.background.show * 100)}%</span>
-                        </div>
-                        <p className="text-[12px] text-faint">The picture shows across the whole window, through the stone. The game and the pages cover it.</p>
-                    </>
-                ) : (
-                    <p className="text-[12px] text-faint">One of the kit&apos;s, or a PNG, JPEG, WebP or GIF of your own of up to 10 MB, shown across the whole window through the stone.</p>
-                )}
+
+                {GROUPS.map(group => (
+                    <section key={group.title}>
+                        <h3 className="px-2.5 pt-3 pb-1 font-pixel text-[14px] text-gold">{group.title}</h3>
+                        <ul className="sunk mx-2.5">
+                            {group.rows.map(([token, label]) => (
+                                <ColorRow key={token} token={token} label={label} value={draft.colors[token]} onChange={value => setColor(token, value)} />
+                            ))}
+                        </ul>
+                    </section>
+                ))}
             </div>
 
-            {GROUPS.map(group => (
-                <section key={group.title}>
-                    <h3 className="px-2.5 pt-3 pb-1 font-pixel text-[14px] text-gold">{group.title}</h3>
-                    <ul className="sunk mx-2.5">
-                        {group.rows.map(([token, label]) => (
-                            <ColorRow key={token} token={token} label={label} value={draft.colors[token]} onChange={value => setColor(token, value)} />
-                        ))}
-                    </ul>
-                </section>
-            ))}
-
-            {said && (
-                <p role={said.alert ? 'alert' : 'status'} className={`px-2.5 pt-2 text-[12px] ${said.alert ? 'text-warn' : 'text-dim'}`}>
-                    {said.text}
-                </p>
-            )}
-
             {/* Exactly one gold `.btn` here: Save. */}
-            <div className="flex flex-wrap items-center gap-2 px-2.5 pt-3 pb-2.5">
-                <button type="button" disabled={busy} onClick={() => void save()} style={BUTTON_SIZE} className="btn">
-                    Save
-                </button>
-                <QuietButton disabled={busy} onClick={onClose}>
-                    Cancel
-                </QuietButton>
-                {saved && (
-                    <>
-                        {/* The file is the theme as saved, so a draft with changes has to be saved before it is what gets written. */}
-                        <QuietButton disabled={busy || changed} onClick={() => void exportTheme()}>
-                            Export…
-                        </QuietButton>
+            <div className="flex shrink-0 flex-col gap-1.5 border-t border-edge-dark px-2.5 pt-2 pb-2.5">
+                {said && (
+                    <p role={said.alert ? 'alert' : 'status'} className={`text-[12px] ${said.alert ? 'text-warn' : 'text-dim'}`}>
+                        {said.text}
+                    </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" disabled={busy} onClick={() => void save()} style={BUTTON_SIZE} className="btn">
+                        Save
+                    </button>
+                    <QuietButton disabled={busy} onClick={onClose}>
+                        Cancel
+                    </QuietButton>
+                    <QuietButton disabled={busy} onClick={() => void exportTheme()}>
+                        Export…
+                    </QuietButton>
+                    {changed && <span className="text-[12px] text-faint">Unsaved changes</span>}
+                    {saved && (
                         <button type="button" disabled={busy} className="group ml-auto" onClick={() => void remove()}>
                             <span className="text-[12px] text-dim underline-offset-2 group-hover:text-alarm group-hover:underline">Delete</span>
                         </button>
-                    </>
-                )}
+                    )}
+                </div>
             </div>
-            {saved && changed && <p className="px-2.5 pb-2.5 text-[12px] text-faint">Save to export these changes.</p>}
         </div>
     );
 }
