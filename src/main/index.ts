@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -2299,9 +2299,13 @@ async function captureAndExit(dir: string): Promise<void> {
             log('[capture] pages skipped: no loaded window offers any links');
         }
 
+        // Every view that exists now is some other window's, so what is new
+        // once the second window has loaded is its own: its shell and its game.
+        const beforeSecond = new Set(webContents.getAllWebContents().map(wc => wc.id));
         const second = openServer(first.state().server);
         log(`[capture] ${second.state().title}: ${await loaded(second)}`);
         await wait(Math.min(settleMs, 8_000));
+        const secondViews = webContents.getAllWebContents().filter(wc => !beforeSecond.has(wc.id));
         await shoot(`${first.state().server.id}-2`, second);
 
         // A setup saved and opened, driven on the window rather than through
@@ -2388,6 +2392,21 @@ async function captureAndExit(dir: string): Promise<void> {
             appState.setServerTheme(own, null);
             appState.setTheme(DEFAULT_THEME);
             appearanceChanged();
+        }
+
+        // The second window closed: its views must go with it. Electron leaves
+        // a closed window's views running, and a game left running is a
+        // character still logged in with nothing on screen. `destroy` rather
+        // than `close`, which would raise a confirm nothing here can answer;
+        // both end in the same `closed`, which is where the views are closed.
+        {
+            const title = second.state().title;
+            second.window.destroy();
+            await wait(1_000);
+            const left = secondViews.filter(wc => !wc.isDestroyed());
+            log(`[capture] ${title} closed: ${secondViews.length} view(s) of its own, ${left.length} still running`);
+            if (secondViews.length === 0) fault(`window close: no views of ${title}'s own were found, so their closing was not checked`);
+            if (left.length > 0) fault(`window close: ${title} left ${left.length} view(s) running after its window closed: ${left.map(wc => wc.getURL()).join(', ')}`);
         }
 
         // A custom theme with one of the kit's own pictures, the way a player

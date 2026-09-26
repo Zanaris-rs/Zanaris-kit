@@ -1335,11 +1335,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // putting the view's coordinates back into the window's.
             if (gamePane && rect) showPaneMenu(gamePane, rect.x + params.x, rect.y + Math.min(PANE_HEADER_HEIGHT, rect.height) + params.y);
         });
-        // Mouse back and forward buttons would walk the history of world switches.
-        win.on('app-command', (event, command) => {
-            if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
-        });
-
         wc.on('did-start-navigation', (_event, url) => {
             // A retry from the offline page is a fresh attempt.
             if (!url.startsWith('file:')) failedOver = false;
@@ -1442,6 +1437,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     // The page keeps its own title; the window keeps the server's name and world.
     win.on('page-title-updated', event => event.preventDefault());
+    // Mouse back and forward buttons would walk the history of world switches.
+    // Once per window, not per game view: a game closed and chosen again is
+    // a new view, and each used to add another of these.
+    win.on('app-command', (event, command) => {
+        if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
+    });
     win.on('close', event => {
         if (!deps.confirmClose(spec.title)) event.preventDefault();
     });
@@ -1449,8 +1450,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         clocks.dispose();
         if (currentProbe) clearInterval(currentProbe);
         if (panelProbe) clearInterval(panelProbe);
-        // The views go with the window; the `persist:pages` session does not, so
-        // a LostHQ login outlives both this window and this launch.
+        // A view does not go with its window: Electron leaves a closed
+        // window's views running, and a game left running is a character
+        // still standing in the world after the confirm said it would be
+        // logged out. So every view is closed here — the game, the shell and,
+        // in `host.destroy`, the pages. The `persist:pages` session is not,
+        // so a LostHQ login outlives both this window and this launch.
+        if (gameView && !gameView.webContents.isDestroyed()) gameView.webContents.close();
+        gameView = null;
+        if (!shellView.webContents.isDestroyed()) shellView.webContents.close();
         host.destroy();
         unsubscribeWorlds?.();
         unsubscribeSingle?.();
