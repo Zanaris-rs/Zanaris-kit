@@ -1,6 +1,6 @@
 # Hiscores tool for Zanaris Kit
 
-Repo: `/Users/matthewgould/Projects/2004scape/Server/swiftkit` (nested git repo, `Zanaris-rs/Zanaris-kit`).
+Repo: `Zanaris-rs/Zanaris-kit` (a nested git repo); paths below are from its root.
 
 ## Context
 

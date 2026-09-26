@@ -157,7 +157,7 @@ at `layout.test.ts:194`) is `STRIP_HEIGHT + MIN_CONTENT_HEIGHT`, still correct.
 
 ## Verification
 
-Run everything from `/Users/matthewgould/Projects/2004scape/Server/swiftkit`.
+Run everything from the repository root.
 
 1. **Static checks** — `npm run typecheck` and `npm test` (the node:test suite,
    including `src/main/layout.test.ts`) both green.
