@@ -267,6 +267,20 @@ input[type='color'] {
 }
 
 /*
+ * A window's top row where it stands in for the OS's title bar, on macOS
+ * (`windowFrame.ts`): pressing it moves the window, as a title bar does,
+ * except on a tab or a button, which keep their presses. The system takes a
+ * press on a drag region before the page sees it, so anything pressable left
+ * out of the exception would stop working here.
+ */
+.title-bar {
+    -webkit-app-region: drag;
+}
+.title-bar :is(button, .tab) {
+    -webkit-app-region: no-drag;
+}
+
+/*
  * The chat dock, and the rail's exception mirrored onto the other axis. The
  * dock's top edge meets the game rather than the window, so a highlight along
  * it would draw a bright line straight across the chrome; the groove goes

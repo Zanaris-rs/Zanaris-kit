@@ -118,6 +118,21 @@ export interface Rect {
     height: number;
 }
 
+/**
+ * How the OS frames a window's top row: `windowFrame.ts` decides, and the
+ * shell and Settings draw from it.
+ */
+export interface WindowFrame {
+    /**
+     * The row stands in for the OS's title bar, which is not drawn: it moves
+     * the window, and the theme runs to the window's top edge. On macOS only;
+     * Windows and Linux keep the system's bar, which holds their menu bar.
+     */
+    ownTitleBar: boolean;
+    /** How far in from the window's left edge the row's first control must start, to clear the window buttons macOS draws over it. Zero where there are none to clear: off macOS, and in full screen. */
+    buttonsInset: number;
+}
+
 export interface ShellState {
     windowId: number;
     server: ServerDef;
@@ -136,6 +151,8 @@ export interface ShellState {
         /** The region the active tab's panes are laid out in: everything below the bar. */
         tree: Rect;
     };
+    /** How the OS frames the tab bar, which is the window's title bar on macOS. */
+    frame: WindowFrame;
     /** This window's workspace tabs. Each is a whole arrangement of the same server's things, not a different server. */
     tabs: TabView[];
     /**
@@ -178,6 +195,8 @@ export interface SettingsState {
     servers: ServersView;
     /** The Appearance section: the app theme, every theme's palette, and each server's own. */
     appearance: AppearanceView;
+    /** How the OS frames the row of sections, which is the window's title bar on macOS. */
+    frame: WindowFrame;
 }
 
 export interface ZanarisApi {

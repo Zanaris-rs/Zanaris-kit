@@ -3,6 +3,7 @@ import { IPC, type Rect, type SettingsState } from '../shared/ipc';
 import { loadShell, preloadPath } from './renderer';
 import { paintsFrames } from './serverWindow';
 import { settingsBounds, type SettingsHandle } from './settingsWindow';
+import { frameOptions } from './windowFrame';
 
 /** What Settings asks for: room for four servers and the add form without scrolling. */
 const SIZE = { width: 520, height: 640 };
@@ -29,13 +30,22 @@ export interface SettingsWindow extends SettingsHandle {
  * No parent: parented to a game window it would close with that window, and
  * it belongs to no one window.
  */
-export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () => void; background: string }): SettingsWindow {
+export function createSettingsWindow(opts: {
+    anchor: Rect | null;
+    onClosed: () => void;
+    /** Full screen came or went, which on macOS takes the window buttons off the row of sections or puts them back (`windowFrame`). */
+    onFrameChanged: () => void;
+    background: string;
+}): SettingsWindow {
     const display = opts.anchor ? screen.getDisplayMatching(opts.anchor) : screen.getPrimaryDisplay();
     const win = new BrowserWindow({
         ...settingsBounds(opts.anchor, SIZE, display.workArea),
         minWidth: 380,
         minHeight: 420,
         title: 'Settings',
+        // No title bar on macOS: the row of sections stands in for it, as a
+        // game window's tab bar does (`windowFrame.ts`).
+        ...frameOptions(process.platform),
         // The app theme's ground, which Settings wears: what shows before the
         // page draws, and at an edge a resize has not yet repainted.
         // `setBackground` keeps it to the theme after a change.
@@ -64,6 +74,8 @@ export function createSettingsWindow(opts: { anchor: Rect | null; onClosed: () =
     win.on('page-title-updated', event => event.preventDefault());
     win.once('ready-to-show', () => win.show());
     win.on('closed', opts.onClosed);
+    win.on('enter-full-screen', opts.onFrameChanged);
+    win.on('leave-full-screen', opts.onFrameChanged);
     // Read now: once the window closes its contents are destroyed and the id with them.
     const contentsId = win.webContents.id;
     const loaded = new Promise<void>(resolve => win.webContents.once('did-finish-load', () => resolve()));
