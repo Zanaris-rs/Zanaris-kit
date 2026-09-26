@@ -88,11 +88,13 @@ Four properties in there are load-bearing and easy to break —
   game, say — costs the window nothing, its room going to its siblings as it
   always did. Only the explicit close does this — a drop also closes a pane
   on its way to moving it, and must never resize the window, so `closePane`
-  is untouched. A **setup** opened from the tab bar's Setups menu sizes the
-  window to hold the game at its pixels and every other pane at the ones the
-  setup was saved with (`arrangeForGame`, through `sizeWindow`): it grows as
-  far as its display allows and shrinks as far as the tree's floor, and the
-  tree is recorded as arranged at that size, as an added pane's is. Nothing
+  is untouched. A **setup** opened from the tab bar's Setups menu, when it
+  holds the game and carries a size, sizes the window to hold the game at its
+  pixels and every other pane at the ones the setup was saved with
+  (`arrangeForGame`, through `sizeWindow`): it grows as far as its display
+  allows and shrinks as far as the tree's floor, and the tree is recorded as
+  arranged at that size, as an added pane's is. One with no game or no size
+  is fitted to the tab by its fractions and leaves the window alone. Nothing
   else resizes the window — not Reset Game Size, not a drop.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file

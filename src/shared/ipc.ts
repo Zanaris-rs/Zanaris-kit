@@ -322,9 +322,10 @@ export interface ZanarisApi {
         addPaneMenu(x: number, y: number): Promise<void>;
         /**
          * Raises the tab bar's Setups menu: the built-in setups, the saved
-         * ones, and saving the active tab as one. Choosing one replaces the
-         * active tab's panes and sizes the window around the game. Native and
-         * built in main like the pane menus. Coordinates are the window's.
+         * ones, and saving the active tab as one. Choosing a setup replaces
+         * the active tab's panes and, when the setup holds the game and has a
+         * size, sizes the window around the game. Native and built in main
+         * like the pane menus. Coordinates are the window's.
          */
         setupsMenu(x: number, y: number): Promise<void>;
         /**

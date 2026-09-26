@@ -736,9 +736,12 @@ shape, one click away. Whatever you pick replaces the panes of the tab in front:
 
 A setup opens around the game. The game keeps the pixels it has — or, with no
 game running, the ones the setup was saved with — every other pane gets the
-pixels the setup was saved with, and the window grows or shrinks to hold them:
-Game, Chat and Tools grows the window by its column, and Game shrinks it to the
-game. It grows no further than its display, moving back onto it as it does for
+pixels the setup was saved with, and the window is sized to hold the setup
+around the game as it is, growing or shrinking to fit. From a new window's game
+over chat, Game, Chat and Tools widens the window by its column; from an
+arrangement wider than the setup it narrows it instead, as the Verified run
+below did, 1482 to 732; and Game sizes the window to the game alone. It grows no
+further than its display, moving back onto it as it does for
 a pane added, and shrinks no further than the panes' floors. Maximised or full
 screen it does not resize at all, and the panes are fitted to it as a resize
 fits them, holding the game. A setup with no game, or a file saved before
@@ -848,7 +851,7 @@ One capture run with every catalog server open at once:
 | Lost City (2), a setup saved and opened into a new tab (as a layout before 2026-09-26; as a setup, a run of 2026-09-26) | not reloaded — one load of the window in the log | tabs "Empty" and "Game": the file saved "game over chat", the new tab opened it at 765x809, the size it was saved at, so the window did not resize, and the game moved into it, leaving the first tab's game pane empty. `state.json` holds no setups. That run's shell shot of this step was not written: the window did not paint |
 | Lost City, Setups > Game, Chat and Tools, then its tools column closed pane by pane (2026-09-26) | kept at 408x809 through both — 408 wide because the seam drag earlier in the run left it there | the window went from 1482 to 732 wide: the game over chat, and a 320px column of Worlds, Hiscores and Timers beside it. The window could not grow the full height on that display, so chat gave up the difference and the game none. Closing the column's three panes took the window to 408, the game over chat alone |
 
-453 tests cover the pure modules: layout, catalog (validation, defaults, file
+1078 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, a version 1, 2 or 3 file each migrating into version 4, and a
 built-in's hiscores block re-adopted from the defaults), slots, tabs, the
 window registry, the world sources against the real API payloads (including a

@@ -265,15 +265,17 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Raises a tab's menu, which is Close Tab, at a point in the window. Setups are the tab bar's Setups menu. */
     showTabMenu(tabId: string, x: number, y: number): void;
     /**
-     * Writes a tab's panes to a setup file, with the size of tab they are
-     * drawn at. Throws when the file cannot be written; the menu reports
-     * that, capture mode fails on it.
+     * Writes the tab in front's panes to a setup file, with the size of tab
+     * they are drawn at. Throws when the file cannot be written, and when
+     * `tabId` is not the tab in front, whose size is the only one the window
+     * has; the menu reports that, capture mode fails on it.
      */
     saveSetupTo(tabId: string, path: string): void;
     /**
      * Opens a setup file into a tab, asking first when that closes the game,
-     * and sizes the window around the game. `unreadable` is a file that could
-     * not be read or is not a setup, and leaves the tab as it was.
+     * and sizes the window around the game when the setup holds one and was
+     * saved with a size. `unreadable` is a file that could not be read or is
+     * not a setup, and leaves the tab as it was.
      */
     openSetupFrom(tabId: string, path: string): Promise<'opened' | 'unreadable' | 'cancelled' | 'missing'>;
     /** Re-runs the layout and pushes the result. For app-wide changes that move things, where pushState alone would only repaint the old geometry. */
@@ -595,9 +597,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * (`paneTree.makeRoom`, through `growWindow`), a pane closed in the
      * game's own row or column giving that room back
      * (`paneTree.closeGivingBack`, through `shrinkWindow`), and a setup
-     * opened, sized to hold the game at its pixels and every other pane at
-     * the ones it was saved with (`paneTree.arrangeForGame`, through
-     * `sizeWindow`). Each way it is the resize that lays everything out
+     * opened that holds the game and carries a size, sized to hold the game
+     * at its pixels and every other pane at the ones it was saved with
+     * (`paneTree.arrangeForGame`, through `sizeWindow`). Each way it is the resize that lays everything out
      * again, through here.
      *
      * The tree runs to the window's edges. It used to be inset by a pixel so a
@@ -990,8 +992,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /**
      * The menu under the tab bar's Setups: the built-in shapes this window can
      * offer (`setups.builtInSetups`), the setups saved for this server, and
-     * saving the tab in front as one. Whatever is chosen replaces the panes of
-     * the tab in front, which is the tab the menu was opened over.
+     * saving the tab in front as one. A setup chosen from it replaces the
+     * panes of the tab in front, which is the tab the menu was opened over.
      *
      * Native and built here for the reason Add pane's is: it drops down over
      * the panes, and a list the shell drew would open behind a game or a page
@@ -1057,10 +1059,18 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * setup opens with every pane at these pixels again. Reads the tab when the
      * file is written rather than when the menu opened: the dialog was up in
      * between.
+     *
+     * Only the tab in front. Its tree is the one laid out at the window's tab
+     * size now; a tab behind it was last fitted at whatever size the window
+     * had when it was in front, so its tree and this size need not agree, and
+     * a file pairing them would open at pixels it was never drawn at. The
+     * dialog is a sheet, but a tab can still be switched by its shortcut
+     * while it is up, so this is refused rather than assumed.
      */
     function saveSetupTo(tabId: string, path: string): void {
         const tree = host.treeOf(tabId);
         if (!tree) throw new Error('that tab has closed');
+        if (tabId !== activeTabId()) throw new Error('that tab is no longer the one in front, so its size is not known; bring it to the front and save it again');
         writeFileSync(path, writeLayout(tree, server.id, { width: rects.tree.width, height: rects.tree.height }));
         deps.log(`${tag} saved setup ${basename(path)}`);
     }

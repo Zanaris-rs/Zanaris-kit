@@ -1782,13 +1782,21 @@ const shotOfThePage =
 /**
  * Open every catalog server, wait for each game to load (or fail over to the
  * offline page), let the clients draw, then write each window's shell and game
- * views as PNGs. Then open the panel on a loaded window and capture it again
- * (the layout engine), and open a second instance of that server (slots and
- * partitions). A window's own webContents holds nothing, so the views are
+ * views as PNGs. A window's own webContents holds nothing, so the views are
  * captured one by one, and a view with no frame yet is skipped rather than
- * allowed to abort the run. Last comes the reference pane: the Guides list,
- * two pages open beside the game, and the first of them brought back to prove
- * a tab switch did not reload it.
+ * allowed to abort the run.
+ *
+ * Then, in this order: Settings; a split, a swap and a move on the first
+ * loaded window; the Worlds tool, maximised, a world switch and a split down;
+ * Hiscores on each server that has it; Timers; a seam dragged and a pane
+ * closed giving its room back; the Your world tool; the reference pane — the
+ * launcher, two pages beside the game, and the first of them brought back to
+ * prove a tab switch did not reload it; a second instance of the first
+ * server (slots and partitions), with a setup saved and opened into a new tab
+ * and the game left behind another tab; every theme, Settings on Appearance,
+ * a server's own theme and a custom theme with a picture and its editor. Last
+ * comes a built-in setup opened on the first window and its tools column
+ * closed, the window sized around the game both ways.
  *
  * A shell that never paints, or a shell shot with the same bytes as an
  * earlier one, is a shot that does not show its step while the log reports it
