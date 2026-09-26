@@ -39,8 +39,8 @@ export default function YourWorld({ view, share }: { view: YourWorldView; share:
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
     const line = view.builds.find(l => l.id === view.selected);
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <div className="px-2.5">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div>
                 <p className={view.status === 'failed' ? 'text-warn' : 'text-cream'} aria-live="polite">
                     {status}
                     {view.status === 'failed' && view.reason && <span className="block text-[12px] text-dim">{view.reason}</span>}
@@ -61,11 +61,11 @@ export default function YourWorld({ view, share }: { view: YourWorldView; share:
             {view.status === 'failed' && (
                 <>
                     {view.logTail.length > 0 && (
-                        <pre className="sunk mx-2.5 mt-2 max-h-[9em] overflow-auto px-2 py-1 font-mono text-[11px] whitespace-pre-wrap text-dim">
+                        <pre className="sunk max-h-[9em] overflow-auto px-2 py-1 font-mono text-[11px] whitespace-pre-wrap text-dim">
                             {view.logTail.slice(-20).join('\n')}
                         </pre>
                     )}
-                    <div className="px-2.5 pt-2">
+                    <div>
                         <button type="button" onClick={() => void window.zanaris.yourWorld.retry()} className="btn btn-red">
                             Try again
                         </button>
@@ -78,7 +78,7 @@ export default function YourWorld({ view, share }: { view: YourWorldView; share:
              * buttons with aria-current, since there is no tabpanel here that a
              * tablist could point at.
              */}
-            <div role="group" aria-label="Your world" className="mt-2.5 flex flex-wrap items-center gap-[5px] px-2.5">
+            <div role="group" aria-label="Your world" className="flex flex-wrap items-center gap-[5px]">
                 {SECTIONS.filter(section => section.id !== 'friends' || share).map(section => (
                     <Tab key={section.id} role="button" label={section.label} open={open === section.id} onSelect={() => setOpen(section.id)} />
                 ))}

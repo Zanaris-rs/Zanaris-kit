@@ -81,8 +81,22 @@ function tabTitle(tab: TabView): string {
  * the header, so the shell leaves the rest of the pane empty exactly as it left
  * the old content rect empty. A page's back, forward and reload moved up into
  * the header with everything else that names a pane rather than works in one.
+ *
+ * Every pane the shell draws itself — a tool, and the launcher an empty pane
+ * shows — is inset by the same 10px on every side, here and only here, so no
+ * tool can drift from another. A tool no longer insets its own edge; it spaces
+ * its own top-level blocks with one `gap-2` instead.
  */
 function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
+    if (pane.content.kind === 'game' || pane.content.kind === 'page') return null;
+    return (
+        <div className="flex min-h-0 flex-1 flex-col p-2.5">
+            <PaneContentBody pane={pane} state={state} />
+        </div>
+    );
+}
+
+function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
     switch (pane.content.kind) {
         case 'empty':
             return <Launcher paneId={pane.paneId} links={state.server.bookmarks} contents={pane.contents ?? []} />;

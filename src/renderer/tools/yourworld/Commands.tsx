@@ -31,8 +31,8 @@ export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
     const shown = visibleCommands(procs === undefined ? [] : procs, filter, query);
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex flex-col gap-1.5 px-2.5 pt-2.5">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
                 {!cheats && <p className="text-[12px] text-warn">These need cheats on, in World. With cheats off the world ignores them.</p>}
                 <p className="text-[12px] text-dim">
                     Type them into the game's chat box. Debug procs start with <code className="font-mono text-cream">::~</code>, and <code className="font-mono text-cream">::~help</code> opens the game's own menu of the common ones, which leaves the ~ out.
@@ -58,7 +58,7 @@ export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
                 )}
             </div>
 
-            <div id={`${id}-list`} className="sunk mx-2.5 mt-2 mb-2.5 min-h-0 flex-1 overflow-y-auto px-2 py-1">
+            <div id={`${id}-list`} className="sunk min-h-0 flex-1 overflow-y-auto px-2 py-1">
                 {procs === undefined ? (
                     <p className="py-1 text-dim">Loading…</p>
                 ) : shown.length === 0 ? (

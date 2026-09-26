@@ -162,8 +162,8 @@ export default function Characters({ view }: { view: YourWorldView }): ReactNode
     };
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <div className="sunk mx-2.5 mt-2.5 min-h-0 flex-1 overflow-y-auto px-2 py-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="sunk min-h-0 flex-1 overflow-y-auto px-2 py-1">
                 {view.characters.length === 0 ? (
                     <p className="py-1 text-dim">No characters yet. Type any name at the game's login screen to make one; it shows here once the game has saved it.</p>
                 ) : (
@@ -194,7 +194,7 @@ export default function Characters({ view }: { view: YourWorldView }): ReactNode
             </div>
 
             {prompt !== null && (
-                <form onSubmit={submit} className="mx-2.5 mt-2 flex flex-col gap-0.5">
+                <form onSubmit={submit} className="flex flex-col gap-0.5">
                     <label htmlFor={`${id}-name`} className="text-[12px] text-dim">
                         {promptLabel(prompt)}
                     </label>
@@ -235,7 +235,7 @@ export default function Characters({ view }: { view: YourWorldView }): ReactNode
             )}
 
             {copying !== null && (
-                <div className="mx-2.5 mt-2 flex flex-col gap-0.5">
+                <div className="flex flex-col gap-0.5">
                     <span className="text-[12px] text-dim">
                         Copy {toDisplayName(copying)} from rev {view.revision} to
                     </span>
@@ -259,14 +259,14 @@ export default function Characters({ view }: { view: YourWorldView }): ReactNode
             )}
 
             {notice !== null && (
-                <p role="alert" className="mx-2.5 mt-1.5 text-[12px] text-warn">
+                <p role="alert" className="text-[12px] text-warn">
                     {notice}
                 </p>
             )}
 
-            <p className="px-2.5 pt-1.5 text-[12px] text-dim">The game saves a character when you log out and every 15 minutes, so one you are playing shows its last save.</p>
+            <p className="text-[12px] text-dim">The game saves a character when you log out and every 15 minutes, so one you are playing shows its last save.</p>
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. Import is gold until a name is being asked for. */}
-            <div className="flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-2">
+            <div className="flex flex-wrap items-center gap-2">
                 {prompt === null ? (
                     <button type="button" disabled={busy} onClick={pick} style={busy ? SPENT : BUTTON_SIZE} className="btn">
                         Import…

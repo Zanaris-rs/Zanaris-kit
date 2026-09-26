@@ -47,8 +47,8 @@ export default function World({ view }: { view: YourWorldView }): ReactNode {
     const busy = view.status === 'preparing' || view.status === 'starting' || view.status === 'stopping';
     const { settings } = view;
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-2.5 pt-2.5">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto">
                 <Switch label="Cheats" red on={settings.cheats} busy={busy} onChange={on => change('cheats', on)} note="Developer commands such as ::tele and ::give. Off, they are refused." />
                 <Switch label="Members" on={settings.members} busy={busy} onChange={on => change('members', on)} note="Off, your world is a free one, as the free-to-play game was." />
                 <div>
@@ -86,12 +86,12 @@ export default function World({ view }: { view: YourWorldView }): ReactNode {
             </div>
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
-            <div className="flex flex-wrap items-center gap-2 px-2.5 pt-2 pb-1.5">
+            <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => void window.zanaris.yourWorld.showLog()} style={QUIET} className="btn group">
                     <span className="text-dim group-hover:text-cream">Show log</span>
                 </button>
             </div>
-            <p className="px-2.5 pb-2 text-[12px] text-dim">{worldRunning(view.status) ? 'Each change restarts the world and logs you out.' : 'Changes take effect when the world next starts.'}</p>
+            <p className="text-[12px] text-dim">{worldRunning(view.status) ? 'Each change restarts the world and logs you out.' : 'Changes take effect when the world next starts.'}</p>
         </div>
     );
 }
