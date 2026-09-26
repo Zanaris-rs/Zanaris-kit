@@ -82,23 +82,26 @@
  * layers: a fine one for the tooth you see at arm's length, a coarse one at a
  * ~190px period so large panels do not visibly tile.
  *
- * NOT DRAWN TODAY. The CSP in `index.html` refuses `data:` images, and these
- * are `data:` SVGs, so every surface below paints as its flat base colour —
- * measured: a stone tab bar is one colour across 80,000 pixels. What follows
- * is the design as intended; letting the grain through lightens every surface
- * in every theme, and is its own decision (CLAUDE.md, "Colours are tokens").
- *
  * They are grey noise composited with `overlay`, which lightens wherever the
  * noise sits above mid-grey and darkens below it — and with fractal noise the
  * lightening wins, so the result reads brighter than its base. That is why the
  * bases below are darker than the values sampled off the client: #443d31 is the
- * panel mid (#504d3b–#565344) minus what the grain will add back. Change a base
- * to the sampled value and the surface comes out washed out.
+ * panel mid (#504d3b–#565344) minus what the grain will add back, and grained
+ * it averages about #4e4638. Change a base to the sampled value and the
+ * surface comes out washed out.
+ *
+ * The layers are files, not `data:` URLs. The page's CSP refuses `data:`
+ * images with nothing on screen to say so: they were inline once, and every
+ * surface drew as its flat base until 2026-09-25. `csp.test.ts` holds it.
+ *
+ * Every surface wears it as `var(--grain, var(--stone-grain))`. A theme whose
+ * picture shows through sets `--grain` to `none`: the noise has an alpha of
+ * its own and blends only with the surface's colour, so over a see-through
+ * surface it would paint its grey on the picture. The picture is the texture
+ * there instead (`themeVars`).
  */
 :root {
-    --stone-grain:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='9'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='70' height='70' filter='url(%23g)' opacity='0.34'/%3E%3C/svg%3E"),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='190' height='190'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.055' numOctaves='2' seed='21'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='190' height='190' filter='url(%23b)' opacity='0.3'/%3E%3C/svg%3E");
+    --stone-grain: url('./grain/fine.svg'), url('./grain/blotch.svg');
 }
 
 html,
@@ -180,7 +183,7 @@ input[type='color'] {
 /* Raised interface stone: panels, tab strips, the frame itself. */
 .tile {
     background-color: var(--color-stone);
-    background-image: var(--stone-grain);
+    background-image: var(--grain, var(--stone-grain));
     background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-dark);
     border-top-color: var(--color-edge-lit);
@@ -190,7 +193,7 @@ input[type='color'] {
 /* The same bevel inverted: a recess that holds a list, a field or a value. */
 .sunk {
     background-color: var(--color-well);
-    background-image: var(--stone-grain);
+    background-image: var(--grain, var(--stone-grain));
     background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-lit);
     border-top-color: var(--color-edge-dark);
@@ -209,7 +212,7 @@ input[type='color'] {
     align-items: center;
     justify-content: center;
     background-color: var(--color-tab);
-    background-image: var(--stone-grain);
+    background-image: var(--grain, var(--stone-grain));
     background-blend-mode: overlay, overlay;
     border: 1px solid var(--color-edge-dark);
     box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.35);
@@ -238,7 +241,7 @@ input[type='color'] {
     justify-content: center;
     padding: 3px 12px;
     background-color: var(--color-stone);
-    background-image: var(--stone-grain);
+    background-image: var(--grain, var(--stone-grain));
     background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-dark);
     border-top-color: var(--color-edge-lit);
@@ -302,7 +305,7 @@ input[type='color'] {
  */
 .dock {
     background-color: var(--color-stone);
-    background-image: var(--stone-grain);
+    background-image: var(--grain, var(--stone-grain));
     background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-dark);
     border-left-color: var(--color-edge-lit);
@@ -386,7 +389,7 @@ input[type='color'] {
 }
 ::-webkit-scrollbar-thumb {
     background-color: var(--color-stone);
-    background-image: var(--stone-grain);
+    background-image: var(--grain, var(--stone-grain));
     background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-dark);
     border-top-color: var(--color-edge-lit);

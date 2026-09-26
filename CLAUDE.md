@@ -417,12 +417,22 @@ of them. A player's own theme can be anything: the editor shows its warnings,
 and saving is theirs. Built-in ids sit in `state.json` and theme files, so one
 once shipped is never renamed.
 
-**The grain has never rendered.** The CSP's `default-src 'self'` refuses the
-`data:` SVGs `--stone-grain` is drawn from; a stone capture's tab bar is one
-colour across 80,000 pixels. `img-src` adds `zanaris-bg:` and deliberately not
-`data:`: switching the grain on changes every surface in every theme, and is
-its own decision. Until it is made, the grain comments in `styles.css` and the
-README's "Stone has grain" each say, up front, that it is not drawn.
+**Every image the renderer draws is a file.** The shell's CSP takes images
+from `'self'` and, for theme pictures, `zanaris-bg:`, and refuses a `data:`
+one with nothing on screen to say so. The grain was two `data:` SVGs, and
+every surface drew as its flat base until 2026-09-25 with no test failing.
+`assetsInlineLimit: 0` keeps Vite from inlining the small ones, and
+`csp.test.ts` fails on a `data:` image in the renderer while the CSP refuses
+them. Themes are checked on flat colours, so a change to the grain or a base
+is checked by `npm run capture`, not by a test.
+
+**Over a picture the grain is off.** Every surface wears it as
+`var(--grain, var(--stone-grain))`, and `themeVars` sets `--grain` to `none`
+when a picture shows through, `initial` otherwise, so a theme change always
+resets it. The noise has an alpha of its own and blends only with the
+surface's colour, so on a see-through surface it paints grey over the
+picture: at `show` 0.4 the capture's dusk sky all but disappeared. A new
+grained surface uses the same `var()`, or it greys every picture theme.
 
 ## Theme pictures
 

@@ -377,12 +377,9 @@ decorative:
 - **Bevels are explicit.** Light above and left, shadow below and right, on
   every raised surface, inverted for every recess. CSS `outset` derives its
   edges from a single colour and always reads flat by comparison.
-- **Stone has grain** — by design, though not on screen yet. Two layers of
-  noise, a fine one and a slower blotch, blended over the base colour.
-  Overlay blending lightens as much as it darkens, so the base sits below the
-  sampled mid to compensate. The page's content security policy refuses the
-  `data:` pictures the noise is drawn from, so today every surface is its flat
-  base colour; whether to let them through is an open decision.
+- **Stone has grain.** Two layers of noise, a fine one and a slower blotch,
+  blended over the base colour. Overlay blending of this noise lightens more
+  than it darkens, so the base sits below the sampled mid to compensate.
 - **Every glyph has a hard black shadow.** The client does this, and without it
   text fights the grain and loses.
 
@@ -440,7 +437,8 @@ bar, the headers and every panel, with the game and the pages covering their
 own part of it. The stone turns partly see-through over it, by as much as the
 theme says, up to 60%; the bevels and the words stay solid, and a list inside
 a panel shows less of the picture than the panel's frame, so the text sits on
-the most solid stone. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB and
+the most solid stone. The picture stands in for the stone's grain, which would
+only lay a grey haze over it. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB and
 a 5K screen's worth of pixels, checked by its own bytes rather than its name; the kit keeps a copy in its
 data folder, under `backgrounds/`.
 

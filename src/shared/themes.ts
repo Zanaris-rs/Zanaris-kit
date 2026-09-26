@@ -503,5 +503,9 @@ export function themeVars(look: ThemeLook): Record<string, string> {
     vars['--picture'] = background ? `url("${pictureUrl(background.picture)}")` : 'none';
     vars['--picture-size'] = background && background.fit !== 'tile' ? background.fit : 'auto';
     vars['--picture-repeat'] = background?.fit === 'tile' ? 'repeat' : 'no-repeat';
+    // The grain is noise with an alpha of its own, blended with the surface's colour and nothing behind it: over a
+    // see-through surface it paints its grey on the picture instead of texturing the stone. So a picture takes its
+    // place. `initial` unsets it, and `styles.css` falls back to the stone's grain.
+    vars['--grain'] = background ? 'none' : 'initial';
     return vars;
 }

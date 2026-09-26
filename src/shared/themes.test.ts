@@ -166,6 +166,7 @@ test('themeVars names every token as the variable styles.css reads, and a look w
     const vars = themeVars({ colors: stone, background: null });
     for (const token of THEME_TOKENS) assert.equal(vars[`--color-${token}`], stone[token]);
     assert.equal(vars['--picture'], 'none');
+    assert.equal(vars['--grain'], 'initial');
 });
 
 test('with a picture, the surfaces let it through by show, and edges, text and window stay solid', () => {
@@ -178,6 +179,8 @@ test('with a picture, the surfaces let it through by show, and edges, text and w
     assert.equal(vars['--picture'], `url("${pictureUrl(PICTURE)}")`);
     assert.equal(vars['--picture-size'], 'cover');
     assert.equal(vars['--picture-repeat'], 'no-repeat');
+    // Over a see-through surface the grain's noise would grey the picture, so the picture is the texture instead.
+    assert.equal(vars['--grain'], 'none');
     const tiled = themeVars({ colors: stone, background: { picture: PICTURE, fit: 'tile', show: 0.2 } });
     assert.equal(tiled['--picture-size'], 'auto');
     assert.equal(tiled['--picture-repeat'], 'repeat');
@@ -185,6 +188,7 @@ test('with a picture, the surfaces let it through by show, and edges, text and w
     const hidden = themeVars({ colors: stone, background: { picture: PICTURE, fit: 'cover', show: 0 } });
     assert.equal(hidden['--picture'], 'none');
     assert.equal(hidden['--color-stone'], stone.stone);
+    assert.equal(hidden['--grain'], 'initial');
 });
 
 test('pictureUrl is the private scheme main serves', () => {
