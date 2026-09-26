@@ -381,9 +381,14 @@ export default function Shell(): ReactNode {
                     {/*
                      * The tablist is its own box so Setups and Add pane, menu
                      * buttons rather than tabs, sit outside it. `min-w-0` is
-                     * what lets the tabs give way to them as they multiply.
+                     * what lets the tabs give way to them as they multiply,
+                     * and `overflow-hidden` keeps what still does not fit
+                     * inside the box: on a window narrower than the bar's
+                     * buttons, which closing a pane beside the game can now
+                     * make, the tabs and the new-tab plus are cut off at its
+                     * edge instead of painting over the gear.
                      */}
-                    <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px]">
+                    <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px] overflow-hidden">
                         {/*
                          * A tab and its close are one object: the close sits inside
                          * the tab it shuts, so it reads as part of that workspace
