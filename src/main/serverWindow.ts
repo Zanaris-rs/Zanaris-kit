@@ -1026,10 +1026,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 : saved.map(entry => ({ label: entry.name, click: () => void openSetupChosen(tabId, join(deps.setupsDir, entry.file)) }))),
             { type: 'separator' },
             { label: 'Save This Tab as a Setup…', click: () => void saveSetupAs(tabId) },
-            // A setup somebody sent, wherever it was saved to. Opening it does
-            // not copy it into the folder: that is still the player's to
-            // decide, by saving it again.
-            { label: 'Open Setup File…', click: () => void openSetupFromFile(tabId) },
+            // A setup somebody sent is dropped into this folder, and is then
+            // listed above like any other.
             { label: 'Open Setups Folder', click: () => void openSetupsFolder() }
         ];
         Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
@@ -1081,23 +1079,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (tabId !== activeTabId()) throw new Error('that tab is no longer the one in front, so its size is not known; bring it to the front and save it again');
         writeFileSync(path, writeLayout(tree, server.id, { width: rects.tree.width, height: rects.tree.height }));
         deps.log(`${tag} saved setup ${basename(path)}`);
-    }
-
-    async function openSetupFromFile(tabId: string): Promise<void> {
-        try {
-            mkdirSync(deps.setupsDir, { recursive: true });
-        } catch {
-            // The folder is only where the dialog starts; a file anywhere else still opens.
-        }
-        const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-            title: 'Open Setup',
-            defaultPath: deps.setupsDir,
-            properties: ['openFile'],
-            filters: [{ name: 'Zanaris Kit setup', extensions: ['json'] }]
-        });
-        const path = filePaths[0];
-        if (canceled || !path || win.isDestroyed()) return;
-        await openSetupChosen(tabId, path);
     }
 
     /** Opening from the menu: the same open, and a sheet rather than silence when the file was not a setup. */

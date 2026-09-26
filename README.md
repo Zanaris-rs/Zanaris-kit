@@ -743,10 +743,9 @@ shape, one click away. Whatever you pick replaces the panes of the tab in front:
 - **Save This Tab as a Setup…** writes the tab in front — the splits, the seam
   positions, what each pane shows, and the tab's size in pixels — to a file
   named for the tab, in that folder. The save dialog lets you rename it.
-- **Open Setup File…** opens one from anywhere, such as a file somebody sent
-  you, without copying it into the folder.
 - **Open Setups Folder** opens the folder in Finder or Explorer, which is how a
-  setup is shared: copy the file out, or drop somebody else's in.
+  setup is shared: copy the file out, or drop somebody else's in and it is
+  listed with your own.
 
 A setup opens around the game. The game keeps the pixels it has — or, with no
 game running, the ones the setup was saved with — every other pane gets the
