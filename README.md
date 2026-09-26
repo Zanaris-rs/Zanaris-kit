@@ -729,7 +729,7 @@ window opens tall enough for both and no taller than the display it opens on;
 on a display too short for that, chat gives way to its 80px floor before the
 game loses any height.
 
-**Setups**, in the tab bar between the gear and Add pane, is a set of panes in a
+**Setups**, in the tab bar just before Add pane, is a set of panes in a
 shape, one click away. Whatever you pick replaces the panes of the tab in front:
 
 - **Game**, **Game and Chat** and **Game, Chat and Tools** are the kit's own.
