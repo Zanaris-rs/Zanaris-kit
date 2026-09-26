@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANSWER_MS, ChatService, offlineChat, SILENCE_MS, splitLines, type ChatIo, type ChatSocket, type ChatStart, type SocketHandlers } from './service.ts';
+import { ANSWER_MS, ChatService, offlineChat, SILENCE_MS, STABLE_MS, splitLines, type ChatIo, type ChatSocket, type ChatStart, type SocketHandlers } from './service.ts';
 import { SERVER_LOG } from '../../shared/chat.ts';
 
 const LOBBY = '#LostHQ';
@@ -87,6 +87,8 @@ interface Fake {
     drop: (reason?: string) => void;
     /** Runs the pending reconnect timer and reports how long it waited. */
     fire: () => number;
+    /** Moves the clock `now` reads, and nothing else: no timer fires. */
+    advance: (ms: number) => void;
 }
 
 function fake(): Fake {
@@ -95,6 +97,7 @@ function fake(): Fake {
     const timers: Timer[] = [];
     let handlers: SocketHandlers | null = null;
     let closes = 0;
+    let clock = 1_700_000_000_000;
     const io: ChatIo = {
         connect: (host, port, h) => {
             connects.push(`${host}:${port}`);
@@ -107,7 +110,7 @@ function fake(): Fake {
             };
             return socket;
         },
-        now: () => 1_700_000_000_000,
+        now: () => clock,
         setTimer: (fn, ms) => {
             const timer: Timer = { ms, fn, cancelled: false };
             timers.push(timer);
@@ -142,6 +145,9 @@ function fake(): Fake {
             timer.cancelled = true;
             timer.fn();
             return timer.ms;
+        },
+        advance: ms => {
+            clock += ms;
         }
     };
     return f;
@@ -532,11 +538,29 @@ test('an unexpected close schedules a reconnect, and the wait grows until one la
     f.drop();
     assert.equal(f.fire(), 4_000);
 
-    // Reaching online again starts the backoff over.
+    // Reaching online again, and staying there, starts the backoff over.
     f.register();
     assert.equal(service.view().status, 'online');
+    f.advance(STABLE_MS);
     f.drop();
     assert.equal(f.fire(), 1_000, 'a connection that worked resets the count');
+});
+
+test('a server that registers the kit and drops it at once is waited out longer each time, not every second', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+    f.register();
+    f.drop();
+    assert.equal(f.fire(), 1_000);
+    // Online for a moment, then killed: the same trouble, not a new one.
+    f.register();
+    assert.equal(service.view().status, 'online');
+    f.advance(STABLE_MS - 1);
+    f.drop();
+    assert.equal(f.fire(), 2_000);
+    f.register();
+    f.drop();
+    assert.equal(f.fire(), 4_000);
 });
 
 test('a reconnect keeps the conversation rather than starting a new one', () => {

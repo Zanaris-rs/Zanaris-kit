@@ -66,6 +66,16 @@ export const SILENCE_MS = 90_000;
 /** How long a PING of ours waits for anything at all to come back before the connection is taken for dead. */
 export const ANSWER_MS = 30_000;
 
+/**
+ * How long a connection must stay online before its drop starts the backoff
+ * over. Reaching online is not enough: a server that registers the kit and
+ * then kills it — a session limit on a shared address, a services kill, an
+ * excess flood — would otherwise be answered with a reconnect every second,
+ * for as long as the kit is open, which is how a network comes to ban the
+ * address.
+ */
+export const STABLE_MS = 60_000;
+
 /** What the Settings tab shows when no service exists to ask: the defaults, nothing saved. */
 const NO_SETTINGS: ChatSettingsView = { nick: null, autoJoin: [...DEFAULT_AUTO_JOIN], ignore: [], notify: true, hasPassword: false, canSavePassword: false };
 
@@ -124,8 +134,10 @@ export class ChatService {
     private client: IrcClient | null = null;
     private socket: ChatSocket | null = null;
     private pending = '';
-    /** Failed attempts since the last connection that reached online, which is what the backoff counts. */
+    /** Failed attempts since the last connection that stayed online for `STABLE_MS`, which is what the backoff counts. */
     private attempt = 0;
+    /** When this socket's connection reached online, or null while it has not. */
+    private onlineAt: number | null = null;
     private cancelRetry: (() => void) | null = null;
     /** The silence count, or the wait for an answer to our PING: one or the other, while a socket is ours. */
     private cancelWatch: (() => void) | null = null;
@@ -360,6 +372,7 @@ export class ChatService {
         client.connecting();
         this.pending = '';
 
+        this.onlineAt = null;
         const gen = ++this.generation;
         const mine = (): boolean => gen === this.generation;
         // Counted from here, so a handshake that never finishes is given up on too.
@@ -391,8 +404,9 @@ export class ChatService {
         this.pending = rest;
         if (this.client === null || lines.length === 0) return;
         for (const line of lines) this.client.receive(line);
-        // Registration succeeded, so the next failure starts the backoff over.
-        if (this.client.snapshot().status === 'online') this.attempt = 0;
+        // Registration succeeded. Whether the next failure starts the backoff
+        // over depends on how long this lasts, which `closed` judges.
+        if (this.onlineAt === null && this.client.snapshot().status === 'online') this.onlineAt = this.io.now();
         this.emit();
     }
 
@@ -402,6 +416,8 @@ export class ChatService {
         this.pending = '';
         const retrying = !this.stopped && this.nick !== null;
         this.client?.closed(reason, retrying);
+        if (this.onlineAt !== null && this.io.now() - this.onlineAt >= STABLE_MS) this.attempt = 0;
+        this.onlineAt = null;
         if (retrying) {
             this.attempt++;
             this.cancelRetry = this.io.setTimer(() => {
