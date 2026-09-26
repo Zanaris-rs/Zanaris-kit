@@ -3,7 +3,7 @@ import { decidePageNavigation } from './guard.ts';
 import {
     appendColumn,
     arrangedAt,
-    closePane,
+    closeGivingBack,
     contentOf,
     evenOut,
     layoutTree,
@@ -16,6 +16,7 @@ import {
     setContent,
     setSeam,
     splitPane,
+    type Edge,
     type Fitted,
     type PaneContent,
     type PaneNode,
@@ -495,8 +496,20 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             return { paneId: born, grown };
         },
 
-        close(paneId: string): void {
-            adopt(closePane(active(), paneId));
+        /**
+         * Closes a pane, and when the game would have grown into its room,
+         * gives the room back to the screen instead
+         * (`paneTree.closeGivingBack`). The shrink and the edge it comes off
+         * are returned for the window to act on, and the tree is fitted from
+         * the size it will have once it has (`arrangedAt`), as `adoptAdded`
+         * does for a pane added.
+         */
+        close(paneId: string, room: Size): { shrunk: Size; edge: Edge | null } {
+            const size = { width: bounds.width, height: bounds.height };
+            const closed = closeGivingBack(active(), paneId, size, room);
+            if (closed.edge) fits.set(set.activeId, arrangedAt(closed.tree, { width: size.width - closed.shrunk.width, height: size.height - closed.shrunk.height }));
+            adopt(closed.tree);
+            return { shrunk: closed.shrunk, edge: closed.edge };
         },
 
         setContent(paneId: string, content: PaneContent): void {
@@ -623,7 +636,8 @@ export interface PaneHost {
     split: (paneId: string, axis: 'x' | 'y', room: Size) => Size;
     /** Adds a pane holding `content` down the active tab's right edge, `width` being the px the tab is laid out in, and focuses it. Returns the new pane's id, and the window's growth as `split` does. */
     appendColumn: (content: PaneContent, width: number, room: Size) => { paneId: string; grown: Size };
-    close: (paneId: string) => void;
+    /** Closes a pane in the active tab. `room` is how far the window could shrink; what it has to shrink by, and at which edge, for the game to keep its size, is returned (`paneTree.closeGivingBack`). */
+    close: (paneId: string, room: Size) => { shrunk: Size; edge: Edge | null };
     setContent: (paneId: string, content: PaneContent) => void;
     /** Moves the game into a pane, emptying the one it was in, in whichever tab that was. */
     moveGame: (paneId: string) => void;

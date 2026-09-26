@@ -81,8 +81,13 @@ Four properties in there are load-bearing and easy to break —
   window is growing to (`arrangedAt`). Left to `refit`, it would be fitted from
   the last frame's size, the growth would read as a resize, and the game would
   be held at the size the new pane squeezed it to while the window grew around
-  it. The window grows itself for nothing else — not Reset Game Size, not a
-  drop — and never shrinks itself back.
+  it. A pane **closed** beside or below the game gives its room back to the
+  screen (`closeGivingBack`): the window shrinks by the pane and its seam,
+  from that pane's side, so the game keeps its pixels and stays where it is.
+  Only the explicit close does this — a drop also closes a pane on its way
+  to moving it, and must never resize the window, so `closePane` is
+  untouched. Nothing else resizes the window — not Reset Game Size, not a
+  drop.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved layout file
 carries tool ids between people — that is the whole point of saving one — and

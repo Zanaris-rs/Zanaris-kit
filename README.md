@@ -567,8 +567,14 @@ the gesture left it. A window that would run off its display moves back onto it,
 and one that cannot grow far enough — at the display's size already, maximised,
 or full screen — takes what is still short from the game, as it always did. A
 split of any other pane costs the game nothing and never grows the window.
-Closing a pane does not shrink the window back: its room goes to the panes
-beside it.
+
+Closing a pane beside or below the game gives that room back to the window:
+it shrinks by the closed pane and its seam, off that pane's own side, so the
+game keeps its pixels and stays exactly where it was on screen. What the
+window cannot give up — maximised, full screen, or short of the tree's own
+floor — is shared by the pane's neighbours instead, as it always was. Closing
+any other pane costs the window nothing, and a drop, which also closes a pane
+on its way to moving it, never resizes the window either.
 
 **Add pane**, at the right end of the tab bar, adds a pane without splitting one
 by hand. It lists what a pane's own dropdown does — the tools, the game, this

@@ -16,8 +16,8 @@ import { showAlertBanner } from './timers/electron';
 import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
-import { canAppendColumn, contentOf, paneIds, parentSplitOf, type PaneContent, type Rect, type Size } from './paneTree';
-import { grownFrame, roomFor } from './windowRoom';
+import { canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
+import { grownFrame, roomFor, shrunkFrame } from './windowRoom';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
 import { layoutEntries, layoutFileName, readLayout, writeLayout } from './layoutFile';
 import { loadShell, preloadPath } from './renderer';
@@ -580,10 +580,13 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * push ladder, the content extent carried across a chrome toggle and the
      * per-axis mode the shell used to report all went with the fixed chrome
      * that motivated them, and so did the tool rail down the right; the bar's
-     * Add pane is how a pane is added. The window grows for one thing only: a
-     * pane added where the game would otherwise have paid for it
-     * (`paneTree.makeRoom`, through `growWindow`), and then it is the resize
-     * that lays everything out again, through here.
+     * Add pane is how a pane is added. The window resizes itself for two
+     * things so far: a pane added where the game would otherwise have paid
+     * for it (`paneTree.makeRoom`, through `growWindow`), and a pane closed
+     * beside or below the game giving that room back
+     * (`paneTree.closeGivingBack`, through `shrinkWindow`) — Task 7 adds a
+     * third, a setup opened. Either way it is the resize that lays
+     * everything out again, through here.
      *
      * The tree runs to the window's edges. It used to be inset by a pixel so a
      * gold ring round the focused pane had shell to land on; focus is a dot in
@@ -688,6 +691,24 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (win.isDestroyed() || (by.width <= 0 && by.height <= 0)) return;
         const frame = win.getBounds();
         win.setBounds(grownFrame(frame, screen.getDisplayMatching(frame).workArea, by));
+    }
+
+    /**
+     * How far the window may shrink to give a closed pane's room back
+     * (`paneTree.closeGivingBack`): as far as its tree reaches, which the
+     * tree's own floor then limits, and not at all while it is maximised or
+     * full screen, since it fills the screen and a resize would only take it
+     * out of that.
+     */
+    function roomToShrink(): Size {
+        if (win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return { width: 0, height: 0 };
+        return { width: rects.tree.width, height: rects.tree.height };
+    }
+
+    /** The window less a closed pane's room, taken off at that pane's side (`windowRoom.shrunkFrame`). Its resize lays everything out again. */
+    function shrinkWindow(by: Size, edge: Edge): void {
+        if (win.isDestroyed() || (by.width <= 0 && by.height <= 0)) return;
+        win.setBounds(shrunkFrame(win.getBounds(), by, edge));
     }
 
     function showYourWorld(): void {
@@ -869,6 +890,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * fresh login reopening costs: a character still standing in the world with
      * nobody watching it dies to events its player cannot see. So the view goes,
      * and the confirm says so before it does.
+     *
+     * A pane closed beside or below the game gives its room back to the
+     * screen (`paneTree.closeGivingBack`, through `shrinkWindow`), so the game
+     * keeps its size and stays where it is.
      */
     async function closePane(paneId: string): Promise<void> {
         const isGame = contentOf(host.tree(), paneId)?.kind === 'game';
@@ -876,7 +901,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (!(await deps.confirmCloseGame('pane'))) return;
             destroyGame('pane');
         }
-        host.close(paneId);
+        const given = host.close(paneId, roomToShrink());
+        if (given.edge) shrinkWindow(given.shrunk, given.edge);
         syncPanelProbe();
     }
 
