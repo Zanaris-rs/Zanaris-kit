@@ -99,6 +99,12 @@ export function pictureSize(bytes: Uint8Array): { width: number; height: number 
     return size && size.width > 0 && size.height > 0 ? size : null;
 }
 
+/** The name `add` keeps a picture under: its sha-256 and the type its bytes say it is. Null for a type the store does not keep. */
+export function pictureName(bytes: Uint8Array): string | null {
+    const type = pictureType(bytes);
+    return type === null ? null : `${createHash('sha256').update(bytes).digest('hex')}.${type}`;
+}
+
 /** A name `PictureStore` made, or one about to be: its hash and type, or the same with `.incoming` while it is written. */
 const STORED = new RegExp(`^(?:${PICTURE_NAME.source.slice(1, -1)})(?:\\.incoming)?$`);
 
@@ -118,14 +124,13 @@ export class PictureStore {
         if (bytes.length > PICTURE_MAX) {
             return { error: `That picture is ${(bytes.length / 1024 / 1024).toFixed(1)} MB. A theme can carry one of up to 10 MB.` };
         }
-        const type = pictureType(bytes);
-        if (type === null) return { error: "That isn't a PNG, JPEG, WebP or GIF picture." };
+        const picture = pictureName(bytes);
+        if (picture === null) return { error: "That isn't a PNG, JPEG, WebP or GIF picture." };
         const size = pictureSize(bytes);
         if (size === null) return { error: "That picture's size can't be read from it." };
         if (size.width > PICTURE_SIDE_MAX || size.height > PICTURE_SIDE_MAX || size.width * size.height > PICTURE_PIXELS_MAX) {
             return { error: `That picture is ${size.width}×${size.height} pixels. A theme can carry one of up to a 5K screen's worth, 5120×2880 pixels.` };
         }
-        const picture = `${createHash('sha256').update(bytes).digest('hex')}.${type}`;
         const file = join(this.dir, picture);
         if (!existsSync(file)) {
             mkdirSync(this.dir, { recursive: true });
