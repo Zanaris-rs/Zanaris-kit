@@ -21,9 +21,14 @@ import Worlds from './tools/Worlds';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
 
-/** Your world's header names the revision of the line it runs, which a switch changes under an open window. */
-function revisionOf(state: ShellState): string {
-    if (state.yourWorld) return `rev ${state.yourWorld.revision}`;
+/**
+ * The revision the read-out adds after the game's label, or null when the
+ * label names it already. Your world's does, beside the world's status, since
+ * a switch of build changes it under an open window; adding it here too
+ * printed it twice.
+ */
+function revisionOf(state: ShellState): string | null {
+    if (state.yourWorld) return null;
     return state.server.revision === null ? 'rev unknown' : `rev ${state.server.revision}`;
 }
 
@@ -143,11 +148,12 @@ const ROOM_FOR_REVISION = 300;
  * reachable however narrow the pane gets.
  */
 function GameReadout({ state, width }: { state: ShellState; width: number }): ReactNode {
+    const revision = revisionOf(state);
     /* No shadow of its own: the header is a `.tile`, and every tile already puts one under its text. */
     return (
-        <span title={`${state.gameLabel} · ${revisionOf(state)}`} className="flex min-w-0 shrink items-center gap-[7px] truncate">
+        <span title={revision === null ? state.gameLabel : `${state.gameLabel} · ${revision}`} className="flex min-w-0 shrink items-center gap-[7px] truncate">
             <span className="truncate">{state.gameLabel}</span>
-            {width >= ROOM_FOR_REVISION && <span className="shrink-0 text-[12px] text-faint">{revisionOf(state)}</span>}
+            {revision !== null && width >= ROOM_FOR_REVISION && <span className="shrink-0 text-[12px] text-faint">{revision}</span>}
         </span>
     );
 }

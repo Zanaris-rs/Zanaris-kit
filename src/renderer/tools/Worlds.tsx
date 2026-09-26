@@ -123,7 +123,7 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
                     style={loading ? SPENT : undefined}
                     className="btn shrink-0"
                 >
-                    {loading ? 'loading' : 'refresh'}
+                    {loading ? 'Loading…' : 'Refresh'}
                 </button>
                 <p className="min-w-0 flex-1 text-[12px]" aria-live="polite">
                     {view.error ? (
