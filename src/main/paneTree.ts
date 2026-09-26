@@ -677,10 +677,15 @@ function findSplit(node: PaneNode, splitId: string): (PaneNode & { kind: 'split'
  * standing in, which is the only split whose seams they can see moving.
  */
 export function parentSplitOf(node: PaneNode, paneId: string): string | null {
+    return parentOf(node, paneId)?.splitId ?? null;
+}
+
+/** The split holding `paneId` as a direct child, or null when the pane is the whole tree or not in it. */
+function parentOf(node: PaneNode, paneId: string): Extract<PaneNode, { kind: 'split' }> | null {
     if (node.kind === 'leaf') return null;
-    if (node.children.some(child => child.kind === 'leaf' && child.paneId === paneId)) return node.splitId;
+    if (node.children.some(child => child.kind === 'leaf' && child.paneId === paneId)) return node;
     for (const child of node.children) {
-        const found = parentSplitOf(child, paneId);
+        const found = parentOf(child, paneId);
         if (found) return found;
     }
     return null;
@@ -771,17 +776,6 @@ export function closeGivingBack(node: PaneNode, paneId: string, size: Size, room
         shrunk: { width: size.width - to.width, height: size.height - to.height },
         edge: across ? (before ? 'left' : 'right') : before ? 'top' : 'bottom'
     };
-}
-
-/** The split holding `paneId` as a direct child, or null when the pane is the whole tree or not in it. */
-function parentOf(node: PaneNode, paneId: string): Extract<PaneNode, { kind: 'split' }> | null {
-    if (node.kind === 'leaf') return null;
-    if (node.children.some(child => child.kind === 'leaf' && child.paneId === paneId)) return node;
-    for (const child of node.children) {
-        const found = parentOf(child, paneId);
-        if (found) return found;
-    }
-    return null;
 }
 
 /**
