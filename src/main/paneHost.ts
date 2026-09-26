@@ -31,6 +31,7 @@ import { closeTab, closingTab, labelOfTab, loadingLayout, marksOfTab, moveGame, 
 import { instantiateLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
+import { troubleNotice, type PaneTrouble } from '../shared/paneNotice.ts';
 
 /**
  * One tab's panes, and the native views inside them.
@@ -62,6 +63,8 @@ export interface PaneHostDeps {
     window: BrowserWindow;
     /** The live game view, or null when there is no game running. Positioned here, owned by the window. */
     gameView: () => WebContentsView | null;
+    /** The game's renderer has crashed or hung, which the window watches: its view is hidden and its pane says so. */
+    gameTrouble: () => PaneTrouble | null;
     /** This server's own links. A page pane may hold nothing else. */
     bookmarks: () => readonly { url: string; name: string }[];
     /** The tools this window offers, in its own order — the first half of what a pane's header offers to become. */
@@ -112,6 +115,14 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
     const pageViews = new Map<string, WebContentsView>();
     const pageStates = new Map<string, PageState>();
+    /** Pages whose renderer crashed or hung. Hidden while here, so the shell's notice shows where the page was. */
+    const pageTrouble = new Map<string, PaneTrouble>();
+    /**
+     * Until when a page's renderer going is one the kit asked for: a reload
+     * of a hung page kills its renderer first, which reports as gone, and
+     * that is not a crash to say anything about.
+     */
+    const recovering = new Map<string, number>();
     let rects = new Map<string, Rect>();
     /** The rect the active tab was last laid out in. A drop is judged against it, since whether a pane can be halved depends on its size. */
     let bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -159,14 +170,17 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             // another application. That is what `backgroundThrottling: false`
             // is for, and it is the one thing the tab design rests on that no
             // test here can prove.
+            // A game in trouble is hidden too, under the notice its pane
+            // shows: a crashed view draws nothing, and a hung one its last
+            // frame, and either would sit over the notice.
             const rect = gamePane ? rects.get(gamePane) : undefined;
             if (rect) game.setBounds(below(rect));
-            game.setVisible(Boolean(rect) && !dragging);
+            game.setVisible(Boolean(rect) && !dragging && !deps.gameTrouble());
         }
         for (const [paneId, view] of pageViews) {
             const rect = rects.get(paneId);
             if (rect) view.setBounds(below(rect));
-            view.setVisible(Boolean(rect) && !dragging);
+            view.setVisible(Boolean(rect) && !dragging && !pageTrouble.has(paneId));
         }
     }
 
@@ -197,11 +211,23 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         }
     }
 
+    /** What a pane says instead of its view: the game's trouble or a page's, as `troubleNotice` words it. */
+    function noticeOf(paneId: string, content: PaneContent): PaneView['notice'] {
+        if (content.kind === 'game') {
+            const trouble = deps.gameTrouble();
+            return trouble ? troubleNotice('game', trouble) : null;
+        }
+        const trouble = content.kind === 'page' ? pageTrouble.get(paneId) : undefined;
+        return trouble ? troubleNotice('page', trouble) : null;
+    }
+
     function destroyPageView(paneId: string): void {
         const view = pageViews.get(paneId);
         if (!view) return;
         pageViews.delete(paneId);
         pageStates.delete(paneId);
+        pageTrouble.delete(paneId);
+        recovering.delete(paneId);
         if (!deps.window.isDestroyed()) deps.window.contentView.removeChildView(view);
         if (!view.webContents.isDestroyed()) view.webContents.close();
     }
@@ -258,6 +284,26 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.log(`pane ${paneId} could not load ${failed}: ${description} (${code})`);
         });
         wc.on('focus', () => focus(paneId));
+        const troubled = (trouble: PaneTrouble | null): void => {
+            if (trouble) pageTrouble.set(paneId, trouble);
+            else if (!pageTrouble.delete(paneId)) return;
+            place();
+            deps.touched();
+        };
+        wc.on('render-process-gone', (_event, details) => {
+            if (details.reason === 'clean-exit' || pageViews.get(paneId) !== view) return;
+            if ((recovering.get(paneId) ?? 0) > Date.now()) return;
+            deps.log(`pane ${paneId}'s page stopped: ${details.reason}`);
+            troubled({ kind: 'crashed', reason: details.reason });
+        });
+        wc.on('unresponsive', () => {
+            if (pageTrouble.has(paneId)) return;
+            deps.log(`pane ${paneId}'s page stopped responding`);
+            troubled({ kind: 'unresponsive' });
+        });
+        wc.on('responsive', () => {
+            if (pageTrouble.get(paneId)?.kind === 'unresponsive') troubled(null);
+        });
         // A right-click on a page never reaches the shell — this view is
         // stacked above it — so the pane menu is raised from here instead, with
         // the view's own coordinates put back into the window's. The header
@@ -376,7 +422,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                     // Only the launcher draws a list; every other pane reaches
                     // the same one through its header, which main pops as a
                     // native menu and builds on the spot.
-                    contents: content.kind === 'empty' ? paneContentItems({ trees, paneId, tools: deps.tools(), links: deps.bookmarks() }) : null
+                    contents: content.kind === 'empty' ? paneContentItems({ trees, paneId, tools: deps.tools(), links: deps.bookmarks() }) : null,
+                    notice: noticeOf(paneId, content)
                 };
             });
         },
@@ -591,6 +638,26 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             }
         },
 
+        pageNotice(paneId: string, action: 'reload' | 'wait'): void {
+            const view = pageViews.get(paneId);
+            const trouble = pageTrouble.get(paneId);
+            if (!view || !trouble || view.webContents.isDestroyed()) return;
+            if (action === 'wait') {
+                if (trouble.kind !== 'unresponsive') return;
+            } else {
+                // A hung renderer is killed before it is reloaded, as Electron
+                // documents: a reload asked of it would wait on the hang.
+                if (trouble.kind === 'unresponsive') {
+                    recovering.set(paneId, Date.now() + 5_000);
+                    view.webContents.forcefullyCrashRenderer();
+                }
+                view.webContents.reload();
+            }
+            pageTrouble.delete(paneId);
+            place();
+            deps.touched();
+        },
+
         repaintBackground(): void {
             for (const view of pageViews.values()) view.setBackgroundColor(deps.background());
         },
@@ -657,6 +724,8 @@ export interface PaneHost {
     dragSeam: (splitId: string, index: number, px: number) => number;
     pageWebContents: () => WebContentsView | null;
     go: (where: 'back' | 'forward' | 'reload') => void;
+    /** A page pane's notice: reload the page, or wait out a hang and show it again. Nothing for a pane with no notice. */
+    pageNotice: (paneId: string, action: 'reload' | 'wait') => void;
     /** The theme changed: every page view takes the new ground. The next one made takes it too, through `deps.background`. */
     repaintBackground: () => void;
     destroy: () => void;

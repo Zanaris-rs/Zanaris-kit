@@ -808,6 +808,24 @@ lands under it is held there and its siblings pay; when even the minimums do not
 fit, every pane is cut by the same proportion, because clipping everything a
 little beats clipping one pane to nothing.
 
+**When something stops, its pane says so.** Every pane that can go wrong shows
+the same notice, drawn by one component (`renderer/paneNotice.tsx`, its words
+in `shared/paneNotice.ts`), with a way back beside it:
+
+- A game or a page whose renderer crashes is hidden, and its pane says it
+  stopped, and why in words — out of memory, closed by something outside the
+  kit — with **Reload game** or **Reload page**, and **Close pane**. The game's
+  says a reload is a fresh login, because it is. Closing a crashed game's pane
+  does not ask, since there is no login left to lose.
+- One that stops responding is hidden the same way, with **Wait**, which shows
+  it again, and a reload, which kills the hung renderer first. It clears itself
+  if the page comes back.
+- A tool that throws while drawing shows its own notice with **Open again** and
+  **Close pane**, rather than taking the tab bar and every other pane with it.
+- The shell and Settings are reloaded by themselves when their renderer goes,
+  up to three times a minute; the game under a shell keeps running through it.
+  A page-wide throw shows the same notice over the whole window, with Reload.
+
 ## Running it
 
 ```sh

@@ -9,6 +9,7 @@ import { applyTheme } from './theme';
 import DropIndicator from './dropIndicator';
 import Grip from './grip';
 import Launcher from './Launcher';
+import PaneNotice, { PaneBoundary } from './paneNotice';
 import PaneHeader, { type Grab } from './paneHeader';
 import Tab from './tab';
 import TopBar from './topBar';
@@ -89,17 +90,36 @@ function tabTitle(tab: TabView): string {
  * the header, so the shell leaves the rest of the pane empty exactly as it left
  * the old content rect empty. A page's back, forward and reload moved up into
  * the header with everything else that names a pane rather than works in one.
+ * The exception is a game or page that has crashed or hung: main hides its
+ * view and sends the pane a notice, which is drawn where the view was.
  *
- * Every pane the shell draws itself — a tool, and the launcher an empty pane
- * shows — is inset by the same 10px on every side, here and only here, so no
- * tool can drift from another. A tool no longer insets its own edge; it spaces
- * its own top-level blocks with one `gap-2` instead.
+ * Every pane the shell draws itself — a tool, the launcher an empty pane
+ * shows, and a notice — is inset by the same 10px on every side, here and
+ * only here, so no tool can drift from another. A tool no longer insets its
+ * own edge; it spaces its own top-level blocks with one `gap-2` instead. A
+ * tool is drawn inside a boundary, keyed by what the pane holds, so one that
+ * throws shows its own notice rather than taking the shell with it.
  */
 function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
+    if (pane.notice) {
+        const notice = pane.notice;
+        return (
+            <div className="flex min-h-0 flex-1 flex-col p-2.5">
+                <PaneNotice
+                    notice={notice}
+                    onAction={action => {
+                        if (action !== 'retry') void window.zanaris.panes.notice(pane.paneId, action);
+                    }}
+                />
+            </div>
+        );
+    }
     if (pane.content.kind === 'game' || pane.content.kind === 'page') return null;
     return (
         <div className="flex min-h-0 flex-1 flex-col p-2.5">
-            <PaneContentBody pane={pane} state={state} />
+            <PaneBoundary key={pane.content.kind === 'tool' ? pane.content.tool : 'empty'} name={pane.name} paneId={pane.paneId}>
+                <PaneContentBody pane={pane} state={state} />
+            </PaneBoundary>
         </div>
     );
 }

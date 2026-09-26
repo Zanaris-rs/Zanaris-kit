@@ -30,6 +30,7 @@ import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { roomFor } from './windowRoom';
 import { allowPermission } from './guard';
+import { readNoticeAction } from '../shared/paneNotice';
 import { COLUMN_PREFERRED_WIDTH, SEAM } from '../shared/layout';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
@@ -1171,6 +1172,12 @@ ipcMain.handle(IPC.paneEvenOut, (event, splitId: unknown) => {
 ipcMain.handle(IPC.paneGo, (event, where: unknown) => {
     if (where !== 'back' && where !== 'forward' && where !== 'reload') return;
     windowFor(event.sender)?.pageGo(where);
+});
+
+ipcMain.handle(IPC.paneNotice, (event, paneId: unknown, action: unknown) => {
+    const act = readNoticeAction(action);
+    if (typeof paneId !== 'string' || !act) return;
+    windowFor(event.sender)?.paneNotice(paneId, act);
 });
 
 ipcMain.handle(IPC.paneContextMenu, (event, paneId: unknown, x: unknown, y: unknown) => {
@@ -2417,6 +2424,45 @@ async function captureAndExit(dir: string): Promise<void> {
             appState.setServerTheme(own, null);
             appState.setTheme(DEFAULT_THEME);
             appearanceChanged();
+        }
+
+        // A crash, on the second window, which is closed next anyway. The
+        // game's tab brought to the front first — the step before left
+        // another tab there, and a notice is drawn only in the tab in front.
+        // The game's renderer killed as a crash would: its pane should say so
+        // in place of the view, with Reload game first, and Reload game should
+        // start a fresh load that lands with the notice gone. Then the
+        // shell's, which should come back by itself and paint. That one is
+        // not shot: redrawn, it is the same picture as before it went.
+        {
+            const title = second.state().title;
+            const gameTab = second.state().tabs.find(tab => tab.marks.includes('game'));
+            if (gameTab) second.selectTab(gameTab.id);
+            await wait(500);
+            const gamePane = (): ShellState['panes'][number] | undefined => second.state().panes.find(p => p.content.kind === 'game');
+            if (!gamePane()) fault(`crash: ${title} has no game pane in front to crash`);
+            second.crashForCapture('game');
+            await wait(1_500);
+            const notice = gamePane()?.notice ?? null;
+            log(`[capture] ${title}: game crashed — notice ${notice ? `"${notice.title}" [${notice.actions.map(a => a.label).join(', ')}]` : 'none'}`);
+            if (!notice) fault(`crash: ${title}'s game pane showed no notice after its renderer went`);
+            else if (notice.actions[0]?.id !== 'reload') fault(`crash: the game's notice does not offer a reload first (${notice.actions.map(a => a.id).join(', ')})`);
+            await shootShell('crash-notice', second);
+            const before = second.whenGameLoaded();
+            const pane = gamePane();
+            if (pane) second.paneNotice(pane.paneId, 'reload');
+            const fresh = second.whenGameLoaded() !== before;
+            const reloaded = await loaded(second);
+            await wait(1_000);
+            const after = gamePane()?.notice ?? null;
+            log(`[capture] ${title}: Reload game — ${fresh ? 'a fresh load' : 'no new load'}, ${reloaded}, notice ${after ? 'still up' : 'gone'}`);
+            if (!fresh || reloaded !== 'loaded' || after) fault(`crash: Reload game did not bring the game back (${fresh ? 'a fresh load' : 'no new load'}, ${reloaded}, notice ${after ? 'still up' : 'gone'})`);
+
+            second.crashForCapture('shell');
+            await wait(3_000);
+            const painted = await second.settle();
+            log(`[capture] ${title}: shell crashed — ${painted ? 'reloaded and painting' : 'not painting'}`);
+            if (!painted) fault(`crash: ${title}'s shell did not come back after its renderer went`);
         }
 
         // The second window closed: its views must go with it. Electron leaves

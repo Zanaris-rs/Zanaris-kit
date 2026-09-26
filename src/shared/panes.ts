@@ -3,8 +3,9 @@ import type { PaneContent, Rect } from '../main/paneTree.ts';
 import type { PaneContentItem } from '../main/paneMenu.ts';
 import type { DropTargets, DropZone } from '../main/paneDrop.ts';
 import type { TabMark } from '../main/tabs.ts';
+import type { PaneNotice } from './paneNotice.ts';
 
-export type { DropTargets, DropZone, PaneContent, PaneContentItem, Rect, TabMark };
+export type { DropTargets, DropZone, PaneContent, PaneContentItem, PaneNotice, Rect, TabMark };
 
 /** A page pane's own navigation state, as its toolbar reads it. One per page leaf, not one per window. */
 export interface PageState {
@@ -34,6 +35,14 @@ export interface PaneView {
      * list drawn by the shell would be hidden by the view below the header.
      */
     contents: PaneContentItem[] | null;
+    /**
+     * The game or page in this pane has crashed or stopped responding, and
+     * this is what the pane says instead. Main hides the view while it is up,
+     * so the shell draws it where the view was. Null otherwise, and always for
+     * a tool or an empty pane: a tool that fails to draw is the shell's to
+     * notice, not main's.
+     */
+    notice: PaneNotice | null;
 }
 
 export interface SeamView {

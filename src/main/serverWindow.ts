@@ -10,6 +10,7 @@ import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
 import type { ThemeLook } from '../shared/themes';
+import type { PaneTrouble } from '../shared/paneNotice';
 import type { ListedTimer } from './timers/defs';
 import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
@@ -269,6 +270,8 @@ export interface ServerWindow extends ServerWindowHandle {
     evenOutFocused(): void;
     /** The focused page pane's toolbar. */
     pageGo(where: 'back' | 'forward' | 'reload'): void;
+    /** A button on a pane's notice: reload the game or page that stopped, wait for one that hung, or close the pane. */
+    paneNotice(paneId: string, action: 'reload' | 'wait' | 'close'): void;
     newTab(): void;
     /**
      * Closes a tab and everything in it. Asks first when the tab holds the
@@ -318,6 +321,8 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
+    /** Capture mode only: kills a view's renderer, as a crash would, to show what the window does about it. */
+    crashForCapture(what: 'game' | 'shell' | 'page'): void;
     /**
      * The focused page pane, for capture mode. Resolves with null when no pane
      * holds a page: there is no view to shoot. Rejects when the page is not
@@ -387,6 +392,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * `index.ts` says so first.
      */
     let gameView: WebContentsView | null = null;
+    /**
+     * The game's renderer crashed or hung. Its view is hidden while this is
+     * set and its pane shows a notice instead (`paneNotice.troubleNotice`),
+     * so a game that has stopped reads as stopped rather than as a frozen
+     * frame or an empty pane — the layout invariant's "obviously suspended".
+     */
+    let gameTrouble: PaneTrouble | null = null;
+    /** Until when the game's renderer going is one the kit asked for, by killing a hung one to reload it. */
+    let recoveringGameUntil = 0;
     let failedOver = false;
     let loadWaiter: ((result: LoadResult) => void) | null = null;
     let loadPromise: Promise<LoadResult> = Promise.resolve('loaded');
@@ -504,6 +518,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const host: PaneHost = createPaneHost({
         window: win,
         gameView: () => gameView,
+        gameTrouble: () => gameTrouble,
         bookmarks: () => server.bookmarks,
         tools: () => tools,
         hosts: () => server.hosts,
@@ -932,7 +947,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     async function closePane(paneId: string): Promise<void> {
         const isGame = contentOf(host.tree(), paneId)?.kind === 'game';
         if (isGame) {
-            if (!(await deps.confirmCloseGame('pane'))) return;
+            // A game whose renderer has gone is already disconnected, so there
+            // is no login left for the question to protect.
+            if (gameTrouble?.kind !== 'crashed' && !(await deps.confirmCloseGame('pane'))) return;
             destroyGame('pane');
         }
         const given = host.close(paneId, roomToShrink());
@@ -982,9 +999,58 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             win.contentView.removeChildView(gameView);
             if (!gameView.webContents.isDestroyed()) gameView.webContents.close();
             gameView = null;
+            gameTrouble = null;
             clocks.gameGone();
         }
         deps.log(`${tag} closed the game ${via === 'setup' ? 'to open a setup' : via} and disconnected`);
+    }
+
+    function setGameTrouble(trouble: PaneTrouble | null): void {
+        gameTrouble = trouble;
+        applyLayout();
+    }
+
+    /**
+     * A button on a pane's notice. Close is the pane's own close, which asks
+     * first for a game that may still be connected. A page's reload and wait
+     * are the host's, which owns page views; the game's are here.
+     *
+     * A reload of the game is a load like any other — Your world's through the
+     * service's state, so a world that is not ready shows its starting page —
+     * and a hung renderer is killed first, which Electron documents as the way
+     * to reload one.
+     */
+    function paneNotice(paneId: string, action: 'reload' | 'wait' | 'close'): void {
+        if (action === 'close') {
+            void closePane(paneId);
+            return;
+        }
+        const content = contentOf(host.tree(), paneId);
+        if (content?.kind === 'page') {
+            host.pageNotice(paneId, action);
+            return;
+        }
+        if (content?.kind !== 'game' || !gameView || !gameTrouble || gameView.webContents.isDestroyed()) return;
+        if (action === 'wait') {
+            if (gameTrouble.kind === 'unresponsive') setGameTrouble(null);
+            return;
+        }
+        if (gameTrouble.kind === 'unresponsive') {
+            recoveringGameUntil = Date.now() + 5_000;
+            gameView.webContents.forcefullyCrashRenderer();
+        }
+        deps.log(`${tag} reloading the game after it stopped`);
+        gameTrouble = null;
+        if (single) {
+            // Forgotten, both, so the page the world is on is loaded again
+            // rather than recognised as already showing.
+            loadedGameUrl = null;
+            shownStarting = null;
+            syncYourWorld();
+        } else {
+            void loadGame(expected);
+        }
+        applyLayout();
     }
 
     // ── setups ───────────────────────────────────────────────────────────
@@ -1313,6 +1379,23 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      */
     function wireGameView(view: WebContentsView): void {
         const wc = view.webContents;
+        // Crashes and hangs, which hide the view under its pane's notice
+        // until the player chooses what to do (`paneNotice`). Only this view's,
+        // and only while it is still the window's game.
+        wc.on('render-process-gone', (_event, details) => {
+            if (details.reason === 'clean-exit' || view !== gameView || Date.now() < recoveringGameUntil) return;
+            deps.log(`${tag} the game stopped: ${details.reason}`);
+            if (gameLoadPending) settleLoad('failed');
+            setGameTrouble({ kind: 'crashed', reason: details.reason });
+        });
+        wc.on('unresponsive', () => {
+            if (view !== gameView || gameTrouble) return;
+            deps.log(`${tag} the game stopped responding`);
+            setGameTrouble({ kind: 'unresponsive' });
+        });
+        wc.on('responsive', () => {
+            if (view === gameView && gameTrouble?.kind === 'unresponsive') setGameTrouble(null);
+        });
         // The game's partition has no handler until this one, and a session
         // with none grants every permission unasked (`guard.allowPermission`).
         // Set again for each game view, which replaces rather than adds: the
@@ -1592,6 +1675,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (splitId) host.evenOut(splitId);
         },
         pageGo: where => host.go(where),
+        paneNotice,
         newTab: () => host.newTab(),
         closeTab,
         selectTab: tabId => host.selectTab(tabId),
@@ -1637,6 +1721,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         settle: () => paintsFrames(shellView.webContents),
         captureShell: () => shellView.webContents.capturePage(),
         captureGame: () => gameView?.webContents.capturePage() ?? Promise.reject(new Error('no game view')),
+        crashForCapture: what => {
+            const view = what === 'game' ? gameView : what === 'shell' ? shellView : host.pageWebContents();
+            if (view && !view.webContents.isDestroyed()) view.webContents.forcefullyCrashRenderer();
+        },
         capturePage: async () => {
             const view = host.pageWebContents();
             if (!view || view.webContents.isDestroyed()) return null;
