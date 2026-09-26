@@ -282,13 +282,19 @@ conversation in the order they were opened:
   message of the day, notices and anything refused. It can't be closed either.
 - **A private message opens a tab** named for whoever sent it, and `/query
   nick` opens one yourself. A notice never opens one, so NickServ's answers
-  stay in Status. The tab follows its person through a nick change.
+  stay in Status. The tab follows its person through a nick change. Twenty is
+  the most: past that, a message from someone new lands in Status, marked pm,
+  until you close one.
 - **Every channel has its own close.** Closing a tab leaves that channel for
   the session, and `/join` joins one for the session. Only Settings changes the
   saved list, and each Connect joins that list again.
 - **The nick works the same way.** A `/nick`, the underscore added to a taken
-  nick, or a services rename to a guest nick lasts for the session. Settings
-  shows the saved nick and, while they differ, what the connection is called.
+  nick, or a services rename to a guest nick lasts until the connection drops:
+  every connection, a reconnect included, starts from the saved nick. A saved
+  nick the server refuses — taken, with its three underscored tries, or not
+  one it will take at all — stops chat with a message rather than retrying,
+  and Connect tries again. Settings shows the saved nick and, while they
+  differ, what the connection is called.
 - **Disconnect is remembered.** A kit you disconnected stays offline on its
   next launch until you press Connect.
 - **The NickServ password** is sent when the server welcomes you, as
@@ -317,7 +323,8 @@ and a channel name joins it, which is how an invite is accepted. Tab finishes
 a nick, a channel or a command, and pressing it again moves to the next match.
 Up and Down bring back what you sent. While the kit is in the background, a
 line that names you or a private message raises a system notification, unless
-Settings turns them off.
+Settings turns them off — at most one every five seconds, and one a minute
+from any one person.
 
 Chat is a pane like anything else: drag its header to wherever you want it, drag
 its seams, close it. A new window opens with it already there, in a pane below the game —
@@ -359,7 +366,14 @@ voice when they lose op. The client is
 pure over an injected `send`, so the whole conversation can be driven in tests
 without a socket. The service around it owns the TLS socket and the reconnect
 backoff, which grows and caps: a client that retries harder the longer a
-network is down is a client that gets banned.
+network is down is a client that gets banned. It starts over only after a
+connection has stayed up a minute, so a server that takes the kit and drops it
+at once is not answered every second, and each wait is spread by a quarter
+either way, so kits dropped together do not come back together. A ban — a 465,
+or an ERROR naming a K-, G-, Z- or D-line — is not retried at all: chat goes
+offline with the server's reason, and Connect tries again. A message is
+measured in bytes as the server will relay it, and one too long is refused
+rather than cut off.
 
 Not carried over from LostKit, which reaches LostHQ's community through
 `https://irc.losthq.rs/`, a hosted web client rather than a server: that host

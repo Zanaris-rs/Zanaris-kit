@@ -1,7 +1,7 @@
 import { connect } from 'node:tls';
 import { DEFAULT_AUTO_JOIN, SERVER_LOG, type ChatLine, type ChatSettings, type ChatSettingsView, type ChatView } from '../../shared/chat.ts';
 import { backoffDelay, IrcClient } from './client.ts';
-import { formatCommand, parseInput, sameName } from './protocol.ts';
+import { foldName, formatCommand, parseInput, sameName } from './protocol.ts';
 
 /**
  * The app's one chat connection.
@@ -37,6 +37,11 @@ export interface ChatIo {
     now(): number;
     /** Schedules fn; the returned closure cancels it. Injected so a test fires the reconnect instead of waiting for it. */
     setTimer(fn: () => void, ms: number): () => void;
+    /**
+     * A number in [0, 1), which spreads each reconnect's wait (`backoffDelay`).
+     * Math.random when absent; a test pins it, so its waits are exact.
+     */
+    random?(): number;
 }
 
 /**
@@ -76,6 +81,37 @@ export const ANSWER_MS = 30_000;
  */
 export const STABLE_MS = 60_000;
 
+/**
+ * The least time between two mention notifications, whoever they are from.
+ * The lines themselves all arrive; this is only how often the system is asked
+ * to show a banner, so someone flooding you raises one rather than a hundred.
+ */
+export const MENTION_GAP_MS = 5_000;
+
+/** The least time between two mention notifications from one person. */
+export const MENTION_REPEAT_MS = 60_000;
+
+/**
+ * A dropped connection in words for the pane. What the socket said is written
+ * for developers — "getaddrinfo ENOTFOUND irc.swiftirc.net", "read
+ * ECONNRESET", an OpenSSL error code — so it goes to Status as it was, and
+ * this is what the pane says instead. The pane's own note says it is
+ * reconnecting, so this says only why.
+ *
+ * Read off Node's messages, which carry the error's code: getaddrinfo is the
+ * name lookup, connect's codes are the address answering or not, and a reset
+ * mid-handshake is the far end closing, not a certificate.
+ */
+export function plainReason(raw: string): string {
+    if (/getaddrinfo|ENOTFOUND|EAI_AGAIN|EAI_FAIL|EAI_NONAME/.test(raw)) return "Couldn't find the chat server. Check your internet connection.";
+    if (/ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENETDOWN|EHOSTDOWN|EADDRNOTAVAIL/.test(raw)) return "Couldn't reach the chat server. Check your internet connection.";
+    if (/ECONNRESET|EPIPE|ECONNABORTED|socket hang up|disconnected before secure TLS|^the connection closed$/.test(raw)) return 'The chat server closed the connection.';
+    if (/certificate|altnames|SSL routines|\bSSL\b|\bTLS\b|CERT_/i.test(raw)) return "Couldn't connect to the chat server securely. Some networks, like public Wi-Fi, get in the way of that.";
+    if (raw === 'the server did not answer') return "The chat server didn't answer.";
+    if (raw === 'the server stopped answering') return 'The chat server stopped answering.';
+    return 'The connection to chat was lost.';
+}
+
 /** What the Settings tab shows when no service exists to ask: the defaults, nothing saved. */
 const NO_SETTINGS: ChatSettingsView = { nick: null, autoJoin: [...DEFAULT_AUTO_JOIN], ignore: [], notify: true, hasPassword: false, canSavePassword: false };
 
@@ -99,11 +135,14 @@ export interface ChatStart extends ChatSettings {
     /** Told the ignore list after /ignore or /unignore changed it, so the next launch ignores the same people. */
     onIgnoreChanged?: (ignore: string[]) => void;
     /**
-     * Told each line that names you or is said to you alone, while `notify` is
-     * on. Whether anyone is looking is the caller's to judge: the service
-     * knows nothing of windows.
+     * Told a line that names you or is said to you alone, while `notify` is
+     * on — but not every one: none within MENTION_GAP_MS of the last, and none
+     * from the same person within MENTION_REPEAT_MS of theirs. Whether anyone
+     * is looking is the caller's to judge, since the service knows nothing of
+     * windows; a caller that showed nothing can return false, and that line
+     * does not count against the next.
      */
-    onMention?: (line: ChatLine) => void;
+    onMention?: (line: ChatLine) => boolean | void;
 }
 
 /** One save from the Settings tab, already checked by `readSettingsDraft`. */
@@ -125,7 +164,10 @@ export class ChatService {
     private readonly canSavePassword: boolean;
     private readonly onConnectionWanted: (wanted: boolean) => void;
     private readonly onIgnoreChanged: (ignore: string[]) => void;
-    private readonly onMention: (line: ChatLine) => void;
+    private readonly onMention: (line: ChatLine) => boolean | void;
+    /** When the last notification was raised, and when each person's last was, by folded nick. */
+    private lastMention = -Infinity;
+    private readonly mentionedAt = new Map<string, number>();
     private nick: string | null;
     private autoJoin: string[];
     private ignore: string[];
@@ -142,8 +184,10 @@ export class ChatService {
     /** The silence count, or the wait for an answer to our PING: one or the other, while a socket is ours. */
     private cancelWatch: (() => void) | null = null;
     /**
-     * The user does not want a connection: they pressed Disconnect, this run or
-     * the last, or the app is quitting. Nothing reconnects while it is set.
+     * No connection is to be made until the user asks: they pressed Disconnect,
+     * this run or the last, or the app is quitting, or the server turned the
+     * last one away in a way retrying cannot change. Nothing reconnects while
+     * it is set, and Connect clears it.
      */
     private stopped: boolean;
     /**
@@ -364,9 +408,7 @@ export class ChatService {
                     this.ignore = [...ignore];
                     this.onIgnoreChanged([...ignore]);
                 },
-                onHighlight: line => {
-                    if (this.notify) this.onMention(line);
-                }
+                onHighlight: line => this.mentioned(line)
             });
         this.client = client;
         client.connecting();
@@ -404,18 +446,28 @@ export class ChatService {
         this.pending = rest;
         if (this.client === null || lines.length === 0) return;
         for (const line of lines) this.client.receive(line);
+        // Banned, or no nick left to try: the same connection again would be
+        // turned away the same way, every backoff, for as long as the kit is
+        // open. So this one ends now, and the next is the user's to ask for.
+        // The flag Connect writes is left alone, so the next launch tries
+        // once more: a ban can be lifted, and a nick given up.
+        if (this.client.turnedAway() !== null) {
+            this.hangUp();
+            return;
+        }
         // Registration succeeded. Whether the next failure starts the backoff
         // over depends on how long this lasts, which `closed` judges.
         if (this.onlineAt === null && this.client.snapshot().status === 'online') this.onlineAt = this.io.now();
         this.emit();
     }
 
+    /** `reason` is what the socket or the watchdog said, which the pane puts in plain words and Status keeps as it was. */
     private closed(reason: string): void {
         this.unwatch();
         this.socket = null;
         this.pending = '';
         const retrying = !this.stopped && this.nick !== null;
-        this.client?.closed(reason, retrying);
+        this.client?.closed(plainReason(reason), retrying, reason);
         if (this.onlineAt !== null && this.io.now() - this.onlineAt >= STABLE_MS) this.attempt = 0;
         this.onlineAt = null;
         if (retrying) {
@@ -423,9 +475,28 @@ export class ChatService {
             this.cancelRetry = this.io.setTimer(() => {
                 this.cancelRetry = null;
                 this.open();
-            }, backoffDelay(this.attempt));
+            }, backoffDelay(this.attempt, () => this.io.random?.() ?? Math.random()));
         }
         this.emit();
+    }
+
+    /**
+     * Passes a highlight on as a notification, when notifications are on and
+     * the last few have left room for it (MENTION_GAP_MS, MENTION_REPEAT_MS).
+     * A line with nobody behind it — a kick, the server — counts as its tab's.
+     */
+    private mentioned(line: ChatLine): void {
+        if (!this.notify) return;
+        const now = this.io.now();
+        const who = foldName(line.nick ?? line.channel);
+        if (now - this.lastMention < MENTION_GAP_MS) return;
+        const theirs = this.mentionedAt.get(who);
+        if (theirs !== undefined && now - theirs < MENTION_REPEAT_MS) return;
+        if (this.onMention(line) === false) return;
+        this.lastMention = now;
+        // Nobody older than the repeat window can hold anything back, so the map stays a minute's worth.
+        for (const [name, at] of this.mentionedAt) if (now - at >= MENTION_REPEAT_MS) this.mentionedAt.delete(name);
+        this.mentionedAt.set(who, now);
     }
 
     /** Cancels a pending retry, and the watch on a socket that is about to be replaced or dropped. */

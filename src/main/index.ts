@@ -388,12 +388,15 @@ app.on('browser-window-focus', (_event, win) => {
  * Raises a system notification for a mention or a private message, but only
  * while no window of the kit's is in front: someone looking at the kit sees
  * the gold edge and the badge already. Clicking it brings the last window
- * back with that conversation open.
+ * back with that conversation open. Says whether it raised one, so chat's
+ * rate limit counts only the banners that were shown.
  */
-function notifyMention(line: ChatLine): void {
-    if (BrowserWindow.getFocusedWindow() !== null || !Notification.isSupported()) return;
+function notifyMention(line: ChatLine): boolean {
+    if (BrowserWindow.getFocusedWindow() !== null || !Notification.isSupported()) return false;
     const where = line.channel === SERVER_LOG ? 'Status' : line.channel;
-    const title = line.nick === null ? where : line.nick === line.channel ? `${line.nick} (private)` : `${line.nick} in ${where}`;
+    // A private message past the most conversations lands in Status, marked
+    // `private`, and is still somebody writing to you rather than a mention.
+    const title = line.nick === null ? where : line.nick === line.channel || line.kind === 'private' ? `${line.nick} (private)` : `${line.nick} in ${where}`;
     const note = new Notification({ title, body: line.kind === 'action' ? `* ${line.nick} ${line.text}` : line.text });
     note.on('click', () => {
         chat?.select(line.channel);
@@ -401,6 +404,7 @@ function notifyMention(line: ChatLine): void {
         sw?.focus();
     });
     note.show();
+    return true;
 }
 
 /**

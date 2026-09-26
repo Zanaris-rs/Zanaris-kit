@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANSWER_MS, ChatService, offlineChat, SILENCE_MS, STABLE_MS, splitLines, type ChatIo, type ChatSocket, type ChatStart, type SocketHandlers } from './service.ts';
+import { ANSWER_MS, ChatService, MENTION_GAP_MS, MENTION_REPEAT_MS, offlineChat, plainReason, SILENCE_MS, STABLE_MS, splitLines, type ChatIo, type ChatSocket, type ChatStart, type SocketHandlers } from './service.ts';
 import { SERVER_LOG } from '../../shared/chat.ts';
 
 const LOBBY = '#LostHQ';
@@ -91,7 +91,8 @@ interface Fake {
     advance: (ms: number) => void;
 }
 
-function fake(): Fake {
+/** `random` is pinned at the middle, where a wait is not spread, unless a test asks for another draw. */
+function fake(random: () => number = () => 0.5): Fake {
     const connects: string[] = [];
     const sent: string[] = [];
     const timers: Timer[] = [];
@@ -111,6 +112,7 @@ function fake(): Fake {
             return socket;
         },
         now: () => clock,
+        random,
         setTimer: (fn, ms) => {
             const timer: Timer = { ms, fn, cancelled: false };
             timers.push(timer);
@@ -135,7 +137,7 @@ function fake(): Fake {
         open: () => handlers?.opened(),
         chunk: text => handlers?.data(text),
         line: text => handlers?.data(`${text}\r\n`),
-        drop: (reason = 'connection reset') => handlers?.closed(reason),
+        drop: (reason = 'read ECONNRESET') => handlers?.closed(reason),
         register: (nick = 'mage') => {
             handlers?.opened();
             handlers?.data(`:irc.swiftirc.net 001 ${nick} :Welcome to SwiftIRC, ${nick}\r\n`);
@@ -367,11 +369,10 @@ test('saving the stored nick after a refused registration puts the underscored c
     f.open();
     for (const taken of ['mage', 'mage_', 'mage__', 'mage___']) f.line(`:irc.swiftirc.net 433 * ${taken} :Nickname is already in use`);
     assert.equal(service.view().nick, 'mage___');
-    f.drop();
 
     service.applySettings({ nick: 'mage', autoJoin: [LOBBY] });
     assert.equal(service.view().nick, 'mage', 'the claim is dropped even though mage is already the saved nick');
-    f.fire();
+    service.connect();
     f.sent.length = 0;
     f.open();
     assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK mage', 'USER mage 0 * :Zanaris Kit']);
@@ -526,7 +527,7 @@ test('an unexpected close schedules a reconnect, and the wait grows until one la
 
     f.drop();
     assert.equal(service.view().status, 'reconnecting');
-    assert.equal(service.view().error, 'connection reset');
+    assert.equal(service.view().error, 'The chat server closed the connection.');
     assert.equal(f.connects.length, 1, 'nothing reconnects before the timer fires');
 
     assert.equal(f.fire(), 1_000, 'the first retry is the shortest');
@@ -778,7 +779,7 @@ test('a handshake that never completes is given up on without a ping', () => {
     assert.deepEqual(f.sent, [], 'there is no connection to ping on');
     assert.equal(f.closes, 1);
     assert.equal(service.view().status, 'reconnecting');
-    assert.match(service.view().error ?? '', /did not answer/);
+    assert.match(service.view().error ?? '', /didn't answer/);
 });
 
 test('nothing is watched once the connection is closed, whoever closed it', () => {
@@ -850,10 +851,12 @@ test('a saved ignore list applies to the connection at once', () => {
 test('a mention is passed on while notifications are on, and not once they are off', () => {
     const f = fake();
     const seen: string[] = [];
-    const service = new ChatService({ ...SETTINGS, nick: 'mage', onMention: line => seen.push(line.text) }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', onMention: line => void seen.push(line.text) }, f.io);
     f.register();
     f.line(`:bob!b@h PRIVMSG ${LOBBY} :mage: look`);
+    f.advance(MENTION_REPEAT_MS);
     f.line(':bob!b@h PRIVMSG mage :psst');
+    f.advance(MENTION_REPEAT_MS);
     service.applySettings({ nick: 'mage', autoJoin: [LOBBY], notify: false });
     f.line(':bob!b@h PRIVMSG mage :again');
     assert.deepEqual(seen, ['mage: look', 'psst']);
@@ -871,4 +874,202 @@ test('a conversation can be closed like a channel, and is never parted', () => {
     assert.equal(service.closeRoom('bob'), true);
     assert.deepEqual(f.sent, []);
     assert.equal(service.view().channels.some(c => c.name === 'bob'), false);
+});
+
+test('a mention notification waits out the last one, and one person\'s waits out theirs, while every line still arrives', () => {
+    const f = fake();
+    const seen: string[] = [];
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', onMention: line => void seen.push(`${line.nick} ${line.text}`) }, f.io);
+    f.register();
+
+    // A flood from forty names in one second is one banner.
+    for (let n = 0; n < 40; n++) f.line(`:spam${n}!s@h PRIVMSG mage :buy gold`);
+    assert.deepEqual(seen, ['spam0 buy gold']);
+    assert.equal(service.view().channels.filter(c => c.name.startsWith('spam')).length, 20, 'the lines still arrive: the cap, not the limit, keeps the tabs down');
+
+    f.advance(MENTION_GAP_MS);
+    f.line(':spam0!s@h PRIVMSG mage :again');
+    assert.deepEqual(seen, ['spam0 buy gold'], 'the same person inside their minute');
+    f.line(`:bob!b@h PRIVMSG ${LOBBY} :mage: look`);
+    assert.deepEqual(seen, ['spam0 buy gold', 'bob mage: look'], 'someone else, once the gap has passed');
+
+    f.advance(MENTION_REPEAT_MS);
+    f.line(':spam0!s@h PRIVMSG mage :and again');
+    assert.deepEqual(seen.at(-1), 'spam0 and again', 'their minute is up');
+});
+
+test('a mention the caller did not show does not hold back the next', () => {
+    const f = fake();
+    const seen: string[] = [];
+    let looking = true;
+    new ChatService(
+        {
+            ...SETTINGS,
+            nick: 'mage',
+            onMention: line => {
+                if (looking) return false;
+                seen.push(line.text);
+                return true;
+            }
+        },
+        f.io
+    );
+    f.register();
+    f.line(':bob!b@h PRIVMSG mage :are you there?');
+    looking = false;
+    f.line(':bob!b@h PRIVMSG mage :hello?');
+    assert.deepEqual(seen, ['hello?'], 'the first was seen in the window, so the second is the first banner');
+});
+
+// ── reconnecting, spread ──────────────────────────────────────────────────
+
+test('each reconnect\'s wait is spread by the injected draw, so kits dropped together do not return together', () => {
+    for (const [draw, first, second] of [
+        [0, 750, 1_500],
+        [0.999_999, 1_250, 2_500]
+    ] as const) {
+        const f = fake(() => draw);
+        new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+        f.register();
+        f.drop();
+        assert.equal(f.fire(), first);
+        f.drop();
+        assert.equal(f.fire(), second);
+    }
+});
+
+// ── turned away ───────────────────────────────────────────────────────────
+
+/** The reconnect timers still waiting: anything that is not the watchdog's. */
+function retries(f: Fake): number[] {
+    return f.timers.filter(t => !t.cancelled && t.ms !== SILENCE_MS && t.ms !== ANSWER_MS).map(t => t.ms);
+}
+
+test('a ban ends the connection and nothing retries it; Connect tries again by hand, and the next launch tries once', () => {
+    const f = fake();
+    const wanted: boolean[] = [];
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', onConnectionWanted: on => wanted.push(on) }, f.io);
+    f.register();
+    f.sent.length = 0;
+
+    f.line('ERROR :Closing link: (~mage@203.0.113.9) [G-lined: Spamming]');
+    assert.equal(service.view().status, 'offline');
+    assert.match(service.view().error ?? '', /^The chat server has banned you: Spamming\. Chat won't reconnect on its own/);
+    assert.equal(f.closes, 1, 'the socket is let go');
+    f.drop('the connection closed');
+    assert.deepEqual(retries(f), [], 'the server\'s close brings nothing back');
+    assert.equal(f.connects.length, 1);
+    assert.deepEqual(wanted, [], 'not remembered as a Disconnect: a ban can be lifted, and the next launch tries once');
+
+    service.connect();
+    assert.equal(f.connects.length, 2, 'Connect is still the user\'s');
+    assert.equal(service.view().error, null, 'and a new try starts clean');
+});
+
+test('a 465 before registration ends it the same way', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+    f.open();
+    f.chunk(':irc.swiftirc.net 465 * :You are banned from this network.\r\nERROR :Closing link: (~mage@203.0.113.9) [K-lined: Ban evasion]\r\n');
+    assert.equal(service.view().status, 'offline');
+    assert.match(service.view().error ?? '', /banned you: Ban evasion\./);
+    assert.deepEqual(retries(f), []);
+});
+
+test('a throttle, a flood or a ping timeout is not a ban: the close after it backs off and retries', () => {
+    for (const text of [
+        'Closing Link: [203.0.113.9] (Throttled: Reconnecting too fast - Email abuse@example.net for more information.)',
+        'Closing link: (~mage@203.0.113.9) [Excess Flood]',
+        'Closing link: (~mage@203.0.113.9) [Ping timeout: 240 seconds]'
+    ]) {
+        const f = fake();
+        const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+        f.register();
+        f.line(`ERROR :${text}`);
+        assert.equal(service.view().status, 'online', text);
+        f.drop('the connection closed');
+        assert.equal(service.view().status, 'reconnecting', text);
+        assert.deepEqual(retries(f), [1_000], text);
+    }
+});
+
+test('a nick the server will not take ends the attempt with a goodbye, and nothing retries it', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+    f.open();
+    f.sent.length = 0;
+    f.line(':irc.swiftirc.net 432 * mage :Erroneous Nickname');
+    assert.deepEqual(f.sent, ['QUIT :Zanaris Kit'], 'registration is not left to time out');
+    assert.equal(f.closes, 1);
+    assert.equal(service.view().status, 'offline');
+    assert.match(service.view().error ?? '', /won't take the nick mage\..*chat's Settings tab/);
+    assert.deepEqual(retries(f), []);
+    assert.deepEqual(watching(f), [], 'and nothing is watching a socket that is gone');
+});
+
+test('taken nicks past the last underscore end the attempt; Connect starts again from the saved nick', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+    f.open();
+    for (const taken of ['mage', 'mage_', 'mage__']) f.line(`:irc.swiftirc.net 433 * ${taken} :Nickname is already in use`);
+    assert.equal(service.view().status, 'registering', 'still trying');
+    f.line(':irc.swiftirc.net 433 * mage___ :Nickname is already in use');
+    assert.equal(service.view().status, 'offline');
+    assert.equal(service.view().error, "The nick mage is taken. Pick another in chat's Settings tab.");
+    assert.deepEqual(retries(f), []);
+
+    service.connect();
+    f.sent.length = 0;
+    f.open();
+    assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK mage', 'USER mage 0 * :Zanaris Kit'], 'not mage____');
+});
+
+test('every reconnect starts from the saved nick, not the one the last connection ended on', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+    f.register();
+    service.send('/nick sessiononly');
+    f.line(':mage!m@h NICK sessiononly');
+    assert.equal(service.view().nick, 'sessiononly');
+    f.drop();
+    f.fire();
+    f.sent.length = 0;
+    f.open();
+    assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK mage', 'USER mage 0 * :Zanaris Kit']);
+});
+
+// ── what the pane says about a drop ───────────────────────────────────────
+
+test('what the socket said is put in plain words for the pane', () => {
+    const find = "Couldn't find the chat server. Check your internet connection.";
+    const reach = "Couldn't reach the chat server. Check your internet connection.";
+    const closed = 'The chat server closed the connection.';
+    for (const [raw, said] of [
+        ['getaddrinfo ENOTFOUND irc.swiftirc.net', find],
+        ['getaddrinfo EAI_AGAIN irc.swiftirc.net', find],
+        ['connect ECONNREFUSED 203.0.113.9:6697', reach],
+        ['connect ETIMEDOUT 203.0.113.9:6697', reach],
+        ['connect ENETUNREACH 203.0.113.9:6697 - Local (0.0.0.0:0)', reach],
+        ['read ECONNRESET', closed],
+        ['write EPIPE', closed],
+        ['Client network socket disconnected before secure TLS connection was established', closed],
+        ['the connection closed', closed],
+        ['certificate has expired', "Couldn't connect to the chat server securely. Some networks, like public Wi-Fi, get in the way of that."],
+        ["Hostname/IP does not match certificate's altnames: Host: irc.swiftirc.net. is not in the cert's altnames: DNS:captive.example", "Couldn't connect to the chat server securely. Some networks, like public Wi-Fi, get in the way of that."],
+        ['80FF71EF01000000:error:0A00010B:SSL routines:tls_validate_record_header:wrong version number', "Couldn't connect to the chat server securely. Some networks, like public Wi-Fi, get in the way of that."],
+        ['the server did not answer', "The chat server didn't answer."],
+        ['the server stopped answering', 'The chat server stopped answering.'],
+        ['something nobody foresaw', 'The connection to chat was lost.']
+    ] as const) {
+        assert.equal(plainReason(raw), said, raw);
+    }
+});
+
+test('a drop shows the plain words in the pane and keeps the socket\'s own in Status', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoJoin: [] }, f.io);
+    f.drop('getaddrinfo ENOTFOUND irc.swiftirc.net');
+    assert.equal(service.view().error, "Couldn't find the chat server. Check your internet connection.");
+    assert.equal(service.view().active, SERVER_LOG);
+    assert.deepEqual(service.view().lines.map(l => l.text), ['disconnected: getaddrinfo ENOTFOUND irc.swiftirc.net']);
 });

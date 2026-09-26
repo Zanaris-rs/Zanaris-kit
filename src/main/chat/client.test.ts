@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { backoffDelay, IrcClient, type ClientOpts } from './client.ts';
+import { backoffDelay, IrcClient, MAX_CONVERSATIONS, type ClientOpts } from './client.ts';
 import { SERVER_LOG, type ChatChannel } from '../../shared/chat.ts';
 
 const CTCP = '\u0001'; // the CTCP delimiter, written as an escape so it survives a copy-paste
@@ -105,13 +105,25 @@ test('closed reconnects or gives up, and forgets who was in the room', () => {
 });
 
 test('backoff grows and is capped, so a long outage is not a hammering', () => {
-    assert.equal(backoffDelay(1), 1_000);
-    assert.equal(backoffDelay(2), 2_000);
-    assert.equal(backoffDelay(3), 4_000);
-    assert.ok(backoffDelay(4) > backoffDelay(3));
-    assert.equal(backoffDelay(20), backoffDelay(6), 'capped');
-    assert.ok(backoffDelay(20) <= 60_000);
-    assert.equal(backoffDelay(0), 1_000, 'a nonsense attempt still waits');
+    const middle = (): number => 0.5; // the unspread wait
+    assert.equal(backoffDelay(1, middle), 1_000);
+    assert.equal(backoffDelay(2, middle), 2_000);
+    assert.equal(backoffDelay(3, middle), 4_000);
+    assert.ok(backoffDelay(4, middle) > backoffDelay(3, middle));
+    assert.equal(backoffDelay(20, middle), backoffDelay(6, middle), 'capped');
+    assert.ok(backoffDelay(20, () => 0.999_999) <= 60_000, 'spread and all');
+    assert.equal(backoffDelay(0, middle), 1_000, 'a nonsense attempt still waits');
+});
+
+test('each wait is spread by up to a quarter either way, so kits dropped together do not return together', () => {
+    assert.equal(backoffDelay(1, () => 0), 750);
+    assert.equal(backoffDelay(1, () => 0.999_999), 1_250);
+    assert.equal(backoffDelay(3, () => 0), 3_000);
+    assert.equal(backoffDelay(20, () => 0), 22_500, 'the cap is spread too, or every kit would meet at it');
+    assert.equal(backoffDelay(20, () => 0.999_999), 37_500);
+    const waits = new Set([0, 0.2, 0.4, 0.6, 0.8].map(r => backoffDelay(2, () => r)));
+    assert.equal(waits.size, 5, 'different draws, different waits');
+    assert.equal(backoffDelay(1, () => 7), 1_250, 'a random out of range is held to it');
 });
 
 // ── messages ──────────────────────────────────────────────────────────────
@@ -287,6 +299,120 @@ test('433 tries again with an underscore, and gives up rather than looping', () 
 
     f.client.select(SERVER_LOG);
     assert.match(f.lines().at(-1)?.text ?? '', /nick/i, 'the panel is told why the nick is not the one asked for');
+});
+
+test('433s past the last underscore end the attempt, naming the nick asked for and where to pick another', () => {
+    const f = fake();
+    f.client.connecting();
+    f.client.opened();
+    for (const taken of ['mage', 'mage_', 'mage__']) f.client.receive(`:irc.swiftirc.net 433 * ${taken} :Nickname is already in use.`);
+    assert.equal(f.client.turnedAway(), null, 'still trying');
+
+    f.client.receive(':irc.swiftirc.net 433 * mage___ :Nickname is already in use.');
+    const why = f.client.turnedAway();
+    assert.match(why ?? '', /The nick mage is taken\. Pick another in chat's Settings tab\./);
+    assert.equal(f.client.snapshot().error, why);
+
+    // The close the holder of the socket makes next keeps the reason rather than clearing it.
+    f.client.closed('', false);
+    assert.equal(f.client.snapshot().status, 'offline');
+    assert.equal(f.client.snapshot().error, why);
+
+    // And a new connection starts clean.
+    f.client.connecting();
+    assert.equal(f.client.turnedAway(), null);
+    assert.equal(f.client.snapshot().error, null);
+});
+
+test('437, a nick held for a while, is tried again with an underscore as a taken one is', () => {
+    const f = fake();
+    f.client.connecting();
+    f.client.opened();
+    f.sent.length = 0;
+    f.client.receive(':irc.swiftirc.net 437 * mage :Nick/channel is temporarily unavailable');
+    assert.deepEqual(f.sent, ['NICK mage_']);
+    for (const held of ['mage_', 'mage__', 'mage___']) f.client.receive(`:irc.swiftirc.net 437 * ${held} :Nick/channel is temporarily unavailable`);
+    assert.deepEqual(f.sent, ['NICK mage_', 'NICK mage__', 'NICK mage___']);
+    assert.match(f.client.turnedAway() ?? '', /mage is taken/);
+
+    // A 437 about a channel is still a join refused, and nothing to do with the nick.
+    const g = online();
+    g.client.receive(':irc.swiftirc.net 437 mage #held :Nick/channel is temporarily unavailable');
+    assert.equal(g.client.turnedAway(), null);
+    g.client.select(SERVER_LOG);
+    assert.equal(g.lines().at(-1)?.text, 'cannot join #held: it is temporarily unavailable');
+});
+
+test('432 during registration ends the attempt at once, with the server\'s reason in Status', () => {
+    const seen: string[] = [];
+    const f = fake({ nick: 'averyveryverylongnickname', onHighlight: line => seen.push(line.text) });
+    f.client.connecting();
+    f.client.opened();
+    f.sent.length = 0;
+    f.client.receive(':irc.swiftirc.net 432 * averyveryverylongnickname :Erroneous Nickname');
+    assert.deepEqual(f.sent, [], 'no underscore: a longer nick is no more acceptable');
+    assert.match(f.client.turnedAway() ?? '', /won't take the nick averyveryverylongnickname\..*Pick another in chat's Settings tab\./);
+    assert.equal(f.channel(SERVER_LOG).unread, 1, 'badged');
+    assert.deepEqual(seen, [], 'but not a mention, though it names our nick');
+    f.client.select(SERVER_LOG);
+    assert.match(f.lines().at(-1)?.text ?? '', /averyveryverylongnickname \(Erroneous Nickname\)/);
+    assert.equal(f.lines().at(-1)?.highlight, false);
+});
+
+test('a 432 for an underscored try is the length it added: the nick asked for is still the taken one', () => {
+    const f = fake();
+    f.client.connecting();
+    f.client.opened();
+    f.client.receive(':irc.swiftirc.net 433 * mage :Nickname is already in use.');
+    f.client.receive(':irc.swiftirc.net 432 * mage_ :Erroneous Nickname');
+    assert.match(f.client.turnedAway() ?? '', /^The nick mage is taken\./);
+});
+
+test('once given up, the answers to NICKs still on the wire change nothing', () => {
+    const f = fake();
+    f.client.connecting();
+    f.client.opened();
+    f.client.receive(':irc.swiftirc.net 432 * mage :Erroneous Nickname');
+    const why = f.client.turnedAway();
+    f.sent.length = 0;
+    f.client.receive(':irc.swiftirc.net 433 * mage :Nickname is already in use.');
+    assert.deepEqual(f.sent, []);
+    assert.equal(f.client.turnedAway(), why);
+});
+
+test('432 and 437 answering a live rename are reported and leave the connection alone', () => {
+    const f = online();
+    f.client.receive(':irc.swiftirc.net 432 mage NickServ :Invalid nickname: Reserved for services');
+    f.client.receive(':irc.swiftirc.net 437 mage held :Nick/channel is temporarily unavailable');
+    assert.deepEqual(f.sent, []);
+    assert.equal(f.client.turnedAway(), null);
+    assert.equal(f.client.snapshot().status, 'online');
+    f.client.select(SERVER_LOG);
+    assert.deepEqual(f.lines().slice(1).map(l => l.text), [
+        'the nick NickServ is not allowed (Invalid nickname: Reserved for services)',
+        'the nick held is unavailable right now'
+    ]);
+});
+
+test('every registration starts from the nick chosen, not the underscores or the rename the last one ended on', () => {
+    const f = fake();
+    f.client.connecting();
+    f.client.opened();
+    for (const taken of ['mage', 'mage_', 'mage__', 'mage___']) f.client.receive(`:irc.swiftirc.net 433 * ${taken} :Nickname is already in use.`);
+    f.client.closed('', false);
+
+    f.client.connecting();
+    f.sent.length = 0;
+    f.client.opened();
+    assert.deepEqual(f.sent.slice(1), ['NICK mage', 'USER mage 0 * :Zanaris Kit'], 'not mage____');
+
+    f.client.receive(':irc.swiftirc.net 001 mage :Welcome');
+    f.client.receive(':mage!m@h NICK Guest12345');
+    f.client.closed('connection reset', true);
+    f.client.connecting();
+    f.sent.length = 0;
+    f.client.opened();
+    assert.deepEqual(f.sent.slice(1), ['NICK mage', 'USER mage 0 * :Zanaris Kit'], 'a services rename was that connection\'s, not the next one\'s');
 });
 
 test('a 433 answering a live rename reports the refusal and leaves the working nick and the cascade alone', () => {
@@ -1046,4 +1172,149 @@ test('each line that names you or is said to you alone is reported as it arrives
     f.client.receive(':bob!b@h PRIVMSG #04scape :nothing to see');
     f.client.receive(':bob!b@h PRIVMSG mage :psst');
     assert.deepEqual(seen, ['#04scape bob hey mage, look', 'bob bob psst']);
+});
+
+// ── bans ──────────────────────────────────────────────────────────────────
+//
+// A ban answered with a reconnect is a ban answered every thirty seconds for
+// as long as the kit is open. The lines here are the ones InspIRCd (which
+// SwiftIRC runs) and UnrealIRCd send.
+
+test('a G-line\'s ERROR ends the attempt, with the operator\'s reason in words and the ERROR itself in Status', () => {
+    const f = online();
+    f.client.receive('ERROR :Closing link: (~mage@203.0.113.9) [G-lined: Spamming links in #2004scape]');
+    assert.equal(
+        f.client.turnedAway(),
+        "The chat server has banned you: Spamming links in #2004scape. Chat won't reconnect on its own — Status has the server's full message."
+    );
+    f.client.closed('the chat server closed the connection', false);
+    assert.equal(f.client.snapshot().error, f.client.turnedAway(), 'the ban outlasts the close it caused');
+    f.client.select(SERVER_LOG);
+    assert.ok(f.lines().some(l => l.text === 'Closing link: (~mage@203.0.113.9) [G-lined: Spamming links in #2004scape]'));
+});
+
+test('a 465 ends the attempt on its own, and the ERROR after it gives the reason when it has one', () => {
+    const f = fake();
+    f.client.connecting();
+    f.client.opened();
+    f.client.receive(':irc.swiftirc.net 465 * :You are banned from this network. Email abuse@example.net for help.');
+    assert.match(f.client.turnedAway() ?? '', /banned you: You are banned from this network\. Email abuse@example\.net for help\. Chat won't/);
+
+    f.client.receive('ERROR :Closing link: (~mage@203.0.113.9) [K-lined: Ban evasion]');
+    assert.match(f.client.turnedAway() ?? '', /banned you: Ban evasion\. /);
+
+    const hidden = fake();
+    hidden.client.connecting();
+    hidden.client.opened();
+    hidden.client.receive(':irc.swiftirc.net 465 * :You are banned from this network.');
+    hidden.client.receive('ERROR :Closing link: (~mage@203.0.113.9) [K-lined]');
+    assert.match(hidden.client.turnedAway() ?? '', /banned you: You are banned from this network\./, 'a hidden reason does not blank the 465\'s');
+});
+
+test('a ban with its reason hidden still says it is a ban', () => {
+    const f = online();
+    f.client.receive('ERROR :Closing link: (~mage@203.0.113.9) [Z-lined]');
+    assert.equal(f.client.turnedAway(), "The chat server has banned you. Chat won't reconnect on its own — Status has the server's full message.");
+});
+
+test('an ERROR that is not a ban only goes to Status: a timeout, a flood, a throttle, a kill, the answer to QUIT', () => {
+    for (const text of [
+        'Closing link: (~mage@203.0.113.9) [Ping timeout: 240 seconds]',
+        'Closing link: (~mage@203.0.113.9) [Excess Flood]',
+        'Closing Link: [203.0.113.9] (Throttled: Reconnecting too fast - Email abuse@example.net for more information.)',
+        'Closing link: (~mage@203.0.113.9) [No more connections allowed from your host via this connect class (local)]',
+        'Closing Link: mage[203.0.113.9] (Too many connections from your IP)',
+        'Closing link: (~mage@203.0.113.9) [Z-lined: Throttled]',
+        'Closing link: (~mage@203.0.113.9) [Killed (Oper (you will be banned from here next time))]',
+        'Closing link: (~mage@203.0.113.9) [Quit: Zanaris Kit]'
+    ]) {
+        const f = online();
+        f.client.receive(`ERROR :${text}`);
+        assert.equal(f.client.turnedAway(), null, text);
+        f.client.select(SERVER_LOG);
+        assert.equal(f.lines().at(-1)?.text, text);
+    }
+});
+
+// ── too many conversations ────────────────────────────────────────────────
+
+test('past the cap, someone new lands in Status, said once, and closing a conversation makes room', () => {
+    const seen: string[] = [];
+    const f = online({ onHighlight: line => seen.push(line.nick ?? '') });
+    for (let n = 0; n < MAX_CONVERSATIONS; n++) f.client.receive(`:spam${n}!s@h PRIVMSG mage :hi`);
+    const conversations = (): string[] => f.client.snapshot().channels.map(c => c.name).filter(name => name !== SERVER_LOG && !name.startsWith('#'));
+    assert.equal(conversations().length, MAX_CONVERSATIONS);
+
+    f.client.receive(':latecomer!l@h PRIVMSG mage :hello?');
+    f.client.receive(':another!a@h PRIVMSG mage :me too');
+    assert.equal(conversations().length, MAX_CONVERSATIONS, 'no tab past the cap');
+    f.client.select(SERVER_LOG);
+    const status = f.lines().slice(1);
+    assert.deepEqual(
+        status.map(l => [l.kind, l.nick, l.text]),
+        [
+            ['system', null, `${MAX_CONVERSATIONS} conversations are open, so messages from anyone new land here until you close one`],
+            ['private', 'latecomer', 'hello?'],
+            ['private', 'another', 'me too']
+        ],
+        'said once, and each message still arrives, marked private'
+    );
+    assert.ok(seen.includes('latecomer'), 'still a highlight');
+
+    f.client.receive(':spam0!s@h PRIVMSG mage :still here');
+    assert.equal(f.channel('spam0').unread, 2, 'someone with a conversation open still reaches it');
+
+    f.client.close('spam0');
+    f.client.receive(':latecomer!l@h PRIVMSG mage :now?');
+    assert.ok(conversations().includes('latecomer'), 'a free slot opens a tab again');
+    f.client.receive(':third!t@h PRIVMSG mage :and me');
+    f.client.select(SERVER_LOG);
+    assert.equal(f.lines().filter(l => l.kind === 'system' && /conversations are open/.test(l.text)).length, 2, 'running out again is news again');
+});
+
+test('a /query past the cap still opens: the cap is on strangers, not on you', () => {
+    const f = online();
+    for (let n = 0; n < MAX_CONVERSATIONS; n++) f.client.receive(`:spam${n}!s@h PRIVMSG mage :hi`);
+    f.client.input('/query friend');
+    assert.equal(f.client.snapshot().active, 'friend');
+});
+
+// ── the line limit ────────────────────────────────────────────────────────
+
+test('a message is measured in bytes as the others receive it, and one too long is refused, not cut', () => {
+    const f = online();
+    f.client.input('a'.repeat(400));
+    assert.equal(f.sent.length, 1, 'the box\'s 400 characters fit, in plain letters');
+
+    f.sent.length = 0;
+    f.client.input('é'.repeat(250));
+    assert.deepEqual(f.sent, [], '250 characters, but 500 bytes: the server would cut it');
+    assert.equal(f.lines().at(-1)?.kind, 'system');
+    assert.match(f.lines().at(-1)?.text ?? '', /too long/);
+    assert.equal(f.lines().filter(l => l.nick === 'mage').length, 1, 'no echo of what was never sent, only of the 400 letters');
+
+    f.client.input('😀'.repeat(110));
+    assert.deepEqual(f.sent, [], '220 UTF-16 units under the box\'s cap, but 440 bytes');
+
+    f.client.input('é'.repeat(200));
+    assert.equal(f.sent.length, 1, '400 bytes fit');
+});
+
+test('the budget counts the command, the target and the prefix the server adds', () => {
+    const f = online();
+    const room = `#${'r'.repeat(49)}`;
+    f.client.join(room);
+    f.client.select(room);
+    f.sent.length = 0;
+    // ":mage!~uuuuuuuuuu@<64 bytes> PRIVMSG #rrr… :", CRLF after: 512 - 83 - 60 - 2 leaves 367 bytes.
+    f.client.input(`${'a'.repeat(365)} b`);
+    assert.equal(f.sent.length, 1);
+    f.client.input(`${'a'.repeat(366)} b`);
+    assert.equal(f.sent.length, 1, 'one byte over is refused');
+
+    f.sent.length = 0;
+    f.client.input(`/msg bob ${'é'.repeat(250)}`);
+    f.client.input(`/notice bob ${'é'.repeat(250)}`);
+    f.client.input(`/me ${'é'.repeat(250)}`);
+    assert.deepEqual(f.sent, [], '/msg, /notice and /me are measured too');
 });

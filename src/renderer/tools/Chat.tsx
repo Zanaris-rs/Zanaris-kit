@@ -234,7 +234,7 @@ function Line({ line, self, mention }: { line: ChatLine; self: string | null; me
                     </>
                 ) : (
                     <>
-                        {/* A /msg sent with no conversation open is echoed into Status beside notices, so it says which it is. */}
+                        {/* A private message with no conversation to go in — a /msg sent with none open, or one from someone new while every conversation slot is taken — sits in Status beside notices, so it says which it is. */}
                         {line.kind === 'private' && <span className="text-faint">pm </span>}
                         <Speaker nick={nick} colour={colour} mention={mention} /> <Words text={line.text} />
                     </>
@@ -442,7 +442,13 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
                 </div>
             )}
 
-            {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
+            {/*
+             * Actions run along the bottom of a panel here, as they do in the
+             * client's own interfaces. The box stops at 400 characters, but
+             * what the server carries is bytes: main measures the line again
+             * as the others will receive it, and refuses one too long with a
+             * note saying so.
+             */}
             <form onSubmit={send} className="flex items-center gap-1.5">
                 <input
                     ref={box}

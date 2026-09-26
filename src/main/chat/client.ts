@@ -1,7 +1,9 @@
 import { isNick } from '../../shared/chatSettings.ts';
 import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatStatus, type ChatTopic, type ChatUser, type ChatView } from '../../shared/chat.ts';
 import {
+    banReason,
     DEFAULT_ISUPPORT,
+    fitsRelayed,
     foldName as key,
     formatCommand,
     isChannel,
@@ -27,8 +29,18 @@ const MAX_LINES = 500;
 /** Underscores to add before giving up on a taken nick; without a stop it is an infinite NICK loop. */
 const MAX_NICK_TRIES = 3;
 
+/**
+ * How many conversations with one person each can be open at once. Past it, a
+ * message from someone new lands in Status rather than opening another tab:
+ * a stranger who can open tabs by saying something could open a thousand.
+ */
+export const MAX_CONVERSATIONS = 20;
+
 const BACKOFF_MS = 1_000;
 const BACKOFF_CAP_MS = 30_000;
+
+/** How far each wait is spread, either way, as a share of it. */
+const JITTER = 0.25;
 
 /** The CTCP delimiter that wraps /me and the queries we ignore. */
 const CTCP = '\u0001';
@@ -39,10 +51,17 @@ const REALNAME = 'Zanaris Kit';
  * How long to wait before reconnect attempt `attempt` (1 is the first). Doubles
  * and then flattens: a client that tries harder the longer a network is down is
  * a client the server bans.
+ *
+ * Each wait is spread by up to a quarter either way, by `random` — a number in
+ * [0, 1), where 0.5 is the unspread wait. A server that restarts drops every
+ * kit at once, and unspread they would all come back in the same second, and
+ * again in the same second after each wait.
  */
-export function backoffDelay(attempt: number): number {
+export function backoffDelay(attempt: number, random: () => number): number {
     const n = Math.max(1, Math.floor(attempt));
-    return Math.min(BACKOFF_CAP_MS, BACKOFF_MS * 2 ** (n - 1));
+    const base = Math.min(BACKOFF_CAP_MS, BACKOFF_MS * 2 ** (n - 1));
+    const spread = Math.min(1, Math.max(0, random())) * 2 - 1;
+    return Math.round(base * (1 + JITTER * spread));
 }
 
 export interface ClientOpts {
@@ -86,6 +105,16 @@ interface Chan {
     createdAt: number | null;
     lines: ChatLine[];
 }
+
+/** A nick refusal: in use, not a nick the server will take (too long, or reserved), or held for a while by services or a nick delay. */
+type NickRefusal = '432' | '433' | '437';
+
+/** Why a nick was refused, in words the panel can show. */
+const NICK_REFUSED: Record<NickRefusal, string> = {
+    '432': 'is not allowed',
+    '433': 'is taken',
+    '437': 'is unavailable right now'
+};
 
 /** Why a join was refused, in words the panel can show. */
 const JOIN_REFUSED: Record<string, string> = {
@@ -172,15 +201,30 @@ export class IrcClient {
     private want: string[] = [];
     private status: ChatStatus = 'offline';
     private nickName: string | null;
-    /** The account NickServ is told we are: the nick chosen in Settings, whatever the connection is called right now. */
+    /**
+     * The nick chosen in Settings, whatever the connection is called right
+     * now: the account NickServ is told we are, and the nick every
+     * registration starts from.
+     */
     private account: string;
     private password: string | null;
     /** A CAP REQ is waiting on its answer, and registration with it. */
     private capPending = false;
     private activeName: string;
     private error: string | null = null;
+    /**
+     * Why the server will not have us as we are — a ban, or a nick refused
+     * with nothing left to try — in the words the pane shows. Set, the attempt
+     * is over: the same connection again would be refused the same way, so
+     * nothing should make one until the user asks. A new connection clears it.
+     */
+    private refusal: string | null = null;
     private lastId = 0;
     private nickTries = 0;
+    /** The nick a registration's underscores were added to, so giving up names the one that was asked for. */
+    private triedFrom: string | null = null;
+    /** Messages from someone new are landing in Status because every conversation slot is taken, and Status has been told so. */
+    private crowded = false;
     private support: Isupport = DEFAULT_ISUPPORT;
     private ignoring: string[];
     /** Whose /whois is on its way, and the tab it was asked from, which is where the answer goes. */
@@ -200,10 +244,19 @@ export class IrcClient {
 
     // ── the connection, driven from outside ───────────────────────────────
 
+    /**
+     * A new connection, which starts from the nick chosen in Settings rather
+     * than the one the last connection ended on. That one may carry the
+     * underscores a taken nick earned, and each reconnect would add three more;
+     * or it may be a services rename, or a /nick typed for that session.
+     */
     connecting(): void {
         this.status = 'connecting';
         this.error = null;
+        this.refusal = null;
         this.nickTries = 0;
+        this.triedFrom = null;
+        if (this.account !== '') this.nickName = this.account;
     }
 
     /**
@@ -224,9 +277,16 @@ export class IrcClient {
         this.opts.send(formatCommand('USER', [nick, '0', '*', REALNAME]));
     }
 
-    closed(reason: string, willRetry: boolean): void {
+    /**
+     * The socket is gone. `reason` is what the pane shows, and `detail` what
+     * the socket itself said, which goes to Status as it was for anyone who
+     * wants it. A refusal outlasts the close it caused: it says why nothing is
+     * reconnecting, which the close itself does not.
+     */
+    closed(reason: string, willRetry: boolean, detail = ''): void {
         this.status = willRetry ? 'reconnecting' : 'offline';
-        this.error = reason === '' ? null : reason;
+        this.error = this.refusal ?? (reason === '' ? null : reason);
+        if (detail !== '') this.push(SERVER_LOG, 'system', null, `disconnected: ${detail}`);
         // Who was in a room is only true while the socket is: keeping the list
         // would show ghosts for however long the reconnect takes. The topic and
         // modes are the room's rather than the socket's, and stay to be read.
@@ -247,13 +307,19 @@ export class IrcClient {
     }
 
     /**
-     * Takes a new nick while nothing is registered, so the next registration
-     * uses it. A live connection renames with /nick instead, which the server
-     * has to confirm.
+     * Takes a new nick while nothing is registered: it becomes the nick
+     * chosen, which the next registration starts from. A live connection
+     * renames with /nick instead, which the server has to confirm.
      */
     rename(nick: string): void {
         if (this.status === 'online' || this.status === 'registering' || nick === '') return;
         this.nickName = nick;
+        this.account = nick;
+    }
+
+    /** Why this attempt is over and should not be retried as it is — a ban, or no nick left to try — or null. */
+    turnedAway(): string | null {
+        return this.refusal;
     }
 
     /**
@@ -298,8 +364,15 @@ export class IrcClient {
                 // The first param is our nick and the last is the "are supported" text.
                 this.support = readIsupport(this.support, p.slice(1, -1));
                 return;
+            case '432':
             case '433':
-                this.nickTaken(p[1]);
+                this.nickRefused(msg.command, p[1], p[2] ?? '');
+                return;
+            case '465':
+                // You are banned from this server: said only to someone the
+                // server is closing the link on, whatever it was answering.
+                this.serverSaid(p);
+                this.banned(p.length > 1 ? stripFormatting(p.at(-1)!) : '', false);
                 return;
             case 'PRIVMSG':
                 this.said(msg.nick, p[0] ?? '', p[1] ?? '');
@@ -333,9 +406,17 @@ export class IrcClient {
                 // The channel is drawn as a link, so accepting is a click on it.
                 this.incoming(SERVER_LOG, 'system', null, `${msg.nick ?? 'someone'} invites you to ${p[1] ?? 'a channel'}`);
                 return;
-            case 'ERROR':
-                this.push(SERVER_LOG, 'system', null, stripFormatting(p[0] ?? 'the server closed the connection'));
+            case 'ERROR': {
+                // The server closing the link, and saying why. Mostly that is
+                // news for Status and nothing more — a ping timeout, a flood,
+                // a throttle — and the close that follows reconnects. A ban is
+                // the exception, since reconnecting only earns it again.
+                const text = stripFormatting(p[0] ?? 'the server closed the connection');
+                this.push(SERVER_LOG, 'system', null, text);
+                const ban = banReason(text);
+                if (ban !== null) this.banned(ban, true);
                 return;
+            }
             case '331':
                 this.withChan(p[1], chan => (chan.topic = null));
                 return;
@@ -364,15 +445,19 @@ export class IrcClient {
             case '366':
                 this.namesDone(p);
                 return;
+            case '437':
+                // Answers a join or a nick: a channel or a nick held for a while.
+                if (isChannel(p[1] ?? '')) this.refused(msg.command, p[1]!);
+                else this.nickRefused(msg.command, p[1], p[2] ?? '');
+                return;
             case '403':
             case '405':
-            case '437':
             case '471':
             case '473':
             case '474':
             case '475':
             case '477':
-                // 403 and 437 also answer things other than a join; only a channel is a join refused.
+                // 403 also answers things other than a join; only a channel is a join refused.
                 if (isChannel(p[1] ?? '')) this.refused(msg.command, p[1]!);
                 else this.serverSaid(p);
                 return;
@@ -501,8 +586,21 @@ export class IrcClient {
         this.opts.send(formatCommand('PRIVMSG', ['NickServ', `IDENTIFY ${this.account} ${this.password}`]));
     }
 
-    private nickTaken(taken: string | undefined): void {
-        const attempted = taken !== undefined && taken !== '' ? taken : (this.nickName ?? this.opts.nick);
+    /**
+     * A nick refused: 433 in use, 437 held for a while (by services after a
+     * ghost, or a nick delay), 432 not one the server will take at all (longer
+     * than its NICKLEN, or reserved).
+     *
+     * During registration there is no working nick yet, so a taken or held one
+     * is tried again with an underscore, up to MAX_NICK_TRIES times. When those
+     * run out, or the server will not take the nick at all, the attempt is
+     * over: waiting for the server to time registration out and then
+     * reconnecting as the same nick would only be refused again, for as long
+     * as the kit is open. So it ends here, naming the nick, and the next try
+     * is the user's, with another nick.
+     */
+    private nickRefused(numeric: NickRefusal, refused: string | undefined, reason: string): void {
+        const attempted = refused !== undefined && refused !== '' && refused !== '*' ? refused : (this.nickName ?? this.opts.nick);
         if (this.status === 'online') {
             // A live rename was refused: the nick we already have is still
             // registered and working, so there is nothing to recover from and
@@ -510,21 +608,59 @@ export class IrcClient {
             // finding a way in during registration, when there is no working
             // nick yet — running it here would trade a nick that works for
             // one nobody asked for and the server has also refused.
-            this.incoming(SERVER_LOG, 'system', null, `the nick ${attempted} is taken`);
+            this.incoming(SERVER_LOG, 'system', null, `the nick ${attempted} ${NICK_REFUSED[numeric]}${numeric === '432' ? because(reason) : ''}`);
             return;
         }
-        if (this.nickTries >= MAX_NICK_TRIES) {
-            if (this.nickTries === MAX_NICK_TRIES) {
-                this.nickTries++; // say it once, then stay quiet
-                this.error = `the nick ${attempted} is taken`;
-                this.incoming(SERVER_LOG, 'system', null, `the nick ${attempted} is taken — pick another one`);
-            }
+        // Already given up: the answers to NICKs still on the wire change nothing.
+        if (this.refusal !== null) return;
+        if (numeric !== '432' && this.nickTries < MAX_NICK_TRIES) {
+            this.triedFrom ??= attempted;
+            this.nickTries++;
+            const next = `${attempted}_`;
+            this.nickName = next;
+            this.opts.send(formatCommand('NICK', [next]));
             return;
         }
-        this.nickTries++;
-        const next = `${attempted}_`;
-        this.nickName = next;
-        this.opts.send(formatCommand('NICK', [next]));
+        // A 432 for an underscored try is most likely the length the
+        // underscore added: what was asked for was taken all the same, and
+        // that is what is said.
+        const asked = this.triedFrom ?? attempted;
+        if (numeric === '432' && this.triedFrom === null) {
+            this.told(`the server won't take the nick ${asked}${because(reason)} — pick another in chat's Settings tab`);
+            this.turnAway(`The chat server won't take the nick ${asked}. It may be too long, or reserved. Pick another in chat's Settings tab.`);
+            return;
+        }
+        this.told(`the nick ${asked} is taken — pick another in chat's Settings tab`);
+        this.turnAway(`The nick ${asked} is taken. Pick another in chat's Settings tab.`);
+    }
+
+    /**
+     * The server has banned us — a K-, G-, Z- or D-line, or a 465. The pane
+     * says so with the reason: the ERROR's when it has one, since a 465 before
+     * it is often a network's standing message ("email us for help") and the
+     * ERROR says why. Both stay in Status as they were written.
+     */
+    private banned(reason: string, fromError: boolean): void {
+        const why = reason.trim().replace(/[.\s]+$/, '');
+        if (this.refusal !== null && (!fromError || why === '')) return;
+        const said = why === '' ? '' : `: ${/[!?]$/.test(why) ? why : `${why}.`}`;
+        this.turnAway(`The chat server has banned you${said === '' ? '.' : said} Chat won't reconnect on its own — Status has the server's full message.`);
+    }
+
+    /**
+     * A line in Status about our own connection, badged as the server's are.
+     * Never a highlight, though it names our nick: it is not someone talking
+     * to us, and a notification would say it was.
+     */
+    private told(text: string): void {
+        const chan = this.push(SERVER_LOG, 'system', null, text);
+        if (!same(chan.name, this.activeName)) chan.unread++;
+    }
+
+    /** Ends the attempt for a reason retrying cannot change. Whoever holds the socket reads it from turnedAway(). */
+    private turnAway(message: string): void {
+        this.refusal = message;
+        this.error = message;
     }
 
     private said(from: string | null, target: string, body: string): void {
@@ -549,7 +685,24 @@ export class IrcClient {
             this.incoming(SERVER_LOG, kind, from, stripFormatting(text), true);
             return;
         }
+        // Someone new while every conversation slot is taken: Status, marked as
+        // private, and said once until a conversation closes and makes room.
+        if (!this.chans.has(key(from)) && this.conversations() >= MAX_CONVERSATIONS) {
+            if (!this.crowded) {
+                this.crowded = true;
+                this.push(SERVER_LOG, 'system', null, `${MAX_CONVERSATIONS} conversations are open, so messages from anyone new land here until you close one`);
+            }
+            this.incoming(SERVER_LOG, kind, from, stripFormatting(text), true);
+            return;
+        }
         this.incoming(from, kind === 'private' ? 'say' : kind, from, stripFormatting(text), true);
+    }
+
+    /** How many conversations with one person are open. */
+    private conversations(): number {
+        let open = 0;
+        for (const chan of this.chans.values()) if (isQuery(chan.name)) open++;
+        return open;
     }
 
     /**
@@ -781,6 +934,7 @@ export class IrcClient {
                 return;
             case 'msg': {
                 if (!this.online(SERVER_LOG)) return;
+                if (!this.fits('PRIVMSG', [typed.target, typed.text])) return;
                 this.opts.send(formatCommand('PRIVMSG', [typed.target, typed.text]));
                 // Echoed where the conversation already is, or in Status: a /msg to NickServ must not open a tab of its own.
                 const open = this.chans.has(key(typed.target));
@@ -795,6 +949,7 @@ export class IrcClient {
                 return;
             case 'notice': {
                 if (!this.online(this.activeName)) return;
+                if (!this.fits('NOTICE', [typed.target, typed.text])) return;
                 this.opts.send(formatCommand('NOTICE', [typed.target, typed.text]));
                 const open = this.chans.has(key(typed.target));
                 this.push(open ? typed.target : SERVER_LOG, 'system', null, `-> -${typed.target}- ${typed.text}`);
@@ -923,9 +1078,22 @@ export class IrcClient {
             return;
         }
         if (!this.online(target)) return;
-        this.opts.send(formatCommand('PRIVMSG', [target, kind === 'action' ? `${CTCP}ACTION ${text}${CTCP}` : text]));
+        const params = [target, kind === 'action' ? `${CTCP}ACTION ${text}${CTCP}` : text];
+        if (!this.fits('PRIVMSG', params)) return;
+        this.opts.send(formatCommand('PRIVMSG', params));
         // IRC never sends our own PRIVMSG back, so the echo is ours to make — and a conversation with NickServ is still no place for a password.
         this.push(target, kind, this.nickName, kind === 'say' ? hideSecret(target, text) : text);
+    }
+
+    /**
+     * Whether a message reaches the others whole, and a note saying it is too
+     * long when not. Refused rather than sent: the server would cut it where
+     * everyone else reads it, while the echo here showed all of it.
+     */
+    private fits(command: 'PRIVMSG' | 'NOTICE', params: string[]): boolean {
+        if (fitsRelayed(this.nickName ?? this.opts.nick, command, params)) return true;
+        this.note('too long to send in one message — press Up to get it back and shorten it');
+        return false;
     }
 
     /** A line from the kit itself, in the tab being looked at. */
@@ -1020,6 +1188,8 @@ export class IrcClient {
     private forget(channel: string): void {
         this.chans.delete(key(channel));
         if (same(this.activeName, channel)) this.activeName = SERVER_LOG;
+        // A conversation closed is a slot free: the next time they run out is news again.
+        if (isQuery(channel)) this.crowded = false;
     }
 
     private isMe(nick: string): boolean {
