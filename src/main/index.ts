@@ -2421,6 +2421,35 @@ async function captureAndExit(dir: string): Promise<void> {
                 if (!(await heading()).includes('Edit theme')) fault('settings-editor: the editor could not be opened, so the shot would show the list');
                 await wait(500);
                 await shootShell('settings-editor', settingsWindow);
+
+                // The live draft: Settings.tsx reports every change through
+                // appearance.editing, main reads it into `editing`, and
+                // `lookFor` resolves every window's theme from it while the
+                // editor is open — the path from a typed hex to a repainted
+                // window, worn by nothing but the shots above until now.
+                // Typed as a person would: a native input event, since React
+                // only hears one.
+                const stoneBefore = first.state().theme.colors.stone;
+                const draftStone = '#7a2a2a';
+                const typed = await contents.executeJavaScript(
+                    `(() => { const el = document.querySelector('input[data-token="stone"]'); if (!el) return false;
+                      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(draftStone)});
+                      el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
+                );
+                if (!typed) fault('theme-draft: the stone field could not be found, so no draft was typed');
+                await wait(800);
+                const stoneDuring = first.state().theme.colors.stone;
+                const settingsStoneDuring = settingsState().appearance.look.colors.stone;
+                if (stoneDuring !== draftStone) fault(`theme-draft: the first window did not wear the draft (stone ${stoneDuring}, expected ${draftStone})`);
+                if (settingsStoneDuring !== draftStone) fault(`theme-draft: Settings did not wear the draft (stone ${settingsStoneDuring}, expected ${draftStone})`);
+                await shootShell('theme-draft', first);
+
+                await click('Cancel');
+                await wait(800);
+                const stoneAfter = first.state().theme.colors.stone;
+                if (stoneAfter !== stoneBefore) fault(`theme-draft: Cancel did not restore the first window's stone (before ${stoneBefore}, after ${stoneAfter})`);
+                log(`[capture] draft: stone ${stoneBefore} -> during ${stoneDuring} -> after Cancel ${stoneAfter}`);
+
                 settingsWindow.window.close();
             }
             for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
@@ -2462,6 +2491,55 @@ async function captureAndExit(dir: string): Promise<void> {
                 if (after.window >= during.window) fault(`setups: closing the tools column did not give the window its width back (${during.window}px -> ${after.window}px)`);
                 await shootShell('setup-closed', first);
             }
+        }
+
+        // The close question, and a quit while it is still on screen. This
+        // must be the run's last act: nothing after it can shoot or log,
+        // since the process is meant to exit with the sheet up. Settings
+        // never holds up a quit (Decision 3 of the live-themes design) —
+        // `closeQuestion` answers null once `quitting` is true, whatever the
+        // draft — so the run's own `app.quit()` below, in `finally`, must
+        // still go through with this window's question unanswered: the case
+        // commit 2f34b03's fix exists for. If it does not, the run hangs.
+        {
+            const settingsWindow = settings.open(first.window.getBounds());
+            await settingsWindow.loaded;
+            const contents = settingsWindow.window.webContents;
+            const click = (label: string): Promise<boolean> =>
+                contents.executeJavaScript(
+                    `(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`
+                );
+            const heading = (): Promise<string[]> => contents.executeJavaScript(`[...document.querySelectorAll('h2')].map(h => h.textContent)`);
+            const openSection = (): Promise<string | null> => contents.executeJavaScript(`document.querySelector('button[aria-current="true"]')?.textContent ?? null`);
+            for (let tries = 0; tries < 20 && (await openSection()) !== 'Appearance'; tries++) {
+                await click('Appearance');
+                await wait(250);
+            }
+            for (let tries = 0; tries < 20 && !(await heading()).some(h => h === 'Edit theme' || h === 'New theme'); tries++) {
+                await click('Customise');
+                await wait(250);
+            }
+            const editorOpen = (await heading()).some(h => h === 'Edit theme' || h === 'New theme');
+            if (!editorOpen) fault('close-question: the editor could not be opened on a built-in, so the close question was never tried');
+            const typed = await contents.executeJavaScript(
+                `(() => { const el = document.querySelector('input[data-token="stone"]'); if (!el) return false;
+                  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '#2a5a7a');
+                  el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
+            );
+            if (!typed) fault('close-question: the stone field could not be found, so no unsaved change was made');
+            await wait(800);
+            settingsWindow.window.close();
+            await wait(800);
+            const held = settings.current() === settingsWindow;
+            log(`[capture] close-question: closing Settings with an unsaved draft ${held ? 'was held — the window is still open with the question up' : 'was NOT held — the window closed'}`);
+            if (!held) fault('close-question: closing Settings with unsaved changes did not ask');
+
+            // Teardown must not leave the draft, or a theme it was never
+            // asked to save, behind: a Customise draft that is only ever
+            // Cancelled or discarded creates nothing on disk.
+            const customLeft = appState.appearance().custom.length;
+            log(`[capture] close-question: ${customLeft} custom theme(s) saved before quit, with the question still on screen`);
+            if (customLeft > 0) fault(`close-question: a Customise draft that was never saved left ${customLeft} custom theme(s) behind`);
         }
     } catch (err) {
         fault(`aborted: ${(err as Error).stack ?? String(err)}`);
