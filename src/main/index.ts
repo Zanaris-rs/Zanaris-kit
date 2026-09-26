@@ -186,8 +186,8 @@ const pictures = new PictureStore(join(userData, 'backgrounds'));
 /**
  * The theme open in Settings' editor, worn by every window until the editor
  * closes (`appearance.lookFor`). Held here only and never written: a draft is
- * kept by Save, and ends with Save, Cancel, Delete, Settings closing, or
- * Settings' page loading again.
+ * kept by Save, and ends with Save, Cancel, Delete, Settings closing,
+ * Settings' page loading again, or its renderer going away.
  */
 let editing: Editing | null = null;
 
@@ -501,7 +501,7 @@ const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
         background: lookFor(appState.appearance(), null, editing).colors.window,
         closeQuestion: () => closeQuestion(editing, quitting),
         onDiscard: endEditing,
-        onReload: endEditing
+        onPageReset: endEditing
     })
 );
 
@@ -541,8 +541,10 @@ function appearanceChanged(): void {
 }
 
 /**
- * Ends the draft, when there is one: every window goes back to what it wears.
- * The menu is left alone, since a draft never changed what anything wears.
+ * Ends the draft, when there is one: every window goes back to the theme it
+ * is set to wear. The menu is left alone: it shows what each window is set to
+ * wear — the app theme and each server's own, the stored choices — and a
+ * draft never changes those.
  */
 function endEditing(): void {
     if (!editing) return;
@@ -795,8 +797,9 @@ ipcMain.handle(IPC.appearanceServer, (event, serverId: unknown, id: unknown) => 
 /**
  * The editor's draft, reported on every change while it is open and as null
  * when it closes. Every window wears it until then. The menu is not rebuilt:
- * View > Server Theme says what each server wears, which a draft never
- * changes, and a colour well reports on every step of a drag.
+ * View > Server Theme shows the theme each server is set to wear, its stored
+ * choice, which a draft never changes, and a colour well reports on every
+ * step of a drag.
  */
 ipcMain.handle(IPC.appearanceEditing, (event, raw: unknown) => {
     if (!settings.isSender(event.sender.id)) return;
@@ -834,6 +837,12 @@ function placeTheme(name: string, except: string | null): { id: string; name: st
  * draft (Decision 2 of the 2026-09-26 spec). Every window has been wearing
  * it, and one that flipped back the moment it was kept would read as Save
  * undoing the work. A server with its own theme goes back to that one.
+ *
+ * Making it the app theme is a second write, after the theme is already
+ * kept, so a failure there is only logged: answering that the save failed
+ * would be untrue, and a second Save of a new theme would add a copy of it.
+ * The app wears it for the rest of the session either way, since `setTheme`
+ * takes the choice before it writes; only the next launch would not.
  */
 ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } | { error: string } => {
     if (!settings.isSender(event.sender.id)) return { error: 'Only Settings saves themes.' };
@@ -846,10 +855,14 @@ ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } |
     const placed = placeTheme(draft.name, draft.id);
     try {
         if (!appState.saveCustomTheme({ ...placed, colors: draft.colors, background: draft.background })) return { error: TOO_MANY_THEMES };
-        appState.setTheme(placed.id);
     } catch (err) {
         log(`[main] could not save a theme: ${(err as Error).message}`);
         return { error: "Couldn't save the theme: the kit's settings file couldn't be written." };
+    }
+    try {
+        appState.setTheme(placed.id);
+    } catch (err) {
+        log(`[main] saved ${placed.id} but could not write it down as the app theme: ${(err as Error).message}`);
     }
     editing = null;
     pictures.prune(keptPictures());

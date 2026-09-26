@@ -31,8 +31,9 @@ export interface SettingsWindow extends SettingsHandle {
  *
  * `closeQuestion` is what closing asks first, or null to close at once;
  * `onDiscard` runs when the answer is Discard, before the window closes.
- * `onReload` runs each time the page finishes loading, the first time
- * included.
+ * `onPageReset` runs whenever the page is left holding nothing it held
+ * before: each time it finishes loading, the first load included, and when
+ * its renderer is gone.
  */
 export function createSettingsWindow(opts: {
     anchor: Rect | null;
@@ -40,7 +41,7 @@ export function createSettingsWindow(opts: {
     background: string;
     closeQuestion: () => { message: string; detail: string } | null;
     onDiscard: () => void;
-    onReload: () => void;
+    onPageReset: () => void;
 }): SettingsWindow {
     const display = opts.anchor ? screen.getDisplayMatching(opts.anchor) : screen.getPrimaryDisplay();
     const win = new BrowserWindow({
@@ -80,34 +81,44 @@ export function createSettingsWindow(opts: {
     // Asked here and decided in `appearance.closeQuestion`: a draft with
     // changes asks before it is thrown away, since every window reverts with
     // it. Prevented synchronously, as `close` must be, and closed again once
-    // the answer is Discard. A close while the question is up — Cmd/Ctrl+W
-    // again — is refused rather than asked twice.
+    // the answer is Discard. The question is asked for first, and only a
+    // close that has one is held: `closeQuestion` has none while the app
+    // quits, so the close a quit sends goes through even with the question on
+    // screen. A second close that has one — Cmd/Ctrl+W again — is refused
+    // rather than asked twice, until the question on screen is answered.
     let discarded = false;
     let asking = false;
     win.on('close', event => {
         if (discarded) return;
-        if (asking) {
-            event.preventDefault();
-            return;
-        }
         const question = opts.closeQuestion();
         if (!question) return;
         event.preventDefault();
+        if (asking) return;
         asking = true;
         void dialog
             .showMessageBox(win, { type: 'question', buttons: ['Keep Editing', 'Discard'], defaultId: 0, cancelId: 0, message: question.message, detail: question.detail })
-            .then(({ response }) => {
+            .finally(() => {
                 asking = false;
-                if (response !== 1 || win.isDestroyed()) return;
-                discarded = true;
-                opts.onDiscard();
-                win.close();
-            });
+            })
+            .then(
+                ({ response }) => {
+                    if (response !== 1 || win.isDestroyed()) return;
+                    discarded = true;
+                    opts.onDiscard();
+                    win.close();
+                },
+                // A question that could not be shown closes nothing; the next close asks again.
+                () => undefined
+            );
     });
     // A page that loads again has no editor open, so a draft left behind would
     // be worn by every window with nothing on screen to end it: Vite's full
-    // reload in development, or a reload from the developer tools.
-    win.webContents.on('did-finish-load', opts.onReload);
+    // reload in development, or a reload from the developer tools. A page
+    // whose renderer is gone — crashed, killed, out of memory — has nothing
+    // on screen either, and nothing in the kit reloads it, so that ends the
+    // draft too.
+    win.webContents.on('did-finish-load', opts.onPageReset);
+    win.webContents.on('render-process-gone', () => opts.onPageReset());
     // Read now: once the window closes its contents are destroyed and the id with them.
     const contentsId = win.webContents.id;
     const loaded = new Promise<void>(resolve => win.webContents.once('did-finish-load', () => resolve()));
@@ -124,7 +135,9 @@ export function createSettingsWindow(opts: {
         settle: () => paintsFrames(win.webContents),
         captureShell: () => win.webContents.capturePage(),
         push: state => {
-            if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+            // A crashed page is gone as well: ending a draft on
+            // `render-process-gone` pushes, and there is nothing to send it to.
+            if (win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
             win.webContents.send(IPC.settingsState, state);
         },
         setBackground: colour => {

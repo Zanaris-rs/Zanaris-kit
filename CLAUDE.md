@@ -426,8 +426,9 @@ once shipped is never renamed.
 and every game window wear the theme being edited, whatever each would
 otherwise wear (`appearance.lookFor`). Main holds it in memory only, never in
 `state.json`. It ends on Save, which also makes it the app theme, on Cancel
-or Delete, on Settings closing, and on Settings' page loading again. A new
-place a draft could outlive its editor needs `endEditing` too.
+or Delete, on Settings closing, and on Settings' page loading again or its
+renderer going away. A new place a draft could outlive its editor needs
+`endEditing` too.
 
 **Every image the renderer draws is a file.** The shell's CSP takes images
 from `'self'` and, for theme pictures, `zanaris-bg:`, and refuses a `data:`
