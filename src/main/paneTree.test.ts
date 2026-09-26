@@ -659,6 +659,29 @@ test('closing chat under a row holding the game gives back its height', () => {
     assert.deepEqual(cgDrawn(closed.tree, to, 'h'), { width: 320, height: 567 });
 });
 
+test("closing chat above a row holding the game moves the window's top edge down by its height", () => {
+    const size = { width: 1089, height: 803 };
+    const tree = split('s1', 'y', [cgChat, split('s2', 'x', [cgGame, cgHiscores], [765 / 1085, 320 / 1085])], [232 / 799, 567 / 799]);
+    const closed = closeGivingBack(tree, 'c', size, plenty);
+    assert.deepEqual(closed.shrunk, { width: 0, height: 236 });
+    assert.equal(closed.edge, 'top');
+    const to = less(size, closed.shrunk);
+    assert.deepEqual(cgDrawn(closed.tree, to, 'g'), { width: 765, height: 567 });
+    assert.deepEqual(cgDrawn(closed.tree, to, 'h'), { width: 320, height: 567 });
+});
+
+test('of three columns, closing the middle one keeps the game and the far column at their pixels', () => {
+    const size = { width: 1417, height: 600 };
+    const row = split('s', 'x', [cgGame, cgHiscores, cgWorlds], [765 / 1409, 320 / 1409, 324 / 1409]);
+    const before = { g: cgDrawn(row, size, 'g'), h: cgDrawn(row, size, 'h'), w: cgDrawn(row, size, 'w') };
+    const closed = closeGivingBack(row, 'h', size, plenty);
+    assert.deepEqual(closed.shrunk, { width: before.h.width + 4, height: 0 });
+    assert.equal(closed.edge, 'right', 'the closed column lay right of the game');
+    const to = less(size, closed.shrunk);
+    assert.deepEqual(cgDrawn(closed.tree, to, 'g'), before.g);
+    assert.deepEqual(cgDrawn(closed.tree, to, 'w'), before.w);
+});
+
 test('closing a pane in a column beside the game changes nothing about the window', () => {
     const size = { width: 1089, height: 803 };
     const tree = split('s1', 'x', [cgGame, split('s2', 'y', [cgHiscores, cgWorlds], [0.5, 0.5])], [765 / 1085, 320 / 1085]);
