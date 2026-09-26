@@ -17,7 +17,7 @@ import { decideNavigation } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
-import { grownFrame, roomFor, shrunkFrame } from './windowRoom';
+import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
 import { layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, type BuiltInSetupId } from './setups';
@@ -1171,16 +1171,16 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /**
      * The window sized so its tab is `size`: grown as far as its display
      * allows and moved back onto it, or shrunk from the right and the bottom
-     * (`windowRoom.grownFrame` takes both). Not while it is maximised or full
-     * screen, where a resize would only take it out of that; the tab's fit
-     * holds the game instead. Its resize lays everything out again.
+     * (`windowRoom.sizedBy` works out how far, and `windowRoom.grownFrame`
+     * takes both). Not while it is maximised or full screen, where a resize
+     * would only take it out of that; the tab's fit holds the game instead.
+     * Its resize lays everything out again.
      */
     function sizeWindow(size: Size): void {
         if (win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return;
         const frame = win.getBounds();
         const workArea = screen.getDisplayMatching(frame).workArea;
-        const room = roomFor(frame, workArea);
-        const by = { width: Math.min(size.width - rects.tree.width, room.width), height: Math.min(size.height - rects.tree.height, room.height) };
+        const by = sizedBy({ width: rects.tree.width, height: rects.tree.height }, size, roomFor(frame, workArea));
         if (by.width === 0 && by.height === 0) return;
         win.setBounds(grownFrame(frame, workArea, by));
     }

@@ -44,6 +44,19 @@ export function grownFrame(frame: Rect, workArea: Rect, by: Size): Rect {
 }
 
 /**
+ * How much a window whose tab is `tree` has to change for its tab to be `want`
+ * — what opening a setup sizes it by (`paneTree.arrangeForGame`), for
+ * `grownFrame` to act on.
+ *
+ * Each side grows no further than `room`, the display's (`roomFor`), and
+ * shrinks as far as `want` asks: shrinking always fits. A negative answer is
+ * a shrink, which `grownFrame` takes from the right and the bottom.
+ */
+export function sizedBy(tree: Size, want: Size, room: Size): Size {
+    return { width: Math.min(want.width - tree.width, room.width), height: Math.min(want.height - tree.height, room.height) };
+}
+
+/**
  * `frame` less `by`, taken off at `edge`: the window giving back a closed
  * pane's room (`paneTree.closeGivingBack`). A pane that was left of the game, or
  * above it, moves the window's left or top edge in, so the game stays where it
