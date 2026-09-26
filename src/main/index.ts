@@ -2138,13 +2138,18 @@ async function captureAndExit(dir: string): Promise<void> {
             log(`[capture] ${first.state().title}: seam asked for ${asked}px of ${seam.gross}, got ${applied}${applied === asked ? '' : ' (clamped)'}`);
             await shoot(`${first.state().server.id}-seam-dragged`, first);
 
-            // And closed again: the sibling takes the space back and the split
-            // collapses, which is the half of the tree's behaviour no shot
-            // above evidences.
+            // And closed again: the focused pane is Timers, appended into the
+            // same row the game sits in (by the Hiscores loop above, or by
+            // `showTool` a few lines up if that loop skipped this server), so
+            // the window gives that room back to the screen instead of
+            // handing it to a sibling (`closeGivingBack`) — the half of the
+            // tree's behaviour no shot above evidences.
+            const widthBefore = first.window.getBounds().width;
             await first.closePane(focused(first));
             await wait(500);
             const closed = first.state();
-            log(`[capture] ${closed.title}: after close — ${closed.panes.length} pane(s), ${closed.seams.length} seam(s)`);
+            const widthAfter = first.window.getBounds().width;
+            log(`[capture] ${closed.title}: after close — ${closed.panes.length} pane(s), ${closed.seams.length} seam(s), window ${widthBefore}px -> ${widthAfter}px`);
             await shoot(`${closed.server.id}-pane-closed`, first);
         } else {
             log('[capture] seam drag skipped: the window had no split to drag');

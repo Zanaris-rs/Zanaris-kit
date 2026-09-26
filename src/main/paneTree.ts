@@ -261,8 +261,9 @@ export function makeRoom(before: PaneNode, after: PaneNode, size: Size, room: Si
  * Works through the same splits `keepGame` does, taking the difference from the
  * panes beside the game down to their floors, so the game gets as close to
  * `want` as there is room for. It never reaches past the tab: along an axis the
- * game spans alone there is nobody to trade with, and a reset does not resize
- * the window — only a pane being added does that (`makeRoom`).
+ * game spans alone there is nobody to trade with, and a reset never resizes
+ * the window — unlike a pane added (`makeRoom`) or one closed in the game's
+ * own row or column (`closeGivingBack`).
  *
  * Returns the tree itself when the game would not move — already at its size,
  * alone in its tab, or not in this tab — so a menu can grey the item by

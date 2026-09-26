@@ -568,13 +568,15 @@ and one that cannot grow far enough — at the display's size already, maximised
 or full screen — takes what is still short from the game, as it always did. A
 split of any other pane costs the game nothing and never grows the window.
 
-Closing a pane beside or below the game gives that room back to the window:
-it shrinks by the closed pane and its seam, off that pane's own side, so the
-game keeps its pixels and stays exactly where it was on screen. What the
-window cannot give up — maximised, full screen, or short of the tree's own
-floor — is shared by the pane's neighbours instead, as it always was. Closing
-any other pane costs the window nothing, and a drop, which also closes a pane
-on its way to moving it, never resizes the window either.
+Closing a pane in the game's own row or column gives that room back to the
+window: it shrinks by the closed pane and its seam, off that pane's own
+side — left, right, top or bottom, whichever it was — so the game keeps its
+pixels and stays exactly where it was on screen. What the window cannot give
+up — maximised, full screen, or short of the tree's own floor — is shared by
+the pane's neighbours instead, as it always was. Closing a pane that does not
+share a row or column with the game costs the window nothing, and a drop,
+which also closes a pane on its way to moving it, never resizes the window
+either.
 
 **Add pane**, at the right end of the tab bar, adds a pane without splitting one
 by hand. It lists what a pane's own dropdown does — the tools, the game, this
@@ -597,7 +599,9 @@ pane you let go decides what happens:
   moves the dragged one into the half on that side. Along the grain of a row or
   column it joins it, taking half the target's share; across it, the target
   and the dragged pane nest in a new split. The pane you dragged leaves its old
-  place the way a close would, so its neighbours take back the room.
+  place exactly as `closePane` always has, so its neighbours take back the
+  room — never the window, even from the game's own row or column, where an
+  explicit close now would.
 - **The middle** swaps the two panes, and nothing else moves: every other
   pane's size and every seam stay exactly where they were.
 
@@ -668,8 +672,9 @@ for the reason the right-click menu is: an item offered and then refused is
 worse than one never offered, and the launcher would otherwise be a second
 opinion about the same question. It was a second opinion, and it was wrong.
 
-The window resizes itself for one thing: a pane added where the game would have
-paid for it (above). Opening the old panel or dock grew the window rather than
+The window resizes itself for two things: a pane added where the game would
+have paid for it, and a pane closed that would have handed the game that room
+back (both above). Opening the old panel or dock grew the window rather than
 shrinking the game, through a `widen → shift → push` ladder, because reloading
 or rescaling the game view was believed to cost the player their login. That
 turned out not to be true of resizing — `setBounds` does not reload a

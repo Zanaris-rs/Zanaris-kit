@@ -581,12 +581,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * per-axis mode the shell used to report all went with the fixed chrome
      * that motivated them, and so did the tool rail down the right; the bar's
      * Add pane is how a pane is added. The window resizes itself for two
-     * things so far: a pane added where the game would otherwise have paid
-     * for it (`paneTree.makeRoom`, through `growWindow`), and a pane closed
-     * beside or below the game giving that room back
-     * (`paneTree.closeGivingBack`, through `shrinkWindow`) — Task 7 adds a
-     * third, a setup opened. Either way it is the resize that lays
-     * everything out again, through here.
+     * things: a pane added where the game would otherwise have paid for it
+     * (`paneTree.makeRoom`, through `growWindow`), and a pane closed in the
+     * game's own row or column giving that room back
+     * (`paneTree.closeGivingBack`, through `shrinkWindow`). Either way it is
+     * the resize that lays everything out again, through here.
      *
      * The tree runs to the window's edges. It used to be inset by a pixel so a
      * gold ring round the focused pane had shell to land on; focus is a dot in
@@ -891,9 +890,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * nobody watching it dies to events its player cannot see. So the view goes,
      * and the confirm says so before it does.
      *
-     * A pane closed beside or below the game gives its room back to the
-     * screen (`paneTree.closeGivingBack`, through `shrinkWindow`), so the game
-     * keeps its size and stays where it is.
+     * A pane closed in the game's own row or column gives its room back to
+     * the screen (`paneTree.closeGivingBack`, through `shrinkWindow`), so the
+     * game keeps its size and stays where it is.
      */
     async function closePane(paneId: string): Promise<void> {
         const isGame = contentOf(host.tree(), paneId)?.kind === 'game';
