@@ -83,10 +83,10 @@ export function formatCommand(command: string, params: string[]): string {
 /** Re-exported so the chat code keeps one import for everything about IRC; the Settings form reads the same rules from shared. */
 export { asChannel, foldName, isChannel, sameName } from '../../shared/ircNames.ts';
 
-/** The characters that can sit inside a nick, so "matt" does not match "mattress". */
+/** The characters that can sit inside a nick, so "mage" does not match "magenta". */
 const NICK_CHAR = /[A-Za-z0-9\[\]\\`^{}|_-]/;
 
-/** Case-insensitive whole-word test: "matt: hi" and "hey Matt" name matt, "mattress" does not. */
+/** Case-insensitive whole-word test: "mage: hi" and "hey Mage" name mage, "magenta" does not. */
 export function mentions(text: string, nick: string): boolean {
     if (nick === '') return false;
     const haystack = text.toLowerCase();

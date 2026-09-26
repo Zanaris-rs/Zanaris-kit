@@ -240,7 +240,7 @@ test('a stored nick or channel that IRC would refuse, or that could smuggle a se
     const file = tempFile();
     writeFileSync(
         file,
-        JSON.stringify({ version: 1, worlds: {}, chat: { nick: 'matt\r\nJOIN #elsewhere', autoJoin: ['#ok', '#bad\r\nQUIT', '#two words', '#fine'] } })
+        JSON.stringify({ version: 1, worlds: {}, chat: { nick: 'mage\r\nJOIN #elsewhere', autoJoin: ['#ok', '#bad\r\nQUIT', '#two words', '#fine'] } })
     );
     const state = new AppState(file);
     state.load();
@@ -579,7 +579,7 @@ test('setStartupServer does not push past the cap readStartup enforces on the wa
 
 test('the chat ignore list and notification choice are kept, and a bad entry costs only itself', () => {
     const file = tempFile();
-    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, chat: { nick: 'matt', ignore: ['spammer', 42, 'two words', 'Bob'], notify: false } }));
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, chat: { nick: 'mage', ignore: ['spammer', 42, 'two words', 'Bob'], notify: false } }));
     const state = new AppState(file);
     state.load();
     assert.deepEqual(state.chat().ignore, ['spammer', 'Bob']);

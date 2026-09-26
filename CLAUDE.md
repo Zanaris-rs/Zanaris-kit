@@ -189,7 +189,7 @@ Hand-written IRC over raw TLS (`node:tls`), no library, no WebSocket.
 - **A saved NickServ password** goes out on `001`, before the JOINs, as
   `PRIVMSG NickServ :IDENTIFY <account> <pass>` (`IrcClient.identify`). The
   account is the nick saved in Settings. Keep the two-word form: the bare one
-  identifies whatever nick the connection holds (`matt_` after a 433), and
+  identifies whatever nick the connection holds (`mage_` after a 433), and
   services split a password with a space in it into account and password.
 - **Host and port** are captured `readonly` at construction, so changing them
   needs an app restart, and there is no UI for them.

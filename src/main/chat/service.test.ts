@@ -12,8 +12,8 @@ const SETTINGS: ChatStart = { nick: null, server: 'irc.swiftirc.net', port: 6697
 // silently when it is wrong: a half-arrived line is not a malformed line.
 
 test('a chunk of whole lines is split into them', () => {
-    const { lines, rest } = splitLines('', 'PING :one\r\n:irc 001 matt :hi\r\nNOTICE :three\r\n');
-    assert.deepEqual(lines, ['PING :one', ':irc 001 matt :hi', 'NOTICE :three']);
+    const { lines, rest } = splitLines('', 'PING :one\r\n:irc 001 mage :hi\r\nNOTICE :three\r\n');
+    assert.deepEqual(lines, ['PING :one', ':irc 001 mage :hi', 'NOTICE :three']);
     assert.equal(rest, '', 'nothing was left over');
 });
 
@@ -57,8 +57,8 @@ test('blank lines are not lines', () => {
 
 test('the offline view asks for a nick only when there is none, and shows the default list when nothing is saved', () => {
     assert.equal(offlineChat(null).needsNick, true);
-    assert.equal(offlineChat('matt').needsNick, false);
-    assert.equal(offlineChat('matt').status, 'offline');
+    assert.equal(offlineChat('mage').needsNick, false);
+    assert.equal(offlineChat('mage').status, 'offline');
     assert.deepEqual(offlineChat(null).settings.autoJoin, ['#2004scape', '#LostHQ', '#Zanaris']);
 });
 
@@ -133,7 +133,7 @@ function fake(): Fake {
         chunk: text => handlers?.data(text),
         line: text => handlers?.data(`${text}\r\n`),
         drop: (reason = 'connection reset') => handlers?.closed(reason),
-        register: (nick = 'matt') => {
+        register: (nick = 'mage') => {
             handlers?.opened();
             handlers?.data(`:irc.swiftirc.net 001 ${nick} :Welcome to SwiftIRC, ${nick}\r\n`);
         },
@@ -163,13 +163,13 @@ test('with no nick the service stays offline and opens nothing', () => {
 
 test('a remembered nick connects as soon as the service is built', () => {
     const f = fake();
-    new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     assert.deepEqual(f.connects, ['irc.swiftirc.net:6697']);
 });
 
 test('a remembered nick stays offline when the user last pressed Disconnect', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoConnect: false }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoConnect: false }, f.io);
     assert.deepEqual(f.connects, []);
     assert.equal(service.view().status, 'offline');
     assert.equal(service.view().needsNick, false);
@@ -180,7 +180,7 @@ test('a remembered nick stays offline when the user last pressed Disconnect', ()
 
 test('registering joins every channel on the auto-join list, and nothing else', () => {
     const f = fake();
-    new ChatService({ ...SETTINGS, nick: 'matt', autoJoin: ['#2004scape', '#LostHQ', '#Zanaris'] }, f.io);
+    new ChatService({ ...SETTINGS, nick: 'mage', autoJoin: ['#2004scape', '#LostHQ', '#Zanaris'] }, f.io);
     f.register();
     assert.deepEqual(
         f.sent.filter(line => line.startsWith('JOIN')),
@@ -190,7 +190,7 @@ test('registering joins every channel on the auto-join list, and nothing else', 
 
 test('an empty auto-join list joins nothing and leaves Status open', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoJoin: [] }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoJoin: [] }, f.io);
     f.register();
     assert.deepEqual(f.sent.filter(line => line.startsWith('JOIN')), []);
     assert.equal(service.view().active, SERVER_LOG);
@@ -198,16 +198,16 @@ test('an empty auto-join list joins nothing and leaves Status open', () => {
 
 test('a saved password identifies before the joins', () => {
     const f = fake();
-    new ChatService({ ...SETTINGS, nick: 'matt', password: 'hunter2' }, f.io);
+    new ChatService({ ...SETTINGS, nick: 'mage', password: 'hunter2' }, f.io);
     f.register();
-    assert.deepEqual(f.sent.slice(3), ['PRIVMSG NickServ :IDENTIFY matt hunter2', `JOIN ${LOBBY}`]);
+    assert.deepEqual(f.sent.slice(3), ['PRIVMSG NickServ :IDENTIFY mage hunter2', `JOIN ${LOBBY}`]);
 });
 
 // ── connect and disconnect ────────────────────────────────────────────────
 
 test('disconnect says goodbye, closes the socket, and nothing tries to come back', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.sent.length = 0;
 
@@ -224,7 +224,7 @@ test('disconnect says goodbye, closes the socket, and nothing tries to come back
 
 test('disconnect while waiting to reconnect cancels the wait and sends nothing', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.drop();
     f.sent.length = 0;
@@ -237,7 +237,7 @@ test('disconnect while waiting to reconnect cancels the wait and sends nothing',
 
 test('the tabs and their logs stay after a disconnect, and connect picks the conversation back up', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     service.send('/join #rscape');
     f.line(`:bob!b@h PRIVMSG ${LOBBY} :hello world`);
@@ -261,7 +261,7 @@ test('the tabs and their logs stay after a disconnect, and connect picks the con
 
 test('connect brings back an auto-join channel whose tab was closed; a closed channel off the list stays closed', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     service.send('/join #rscape');
     service.closeRoom(LOBBY);
@@ -276,7 +276,7 @@ test('connect brings back an auto-join channel whose tab was closed; a closed ch
 
 test('connect while waiting out a backoff connects now rather than when the timer says', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.drop();
     assert.equal(f.connects.length, 1);
@@ -292,7 +292,7 @@ test('connect while waiting out a backoff connects now rather than when the time
 
 test('connect on a live connection does not open another', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     service.connect();
     assert.equal(f.connects.length, 1);
@@ -302,9 +302,9 @@ test('connect on a live connection does not open another', () => {
 
 test('the view carries the saved auto-join list and whether a password is held, never the password', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', password: 'hunter2', canSavePassword: false }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', password: 'hunter2', canSavePassword: false }, f.io);
     const settings = service.view().settings;
-    assert.deepEqual(settings, { nick: 'matt', autoJoin: [LOBBY], ignore: [], notify: true, hasPassword: true, canSavePassword: false });
+    assert.deepEqual(settings, { nick: 'mage', autoJoin: [LOBBY], ignore: [], notify: true, hasPassword: true, canSavePassword: false });
     assert.ok(!JSON.stringify(service.view()).includes('hunter2'));
 });
 
@@ -326,68 +326,68 @@ test('a first nick saved from Settings waits for Connect', () => {
 
 test('a new nick on a live connection is asked for, not reconnected for', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.sent.length = 0;
 
-    service.applySettings({ nick: 'matthew', autoJoin: [LOBBY] });
-    assert.deepEqual(f.sent, ['NICK matthew']);
+    service.applySettings({ nick: 'archmage', autoJoin: [LOBBY] });
+    assert.deepEqual(f.sent, ['NICK archmage']);
     assert.equal(f.connects.length, 1);
-    assert.equal(service.view().nick, 'matt', 'the server has not agreed yet');
-    f.line(':matt!m@h NICK matthew');
-    assert.equal(service.view().nick, 'matthew');
+    assert.equal(service.view().nick, 'mage', 'the server has not agreed yet');
+    f.line(':mage!m@h NICK archmage');
+    assert.equal(service.view().nick, 'archmage');
 });
 
 test('a new nick while reconnecting is the one the next registration uses, and the log is kept', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.line(`:bob!b@h PRIVMSG ${LOBBY} :hello world`);
     service.select(LOBBY);
     f.drop();
 
-    service.applySettings({ nick: 'matt2', autoJoin: [LOBBY] });
+    service.applySettings({ nick: 'mage2', autoJoin: [LOBBY] });
     assert.equal(f.connects.length, 1, 'no restart: the waiting retry will do');
     f.fire();
     f.sent.length = 0;
     f.open();
-    assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK matt2', 'USER matt2 0 * :Zanaris Kit']);
+    assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK mage2', 'USER mage2 0 * :Zanaris Kit']);
     assert.deepEqual(service.view().lines.map(l => l.text), ['hello world']);
 });
 
 test('saving the stored nick after a refused registration puts the underscored claim right', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.open();
-    for (const taken of ['matt', 'matt_', 'matt__', 'matt___']) f.line(`:irc.swiftirc.net 433 * ${taken} :Nickname is already in use`);
-    assert.equal(service.view().nick, 'matt___');
+    for (const taken of ['mage', 'mage_', 'mage__', 'mage___']) f.line(`:irc.swiftirc.net 433 * ${taken} :Nickname is already in use`);
+    assert.equal(service.view().nick, 'mage___');
     f.drop();
 
-    service.applySettings({ nick: 'matt', autoJoin: [LOBBY] });
-    assert.equal(service.view().nick, 'matt', 'the claim is dropped even though matt is already the saved nick');
+    service.applySettings({ nick: 'mage', autoJoin: [LOBBY] });
+    assert.equal(service.view().nick, 'mage', 'the claim is dropped even though mage is already the saved nick');
     f.fire();
     f.sent.length = 0;
     f.open();
-    assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK matt', 'USER matt 0 * :Zanaris Kit']);
+    assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK mage', 'USER mage 0 * :Zanaris Kit']);
 });
 
 test('the saved nick stays what Settings saved while the connection is called something else', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.open();
-    f.line(':irc.swiftirc.net 433 * matt :Nickname is already in use');
-    f.line(':irc.swiftirc.net 001 matt_ :Welcome');
-    f.line(':matt_!m@h NICK Guest12345');
+    f.line(':irc.swiftirc.net 433 * mage :Nickname is already in use');
+    f.line(':irc.swiftirc.net 001 mage_ :Welcome');
+    f.line(':mage_!m@h NICK Guest12345');
     assert.equal(service.view().nick, 'Guest12345');
-    assert.equal(service.view().settings.nick, 'matt', 'a services rename is the session\'s, not the saved nick');
+    assert.equal(service.view().settings.nick, 'mage', 'a services rename is the session\'s, not the saved nick');
     service.send('/nick someone');
     f.line(':Guest12345!m@h NICK someone');
-    assert.equal(service.view().settings.nick, 'matt', 'and so is a typed /nick');
+    assert.equal(service.view().settings.nick, 'mage', 'and so is a typed /nick');
 });
 
 test('a new nick and password saved together on a live connection identify the new account before the rename', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.sent.length = 0;
     service.applySettings({ nick: 'Whoosh', autoJoin: [LOBBY], password: 'correct horse' });
@@ -397,12 +397,12 @@ test('a new nick and password saved together on a live connection identify the n
 test('a channel added to the list while connecting or reconnecting is joined when the connection is up', () => {
     for (const settle of ['connecting', 'reconnecting'] as const) {
         const f = fake();
-        const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+        const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
         if (settle === 'reconnecting') {
             f.register();
             f.drop();
         }
-        service.applySettings({ nick: 'matt', autoJoin: [LOBBY, '#Zanaris'] });
+        service.applySettings({ nick: 'mage', autoJoin: [LOBBY, '#Zanaris'] });
         if (settle === 'reconnecting') f.fire();
         f.sent.length = 0;
         f.register();
@@ -412,11 +412,11 @@ test('a channel added to the list while connecting or reconnecting is joined whe
 
 test('a channel added to the list is joined now, and one taken off is not parted', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoJoin: [LOBBY, '#2004scape'] }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoJoin: [LOBBY, '#2004scape'] }, f.io);
     f.register();
     f.sent.length = 0;
 
-    service.applySettings({ nick: 'matt', autoJoin: ['#2004SCAPE', '#Zanaris'] });
+    service.applySettings({ nick: 'mage', autoJoin: ['#2004SCAPE', '#Zanaris'] });
     assert.deepEqual(f.sent, ['JOIN #Zanaris'], 'a case-only difference is the same channel, and #LostHQ is left alone');
     assert.deepEqual(service.view().settings.autoJoin, ['#2004SCAPE', '#Zanaris']);
     assert.ok(service.view().channels.some(c => c.name === LOBBY), 'still in #LostHQ until its tab is closed');
@@ -424,8 +424,8 @@ test('a channel added to the list is joined now, and one taken off is not parted
 
 test('a channel added to the list while offline waits for the next connect', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoConnect: false }, f.io);
-    service.applySettings({ nick: 'matt', autoJoin: [LOBBY, '#Zanaris'] });
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoConnect: false }, f.io);
+    service.applySettings({ nick: 'mage', autoJoin: [LOBBY, '#Zanaris'] });
     assert.equal(f.sent.length, 0, 'nothing to send it on');
     service.connect();
     f.register();
@@ -434,20 +434,20 @@ test('a channel added to the list while offline waits for the next connect', () 
 
 test('a password saved on a live connection identifies at once; left out, the saved one is kept; null forgets it', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.sent.length = 0;
 
-    service.applySettings({ nick: 'matt', autoJoin: [LOBBY], password: 'hunter2' });
-    assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY matt hunter2']);
+    service.applySettings({ nick: 'mage', autoJoin: [LOBBY], password: 'hunter2' });
+    assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY mage hunter2']);
     assert.equal(service.view().settings.hasPassword, true);
 
     f.sent.length = 0;
-    service.applySettings({ nick: 'matt', autoJoin: [LOBBY] });
+    service.applySettings({ nick: 'mage', autoJoin: [LOBBY] });
     assert.deepEqual(f.sent, []);
     assert.equal(service.view().settings.hasPassword, true);
 
-    service.applySettings({ nick: 'matt', autoJoin: [LOBBY], password: null });
+    service.applySettings({ nick: 'mage', autoJoin: [LOBBY], password: null });
     assert.equal(service.view().settings.hasPassword, false);
 });
 
@@ -455,7 +455,7 @@ test('a password saved on a live connection identifies at once; left out, the sa
 
 test('any channel can be closed, including one from the auto-join list, and it is parted', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoJoin: [LOBBY, '#2004scape'] }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoJoin: [LOBBY, '#2004scape'] }, f.io);
     f.register();
     service.send('/join #rscape');
 
@@ -471,7 +471,7 @@ test('any channel can be closed, including one from the auto-join list, and it i
 
 test('Status cannot be closed, nor a channel that is not open', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.sent.length = 0;
     assert.equal(service.closeRoom(SERVER_LOG), false);
@@ -487,7 +487,7 @@ test('closing a channel while offline is refused rather than throwing', () => {
 
 test('closing a channel asked for in a different case parts it under the name given', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     service.send('/join RSCape');
     f.sent.length = 0;
@@ -498,7 +498,7 @@ test('closing a channel asked for in a different case parts it under the name gi
 
 test('/join lasts for the session: it never reaches the saved list', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     service.send('/join #rscape');
     assert.deepEqual(service.view().settings.autoJoin, [LOBBY]);
@@ -506,7 +506,7 @@ test('/join lasts for the session: it never reaches the saved list', () => {
 
 test('select recognizes a channel even when asked for in a different case than it was joined', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoJoin: ['#LostCity'] }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoJoin: ['#LostCity'] }, f.io);
     f.register();
     service.select(SERVER_LOG);
     service.select('#lostcity');
@@ -515,7 +515,7 @@ test('select recognizes a channel even when asked for in a different case than i
 
 test('an unexpected close schedules a reconnect, and the wait grows until one lands', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
 
     f.drop();
@@ -541,7 +541,7 @@ test('an unexpected close schedules a reconnect, and the wait grows until one la
 
 test('a reconnect keeps the conversation rather than starting a new one', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.line(`:bob!b@h PRIVMSG ${LOBBY} :hello world`);
     service.select(LOBBY);
@@ -560,7 +560,7 @@ test('a reconnect keeps the conversation rather than starting a new one', () => 
 test('/quit is a disconnect: goodbye with the reason, no retry, and remembered like the button', () => {
     const f = fake();
     const wanted: boolean[] = [];
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', onConnectionWanted: on => wanted.push(on) }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', onConnectionWanted: on => wanted.push(on) }, f.io);
     f.register();
     f.sent.length = 0;
 
@@ -578,7 +578,7 @@ test('/quit is a disconnect: goodbye with the reason, no retry, and remembered l
 test('/quit while offline is still a disconnect, so a waiting retry stops and the next launch stays offline', () => {
     const f = fake();
     const wanted: boolean[] = [];
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', onConnectionWanted: on => wanted.push(on) }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', onConnectionWanted: on => wanted.push(on) }, f.io);
     f.register();
     f.drop();
     f.sent.length = 0;
@@ -592,7 +592,7 @@ test('/quit while offline is still a disconnect, so a waiting retry stops and th
 test('connect and disconnect say whether a connection is wanted; stop, for the app quitting, does not', () => {
     const f = fake();
     const wanted: boolean[] = [];
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoConnect: false, onConnectionWanted: on => wanted.push(on) }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoConnect: false, onConnectionWanted: on => wanted.push(on) }, f.io);
     service.connect();
     f.register();
     service.disconnect();
@@ -603,7 +603,7 @@ test('connect and disconnect say whether a connection is wanted; stop, for the a
 
 test('stop says goodbye, closes the socket and does not reconnect', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.sent.length = 0;
 
@@ -629,7 +629,7 @@ test('stop says goodbye, closes the socket and does not reconnect', () => {
 
 test('stop while waiting to reconnect cancels the wait', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.drop();
     service.stop();
@@ -639,7 +639,7 @@ test('stop while waiting to reconnect cancels the wait', () => {
 
 test('typed lines and channel selection reach the client, and subscribers hear about it', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', autoJoin: [LOBBY, '#LostCity'] }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', autoJoin: [LOBBY, '#LostCity'] }, f.io);
     f.register();
     f.sent.length = 0;
 
@@ -661,7 +661,7 @@ test('typed lines and channel selection reach the client, and subscribers hear a
 
 test('a message arriving in pieces is logged once, whole', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     service.select(LOBBY);
 
@@ -677,7 +677,7 @@ test('a message arriving in pieces is logged once, whole', () => {
 
 test('a half-arrived line does not survive the socket that was carrying it', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     service.select(LOBBY);
     f.chunk(`:bob!b@h PRIVMSG ${LOBBY} :hel`);
@@ -702,7 +702,7 @@ function watching(f: Fake): number[] {
 
 test('a server silent for a while is pinged, and any answer keeps the connection', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.sent.length = 0;
     assert.deepEqual(watching(f), [SILENCE_MS], 'online, the silence is being counted');
@@ -721,7 +721,7 @@ test('a server silent for a while is pinged, and any answer keeps the connection
 
 test('anything the server sends starts the silence count over', () => {
     const f = fake();
-    new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.chunk(':bob!b@h PRIVMSG #LostHQ :hal');
     assert.deepEqual(watching(f), [SILENCE_MS], 'even half a line: the socket is alive');
@@ -730,7 +730,7 @@ test('anything the server sends starts the silence count over', () => {
 
 test('a ping nobody answers drops the socket and reconnects', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
 
     f.fire(); // the silence
@@ -747,7 +747,7 @@ test('a ping nobody answers drops the socket and reconnects', () => {
 
 test('a handshake that never completes is given up on without a ping', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     assert.deepEqual(watching(f), [SILENCE_MS]);
 
     f.fire();
@@ -759,7 +759,7 @@ test('a handshake that never completes is given up on without a ping', () => {
 
 test('nothing is watched once the connection is closed, whoever closed it', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.drop();
     assert.deepEqual(watching(f), [], 'a dropped connection has no silence to count');
@@ -772,7 +772,7 @@ test('nothing is watched once the connection is closed, whoever closed it', () =
 
 test('a wake asks the server at once rather than waiting out the silence', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     f.sent.length = 0;
 
@@ -787,7 +787,7 @@ test('a wake asks the server at once rather than waiting out the silence', () =>
 
 test('a wake with no connection up sends nothing and changes nothing', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     service.wake(); // still connecting
     assert.deepEqual(f.sent, []);
     assert.deepEqual(watching(f), [SILENCE_MS]);
@@ -805,7 +805,7 @@ test('a wake with no connection up sends nothing and changes nothing', () => {
 test('/ignore is kept for the next launch, and shown in the view', () => {
     const f = fake();
     const kept: string[][] = [];
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', onIgnoreChanged: list => kept.push(list) }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', onIgnoreChanged: list => kept.push(list) }, f.io);
     f.register();
     service.send('/ignore spammer');
     assert.deepEqual(kept, [['spammer']]);
@@ -814,10 +814,10 @@ test('/ignore is kept for the next launch, and shown in the view', () => {
 
 test('a saved ignore list applies to the connection at once', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
     service.select(LOBBY);
-    service.applySettings({ nick: 'matt', autoJoin: [LOBBY], ignore: ['spammer'] });
+    service.applySettings({ nick: 'mage', autoJoin: [LOBBY], ignore: ['spammer'] });
     f.line(`:spammer!s@h PRIVMSG ${LOBBY} :buy gold`);
     assert.deepEqual(service.view().lines, []);
     assert.deepEqual(service.view().settings.ignore, ['spammer']);
@@ -826,21 +826,21 @@ test('a saved ignore list applies to the connection at once', () => {
 test('a mention is passed on while notifications are on, and not once they are off', () => {
     const f = fake();
     const seen: string[] = [];
-    const service = new ChatService({ ...SETTINGS, nick: 'matt', onMention: line => seen.push(line.text) }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage', onMention: line => seen.push(line.text) }, f.io);
     f.register();
-    f.line(`:bob!b@h PRIVMSG ${LOBBY} :matt: look`);
-    f.line(':bob!b@h PRIVMSG matt :psst');
-    service.applySettings({ nick: 'matt', autoJoin: [LOBBY], notify: false });
-    f.line(':bob!b@h PRIVMSG matt :again');
-    assert.deepEqual(seen, ['matt: look', 'psst']);
+    f.line(`:bob!b@h PRIVMSG ${LOBBY} :mage: look`);
+    f.line(':bob!b@h PRIVMSG mage :psst');
+    service.applySettings({ nick: 'mage', autoJoin: [LOBBY], notify: false });
+    f.line(':bob!b@h PRIVMSG mage :again');
+    assert.deepEqual(seen, ['mage: look', 'psst']);
     assert.equal(service.view().settings.notify, false);
 });
 
 test('a conversation can be closed like a channel, and is never parted', () => {
     const f = fake();
-    const service = new ChatService({ ...SETTINGS, nick: 'matt' }, f.io);
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
     f.register();
-    f.line(':bob!b@h PRIVMSG matt :hi');
+    f.line(':bob!b@h PRIVMSG mage :hi');
     const bob = service.view().channels.find(c => c.name === 'bob');
     assert.equal(bob?.closable, true);
     f.sent.length = 0;

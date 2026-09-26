@@ -20,7 +20,7 @@ function fake(opts: Partial<ClientOpts> = {}): Fake {
     const sent: string[] = [];
     const clock = { now: 1_700_000_000_000 };
     const client = new IrcClient({
-        nick: 'matt',
+        nick: 'mage',
         channels: ['#04scape'],
         now: () => clock.now,
         send: line => sent.push(line),
@@ -49,7 +49,7 @@ function online(opts: Partial<ClientOpts> = {}): Fake {
     const f = fake(opts);
     f.client.connecting();
     f.client.opened();
-    f.client.receive(':irc.libera.chat 001 matt :Welcome to Libera.Chat, matt');
+    f.client.receive(':irc.libera.chat 001 mage :Welcome to Libera.Chat, mage');
     f.sent.length = 0;
     return f;
 }
@@ -66,10 +66,10 @@ test('the handshake registers, then joins on 001', () => {
 
     f.client.opened();
     assert.equal(f.client.snapshot().status, 'registering');
-    assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK matt', 'USER matt 0 * :Zanaris Kit']);
+    assert.deepEqual(f.sent, ['CAP REQ multi-prefix', 'NICK mage', 'USER mage 0 * :Zanaris Kit']);
 
     f.sent.length = 0;
-    f.client.receive(':irc.libera.chat 001 matt :Welcome to Libera.Chat, matt');
+    f.client.receive(':irc.libera.chat 001 mage :Welcome to Libera.Chat, mage');
     assert.equal(f.client.snapshot().status, 'online');
     assert.deepEqual(f.sent, ['JOIN #04scape'], 'everything wanted is joined');
     assert.equal(f.client.snapshot().error, null);
@@ -79,8 +79,8 @@ test('001 takes the nick the server settled on', () => {
     const f = fake();
     f.client.connecting();
     f.client.opened();
-    f.client.receive(':irc.libera.chat 001 matt2 :Welcome');
-    assert.equal(f.client.snapshot().nick, 'matt2');
+    f.client.receive(':irc.libera.chat 001 mage2 :Welcome');
+    assert.equal(f.client.snapshot().nick, 'mage2');
 });
 
 test('PING is answered with the same token', () => {
@@ -91,8 +91,8 @@ test('PING is answered with the same token', () => {
 
 test('closed reconnects or gives up, and forgets who was in the room', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :matt bob');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End of /NAMES list');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage bob');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
     assert.equal(f.channel('#04scape').users.length, 2);
 
     f.client.closed('connection reset', true);
@@ -139,7 +139,7 @@ test('CTCP ACTION is an action, and other CTCP is ignored', () => {
 
 test('a private message opens a conversation with whoever sent it, and always highlights', () => {
     const f = online();
-    f.client.receive(':bob!~b@host PRIVMSG matt :psst, over here');
+    f.client.receive(':bob!~b@host PRIVMSG mage :psst, over here');
     assert.equal(f.channel('bob').unread, 1, 'a tab of its own, badged');
     assert.equal(f.client.snapshot().active, '#04scape', 'it does not take the open tab away');
     f.client.select('bob');
@@ -152,7 +152,7 @@ test('a private message opens a conversation with whoever sent it, and always hi
 
 test('a notice is a system line', () => {
     const f = online();
-    f.client.receive(':NickServ!s@services. NOTICE matt :This nickname is registered.');
+    f.client.receive(':NickServ!s@services. NOTICE mage :This nickname is registered.');
     f.client.select(SERVER_LOG);
     const line = f.lines().at(-1);
     assert.equal(line?.kind, 'system');
@@ -163,12 +163,12 @@ test('a notice is a system line', () => {
 test('a command that is not a numeric and not handled is ignored quietly', () => {
     const f = online();
     const before = f.client.snapshot().channels.map(c => c.name).length;
-    f.client.receive(':irc.libera.chat CAP matt ACK :multi-prefix');
+    f.client.receive(':irc.libera.chat CAP mage ACK :multi-prefix');
     f.client.receive(':bob!b@h WALLOPS :nothing for us');
     f.client.select(SERVER_LOG);
     assert.deepEqual(
         f.lines().map(l => l.text),
-        ['Welcome to Libera.Chat, matt'],
+        ['Welcome to Libera.Chat, mage'],
         'only the welcome, which the handshake already put there'
     );
     assert.equal(f.client.snapshot().channels.length, before);
@@ -178,58 +178,58 @@ test('a command that is not a numeric and not handled is ignored quietly', () =>
 
 test('NAMES builds the user list, ranked first and named second, keeping every rank symbol', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :@zed matt +bob');
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :alice @+Carol ~owner');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :@zed mage +bob');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :alice @+Carol ~owner');
     assert.deepEqual(f.channel('#04scape').users, [], 'nothing until the list ends');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End of /NAMES list');
-    assert.deepEqual(f.who('#04scape'), ['~owner', '@+Carol', '@zed', '+bob', 'alice', 'matt']);
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
+    assert.deepEqual(f.who('#04scape'), ['~owner', '@+Carol', '@zed', '+bob', 'alice', 'mage']);
 });
 
 test('a userhost-in-names entry is listed by its nick alone', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :@zed!z@host.example matt!m@elsewhere');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End of /NAMES list');
-    assert.deepEqual(f.who('#04scape'), ['@zed', 'matt']);
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :@zed!z@host.example mage!m@elsewhere');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
+    assert.deepEqual(f.who('#04scape'), ['@zed', 'mage']);
 });
 
 test('a server that says its PREFIX is (ov)@+ has no half-ops, so a % is part of a nick', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 005 matt PREFIX=(ov)@+ CHANTYPES=# :are supported by this server');
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :@zed %odd');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End of /NAMES list');
+    f.client.receive(':irc.libera.chat 005 mage PREFIX=(ov)@+ CHANTYPES=# :are supported by this server');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :@zed %odd');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
     assert.deepEqual(f.who('#04scape'), ['@zed', '%odd']);
 });
 
 test('JOIN, PART, QUIT and NICK keep the nick list right', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :matt bob');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End of /NAMES list');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage bob');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
 
     f.client.receive(':alice!a@h JOIN #04scape');
-    assert.deepEqual(f.who('#04scape'), ['alice', 'bob', 'matt']);
+    assert.deepEqual(f.who('#04scape'), ['alice', 'bob', 'mage']);
 
     f.client.receive(':alice!a@h NICK alicia');
-    assert.deepEqual(f.who('#04scape'), ['alicia', 'bob', 'matt']);
+    assert.deepEqual(f.who('#04scape'), ['alicia', 'bob', 'mage']);
 
     f.client.receive(':alicia!a@h PART #04scape :bye');
-    assert.deepEqual(f.who('#04scape'), ['bob', 'matt']);
+    assert.deepEqual(f.who('#04scape'), ['bob', 'mage']);
 
     f.client.receive(':bob!b@h QUIT :Ping timeout');
-    assert.deepEqual(f.who('#04scape'), ['matt']);
+    assert.deepEqual(f.who('#04scape'), ['mage']);
 });
 
 test('our own NICK follows us', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :matt');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End of /NAMES list');
-    f.client.receive(':matt!m@h NICK matthew');
-    assert.equal(f.client.snapshot().nick, 'matthew');
-    assert.deepEqual(f.who('#04scape'), ['matthew']);
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
+    f.client.receive(':mage!m@h NICK archmage');
+    assert.equal(f.client.snapshot().nick, 'archmage');
+    assert.deepEqual(f.who('#04scape'), ['archmage']);
 });
 
 test('our own PART closes the channel', () => {
     const f = online();
-    f.client.receive(':matt!m@h PART #04scape :bye');
+    f.client.receive(':mage!m@h PART #04scape :bye');
     assert.deepEqual(
         f.client.snapshot().channels.map(c => c.name),
         [SERVER_LOG]
@@ -240,7 +240,7 @@ test('our own PART closes the channel', () => {
 
 test('a line naming you is highlighted and counted', () => {
     const f = online();
-    f.client.receive(':bob!b@h PRIVMSG #04scape :matt: look at this');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look at this');
     f.client.receive(':bob!b@h PRIVMSG #04scape :nothing to see');
     assert.deepEqual(
         f.lines().map(l => l.highlight),
@@ -255,7 +255,7 @@ test('unread counts only what arrives away from the active channel, and select c
     assert.equal(f.channel('#04scape').unread, 0);
 
     f.client.receive(':bob!b@h PRIVMSG #swiftkit :over here');
-    f.client.receive(':bob!b@h PRIVMSG #swiftkit :matt: and again');
+    f.client.receive(':bob!b@h PRIVMSG #swiftkit :mage: and again');
     assert.equal(f.channel('#swiftkit').unread, 2);
     assert.equal(f.channel('#swiftkit').highlights, 1);
 
@@ -280,24 +280,24 @@ test('433 tries again with an underscore, and gives up rather than looping', () 
     f.client.opened();
     f.sent.length = 0;
 
-    for (const taken of ['matt', 'matt_', 'matt__', 'matt___', 'matt____']) {
+    for (const taken of ['mage', 'mage_', 'mage__', 'mage___', 'mage____']) {
         f.client.receive(`:irc.libera.chat 433 * ${taken} :Nickname is already in use.`);
     }
-    assert.deepEqual(f.sent, ['NICK matt_', 'NICK matt__', 'NICK matt___'], 'three tries, then it stops asking');
+    assert.deepEqual(f.sent, ['NICK mage_', 'NICK mage__', 'NICK mage___'], 'three tries, then it stops asking');
 
     f.client.select(SERVER_LOG);
     assert.match(f.lines().at(-1)?.text ?? '', /nick/i, 'the panel is told why the nick is not the one asked for');
 });
 
 test('a 433 answering a live rename reports the refusal and leaves the working nick and the cascade alone', () => {
-    const f = online(); // registered as matt, sent cleared
+    const f = online(); // registered as mage, sent cleared
     f.client.input('/nick taken');
     assert.deepEqual(f.sent, ['NICK taken']);
     f.sent.length = 0;
 
-    f.client.receive(':irc.libera.chat 433 matt taken :Nickname is already in use.');
-    assert.deepEqual(f.sent, [], 'nothing is retried: matt is still registered and working');
-    assert.equal(f.client.snapshot().nick, 'matt', 'the working nick is untouched by the refusal');
+    f.client.receive(':irc.libera.chat 433 mage taken :Nickname is already in use.');
+    assert.deepEqual(f.sent, [], 'nothing is retried: mage is still registered and working');
+    assert.equal(f.client.snapshot().nick, 'mage', 'the working nick is untouched by the refusal');
     assert.equal(f.client.snapshot().status, 'online');
     assert.equal(f.client.snapshot().error, null, 'the connection itself is fine');
 
@@ -310,20 +310,20 @@ test('a 433 answering a live rename reports the refusal and leaves the working n
     f.client.connecting();
     f.client.opened();
     f.sent.length = 0;
-    for (const again of ['matt', 'matt_', 'matt__', 'matt___', 'matt____']) {
+    for (const again of ['mage', 'mage_', 'mage__', 'mage___', 'mage____']) {
         f.client.receive(`:irc.libera.chat 433 * ${again} :Nickname is already in use.`);
     }
-    assert.deepEqual(f.sent, ['NICK matt_', 'NICK matt__', 'NICK matt___'], 'a fresh registration still runs the full cascade');
+    assert.deepEqual(f.sent, ['NICK mage_', 'NICK mage__', 'NICK mage___'], 'a fresh registration still runs the full cascade');
 });
 
 // ── failed joins ──────────────────────────────────────────────────────────
 
 test('a refused join says which channel and why', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 403 matt #nope :No such channel');
-    f.client.receive(':irc.libera.chat 473 matt #invite :Cannot join channel (+i)');
-    f.client.receive(':irc.libera.chat 474 matt #banned :Cannot join channel (+b)');
-    f.client.receive(':irc.libera.chat 475 matt #keyed :Cannot join channel (+k)');
+    f.client.receive(':irc.libera.chat 403 mage #nope :No such channel');
+    f.client.receive(':irc.libera.chat 473 mage #invite :Cannot join channel (+i)');
+    f.client.receive(':irc.libera.chat 474 mage #banned :Cannot join channel (+b)');
+    f.client.receive(':irc.libera.chat 475 mage #keyed :Cannot join channel (+k)');
     f.client.select(SERVER_LOG);
     // After the welcome, which the handshake already put in Status.
     const texts = f.lines().slice(1).map(l => l.text);
@@ -342,7 +342,7 @@ test('a typed message is sent and echoed, since IRC does not echo it back', () =
     assert.deepEqual(f.sent, ['PRIVMSG #04scape :hello world']);
     assert.deepEqual(
         f.lines().map(l => [l.kind, l.nick, l.text]),
-        [['say', 'matt', 'hello world']]
+        [['say', 'mage', 'hello world']]
     );
 });
 
@@ -364,7 +364,7 @@ test('a typed private message is sent and echoed to the server log', () => {
     f.client.select(SERVER_LOG);
     assert.deepEqual(
         f.lines().slice(1).map(l => [l.kind, l.nick, l.text]),
-        [['private', 'matt', 'hi there']],
+        [['private', 'mage', 'hi there']],
         'after the welcome'
     );
 });
@@ -390,7 +390,7 @@ test('a channel wanted while offline is joined on the next 001', () => {
     f.client.connecting();
     f.client.opened();
     f.sent.length = 0;
-    f.client.receive(':irc.libera.chat 001 matt :Welcome');
+    f.client.receive(':irc.libera.chat 001 mage :Welcome');
     assert.deepEqual(f.sent, ['JOIN #04scape']);
 });
 
@@ -427,11 +427,11 @@ test('talking while offline says so instead of dropping the message', () => {
 
 test('a typed nick change waits for the server to confirm it', () => {
     const f = online();
-    f.client.input('/nick matthew');
-    assert.deepEqual(f.sent, ['NICK matthew']);
-    assert.equal(f.client.snapshot().nick, 'matt', 'still the old nick until the server says otherwise');
-    f.client.receive(':matt!m@h NICK matthew');
-    assert.equal(f.client.snapshot().nick, 'matthew');
+    f.client.input('/nick archmage');
+    assert.deepEqual(f.sent, ['NICK archmage']);
+    assert.equal(f.client.snapshot().nick, 'mage', 'still the old nick until the server says otherwise');
+    f.client.receive(':mage!m@h NICK archmage');
+    assert.equal(f.client.snapshot().nick, 'archmage');
 });
 
 // ── the log ───────────────────────────────────────────────────────────────
@@ -460,8 +460,8 @@ test('a password identifies to NickServ on the welcome, before any join, and nev
     f.client.connecting();
     f.client.opened();
     f.sent.length = 0;
-    f.client.receive(':irc.swiftirc.net 001 matt :Welcome to SwiftIRC, matt');
-    assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY matt hunter2 with spaces', 'JOIN #04scape'], 'named, so the spaces stay in the password');
+    f.client.receive(':irc.swiftirc.net 001 mage :Welcome to SwiftIRC, mage');
+    assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY mage hunter2 with spaces', 'JOIN #04scape'], 'named, so the spaces stay in the password');
 
     const everyLine = f.client.snapshot().channels.flatMap(c => {
         f.client.select(c.name);
@@ -475,52 +475,52 @@ test('no password sends nothing to NickServ', () => {
     f.client.connecting();
     f.client.opened();
     f.sent.length = 0;
-    f.client.receive(':irc.swiftirc.net 001 matt :Welcome');
+    f.client.receive(':irc.swiftirc.net 001 mage :Welcome');
     assert.deepEqual(f.sent, ['JOIN #04scape']);
 });
 
 test('a password given on a live connection identifies at once, and a cleared one is not sent on the next welcome', () => {
     const f = online();
-    f.client.setCredentials('matt', 'hunter2');
-    assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY matt hunter2']);
-    f.client.setCredentials('matt', 'hunter2');
+    f.client.setCredentials('mage', 'hunter2');
+    assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY mage hunter2']);
+    f.client.setCredentials('mage', 'hunter2');
     assert.equal(f.sent.length, 1, 'the same credentials again are not re-sent');
 
-    f.client.setCredentials('matt', null);
+    f.client.setCredentials('mage', null);
     f.client.closed('', true);
     f.client.connecting();
     f.client.opened();
     f.sent.length = 0;
-    f.client.receive(':irc.swiftirc.net 001 matt :Welcome');
+    f.client.receive(':irc.swiftirc.net 001 mage :Welcome');
     assert.deepEqual(f.sent, ['JOIN #04scape']);
 });
 
 test('a password given while offline waits for the welcome', () => {
     const f = fake();
-    f.client.setCredentials('matt', 'hunter2');
+    f.client.setCredentials('mage', 'hunter2');
     assert.deepEqual(f.sent, []);
     f.client.connecting();
     f.client.opened();
     f.sent.length = 0;
-    f.client.receive(':irc.swiftirc.net 001 matt :Welcome');
-    assert.equal(f.sent[0], 'PRIVMSG NickServ :IDENTIFY matt hunter2');
+    f.client.receive(':irc.swiftirc.net 001 mage :Welcome');
+    assert.equal(f.sent[0], 'PRIVMSG NickServ :IDENTIFY mage hunter2');
 });
 
 // ── ranks and modes ───────────────────────────────────────────────────────
 
 test('a MODE giving and taking ranks moves people up and down the list, and is said in the room', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :matt bob alice');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End of /NAMES list');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage bob alice');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
 
     f.client.receive(':ChanServ!s@services. MODE #04scape +ov bob alice');
-    assert.deepEqual(f.who('#04scape'), ['@bob', '+alice', 'matt']);
+    assert.deepEqual(f.who('#04scape'), ['@bob', '+alice', 'mage']);
 
     f.client.receive(':ChanServ!s@services. MODE #04scape +v bob');
-    assert.deepEqual(f.who('#04scape'), ['@+bob', '+alice', 'matt'], 'a second rank is kept below the first');
+    assert.deepEqual(f.who('#04scape'), ['@+bob', '+alice', 'mage'], 'a second rank is kept below the first');
 
     f.client.receive(':ChanServ!s@services. MODE #04scape -o+l bob 50');
-    assert.deepEqual(f.who('#04scape'), ['+alice', '+bob', 'matt'], 'losing op leaves the voice, and the limit takes its own parameter');
+    assert.deepEqual(f.who('#04scape'), ['+alice', '+bob', 'mage'], 'losing op leaves the voice, and the limit takes its own parameter');
 
     assert.deepEqual(
         f.lines().map(l => l.text),
@@ -530,20 +530,20 @@ test('a MODE giving and taking ranks moves people up and down the list, and is s
 
 test('a nick change keeps its rank', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :@zed matt');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End of /NAMES list');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :@zed mage');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
     f.client.receive(':zed!z@h NICK aaron');
-    assert.deepEqual(f.who('#04scape'), ['@aaron', 'matt']);
+    assert.deepEqual(f.who('#04scape'), ['@aaron', 'mage']);
 });
 
 test('joining asks for the channel modes, and 324 and 329 fill them in, flags only', () => {
     const f = online();
-    f.client.receive(':matt!m@h JOIN #swiftkit');
+    f.client.receive(':mage!m@h JOIN #swiftkit');
     assert.deepEqual(f.sent, ['MODE #swiftkit']);
     assert.equal(f.channel('#swiftkit').modes, null, 'not known until the server says');
 
-    f.client.receive(':irc.libera.chat 324 matt #swiftkit +ntkl sekrit 50');
-    f.client.receive(':irc.libera.chat 329 matt #swiftkit 1757478015');
+    f.client.receive(':irc.libera.chat 324 mage #swiftkit +ntkl sekrit 50');
+    f.client.receive(':irc.libera.chat 329 mage #swiftkit 1757478015');
     assert.equal(f.channel('#swiftkit').modes, '+ntkl', 'the key itself is not shown');
     assert.equal(f.channel('#swiftkit').createdAt, 1_757_478_015_000);
 
@@ -555,10 +555,10 @@ test('joining asks for the channel modes, and 324 and 329 fill them in, flags on
 
 test('our own user modes are said in Status', () => {
     const f = online();
-    f.client.receive(':matt MODE matt :+ixz');
-    f.client.receive(':irc.swiftirc.net 221 matt +ixz');
+    f.client.receive(':mage MODE mage :+ixz');
+    f.client.receive(':irc.swiftirc.net 221 mage +ixz');
     f.client.select(SERVER_LOG);
-    assert.deepEqual(f.lines().slice(-2).map(l => l.text), ['matt sets mode +ixz on matt', 'your modes are +ixz']);
+    assert.deepEqual(f.lines().slice(-2).map(l => l.text), ['mage sets mode +ixz on mage', 'your modes are +ixz']);
 });
 
 // ── topics ────────────────────────────────────────────────────────────────
@@ -566,10 +566,10 @@ test('our own user modes are said in Status', () => {
 test('332 and 333 give the topic, who set it and when, without a line in the room', () => {
     const f = online();
     const bold = String.fromCharCode(2);
-    f.client.receive(`:irc.swiftirc.net 332 matt #04scape :${bold}Migrating channels${bold}, please join #LostCity`);
-    f.client.receive(':irc.swiftirc.net 333 matt #04scape Collin!c@host.example 1786319756');
+    f.client.receive(`:irc.swiftirc.net 332 mage #04scape :${bold}Migrating channels${bold}, please join #LostCity`);
+    f.client.receive(':irc.swiftirc.net 333 mage #04scape Collin!c@host.example 1786319756');
     assert.deepEqual(f.channel('#04scape').topic, { text: 'Migrating channels, please join #LostCity', setBy: 'Collin', setAt: 1_786_319_756_000 });
-    f.client.receive(':irc.swiftirc.net 333 matt #04scape Collin 1786319756');
+    f.client.receive(':irc.swiftirc.net 333 mage #04scape Collin 1786319756');
     assert.equal(f.channel('#04scape').topic?.setBy, 'Collin', 'a server that sends the bare nick is read the same');
     assert.deepEqual(f.lines(), []);
 });
@@ -589,10 +589,10 @@ test('a TOPIC while we are there changes the topic and says so, and an empty one
 
 test('the topic and modes outlive a dropped connection; the user list does not', () => {
     const f = online();
-    f.client.receive(':irc.swiftirc.net 332 matt #04scape :Hello');
-    f.client.receive(':irc.swiftirc.net 324 matt #04scape +nt');
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :matt');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End');
+    f.client.receive(':irc.swiftirc.net 332 mage #04scape :Hello');
+    f.client.receive(':irc.swiftirc.net 324 mage #04scape +nt');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End');
     f.client.closed('reset', true);
     assert.equal(f.channel('#04scape').topic?.text, 'Hello');
     assert.equal(f.channel('#04scape').modes, '+nt');
@@ -603,18 +603,18 @@ test('the topic and modes outlive a dropped connection; the user list does not',
 
 test('someone else kicked leaves the list, with who and why said in the room', () => {
     const f = online();
-    f.client.receive(':irc.libera.chat 353 matt = #04scape :@op matt bob');
-    f.client.receive(':irc.libera.chat 366 matt #04scape :End');
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :@op mage bob');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End');
     f.client.receive(':op!o@h KICK #04scape bob :spamming');
-    assert.deepEqual(f.who('#04scape'), ['@op', 'matt']);
+    assert.deepEqual(f.who('#04scape'), ['@op', 'mage']);
     assert.equal(f.lines().at(-1)?.text, 'bob was kicked by op (spamming)');
 });
 
 test('kicked ourselves, the tab stays to say why, empty, and a reconnect does not rejoin it', () => {
     const f = online({ channels: ['#04scape', '#swiftkit'] });
-    f.client.receive(':irc.libera.chat 353 matt = #swiftkit :@op matt');
-    f.client.receive(':irc.libera.chat 366 matt #swiftkit :End');
-    f.client.receive(':op!o@h KICK #swiftkit matt :bye');
+    f.client.receive(':irc.libera.chat 353 mage = #swiftkit :@op mage');
+    f.client.receive(':irc.libera.chat 366 mage #swiftkit :End');
+    f.client.receive(':op!o@h KICK #swiftkit mage :bye');
 
     assert.deepEqual(f.channel('#swiftkit').users, []);
     assert.equal(f.channel('#swiftkit').highlights, 1, 'being kicked is worth a badge');
@@ -626,13 +626,13 @@ test('kicked ourselves, the tab stays to say why, empty, and a reconnect does no
     f.client.connecting();
     f.client.opened();
     f.sent.length = 0;
-    f.client.receive(':irc.libera.chat 001 matt :Welcome');
+    f.client.receive(':irc.libera.chat 001 mage :Welcome');
     assert.deepEqual(f.sent, ['JOIN #04scape']);
 });
 
 test('closing the tab of a channel we were kicked from forgets it without a PART the server would refuse', () => {
     const f = online({ channels: ['#04scape', '#swiftkit'] });
-    f.client.receive(':op!o@h KICK #swiftkit matt :bye');
+    f.client.receive(':op!o@h KICK #swiftkit mage :bye');
     f.sent.length = 0;
     f.client.part('#swiftkit');
     assert.deepEqual(f.sent, []);
@@ -646,14 +646,14 @@ test('the welcome, the MOTD and other numerics are read out in Status without ba
     f.client.connecting();
     f.client.opened();
     for (const line of [
-        ':irc.swiftirc.net 001 matt :Welcome to the SwiftIRC IRC Network matt!m@host',
-        ':irc.swiftirc.net 002 matt :Your host is irc.swiftirc.net',
-        ':irc.swiftirc.net 004 matt irc.swiftirc.net InspIRCd-3 iosw biklmnopstv',
-        ':irc.swiftirc.net 005 matt AWAYLEN=200 PREFIX=(qaohv)~&@%+ :are supported by this server',
-        ':irc.swiftirc.net 251 matt :There are 120 users and 3000 invisible on 9 servers',
-        ':irc.swiftirc.net 375 matt :irc.swiftirc.net message of the day',
-        ':irc.swiftirc.net 372 matt :- Happy chatting!',
-        ':irc.swiftirc.net 376 matt :End of message of the day.'
+        ':irc.swiftirc.net 001 mage :Welcome to the SwiftIRC IRC Network mage!m@host',
+        ':irc.swiftirc.net 002 mage :Your host is irc.swiftirc.net',
+        ':irc.swiftirc.net 004 mage irc.swiftirc.net InspIRCd-3 iosw biklmnopstv',
+        ':irc.swiftirc.net 005 mage AWAYLEN=200 PREFIX=(qaohv)~&@%+ :are supported by this server',
+        ':irc.swiftirc.net 251 mage :There are 120 users and 3000 invisible on 9 servers',
+        ':irc.swiftirc.net 375 mage :irc.swiftirc.net message of the day',
+        ':irc.swiftirc.net 372 mage :- Happy chatting!',
+        ':irc.swiftirc.net 376 mage :End of message of the day.'
     ]) {
         f.client.receive(line);
     }
@@ -662,7 +662,7 @@ test('the welcome, the MOTD and other numerics are read out in Status without ba
     assert.deepEqual(
         f.lines().map(l => l.text),
         [
-            'Welcome to the SwiftIRC IRC Network matt!m@host',
+            'Welcome to the SwiftIRC IRC Network mage!m@host',
             'Your host is irc.swiftirc.net',
             'irc.swiftirc.net InspIRCd-3 iosw biklmnopstv',
             'There are 120 users and 3000 invisible on 9 servers',
@@ -695,7 +695,7 @@ test('a nick taken while offline is the one the next registration uses', () => {
 test('rename does nothing on a live connection, where the server has to agree to a new nick', () => {
     const f = online();
     f.client.rename('Whoosh');
-    assert.equal(f.client.snapshot().nick, 'matt');
+    assert.equal(f.client.snapshot().nick, 'mage');
     assert.deepEqual(f.sent, []);
 });
 
@@ -718,10 +718,10 @@ test('a registration that settled on an underscore still identifies the account,
     const f = fake({ password: 'hunter2' });
     f.client.connecting();
     f.client.opened();
-    f.client.receive(':irc.swiftirc.net 433 * matt :Nickname is already in use.');
+    f.client.receive(':irc.swiftirc.net 433 * mage :Nickname is already in use.');
     f.sent.length = 0;
-    f.client.receive(':irc.swiftirc.net 001 matt_ :Welcome');
-    assert.equal(f.sent[0], 'PRIVMSG NickServ :IDENTIFY matt hunter2');
+    f.client.receive(':irc.swiftirc.net 001 mage_ :Welcome');
+    assert.equal(f.sent[0], 'PRIVMSG NickServ :IDENTIFY mage hunter2');
 });
 
 test('new credentials on a live connection identify the new account', () => {
@@ -749,15 +749,15 @@ test('a CAP line that is not the answer, or one after the welcome, sends nothing
     f.sent.length = 0;
     f.client.receive(':irc.swiftirc.net CAP * LS :multi-prefix sasl');
     assert.deepEqual(f.sent, []);
-    f.client.receive(':irc.swiftirc.net 001 matt :Welcome');
+    f.client.receive(':irc.swiftirc.net 001 mage :Welcome');
     f.sent.length = 0;
-    f.client.receive(':irc.swiftirc.net CAP matt ACK :multi-prefix');
+    f.client.receive(':irc.swiftirc.net CAP mage ACK :multi-prefix');
     assert.deepEqual(f.sent, [], 'registration is already over');
 });
 
 test('closing a channel the server put us in, unasked, still parts it', () => {
     const f = online();
-    f.client.receive(':matt!m@h JOIN #redirected');
+    f.client.receive(':mage!m@h JOIN #redirected');
     f.sent.length = 0;
     f.client.part('#redirected');
     assert.deepEqual(f.sent, ['PART #redirected']);
@@ -765,9 +765,9 @@ test('closing a channel the server put us in, unasked, still parts it', () => {
 
 test('rejoining a channel we were kicked from makes its close a real PART again', () => {
     const f = online({ channels: ['#04scape', '#swiftkit'] });
-    f.client.receive(':op!o@h KICK #swiftkit matt :bye');
+    f.client.receive(':op!o@h KICK #swiftkit mage :bye');
     f.client.input('/join #swiftkit');
-    f.client.receive(':matt!m@h JOIN #swiftkit');
+    f.client.receive(':mage!m@h JOIN #swiftkit');
     f.sent.length = 0;
     f.client.part('#swiftkit');
     assert.deepEqual(f.sent, ['PART #swiftkit']);
@@ -775,11 +775,11 @@ test('rejoining a channel we were kicked from makes its close a real PART again'
 
 test('a typed IDENTIFY to NickServ is sent whole but echoed without the password', () => {
     const f = online();
-    f.client.input('/msg NickServ IDENTIFY matt hunter2');
+    f.client.input('/msg NickServ IDENTIFY mage hunter2');
     f.client.input('/msg nickserv register hunter2 me@example.com');
     f.client.input('/msg NickServ SET PASSWORD hunter3');
     f.client.input('/msg NickServ HELP');
-    assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY matt hunter2', 'PRIVMSG nickserv :register hunter2 me@example.com', 'PRIVMSG NickServ :SET PASSWORD hunter3', 'PRIVMSG NickServ HELP']);
+    assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY mage hunter2', 'PRIVMSG nickserv :register hunter2 me@example.com', 'PRIVMSG NickServ :SET PASSWORD hunter3', 'PRIVMSG NickServ HELP']);
     f.client.select(SERVER_LOG);
     const echoed = f.lines().slice(1).map(l => l.text);
     assert.deepEqual(echoed, ['IDENTIFY (hidden)', 'register (hidden)', 'SET PASSWORD (hidden)', 'HELP']);
@@ -787,7 +787,7 @@ test('a typed IDENTIFY to NickServ is sent whole but echoed without the password
 
 test('an invite badges Status, since it is addressed to you', () => {
     const f = online();
-    f.client.receive(':bob!b@h INVITE matt #secret');
+    f.client.receive(':bob!b@h INVITE mage #secret');
     assert.equal(f.channel(SERVER_LOG).unread, 1);
 });
 
@@ -805,8 +805,8 @@ test('/query opens a conversation and shows it, and lines typed there go to that
     assert.deepEqual(
         f.lines().map(l => [l.kind, l.nick, l.text]),
         [
-            ['say', 'matt', 'hello bob'],
-            ['action', 'matt', 'waves']
+            ['say', 'mage', 'hello bob'],
+            ['action', 'mage', 'waves']
         ]
     );
 });
@@ -825,7 +825,7 @@ test('a /msg to someone with a conversation open is echoed there; to NickServ it
     f.client.input('/query bob');
     f.client.input('/msg bob from afar');
     assert.equal(f.lines().at(-1)?.text, 'from afar');
-    f.client.input('/msg NickServ IDENTIFY matt hunter2');
+    f.client.input('/msg NickServ IDENTIFY mage hunter2');
     assert.equal(f.client.snapshot().channels.some(c => c.name === 'NickServ'), false, 'services get no tab of their own');
     f.client.select(SERVER_LOG);
     assert.equal(f.lines().at(-1)?.text, 'IDENTIFY (hidden)');
@@ -834,24 +834,24 @@ test('a /msg to someone with a conversation open is echoed there; to NickServ it
 test('a password typed into a conversation with NickServ is not written into it', () => {
     const f = online();
     f.client.input('/query NickServ');
-    f.client.input('identify matt hunter2');
-    assert.deepEqual(f.sent, ['PRIVMSG NickServ :identify matt hunter2']);
+    f.client.input('identify mage hunter2');
+    assert.deepEqual(f.sent, ['PRIVMSG NickServ :identify mage hunter2']);
     assert.equal(f.lines().at(-1)?.text, 'identify (hidden)');
 });
 
 test('a notice goes to the conversation with its sender when one is open, and never opens one', () => {
     const f = online();
-    f.client.receive(':NickServ!s@services. NOTICE matt :You are now identified.');
+    f.client.receive(':NickServ!s@services. NOTICE mage :You are now identified.');
     assert.equal(f.client.snapshot().channels.some(c => c.name === 'NickServ'), false);
     f.client.input('/query bob');
-    f.client.receive(':bob!b@h NOTICE matt :psst');
+    f.client.receive(':bob!b@h NOTICE mage :psst');
     assert.equal(f.lines().at(-1)?.text, '-bob- psst');
 });
 
 test('a conversation follows its person to a new name, in the same place in the row', () => {
     const f = online();
-    f.client.receive(':bob!b@h PRIVMSG matt :hi');
-    f.client.receive(':alice!a@h PRIVMSG matt :hey');
+    f.client.receive(':bob!b@h PRIVMSG mage :hi');
+    f.client.receive(':alice!a@h PRIVMSG mage :hey');
     f.client.select('bob');
     f.client.receive(':bob!b@h NICK :robert');
     assert.deepEqual(
@@ -901,15 +901,15 @@ test('an ignored nick\'s messages, notices, actions and invites are dropped, wha
     const f = online({ ignore: ['Spammer'] });
     f.client.receive(':spammer!s@h PRIVMSG #04scape :buy gold');
     f.client.receive(`:spammer!s@h PRIVMSG #04scape :${CTCP}ACTION buys gold${CTCP}`);
-    f.client.receive(':spammer!s@h PRIVMSG matt :psst');
-    f.client.receive(':spammer!s@h NOTICE matt :psst');
-    f.client.receive(':spammer!s@h INVITE matt #gold');
+    f.client.receive(':spammer!s@h PRIVMSG mage :psst');
+    f.client.receive(':spammer!s@h NOTICE mage :psst');
+    f.client.receive(':spammer!s@h INVITE mage #gold');
     assert.deepEqual(f.lines(), []);
     assert.equal(f.client.snapshot().channels.some(c => c.name === 'spammer'), false);
     f.client.select(SERVER_LOG);
     assert.deepEqual(
         f.lines().map(l => l.text),
-        ['Welcome to Libera.Chat, matt']
+        ['Welcome to Libera.Chat, mage']
     );
 });
 
@@ -937,8 +937,8 @@ test('/topic with text sets the active channel\'s; alone it shows what the join 
     f.client.select('#04scape');
     f.client.input('/topic');
     assert.equal(f.lines().at(-1)?.text, '#04scape has no topic');
-    f.client.receive(':irc 332 matt #04scape :Welcome to 2004scape');
-    f.client.receive(':irc 333 matt #04scape alice!a@h 1700000000');
+    f.client.receive(':irc 332 mage #04scape :Welcome to 2004scape');
+    f.client.receive(':irc 333 mage #04scape alice!a@h 1700000000');
     f.client.input('/topic');
     assert.equal(f.lines().at(-1)?.text, 'topic of #04scape: Welcome to 2004scape (set by alice)');
     f.client.input('/topic A new topic');
@@ -987,14 +987,14 @@ test('a whois answer is read into sentences in the tab it was asked from', () =>
     f.client.select('#04scape');
     f.client.input('/whois bob');
     assert.deepEqual(f.sent, ['WHOIS bob']);
-    f.client.receive(':irc 311 matt bob ~b host.example * :Bob Smith');
-    f.client.receive(':irc 319 matt bob :@#04scape #LostHQ');
-    f.client.receive(':irc 312 matt bob fiery.swiftirc.net :SwiftIRC');
-    f.client.receive(':irc 301 matt bob :lunch');
-    f.client.receive(':irc 330 matt bob bobacct :is logged in as');
-    f.client.receive(':irc 317 matt bob 190 1700000000 :seconds idle, signon time');
-    f.client.receive(':irc 378 matt bob :is connecting from *@1.2.3.4');
-    f.client.receive(':irc 318 matt bob :End of /WHOIS list.');
+    f.client.receive(':irc 311 mage bob ~b host.example * :Bob Smith');
+    f.client.receive(':irc 319 mage bob :@#04scape #LostHQ');
+    f.client.receive(':irc 312 mage bob fiery.swiftirc.net :SwiftIRC');
+    f.client.receive(':irc 301 mage bob :lunch');
+    f.client.receive(':irc 330 mage bob bobacct :is logged in as');
+    f.client.receive(':irc 317 mage bob 190 1700000000 :seconds idle, signon time');
+    f.client.receive(':irc 378 mage bob :is connecting from *@1.2.3.4');
+    f.client.receive(':irc 318 mage bob :End of /WHOIS list.');
     assert.deepEqual(
         f.lines().map(l => l.text),
         [
@@ -1007,7 +1007,7 @@ test('a whois answer is read into sentences in the tab it was asked from', () =>
             'bob is connecting from *@1.2.3.4'
         ]
     );
-    f.client.receive(':irc 378 matt bob :is connecting from *@1.2.3.4');
+    f.client.receive(':irc 378 mage bob :is connecting from *@1.2.3.4');
     assert.equal(f.lines().length, 7, 'once the whois is over, the next reply is Status\'s');
 });
 
@@ -1015,15 +1015,15 @@ test('someone not online says so where you were talking to them', () => {
     const f = online();
     f.client.input('/query ghost');
     f.client.input('boo');
-    f.client.receive(':irc 401 matt ghost :No such nick/channel');
+    f.client.receive(':irc 401 mage ghost :No such nick/channel');
     assert.equal(f.lines().at(-1)?.text, 'ghost is not online');
 });
 
 test('a full, registered-only or overfull join is refused in words', () => {
     const f = online();
-    f.client.receive(':irc 471 matt #full :Cannot join channel (+l)');
-    f.client.receive(':irc 477 matt #regonly :Cannot join channel (+R)');
-    f.client.receive(':irc 405 matt #more :You have joined too many channels');
+    f.client.receive(':irc 471 mage #full :Cannot join channel (+l)');
+    f.client.receive(':irc 477 mage #regonly :Cannot join channel (+R)');
+    f.client.receive(':irc 405 mage #more :You have joined too many channels');
     f.client.select(SERVER_LOG);
     assert.deepEqual(
         f.lines().slice(1).map(l => l.text),
@@ -1033,7 +1033,7 @@ test('a full, registered-only or overfull join is refused in words', () => {
 
 test('not being an operator is said in the channel it happened in', () => {
     const f = online();
-    f.client.receive(':irc 482 matt #04scape :You\'re not channel operator');
+    f.client.receive(':irc 482 mage #04scape :You\'re not channel operator');
     assert.equal(f.lines().at(-1)?.text, 'you are not an operator in #04scape');
 });
 
@@ -1042,8 +1042,8 @@ test('not being an operator is said in the channel it happened in', () => {
 test('each line that names you or is said to you alone is reported as it arrives, and nothing else', () => {
     const seen: string[] = [];
     const f = online({ onHighlight: line => seen.push(`${line.channel} ${line.nick} ${line.text}`) });
-    f.client.receive(':bob!b@h PRIVMSG #04scape :hey matt, look');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :hey mage, look');
     f.client.receive(':bob!b@h PRIVMSG #04scape :nothing to see');
-    f.client.receive(':bob!b@h PRIVMSG matt :psst');
-    assert.deepEqual(seen, ['#04scape bob hey matt, look', 'bob bob psst']);
+    f.client.receive(':bob!b@h PRIVMSG mage :psst');
+    assert.deepEqual(seen, ['#04scape bob hey mage, look', 'bob bob psst']);
 });

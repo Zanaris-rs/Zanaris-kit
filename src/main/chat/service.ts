@@ -226,8 +226,8 @@ export class ChatService {
      *   connection takes it when the server agrees. Otherwise it is simply the
      *   nick the next registration uses. It is compared with the nick the
      *   connection holds rather than the saved one: a refused registration
-     *   leaves the client claiming "matt___", and saving "matt" again has to
-     *   put that right even though "matt" is what is stored.
+     *   leaves the client claiming "mage___", and saving "mage" again has to
+     *   put that right even though "mage" is what is stored.
      * - A channel added to the list is joined now, or as soon as the
      *   connection on its way is up. One taken off is not parted: the list
      *   says what to join next time, and closing the tab is how to leave now.
