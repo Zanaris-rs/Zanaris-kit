@@ -124,6 +124,7 @@ const api: ZanarisApi = {
         saveCustom: draft => ipcRenderer.invoke(IPC.appearanceSaveCustom, draft),
         deleteCustom: id => ipcRenderer.invoke(IPC.appearanceDeleteCustom, id),
         choosePicture: () => ipcRenderer.invoke(IPC.appearanceChoosePicture),
+        presetPicture: id => ipcRenderer.invoke(IPC.appearancePresetPicture, id),
         importTheme: () => ipcRenderer.invoke(IPC.appearanceImportTheme),
         exportTheme: id => ipcRenderer.invoke(IPC.appearanceExportTheme, id)
     }

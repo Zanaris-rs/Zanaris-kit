@@ -59,7 +59,8 @@ import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
 import { appearanceView, deleteQuestion } from './appearance';
 import { devBranding } from './branding';
-import { MIME, PICTURE_MAX, PictureStore } from './pictures';
+import { MIME, PICTURE_MAX, PictureStore, pictureType } from './pictures';
+import { presetCards, readPreset, type PresetCard } from './presets';
 import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
 
 const log = (msg: string): void => console.log(msg);
@@ -182,6 +183,10 @@ const catalog = new Catalog(join(userData, 'servers.json'), { yourWorldRevision:
 const appState = new AppState(join(userData, 'state.json'));
 /** The pictures custom themes carry, by content. See `pictures.ts`. */
 const pictures = new PictureStore(join(userData, 'backgrounds'));
+/** The kit's own pictures, found from the bundle the way the rest of `static/` is. See `presets.ts`. */
+const PRESET_DIR = join(__dirname, '../../static/pictures');
+/** What Settings is sent for them, read and hashed once: the files are the app's own, and do not change while it runs. */
+let presetView: PresetCard[] | undefined;
 
 /** Every picture a custom theme names: what pruning keeps. */
 function keptPictures(): Set<string> {
@@ -487,7 +492,7 @@ const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
 function settingsState(): SettingsState {
     return {
         servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
-        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list() })
+        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list(), presets: (presetView ??= presetCards(PRESET_DIR)) })
     };
 }
 
@@ -837,6 +842,24 @@ ipcMain.handle(IPC.appearanceChoosePicture, async (event): Promise<{ picture: st
     } catch (err) {
         log(`[main] could not read a picture: ${(err as Error).message}`);
         return { error: `Couldn't read ${basename(path)}.` };
+    }
+});
+
+/**
+ * A picture from the editor's gallery: one of the kit's own, stored as a file
+ * of the player's is and answered by name, so the theme that keeps it names a
+ * stored picture and never a preset. Only an id comes from the page, and it
+ * is looked up in the list, never made into a path.
+ */
+ipcMain.handle(IPC.appearancePresetPicture, (event, id: unknown): { picture: string } | { error: string } | null => {
+    if (!settingsWindowFor(event.sender)) return null;
+    const bytes = readPreset(PRESET_DIR, id);
+    if (bytes === null) return { error: "That picture isn't one the kit has." };
+    try {
+        return pictures.add(bytes);
+    } catch (err) {
+        log(`[main] could not store a preset picture: ${(err as Error).message}`);
+        return { error: "Couldn't keep that picture: the kit's data folder couldn't be written." };
     }
 });
 
@@ -2351,7 +2374,15 @@ app.whenReady().then(async () => {
     if (appState.fromFile()) pictures.prune(keptPictures());
     protocol.handle(PICTURE_SCHEME, request => {
         const url = new URL(request.url);
-        const found = url.host === 'picture' ? pictures.read(decodeURIComponent(url.pathname.slice(1))) : null;
+        const name = decodeURIComponent(url.pathname.slice(1));
+        if (url.host === 'preset') {
+            // The gallery's thumbnails, by id. Not marked immutable: unlike a stored picture, named by its content, an id's file can change between releases.
+            const bytes = readPreset(PRESET_DIR, name);
+            const type = bytes && pictureType(bytes);
+            if (!bytes || !type) return new Response(null, { status: 404 });
+            return new Response(new Uint8Array(bytes), { headers: { 'content-type': MIME[type], 'x-content-type-options': 'nosniff' } });
+        }
+        const found = url.host === 'picture' ? pictures.read(name) : null;
         if (!found) return new Response(null, { status: 404 });
         return new Response(new Uint8Array(found.bytes), {
             headers: { 'content-type': MIME[found.type], 'x-content-type-options': 'nosniff', 'cache-control': 'max-age=31536000, immutable' }

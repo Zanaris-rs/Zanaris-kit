@@ -16,6 +16,7 @@ import {
     isThemeId,
     newCustomId,
     pictureUrl,
+    presetUrl,
     readBackground,
     readColors,
     readCustomTheme,
@@ -191,6 +192,10 @@ test('with a picture, the surfaces let it through by show, and edges, text and w
 
 test('pictureUrl is the private scheme main serves', () => {
     assert.equal(pictureUrl(PICTURE), `zanaris-bg://picture/${PICTURE}`);
+});
+
+test("presetUrl is the same scheme's host for the kit's own pictures, by id", () => {
+    assert.equal(presetUrl('lava'), 'zanaris-bg://preset/lava');
 });
 
 test('newCustomId never hands out one already taken', () => {

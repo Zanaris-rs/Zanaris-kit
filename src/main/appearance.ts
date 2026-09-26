@@ -1,5 +1,6 @@
 import type { ServerDef } from '../shared/catalog.ts';
 import { THEMES, serverOverride, themeFor, type Appearance, type Theme, type ThemeLook } from '../shared/themes.ts';
+import type { PresetCard } from './presets.ts';
 
 /** One catalog server in the Appearance section: its own theme, or null when it follows the app. */
 export interface ServerThemeRow {
@@ -25,6 +26,8 @@ export interface AppearanceView {
     /** The built-ins, then the player's own in the order they were made. */
     themes: ThemeCard[];
     servers: ServerThemeRow[];
+    /** The kit's own pictures, for the editor's gallery, in the order it shows them. */
+    presets: PresetCard[];
 }
 
 /** "A", "A and B", "A, B and C". */
@@ -48,8 +51,8 @@ export function deleteQuestion(opts: { appearance: Appearance; catalog: readonly
     return { message: `Delete ${theme.name}?`, detail: lines.join(' ') };
 }
 
-/** Pure, beside `serversView`: main builds it with every Settings push. */
-export function appearanceView(opts: { appearance: Appearance; catalog: readonly ServerDef[] }): AppearanceView {
+/** Pure, beside `serversView`: main builds it with every Settings push, handing it the presets it read once from their files. */
+export function appearanceView(opts: { appearance: Appearance; catalog: readonly ServerDef[]; presets: readonly PresetCard[] }): AppearanceView {
     const app = themeFor(opts.appearance, null);
     const card = (theme: Theme, custom: boolean): ThemeCard => ({
         id: theme.id,
@@ -62,6 +65,7 @@ export function appearanceView(opts: { appearance: Appearance; catalog: readonly
         theme: app.id,
         look: { colors: app.colors, background: app.background },
         themes: [...THEMES.map(theme => card(theme, false)), ...opts.appearance.custom.map(theme => card(theme, true))],
-        servers: opts.catalog.map(server => ({ id: server.id, name: server.name, theme: serverOverride(opts.appearance, server.id) }))
+        servers: opts.catalog.map(server => ({ id: server.id, name: server.name, theme: serverOverride(opts.appearance, server.id) })),
+        presets: opts.presets.map(preset => ({ ...preset }))
     };
 }

@@ -458,12 +458,17 @@ export function contrastWarnings(colors: ThemeColors): string[] {
 
 // ── putting a look on a page ──────────────────────────────────────────────
 
-/** The private scheme main serves stored pictures on, to the kit's own pages only. */
+/** The private scheme main serves stored pictures on, and the kit's own, to the kit's own pages only. */
 export const PICTURE_SCHEME = 'zanaris-bg';
 
 /** Where the page asks for a stored picture. */
 export function pictureUrl(picture: string): string {
     return `${PICTURE_SCHEME}://picture/${picture}`;
+}
+
+/** Where the page asks for one of the kit's own pictures, by its id: the editor's gallery draws its thumbnails from here. */
+export function presetUrl(id: string): string {
+    return `${PICTURE_SCHEME}://preset/${id}`;
 }
 
 /**
