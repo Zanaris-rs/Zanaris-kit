@@ -133,7 +133,7 @@ function ChatTabs({
             ref={group}
             role="group"
             aria-label="Chat"
-            className="flex min-w-0 flex-wrap items-center gap-[5px] px-1.5 py-[3px]"
+            className="flex min-w-0 flex-wrap items-center gap-[5px]"
         >
             <Tab role="button" label="Settings" open={onSettings} onSelect={showSettings} />
             {view.channels.map(channel => {
