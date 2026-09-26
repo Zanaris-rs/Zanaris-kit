@@ -599,8 +599,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * (`paneTree.closeGivingBack`, through `shrinkWindow`), and a setup
      * opened that holds the game and carries a size, sized to hold the game
      * at its pixels and every other pane at the ones it was saved with
-     * (`paneTree.arrangeForGame`, through `sizeWindow`). Each way it is the resize that lays everything out
-     * again, through here.
+     * (`paneTree.arrangeForGame`, through `sizeWindow`). Each way it is the
+     * resize that lays everything out again, through here.
      *
      * The tree runs to the window's edges. It used to be inset by a pixel so a
      * gold ring round the focused pane had shell to land on; focus is a dot in

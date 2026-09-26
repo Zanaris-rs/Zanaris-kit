@@ -674,18 +674,18 @@ worse than one never offered, and the launcher would otherwise be a second
 opinion about the same question. It was a second opinion, and it was wrong.
 
 The window resizes itself for three things: a pane added where the game would
-have paid for it, a pane closed that would have handed the game that room
-back (both above), and a setup opened around the game (below). Opening the old panel or dock grew the window rather than
-shrinking the game, through a `widen → shift → push` ladder, because reloading
-or rescaling the game view was believed to cost the player their login. That
-turned out not to be true of resizing — `setBounds` does not reload a
-`WebContentsView`; only `loadURL` does, which is why a world switch warns and a
-drag does not — so the ladder, the per-axis mode notes and the protected content
-extent went with the fixed columns that motivated them, and for a while the
-window never grew at all. What came back is the plain half of the old idea: a
-new pane is paid for by the window rather than the game, because the cost of
-the other way was dragging the window wider after every Add pane to see the
-game again.
+have paid for it, a pane closed that would have handed the game that room back
+(both above), and a setup opened around the game (below). Opening the old panel
+or dock grew the window rather than shrinking the game, through a
+`widen → shift → push` ladder, because reloading or rescaling the game view was
+believed to cost the player their login. That turned out not to be true of
+resizing — `setBounds` does not reload a `WebContentsView`; only `loadURL` does,
+which is why a world switch warns and a drag does not — so the ladder, the
+per-axis mode notes and the protected content extent went with the fixed columns
+that motivated them, and for a while the window never grew at all. What came
+back is the plain half of the old idea: a new pane is paid for by the window
+rather than the game, because the cost of the other way was dragging the window
+wider after every Add pane to see the game again.
 
 What a small game pane costs is the bottom of the canvas. The served page does
 not rescale to follow unless the player picked **Auto Sizing** from the controls
