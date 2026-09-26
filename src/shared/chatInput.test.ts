@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { complete, HISTORY_MAX, recall, remember, userActions, type CompletionSources } from './chatInput.ts';
 
-const SOURCES: CompletionSources = { nicks: ['Bob', 'bobby', 'alice', 'matt'], channels: ['#LostHQ', '#2004scape'], commands: ['join', 'me', 'msg', 'query'] };
+const SOURCES: CompletionSources = { nicks: ['Bob', 'bobby', 'alice', 'mage'], channels: ['#LostHQ', '#2004scape'], commands: ['join', 'me', 'msg', 'query'] };
 
 // ── Tab ───────────────────────────────────────────────────────────────────
 
@@ -51,8 +51,8 @@ test('nothing to finish, or nothing matching, leaves the key alone', () => {
 });
 
 test('a nick listed twice in different case is offered once', () => {
-    const done = complete('ma', 2, { ...SOURCES, nicks: ['matt', 'Matt'] }, null)!;
-    assert.deepEqual(done.matches, ['matt']);
+    const done = complete('ma', 2, { ...SOURCES, nicks: ['mage', 'Mage'] }, null)!;
+    assert.deepEqual(done.matches, ['mage']);
 });
 
 // ── the arrows ────────────────────────────────────────────────────────────
@@ -94,15 +94,15 @@ test('a line sent twice running is kept once, and the history does not grow with
 
 test('a nick offers a conversation, a mention, a lookup and ignoring them', () => {
     assert.deepEqual(
-        userActions('bob', 'matt', []).map(a => a.action),
+        userActions('bob', 'mage', []).map(a => a.action),
         ['message', 'mention', 'whois', 'ignore']
     );
-    assert.equal(userActions('Bob', 'matt', ['bob']).at(-1)?.action, 'unignore', 'the ignore list is case-insensitive');
+    assert.equal(userActions('Bob', 'mage', ['bob']).at(-1)?.action, 'unignore', 'the ignore list is case-insensitive');
 });
 
 test('your own name offers only the lookup', () => {
     assert.deepEqual(
-        userActions('Matt', 'matt', []).map(a => a.action),
+        userActions('Mage', 'mage', []).map(a => a.action),
         ['whois']
     );
 });

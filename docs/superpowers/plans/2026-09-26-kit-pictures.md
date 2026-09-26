@@ -125,7 +125,7 @@
   ```
   Imports: `import type { Fit } from '../shared/themes.ts'; import { pictureName } from './pictures.ts';`.
 - [ ] **Step 4: `scripts/make-pictures.mjs`** — Electron main script (no top-level await: it deadlocks an ESM entry's `ready`). For each preset: `nativeImage.createFromPath(join(content, preset.from))`, refuse `isEmpty()`, then `mirror` (BGRA copy of each row and its reverse → `createFromBitmap(..., { width: 2w, height: h }).toJPEG(90)`) or `double` (nearest-neighbour 2× → `.toPNG()`); write `static/pictures/<file>`; `app.exit(1)` on any failure, `app.quit()` otherwise. Content dir is `process.argv[2]` or `.engine-work/content`. `package.json`: `"make:pictures": "electron scripts/make-pictures.mjs"`.
-- [ ] **Step 5: Run** `npm run make:pictures -- /Users/matthewgould/Projects/2004scape/swiftkit/.engine-work/content` and look at `title.jpg` and two textures.
+- [ ] **Step 5: Run** `npm run make:pictures -- <content checkout>` (the main checkout's `.engine-work/content`, which a worktree lacks) and look at `title.jpg` and two textures.
 - [ ] **Step 6: `presets.test.ts`**: static/pictures holds exactly the listed files; each file's `pictureType` matches its extension; a `PictureStore` in a temp dir accepts each under the name `presetCards` gives; ids unique and `/^[a-z]+$/`, names unique, fits in `FITS`; `readPreset` answers null for `''`, `'nope'`, `'../package.json'`, `'title.jpg'`, `'__proto__'`, `null`, `7`; `presetCards` of an empty folder is `[]`.
 - [ ] **Step 7: Run** `npm test && npm run typecheck`, expect PASS.
 - [ ] **Step 8: Commit** `feat: twelve of the game's own pictures, made from the content pin`.

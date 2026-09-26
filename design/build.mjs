@@ -296,7 +296,7 @@ writeFileSync('Settings.dc.html', toolPanel('wrench', `
       <div style="padding: 0 10px 5px; font-size: 12px; color: ${C.green};">Chat</div>
       <div style="display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px; padding: 0 10px 12px; align-items: center;">
         <span style="color: ${C.dim};">Server</span><div class="sunk" style="padding: 3px 7px;">irc.libera.chat</div>
-        <span style="color: ${C.dim};">Nickname</span><div class="sunk" style="padding: 3px 7px;">mattg</div>
+        <span style="color: ${C.dim};">Nickname</span><div class="sunk" style="padding: 3px 7px;">mage</div>
       </div>
       <div style="padding: 0 10px 5px; font-size: 12px; color: ${C.green};">Screenshots</div>
       <div style="display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px; padding: 0 10px 8px; align-items: center;">

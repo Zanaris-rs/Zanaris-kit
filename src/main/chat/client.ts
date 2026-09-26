@@ -491,7 +491,7 @@ export class IrcClient {
      * draws the log, or persists it, ever sees it.
      *
      * Always the two-word form, naming the account. The bare form identifies
-     * whatever nick the connection holds, which after a taken nick is "matt_"
+     * whatever nick the connection holds, which after a taken nick is "mage_"
      * rather than the account; and services read "IDENTIFY correct horse" as
      * account "correct", password "horse". Named, the password is the rest of
      * the line, spaces and all.
@@ -742,7 +742,7 @@ export class IrcClient {
 
     /**
      * One NAMES entry: every rank symbol in front (a server with multi-prefix
-     * sends "@+matt" for an op who is voiced) and the nick after, with any
+     * sends "@+mage" for an op who is voiced) and the nick after, with any
      * user@host a userhost-in-names server tacks on taken off.
      */
     private user(entry: string): ChatUser {

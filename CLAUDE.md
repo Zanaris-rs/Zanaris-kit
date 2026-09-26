@@ -25,6 +25,12 @@ Check the result afterwards — `gh pr view <n> --json author` — rather than a
 Never add repo-local user or credential overrides, and never let a retired handle,
 the old org, the owner's company or its domain into anything pushed.
 
+A home directory's absolute path carries the owner's real name too, and three
+plans once named the repository that way. Write a path from the repository root,
+and give a test's home a placeholder: `src/shared/identity.test.ts` fails on any
+other home in `docs/`, `src/`, `scripts/`, the README or this file. It cannot
+catch the name itself, since the test would then have to contain it.
+
 ## The layout invariant
 
 **A running game is either visible or obviously suspended, never silently
@@ -212,7 +218,7 @@ Hand-written IRC over raw TLS (`node:tls`), no library, no WebSocket.
 - **A saved NickServ password** goes out on `001`, before the JOINs, as
   `PRIVMSG NickServ :IDENTIFY <account> <pass>` (`IrcClient.identify`). The
   account is the nick saved in Settings. Keep the two-word form: the bare one
-  identifies whatever nick the connection holds (`matt_` after a 433), and
+  identifies whatever nick the connection holds (`mage_` after a 433), and
   services split a password with a space in it into account and password.
 - **Host and port** are captured `readonly` at construction, so changing them
   needs an app restart, and there is no UI for them.

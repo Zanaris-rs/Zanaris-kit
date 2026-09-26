@@ -6,25 +6,25 @@ import { DEFAULT_ISUPPORT, formatCommand, isChannel, mentions, modeChanges, pars
 // ── parseLine ─────────────────────────────────────────────────────────────
 
 test('a user prefix yields the nick before the bang', () => {
-    const msg = parseLine(':matt!~m@user/matt PRIVMSG #04scape :hello world');
+    const msg = parseLine(':mage!~m@user/mage PRIVMSG #04scape :hello world');
     assert.deepEqual(msg, {
-        prefix: 'matt!~m@user/matt',
-        nick: 'matt',
+        prefix: 'mage!~m@user/mage',
+        nick: 'mage',
         command: 'PRIVMSG',
         params: ['#04scape', 'hello world']
     });
 });
 
 test('a server prefix has no nick', () => {
-    const msg = parseLine(':irc.libera.chat 001 matt :Welcome to Libera.Chat');
+    const msg = parseLine(':irc.libera.chat 001 mage :Welcome to Libera.Chat');
     assert.equal(msg?.prefix, 'irc.libera.chat');
     assert.equal(msg?.nick, null);
     assert.equal(msg?.command, '001');
-    assert.deepEqual(msg?.params, ['matt', 'Welcome to Libera.Chat']);
+    assert.deepEqual(msg?.params, ['mage', 'Welcome to Libera.Chat']);
 });
 
 test('a bare-word prefix is read as a nick, since some servers send only that', () => {
-    assert.equal(parseLine(':matt NICK matthew')?.nick, 'matt');
+    assert.equal(parseLine(':mage NICK archmage')?.nick, 'mage');
 });
 
 test('a line with no prefix parses', () => {
@@ -47,11 +47,11 @@ test('an empty trailing param is still a param', () => {
 });
 
 test('middle params come through in order', () => {
-    assert.deepEqual(parseLine(':srv 353 matt = #c :matt @op +voice')?.params, ['matt', '=', '#c', 'matt @op +voice']);
+    assert.deepEqual(parseLine(':srv 353 mage = #c :mage @op +voice')?.params, ['mage', '=', '#c', 'mage @op +voice']);
 });
 
 test('a command with no params parses', () => {
-    assert.deepEqual(parseLine(':matt!m@h QUIT')?.params, []);
+    assert.deepEqual(parseLine(':mage!m@h QUIT')?.params, []);
 });
 
 test('blank, whitespace and truncated lines are null rather than a throw', () => {
@@ -65,7 +65,7 @@ test('blank, whitespace and truncated lines are null rather than a throw', () =>
 // ── formatCommand ─────────────────────────────────────────────────────────
 
 test('a plain param needs no colon', () => {
-    assert.equal(formatCommand('NICK', ['matt']), 'NICK matt');
+    assert.equal(formatCommand('NICK', ['mage']), 'NICK mage');
     assert.equal(formatCommand('JOIN', ['#04scape']), 'JOIN #04scape');
 });
 
@@ -97,23 +97,23 @@ test('a command with no params is just the command', () => {
 test('isChannel knows the two prefixes', () => {
     assert.equal(isChannel('#04scape'), true);
     assert.equal(isChannel('&local'), true);
-    assert.equal(isChannel('matt'), false);
+    assert.equal(isChannel('mage'), false);
     assert.equal(isChannel(''), false);
 });
 
 test('mentions is a case-insensitive whole-word test', () => {
-    assert.equal(mentions('matt: hi', 'matt'), true);
-    assert.equal(mentions('hey Matt', 'matt'), true);
-    assert.equal(mentions('hey matt, look at this', 'Matt'), true);
-    assert.equal(mentions('matt', 'matt'), true);
-    assert.equal(mentions('mattress', 'matt'), false);
-    assert.equal(mentions('domatt', 'matt'), false);
-    assert.equal(mentions('a mattress for matt', 'matt'), true, 'a later whole word still counts');
+    assert.equal(mentions('mage: hi', 'mage'), true);
+    assert.equal(mentions('hey Mage', 'mage'), true);
+    assert.equal(mentions('hey mage, look at this', 'Mage'), true);
+    assert.equal(mentions('mage', 'mage'), true);
+    assert.equal(mentions('magenta', 'mage'), false);
+    assert.equal(mentions('image', 'mage'), false);
+    assert.equal(mentions('a magenta for mage', 'mage'), true, 'a later whole word still counts');
     assert.equal(mentions('anything', ''), false);
 });
 
 test('mentions handles the punctuation IRC allows in a nick', () => {
-    assert.equal(mentions('hi |matt|', '|matt|'), true);
+    assert.equal(mentions('hi |mage|', '|mage|'), true);
     assert.equal(mentions('nothing here', 'a[b]'), false);
 });
 
@@ -145,7 +145,7 @@ test('/msg takes a target and the rest of the line', () => {
 });
 
 test('/nick takes a nick', () => {
-    assert.deepEqual(parseInput('/nick matthew'), { kind: 'nick', nick: 'matthew' });
+    assert.deepEqual(parseInput('/nick archmage'), { kind: 'nick', nick: 'archmage' });
     assert.equal(parseInput('/nick'), null);
 });
 
@@ -211,10 +211,10 @@ test('list and always modes take a parameter, a set-only mode takes one only whe
         { adding: true, mode: 'l', param: '50' }
     ]);
     assert.deepEqual(
-        modeChanges('-lo', ['matt'], DEFAULT_ISUPPORT),
+        modeChanges('-lo', ['mage'], DEFAULT_ISUPPORT),
         [
             { adding: false, mode: 'l', param: null },
-            { adding: false, mode: 'o', param: 'matt' }
+            { adding: false, mode: 'o', param: 'mage' }
         ],
         'removing a limit takes no parameter, so the nick is not swallowed by it'
     );

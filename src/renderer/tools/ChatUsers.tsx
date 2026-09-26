@@ -60,7 +60,7 @@ export default function ChatUsers({ channel, self, mention, className = '' }: { 
                                     <span style={{ color: nickColour(user.nick, self) }} className="truncate">
                                         {user.nick}
                                     </span>
-                                    {/* The symbol is drawn for the eye; this says it for a screen reader, which would otherwise read "at matt". */}
+                                    {/* The symbol is drawn for the eye; this says it for a screen reader, which would otherwise read "at mage". */}
                                     {ranks.length > 0 && <span className="sr-only">, {ranks.join(' and ')}</span>}
                                 </button>
                             </li>

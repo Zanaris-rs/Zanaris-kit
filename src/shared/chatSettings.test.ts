@@ -13,19 +13,19 @@ test('a valid form reads as its nick and channels, trimmed', () => {
 });
 
 test('channels may be separated by commas, spaces or both, and a missing # is added as /join adds it', () => {
-    const reading = readSettingsDraft({ nick: 'matt', channels: 'lostcity  #LostHQ,,&local\n#help' });
+    const reading = readSettingsDraft({ nick: 'mage', channels: 'lostcity  #LostHQ,,&local\n#help' });
     assert.ok(reading.ok);
     assert.deepEqual(reading.draft.autoJoin, ['#lostcity', '#LostHQ', '&local', '#help']);
 });
 
 test('a channel named twice in different cases is kept once, as first written', () => {
-    const reading = readSettingsDraft({ nick: 'matt', channels: '#LostHQ, #losthq, LOSTHQ' });
+    const reading = readSettingsDraft({ nick: 'mage', channels: '#LostHQ, #losthq, LOSTHQ' });
     assert.ok(reading.ok);
     assert.deepEqual(reading.draft.autoJoin, ['#LostHQ']);
 });
 
 test('an empty channel list is allowed: the user may want to join nothing', () => {
-    assert.deepEqual(readSettingsDraft({ nick: 'matt', channels: '  , ' }), { ok: true, draft: { nick: 'matt', autoJoin: [] } });
+    assert.deepEqual(readSettingsDraft({ nick: 'mage', channels: '  , ' }), { ok: true, draft: { nick: 'mage', autoJoin: [] } });
 });
 
 test('the nick is required, and refused when IRC would refuse it', () => {
@@ -50,7 +50,7 @@ test('the nick is checked before the channels, the order the form shows them in'
 
 test('a channel name too long, a lone prefix, or a control character is refused', () => {
     const field = (channels: string): string | null => {
-        const reading = readSettingsDraft({ nick: 'matt', channels });
+        const reading = readSettingsDraft({ nick: 'mage', channels });
         return reading.ok ? null : reading.problem.field;
     };
     assert.equal(field(`#${'x'.repeat(50)}`), 'channels', '51 characters');
@@ -61,7 +61,7 @@ test('a channel name too long, a lone prefix, or a control character is refused'
 
 test('the stored-profile checks agree with the form', () => {
     assert.equal(isNick('Whoosh'), true);
-    assert.equal(isNick('matt\r\nQUIT'), false);
+    assert.equal(isNick('mage\r\nQUIT'), false);
     assert.equal(isNick('x'.repeat(31)), false);
     assert.equal(channelProblem('#LostHQ'), null);
     assert.notEqual(channelProblem('LostHQ'), null, 'a stored name has its prefix already');
@@ -72,14 +72,14 @@ test('the stored-profile checks agree with the form', () => {
 
 test('more channels than the rail allows is refused', () => {
     const many = Array.from({ length: AUTO_JOIN_MAX + 1 }, (_, i) => `#room${i}`).join(',');
-    const reading = readSettingsDraft({ nick: 'matt', channels: many });
+    const reading = readSettingsDraft({ nick: 'mage', channels: many });
     assert.equal(reading.ok ? null : reading.problem.field, 'channels');
 });
 
 test('the saved list is shown comma separated, and reads back to itself', () => {
     const shown = formatAutoJoin(DEFAULT_AUTO_JOIN);
     assert.equal(shown, '#2004scape, #LostHQ, #Zanaris');
-    const reading = readSettingsDraft({ nick: 'matt', channels: shown });
+    const reading = readSettingsDraft({ nick: 'mage', channels: shown });
     assert.ok(reading.ok);
     assert.deepEqual(reading.draft.autoJoin, [...DEFAULT_AUTO_JOIN]);
 });
@@ -96,18 +96,18 @@ test('a password is refused empty, too long, or holding a line break that would 
 // ── whether there is anything to save ─────────────────────────────────────
 
 test('a draft matching what is saved is not a change, whatever the channel order or case', () => {
-    assert.equal(sameSettings({ nick: 'matt', autoJoin: ['#b', '#A'] }, 'matt', ['#a', '#B']), true);
+    assert.equal(sameSettings({ nick: 'mage', autoJoin: ['#b', '#A'] }, 'mage', ['#a', '#B']), true);
 });
 
 test('a different nick, even by case, is a change', () => {
-    assert.equal(sameSettings({ nick: 'Matt', autoJoin: [] }, 'matt', []), false);
-    assert.equal(sameSettings({ nick: 'matt', autoJoin: [] }, null, []), false);
+    assert.equal(sameSettings({ nick: 'Mage', autoJoin: [] }, 'mage', []), false);
+    assert.equal(sameSettings({ nick: 'mage', autoJoin: [] }, null, []), false);
 });
 
 test('a channel added or removed is a change', () => {
-    assert.equal(sameSettings({ nick: 'matt', autoJoin: ['#a', '#b'] }, 'matt', ['#a']), false);
-    assert.equal(sameSettings({ nick: 'matt', autoJoin: ['#a'] }, 'matt', ['#a', '#b']), false);
-    assert.equal(sameSettings({ nick: 'matt', autoJoin: ['#a', '#c'] }, 'matt', ['#a', '#b']), false);
+    assert.equal(sameSettings({ nick: 'mage', autoJoin: ['#a', '#b'] }, 'mage', ['#a']), false);
+    assert.equal(sameSettings({ nick: 'mage', autoJoin: ['#a'] }, 'mage', ['#a', '#b']), false);
+    assert.equal(sameSettings({ nick: 'mage', autoJoin: ['#a', '#c'] }, 'mage', ['#a', '#b']), false);
 });
 
 test('only offline is a connection to start; reconnecting is one to stop', () => {
