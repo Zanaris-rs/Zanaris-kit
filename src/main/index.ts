@@ -448,7 +448,7 @@ const windows = new ServerWindows(
                 chat: chatView,
                 alwaysOnTop: () => appState.alwaysOnTop(),
                 confirmCloseGame: via => confirmCloseGame(spec, via),
-                layoutsDir: join(userData, 'layouts', slugify(spec.server.id)),
+                setupsDir: join(userData, 'setups', slugify(spec.server.id)),
                 remembered: appState.world(spec.server.id),
                 remember: remembered => appState.setWorld(spec.server.id, remembered),
                 probe: probeLatency,
@@ -1182,6 +1182,12 @@ ipcMain.handle(IPC.tabAddPaneMenu, (event, x: unknown, y: unknown) => {
     windowFor(event.sender)?.showAddPaneMenu(x, y);
 });
 
+ipcMain.handle(IPC.tabSetupsMenu, (event, x: unknown, y: unknown) => {
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    windowFor(event.sender)?.showSetupsMenu(x, y);
+});
+
 ipcMain.handle(IPC.tabShowYourWorld, event => windowFor(event.sender)?.showYourWorld());
 
 ipcMain.handle(IPC.tabClose, async (event, tabId: unknown) => {
@@ -1425,15 +1431,15 @@ ipcMain.handle(IPC.chatDisconnect, () => {
 // ── your world ─────────────────────────────────────────────────────────
 
 /**
- * Ask before closing the game — its pane, or a tab holding it — which destroys
- * the view and disconnects the player.
+ * Ask before closing the game — its pane, a tab holding it, or a setup opened
+ * over the tab holding it — which destroys the view and disconnects the player.
  *
  * The same shape as `confirmSwitch`: a sheet on the window rather than an
  * app-modal box, so other windows keep running, and the same "don't ask again"
  * the switch warning uses — it is the same preference, since it answers the same
  * question about the same cost. Capture mode never arrives here.
  */
-async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'layout'): Promise<boolean> {
+async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'setup'): Promise<boolean> {
     const sw = serverWindows.get(spec.id);
     if (!sw || quitting) return true;
     if (!appState.warnOnSwitch()) return true;
@@ -1442,7 +1448,7 @@ async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'layout'
         buttons: ['Close', 'Cancel'],
         defaultId: 1,
         cancelId: 1,
-        message: via === 'tab' ? 'Close this tab and the game in it?' : via === 'layout' ? 'Load this layout and close the game?' : 'Close the game?',
+        message: via === 'tab' ? 'Close this tab and the game in it?' : via === 'setup' ? 'Open this setup and close the game?' : 'Close the game?',
         detail: `Zanaris Kit disconnects from ${spec.server.name} straight away, whether or not you are logged in. If you are in game, that logs you out. Opening the game again is a fresh login.`,
         checkboxLabel: "Don't ask again",
         checkboxChecked: false
@@ -2259,26 +2265,26 @@ async function captureAndExit(dir: string): Promise<void> {
         await wait(Math.min(settleMs, 8_000));
         await shoot(`${first.state().server.id}-2`, second);
 
-        // A layout saved and loaded, driven on the window rather than through
-        // the tab menu — the save and open dialogs are native sheets nothing
+        // A setup saved and opened, driven on the window rather than through
+        // the Setups menu — the save and open dialogs are native sheets nothing
         // here can click. The fresh window's game-and-chat tab is written to a
-        // file, a new empty tab is opened, and the file loaded into it: the
+        // file, a new empty tab is opened, and the file opened into it: the
         // game should move into the new tab's game pane without a reload, and
         // the first tab's game pane should be left empty. Written to the temp
-        // directory and removed, so a run leaves nothing in the layouts folder.
+        // directory and removed, so a run leaves nothing in the setups folder.
         const activeTab = (sw: ServerWindow): string => sw.state().tabs.find(tab => tab.active)?.id ?? '';
         const panesOf = (sw: ServerWindow): string => sw.state().panes.map(p => (p.content.kind === 'tool' ? p.content.tool : p.content.kind)).join(' over ');
-        const layoutPath = join(app.getPath('temp'), `zanaris-kit-capture-${Date.now()}.json`);
+        const setupPath = join(app.getPath('temp'), `zanaris-kit-capture-setup-${Date.now()}.json`);
         try {
             const saved = panesOf(second);
-            second.saveLayoutTo(activeTab(second), layoutPath);
+            second.saveSetupTo(activeTab(second), setupPath);
             second.newTab();
             await wait(300);
-            const result = await second.loadLayoutFrom(activeTab(second), layoutPath);
+            const result = await second.openSetupFrom(activeTab(second), setupPath);
             await wait(500);
             const tabs = second.state().tabs.map(tab => tab.label).join(', ');
-            log(`[capture] ${second.state().title}: saved "${saved}", loaded into a new tab: ${result} — now "${panesOf(second)}", tabs ${tabs}`);
-            await shoot(`${first.state().server.id}-layout-loaded`, second);
+            log(`[capture] ${second.state().title}: saved setup "${saved}", opened into a new tab: ${result} — now "${panesOf(second)}", tabs ${tabs}`);
+            await shoot(`${first.state().server.id}-setup-loaded`, second);
 
             // The game is in the second tab now, so bringing the first one to
             // the front hides it: the second tab should carry the game's flag,
@@ -2292,7 +2298,7 @@ async function captureAndExit(dir: string): Promise<void> {
                 await shoot(`${first.state().server.id}-game-behind`, second);
             }
         } finally {
-            rmSync(layoutPath, { force: true });
+            rmSync(setupPath, { force: true });
         }
 
         // Themes. Each as the app theme on the first window, with a tool
@@ -2413,6 +2419,41 @@ async function captureAndExit(dir: string): Promise<void> {
             appState.setTheme(DEFAULT_THEME);
             pictures.prune(keptPictures());
             appearanceChanged();
+        }
+
+        // A built-in setup opened, then its tools column closed pane by pane:
+        // the window should grow or shrink to hold the column when the setup
+        // opens and give the column back when its last pane closes, and the
+        // game keep its width through both. On the first window, whose tab in
+        // front holds the game; skipped, and said, when it does not. Widths
+        // are the window's frame, as the pane-closed line above reads them.
+        {
+            const gamePane = (): { rect: { width: number; height: number } } | undefined => first.state().panes.find(p => p.content.kind === 'game');
+            const game = (): string => {
+                const rect = gamePane()?.rect;
+                return rect ? `${rect.width}x${rect.height}` : 'none';
+            };
+            const width = (): number => first.window.getBounds().width;
+            if (!gamePane()) {
+                log('[capture] setups: the first window has no game in its tab in front; the setup and close check was skipped');
+            } else {
+                const before = { window: width(), game: gamePane()!.rect.width, size: game() };
+                const opened = await first.openBuiltInSetup('game-chat-tools');
+                await wait(800);
+                const during = { window: width(), game: gamePane()?.rect.width ?? 0, size: game() };
+                log(`[capture] setup Game, Chat and Tools: ${opened} — window ${before.window}px -> ${during.window}px, game ${before.size} -> ${during.size}, panes ${first.state().panes.map(p => (p.content.kind === 'tool' ? p.content.tool : p.content.kind)).join(' · ')}`);
+                await shootShell('setup-tools', first);
+                for (const pane of first.state().panes.filter(p => p.content.kind === 'tool' && p.content.tool !== 'chat')) {
+                    await first.closePane(pane.paneId);
+                    await wait(300);
+                }
+                await wait(500);
+                const after = { window: width(), game: gamePane()?.rect.width ?? 0, size: game() };
+                log(`[capture] setups: tools column closed — window ${during.window}px -> ${after.window}px, game ${during.size} -> ${after.size}`);
+                if (during.game !== before.game || after.game !== before.game) fault(`setups: the game did not keep its width (${before.game}, ${during.game}, ${after.game})`);
+                if (after.window >= during.window) fault(`setups: closing the tools column did not give the window its width back (${during.window}px -> ${after.window}px)`);
+                await shootShell('setup-closed', first);
+            }
         }
     } catch (err) {
         fault(`aborted: ${(err as Error).stack ?? String(err)}`);

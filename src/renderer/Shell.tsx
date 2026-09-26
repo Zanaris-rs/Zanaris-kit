@@ -368,19 +368,20 @@ export default function Shell(): ReactNode {
         <div className="picture relative h-full overflow-hidden bg-ink text-cream">
             <div style={at(rects.tabBar)} className="flex flex-col">
                 {/*
-                 * Tabs and the control that makes one, then Settings and Add
-                 * pane at the far end, and nothing else. The game's read-out
-                 * used to sit at this bar's left on the grounds that it was
-                 * the window's rather than any tab's — true, but it left the
-                 * bar reading as two unrelated things, and a read-out about
-                 * the game is easiest to believe beside the game. It is in
-                 * the game pane's own header now.
+                 * Tabs and the control that makes one, then Sharing while a
+                 * live link has no pane to mark, and Settings, Setups and Add
+                 * pane at the far end, and nothing else. The game's
+                 * read-out used to sit at this bar's left on the grounds that
+                 * it was the window's rather than any tab's — true, but it
+                 * left the bar reading as two unrelated things, and a read-out
+                 * about the game is easiest to believe beside the game. It is
+                 * in the game pane's own header now.
                  */}
                 <header style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
                     {/*
-                     * The tablist is its own box so Add pane, a menu button
-                     * rather than a tab, sits outside it. `min-w-0` is what lets
-                     * the tabs give way to it as they multiply.
+                     * The tablist is its own box so Setups and Add pane, menu
+                     * buttons rather than tabs, sit outside it. `min-w-0` is
+                     * what lets the tabs give way to them as they multiply.
                      */}
                     <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px]">
                         {/*
@@ -388,9 +389,10 @@ export default function Shell(): ReactNode {
                          * the tab it shuts, so it reads as part of that workspace
                          * rather than as another piece of the bar's furniture. Main
                          * asks first when the tab holds the game. A right-click
-                         * raises the tab's own menu — save its panes as a layout,
-                         * load one, open the folder — which main builds, as it does
-                         * every pane menu.
+                         * raises the tab's own menu, which offers Close Tab and
+                         * which main builds, as it does every pane menu. Setups
+                         * are the bar's Setups menu, which opens into the tab in
+                         * front.
                          */}
                         {state.tabs.map(tab => (
                             <Tab
@@ -450,6 +452,26 @@ export default function Shell(): ReactNode {
                         className="btn shrink-0 justify-center"
                     >
                         <Gear />
+                    </button>
+                    {/*
+                     * Setups: a set of panes in a shape, one click away. Main's
+                     * menu, as Add pane's is, since it drops down over the panes;
+                     * whatever is chosen replaces the panes of the tab in front
+                     * and sizes the window around the game.
+                     */}
+                    <button
+                        type="button"
+                        title="Open this tab in a setup, or save it as one"
+                        aria-haspopup="menu"
+                        onClick={event => {
+                            const box = event.currentTarget.getBoundingClientRect();
+                            void window.zanaris.panes.setupsMenu(box.left, box.bottom);
+                        }}
+                        style={ADD_PANE_BOX}
+                        className="btn shrink-0 gap-[3px]"
+                    >
+                        Setups
+                        <Caret />
                     </button>
                     {/*
                      * How a pane gets added, at the far end of the bar from the

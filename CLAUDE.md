@@ -88,15 +88,19 @@ Four properties in there are load-bearing and easy to break —
   game, say — costs the window nothing, its room going to its siblings as it
   always did. Only the explicit close does this — a drop also closes a pane
   on its way to moving it, and must never resize the window, so `closePane`
-  is untouched. Nothing else resizes the window — not Reset Game Size, not a
-  drop.
+  is untouched. A **setup** opened from the tab bar's Setups menu sizes the
+  window to hold the game at its pixels and every other pane at the ones the
+  setup was saved with (`arrangeForGame`, through `sizeWindow`): it grows as
+  far as its display allows and shrinks as far as the tree's floor, and the
+  tree is recorded as arranged at that size, as an added pane's is. Nothing
+  else resizes the window — not Reset Game Size, not a drop.
 
-`TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved layout file
+`TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file
 carries tool ids between people — that is the whole point of saving one — and
 `readContent` checks every leaf's id against `TOOL_IDS` before the tree is
 trusted at all. One leaf naming an id the array no longer holds sinks the
-whole read: `readLayout` refuses the entire file rather than that one pane,
-and whoever tried to open it sees "That file isn't a Zanaris Kit layout" over
+whole read: `readSetup` refuses the entire file rather than that one pane,
+and whoever tried to open it sees "That file isn't a Zanaris Kit setup" over
 a tab left exactly as it was. `instantiateLayout`'s own empty-pane fallback
 is a different, narrower thing — a tool `TOOL_IDS` still recognises but this
 particular window does not currently offer, Hiscores on a server with none or
@@ -269,7 +273,7 @@ The name changed on 2026-09-20: the feature runs a world on your machine and
 Friends shares it by link, so "single player" said the opposite of what it
 does. Three stored keys did not change, because they sit in files that already
 exist and nothing shows them — the catalog entry's `id` and `kind`
-(`singleplayer`), `TOOL_IDS`' `singleplayer`, which saved layouts carry between
+(`singleplayer`), `TOOL_IDS`' `singleplayer`, which saved setups carry between
 people, and `state.json`'s `singlePlayer` block. Renaming one of those is a
 migration, not a rename. Everything else reads "your world".
 

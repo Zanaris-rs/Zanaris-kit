@@ -35,6 +35,7 @@ export const IPC = {
     tabSelect: 'zanaris:tab-select',
     tabContextMenu: 'zanaris:tab-context-menu',
     tabAddPaneMenu: 'zanaris:tab-add-pane-menu',
+    tabSetupsMenu: 'zanaris:tab-setups-menu',
     tabShowYourWorld: 'zanaris:tab-show-your-world',
     paneOpenExternal: 'zanaris:pane-open-external',
     worldsRefresh: 'zanaris:worlds-refresh',
@@ -306,9 +307,9 @@ export interface ZanarisApi {
         closeTab(tabId: string): Promise<void>;
         selectTab(tabId: string): Promise<void>;
         /**
-         * Raises a tab's menu, for a right-click on it: save its panes as a
-         * layout, load one into it, open the layouts folder. Native and built in
-         * main like the pane menus. Coordinates are the window's.
+         * Raises a tab's menu, for a right-click on it, which is Close Tab.
+         * Setups moved to the tab bar's Setups menu. Native and built in main
+         * like the pane menus. Coordinates are the window's.
          */
         tabMenu(tabId: string, x: number, y: number): Promise<void>;
         /**
@@ -319,6 +320,13 @@ export interface ZanarisApi {
          * Coordinates are the window's.
          */
         addPaneMenu(x: number, y: number): Promise<void>;
+        /**
+         * Raises the tab bar's Setups menu: the built-in setups, the saved
+         * ones, and saving the active tab as one. Choosing one replaces the
+         * active tab's panes and sizes the window around the game. Native and
+         * built in main like the pane menus. Coordinates are the window's.
+         */
+        setupsMenu(x: number, y: number): Promise<void>;
         /**
          * The bar's Sharing button, shown while a link is live and no pane
          * shows Your world: opens its pane as a column down the active tab's

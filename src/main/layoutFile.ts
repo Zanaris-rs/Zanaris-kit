@@ -3,14 +3,14 @@ import type { PaneLink } from './paneMenu.ts';
 import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
 
 /**
- * A saved layout: one tab's panes, as a file the player chose to write.
+ * A saved setup: one tab's panes, as a file the player chose to write.
  *
  * Nothing is saved on its own any more. The window used to write its whole
  * arrangement to `state.json` after every split and every seam drag, which made
  * "how I left it" and "how I want it" the same thing — so an experiment could
  * not be walked away from, and there was nothing to hand anyone else. A setup
  * is now a file, saved from the tab bar's Setups menu into that server's own
- * `setups/` folder, loaded from the same menu, and shared by copying it.
+ * `setups/` folder, opened from the same menu, and shared by copying it.
  *
  * Pure for the reason every rule in this kit is, and for one of its own: a file
  * that came from somebody else is untrusted input, so what it may contain and
@@ -173,8 +173,8 @@ export function instantiateLayout(
 }
 
 /**
- * What Save Layout suggests calling the file: the tab's own label, made safe to
- * be a file name on all three platforms.
+ * What Save This Tab as a Setup… suggests calling the file: the tab's own
+ * label, made safe to be a file name on all three platforms.
  *
  * Windows is the strict one — no `<>:"/\|?*`, no control characters, no
  * trailing dot or space — and a leading dot would hide the file on the other
@@ -195,10 +195,10 @@ export function layoutFileName(label: string): string {
 }
 
 /**
- * The Load Layout submenu: the layout files among a folder's entries, named
- * without their extension and in the order a person would look for them.
+ * The Setups menu's saved setups: the setup files among a folder's entries,
+ * named without their extension and in the order a person would look for them.
  *
- * Hidden files are left out — `.DS_Store` is not a layout, and nor is anything
+ * Hidden files are left out — `.DS_Store` is not a setup, and nor is anything
  * else a platform puts in a folder uninvited.
  */
 export function layoutEntries(files: readonly string[]): { name: string; file: string }[] {

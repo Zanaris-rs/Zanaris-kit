@@ -9,8 +9,9 @@ on top of the reference pane and your world.** The window is a tree of
 panes now rather than four fixed regions: the game, a reference page and any
 tool can sit anywhere in it, split left/right or up/down, and every seam
 drags. A fresh pane shows a launcher of this server's links and this window's
-tools. Workspace tabs are in, and so are layouts saved as files you can hand to
-someone else; background images follow.
+tools. Workspace tabs are in, and so are setups — shapes of panes opened from
+the tab bar in one click, and saved as files you can hand to someone else;
+background images follow.
 The design is in `docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`,
 which supersedes the layout halves of the server-windows and chat-dock specs
 beside it; the plans are under `docs/superpowers/plans/`.
@@ -447,7 +448,7 @@ data folder, under `backgrounds/`.
 Export…, in the editor, writes the theme as the editor holds it, saved or
 not, to a `.zktheme` file, its picture inside it, to hand to someone else;
 Import theme… adds one as a new theme beside yours and never over one. A
-theme file carries the look and nothing else — no server, no layout.
+theme file carries the look and nothing else — no server, no setup.
 
 The mockups this was ported from live in `design/`: `build.mjs` generates the
 artboards, and `seed-canvas.mjs` from the design skill packages them into a
@@ -476,7 +477,7 @@ seeded on first run, one entry per server, now at file version 5:
 | `singleplayer` | the build line it runs, 274 until another is picked | none | | losthq |
 
 The last id is the one the tool was called before it was Your world. It is a
-key in files people already have — a stored `servers.json`, a saved layout —
+key in files people already have — a stored `servers.json`, a saved setup —
 so it stays as it is; nothing shows it.
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
@@ -525,8 +526,8 @@ open.
 `<userData>/state.json` remembers the last world and detail per server, and
 whether the switch confirmation still shows. It is
 not configuration and never interrupts a launch: a broken file is kept aside
-and the state starts empty. It does not remember pane layouts: those are saved
-only when you ask, as files of their own (see Layout below).
+and the state starts empty. It does not remember how the panes were arranged:
+that is saved only when you ask, as a setup (see Layout below).
 
 ## Layout
 
@@ -672,9 +673,9 @@ for the reason the right-click menu is: an item offered and then refused is
 worse than one never offered, and the launcher would otherwise be a second
 opinion about the same question. It was a second opinion, and it was wrong.
 
-The window resizes itself for two things: a pane added where the game would
-have paid for it, and a pane closed that would have handed the game that room
-back (both above). Opening the old panel or dock grew the window rather than
+The window resizes itself for three things: a pane added where the game would
+have paid for it, a pane closed that would have handed the game that room
+back (both above), and a setup opened around the game (below). Opening the old panel or dock grew the window rather than
 shrinking the game, through a `widen → shift → push` ladder, because reloading
 or rescaling the game view was believed to cost the player their login. That
 turned out not to be true of resizing — `setBounds` does not reload a
@@ -714,30 +715,52 @@ window opens tall enough for both and no taller than the display it opens on;
 on a display too short for that, chat gives way to its 80px floor before the
 game loses any height.
 
-A layout is saved on purpose, from the menu a **right-click on a tab** raises:
+**Setups**, in the tab bar between the gear and Add pane, is a set of panes in a
+shape, one click away. Whatever you pick replaces the panes of the tab in front:
 
-- **Save Layout…** writes that tab's panes — the splits, the seam positions and
-  what each pane shows — to a `.json` file named for the tab, in that server's
-  own folder, `<userData>/layouts/<server>/`. The save dialog lets you rename it.
-- **Load Layout** lists that folder's layouts by name and replaces the tab's
-  panes with the one you pick. **From File…** loads one from anywhere, such as a
-  file somebody sent you.
-- **Open Layouts Folder** opens the folder in Finder or Explorer, which is how a
-  layout is shared: copy the file out, or drop somebody else's in.
-- **Close Tab**, the same close as the one inside the tab.
+- **Game**, **Game and Chat** and **Game, Chat and Tools** are the kit's own.
+  Game is the game alone; Game and Chat is the game over chat, as a new window
+  opens; Game, Chat and Tools adds a 320px column down the right holding every
+  other tool the window offers — Worlds, Hiscores, Timers, and Your world in
+  its own window — sharing the column's height evenly. A built-in leaves out a
+  tool the window does not offer rather than showing an empty pane.
+- **Your saved setups** follow, by file name: the `.json` files in that server's
+  own folder, `<userData>/setups/<server>/`, or "No Saved Setups" greyed.
+- **Save This Tab as a Setup…** writes the tab in front — the splits, the seam
+  positions, what each pane shows, and the tab's size in pixels — to a file
+  named for the tab, in that folder. The save dialog lets you rename it.
+- **Open Setup File…** opens one from anywhere, such as a file somebody sent
+  you, without copying it into the folder.
+- **Open Setups Folder** opens the folder in Finder or Explorer, which is how a
+  setup is shared: copy the file out, or drop somebody else's in.
+
+A setup opens around the game. The game keeps the pixels it has — or, with no
+game running, the ones the setup was saved with — every other pane gets the
+pixels the setup was saved with, and the window grows or shrinks to hold them:
+Game, Chat and Tools grows the window by its column, and Game shrinks it to the
+game. It grows no further than its display, moving back onto it as it does for
+a pane added, and shrinks no further than the panes' floors. Maximised or full
+screen it does not resize at all, and the panes are fitted to it as a resize
+fits them, holding the game. A setup with no game, or a file saved before
+setups carried a size, is fitted to the tab by its proportions and leaves the
+window alone.
+
+Right-clicking a tab offers **Close Tab**, the same close as the one inside the
+tab. That menu used to save the tab's arrangement and load one into it; Setups
+took that over, since a setup goes into whichever tab is in front.
 
 The window used to save its arrangement after every split and seam drag, which
 made the last accident the thing the next window opened with, and left nothing
 to hand anyone.
 
-A layout file holds no pane or split ids — the window hands out its own on load
-— and is validated whole and refused whole, with a sheet saying the file is not
-a layout and the tab left as it was. A layout made on another server still
-loads: a tool this window does not offer, or a page that is not one of
+A setup file holds no pane or split ids — the window hands out its own when it
+opens one — and is validated whole and refused whole, with a sheet saying the
+file is not a setup and the tab left as it was. A setup made on another server
+still opens: a tool this window does not offer, or a page that is not one of
 this server's links, comes up as an empty pane showing the launcher rather than
-failing the rest. Loading keeps the one-game rule. A layout with a game pane
-moves the game into it from wherever it was, with no reload; a layout with no
-game, loaded over the tab that holds the game, is closing the game, so it asks
+failing the rest. Opening one keeps the one-game rule. A setup with a game pane
+moves the game into it from wherever it was, with no reload; a setup with no
+game, opened over the tab that holds the game, is closing the game, so it asks
 first and ends the game view exactly as closing that tab would.
 
 The floor on a pane is 120x80: the point at which it stops being able to show
@@ -822,7 +845,8 @@ One capture run with every catalog server open at once:
 | Lost City, split right then swapped | untouched | "Empty" beside "Game" over "Chat", the dot on the game's header only — the split shot itself came back a stale frame of the window before it (the capture hazard; so did the Your world tool's), and the swapped shot straight after it shows the three panes |
 | Lost City, swapped then moved (a later run, 2026-09-15) | followed its pane both times: 760x742 on the right after the swap, then 378x1554 as a full-height column after the move | swapped: "Empty" beside "Game" over "Chat", the dot on the game that was dragged, and the tab renamed "Empty" for its new first pane; moved: chat dropped on the game's right edge and became a third full-height column — "Empty", "Game", "Chat" — with the dot on chat. The split, swapped and moved shots all hash differently, so none is a stale frame |
 | Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, opening on the game over chat like every new window rather than on the first window's arrangement, which nothing saves any more |
-| Lost City (2), a layout saved and loaded into a new tab | not reloaded — no second load in the log | tabs "Empty" and "Game": the file saved "game over chat", the new tab loaded it, and the game moved into it, leaving the first tab's game pane empty. `state.json` holds no layouts |
+| Lost City (2), a setup saved and opened into a new tab (as a layout before 2026-09-26; as a setup, a run of 2026-09-26) | not reloaded — one load of the window in the log | tabs "Empty" and "Game": the file saved "game over chat", the new tab opened it at 765x809, the size it was saved at, so the window did not resize, and the game moved into it, leaving the first tab's game pane empty. `state.json` holds no setups. That run's shell shot of this step was not written: the window did not paint |
+| Lost City, Setups > Game, Chat and Tools, then its tools column closed pane by pane (2026-09-26) | kept at 408x809 through both — 408 wide because the seam drag earlier in the run left it there | the window went from 1482 to 732 wide: the game over chat, and a 320px column of Worlds, Hiscores and Timers beside it. The window could not grow the full height on that display, so chat gave up the difference and the game none. Closing the column's three panes took the window to 408, the game over chat alone |
 
 453 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, a version 1, 2 or 3 file each migrating into version 4, and a
@@ -837,10 +861,11 @@ failure, the rate-limit message), the per-window switch state, the app state
 store, the navigation guard, the latency probe against a local listener, the
 pane tree and its solver, the workspace tabs — including moving the game out of
 one tab and into another, the game-and-chat arrangement a window opens with at
-full, short and tiny heights, and what loading a layout over a tab costs the
-game — the layout file (refusing anything that could not have been saved,
-fresh ids, and whatever this window cannot show coming up empty), and what a
-pane is called and may be turned into, the header's dropdown sharing the
+full, short and tiny heights, and what opening a setup over a tab costs the
+game — the setup file (refusing anything that could not have been saved, the
+size it was saved at, fresh ids, and whatever this window cannot show coming up
+empty), the built-in setups per window, a setup arranged around the game, and
+what a pane is called and may be turned into, the header's dropdown sharing the
 right-click menu's splits.
 
 ## Known
@@ -933,8 +958,9 @@ src/shared/engines.ts       pure: a build recipe, its tag and its download url  
 src/main/paneTree.ts        pure: the split tree, its solver, splits, moves, swaps  (tested)
 src/main/paneDrop.ts        pure: what a header drop does and where the pane lands  (tested)
 src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
-                            arrangement, loading a layout into a tab                (tested)
-src/main/layoutFile.ts      pure: a layout file — writing, validating, fresh ids    (tested)
+                            arrangement, opening a setup into a tab                 (tested)
+src/main/layoutFile.ts      pure: a setup file — writing, validating, fresh ids     (tested)
+src/main/setups.ts          pure: the built-in setups, from a window's tools        (tested)
 src/main/paneMenu.ts        pure: a pane's name, its gestures, what it may become    (tested)
 src/main/paneHost.ts        the views inside a tab's panes; holds no rules
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)

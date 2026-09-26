@@ -6,6 +6,7 @@ import {
     closeGivingBack,
     contentOf,
     evenOut,
+    gameSizeIn,
     layoutTree,
     leaf,
     makeRoom,
@@ -71,8 +72,8 @@ export interface PaneHostDeps {
     log: (line: string) => void;
     /**
      * The arrangement the window opens with. Nothing is carried over from last
-     * time on its own — a layout is a file the player saves and loads from a
-     * tab's menu — so this is the window's own default.
+     * time on its own — a setup is a file the player saves and opens from the
+     * tab bar's Setups menu — so this is the window's own default.
      */
     initial: TabSet;
     /** The tree's shape changed: lay the window out again and push state. */
@@ -430,7 +431,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.changed();
         },
 
-        /** A saved layout's tree made real in this window: fresh ids from this window's counters, and anything it cannot show left empty. */
+        /** A setup's tree made real in this window: fresh ids from this window's counters, and anything it cannot show left empty. */
         instantiate(stored: StoredNode): PaneNode {
             return instantiateLayout(stored, {
                 tools: deps.tools(),
@@ -443,19 +444,26 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         loading: (tabId: string, tree: PaneNode) => loadingLayout(set, tabId, tree),
 
         /**
-         * Replaces a tab's panes with a loaded layout's. The window has already
-         * asked about and destroyed the game when this drops it, which is why it
-         * is a separate step from `loading`: the question comes between them.
+         * Replaces a tab's panes with a setup's. The window has already asked
+         * about and destroyed the game when this drops it, which is why it is
+         * a separate step from `loading`: the question comes between them.
+         * With a size (`paneTree.arrangeForGame`), the tree is the arrangement
+         * made at that size, so the window's resize toward it is fitted from
+         * there rather than read as a resize of the old tab; without one it is
+         * fitted to the tab as it is, by its fractions.
          */
-        replaceTab(tabId: string, tree: PaneNode): boolean {
+        replaceTab(tabId: string, tree: PaneNode, size: Size | null): boolean {
             const loaded = loadingLayout(set, tabId, tree);
             if (!loaded) return false;
             set = loaded.set;
+            if (size) fits.set(tabId, arrangedAt(tree, size));
             dragging = false;
             syncViews();
             deps.changed();
             return true;
         },
+
+        gameSize: () => gameSizeIn(set.tabs.map(tab => tab.tree), { width: bounds.width, height: bounds.height }),
 
         /** Returns false when that was the last tab — the window's cue to close. */
         closeTab(tabId: string): boolean {
@@ -597,7 +605,7 @@ export interface PaneHost {
     tree: () => PaneNode;
     /** Every tab's tree. What a pane may become depends on all of them, since the game can be moved out of any. */
     trees: () => PaneNode[];
-    /** One tab's tree, for saving it as a layout. Null when there is no such tab. */
+    /** One tab's tree, for saving it as a setup. Null when there is no such tab. */
     treeOf: (tabId: string) => PaneNode | null;
     focusedPaneId: () => string;
     layout: (rect: Rect) => void;
@@ -619,10 +627,12 @@ export interface PaneHost {
     rectOf: (paneId: string) => Rect | null;
     newTab: () => void;
     instantiate: (stored: StoredNode) => PaneNode;
-    /** What loading a layout into a tab would do, the game above all — null when there is no such tab. Nothing changes until `replaceTab`. */
+    /** What opening a setup into a tab would do, the game above all — null when there is no such tab. Nothing changes until `replaceTab`. */
     loading: (tabId: string, tree: PaneNode) => { set: TabSet; dropsGame: boolean } | null;
-    /** False when there is no such tab. */
-    replaceTab: (tabId: string, tree: PaneNode) => boolean;
+    /** False when there is no such tab. `size` is the tab size the tree was arranged at (`paneTree.arrangeForGame`), or null to fit it by its fractions. */
+    replaceTab: (tabId: string, tree: PaneNode, size: Size | null) => boolean;
+    /** The game's pixels in whichever tab holds it, at the tab size the window has now, or null when no tab holds it. */
+    gameSize: () => Size | null;
     /** What closing a tab would take with it — the window, the game, or only itself. The window asks this before it closes anything. */
     closing: (tabId: string) => TabClosing;
     /** False when that was the last tab, which is the window's cue to close. */

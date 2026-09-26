@@ -1,8 +1,8 @@
 import type { Edge, Rect, Size } from './paneTree.ts';
 
 /**
- * How a window grows to hold a pane it has just been given, on the display it
- * is on.
+ * How a window grows to hold a pane it has just been given, shrinks to give a
+ * closed one's room back, or is sized around a setup, on the display it is on.
  *
  * Pure, for the reason `CLAUDE.md` gives: `serverWindow` cannot be tested, so
  * the geometry it acts on is worked out here, and all it does is ask the
@@ -29,8 +29,8 @@ export function roomFor(frame: Rect, workArea: Rect): Size {
  * A window already hanging off the left or the top is left there rather than
  * pulled further: the player put it there, and moving it is for keeping the
  * new pane on screen, not for tidying the window. A negative `by` shrinks it
- * from the right and the bottom, where it is (`serverWindow.sizeWindow`, Task 7,
- * relies on this).
+ * from the right and the bottom, where it is (`serverWindow.sizeWindow` relies
+ * on this).
  */
 export function grownFrame(frame: Rect, workArea: Rect, by: Size): Rect {
     const width = frame.width + by.width;

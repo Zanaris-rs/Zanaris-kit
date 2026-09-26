@@ -102,7 +102,7 @@ test('a file name is suggested from the tab label, safe on every platform', () =
     assert.equal(layoutFileName('x'.repeat(200)).length, 80 + '.json'.length);
 });
 
-test("the Load Layout list is the folder's layout files, by name, in the order a person reads them", () => {
+test('the Setups menu lists the folder’s setup files, by name, in the order a person reads them', () => {
     assert.deepEqual(layoutEntries(['Raids 10.json', '.DS_Store', 'notes.txt', 'raids 2.JSON', 'Game.json', '.hidden.json']), [
         { name: 'Game', file: 'Game.json' },
         { name: 'raids 2', file: 'raids 2.JSON' },
