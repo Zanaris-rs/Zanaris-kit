@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appearanceView, deleteQuestion } from './appearance.ts';
+import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing } from './appearance.ts';
 import { DEFAULT_SERVERS } from './catalog.ts';
 import { THEMES, themeById, type Theme } from '../shared/themes.ts';
 import type { ServerDef } from '../shared/catalog.ts';
@@ -79,4 +79,56 @@ test('the delete question says who wears the theme and what they will wear inste
     assert.ok(one?.detail.startsWith(`${zanaris.name} wears it`));
     assert.match(deleteQuestion({ appearance: { theme: 'stone', servers: {}, custom: [night] }, catalog, id: 'custom-0000000a' })!.detail, /^Nothing wears it\./);
     assert.equal(deleteQuestion({ appearance: { theme: 'stone', servers: {}, custom: [] }, catalog, id: 'custom-0000000a' }), null);
+});
+
+const draftLook = { colors: themeById('zanaris').colors, background: null };
+
+test('a report of the theme being edited is read with its look, name and whether it changed', () => {
+    assert.deepEqual(readEditing({ look: draftLook, name: 'Mine', changed: true }), { look: draftLook, name: 'Mine', changed: true });
+});
+
+test('a report with a colour or a picture that cannot be read is ignored', () => {
+    assert.equal(readEditing({ look: { colors: { ...draftLook.colors, ink: 'red' }, background: null }, name: 'Mine', changed: true }), null);
+    assert.equal(readEditing({ look: { colors: draftLook.colors, background: { picture: '../../etc/passwd', fit: 'cover', show: 0.3 } }, name: 'Mine', changed: true }), null);
+    assert.equal(readEditing({ look: draftLook, name: 'Mine', changed: 'yes' }), null);
+    assert.equal(readEditing({ look: draftLook, changed: true }), null);
+    assert.equal(readEditing(null), null);
+});
+
+test('a picture that can be read is kept', () => {
+    const background = { picture: `${'a'.repeat(64)}.png`, fit: 'tile' as const, show: 0.3 };
+    assert.deepEqual(readEditing({ look: { colors: draftLook.colors, background }, name: 'Mine', changed: false })?.look.background, background);
+});
+
+test('a long name is cut, and an empty one reads as "this theme"', () => {
+    assert.equal(readEditing({ look: draftLook, name: 'x'.repeat(100), changed: true })?.name.length, 40);
+    assert.equal(readEditing({ look: draftLook, name: '   ', changed: true })?.name, 'this theme');
+});
+
+test('while a theme is being edited, every window wears it, a server with its own theme included', () => {
+    const appearance = { theme: 'stone', servers: { lostcity: 'wilderness' }, custom: [] };
+    const editing = { look: draftLook, name: 'Mine', changed: true };
+    assert.deepEqual(lookFor(appearance, null, editing), draftLook);
+    assert.deepEqual(lookFor(appearance, 'lostcity', editing), draftLook);
+});
+
+test("with nothing being edited, a window wears its own theme or the app's", () => {
+    const appearance = { theme: 'zanaris', servers: { lostcity: 'wilderness' }, custom: [] };
+    assert.deepEqual(lookFor(appearance, 'lostcity', null), { colors: themeById('wilderness').colors, background: null });
+    assert.deepEqual(lookFor(appearance, 'other', null), { colors: themeById('zanaris').colors, background: null });
+    assert.deepEqual(lookFor(appearance, null, null), { colors: themeById('zanaris').colors, background: null });
+});
+
+test('closing Settings asks only about a draft with changes, and never while quitting', () => {
+    const editing = { look: draftLook, name: 'Mine', changed: true };
+    assert.deepEqual(closeQuestion(editing, false), { message: 'Discard your changes to Mine?', detail: 'Every window goes back to the theme it wore before.' });
+    assert.equal(closeQuestion({ ...editing, changed: false }, false), null);
+    assert.equal(closeQuestion(editing, true), null);
+    assert.equal(closeQuestion(null, false), null);
+});
+
+test('while a theme is being edited, Settings wears it, and the app theme is still named', () => {
+    const view = appearanceView({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, catalog, editing: { look: { colors: themeById('wilderness').colors, background: null }, name: 'Mine', changed: true } });
+    assert.equal(view.theme, 'zanaris');
+    assert.deepEqual(view.look, { colors: themeById('wilderness').colors, background: null });
 });
