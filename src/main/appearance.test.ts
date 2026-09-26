@@ -8,18 +8,18 @@ import type { ServerDef } from '../shared/catalog.ts';
 const catalog = DEFAULT_SERVERS.map(s => ({ ...s }) as ServerDef);
 
 test('the view names the app theme and carries its look, for Settings to wear', () => {
-    const view = appearanceView({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, catalog });
+    const view = appearanceView({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, catalog, presets: [] });
     assert.equal(view.theme, 'zanaris');
     assert.deepEqual(view.look, { colors: themeById('zanaris').colors, background: null });
 });
 
 test('an app theme the kit does not know is named as the stone it falls back to', () => {
-    const view = appearanceView({ appearance: { theme: 'parchment', servers: {}, custom: [] }, catalog });
+    const view = appearanceView({ appearance: { theme: 'parchment', servers: {}, custom: [] }, catalog, presets: [] });
     assert.equal(view.theme, 'stone');
 });
 
 test('every theme is offered, in order', () => {
-    const view = appearanceView({ appearance: { theme: 'stone', servers: {}, custom: [] }, catalog });
+    const view = appearanceView({ appearance: { theme: 'stone', servers: {}, custom: [] }, catalog, presets: [] });
     assert.deepEqual(
         view.themes.map(t => t.id),
         THEMES.map(t => t.id)
@@ -28,7 +28,7 @@ test('every theme is offered, in order', () => {
 });
 
 test('every catalog server is listed in catalog order, with its own theme or null to follow the app', () => {
-    const view = appearanceView({ appearance: { theme: 'stone', servers: { zanaris: 'zanaris' }, custom: [] }, catalog });
+    const view = appearanceView({ appearance: { theme: 'stone', servers: { zanaris: 'zanaris' }, custom: [] }, catalog, presets: [] });
     assert.deepEqual(
         view.servers.map(s => s.id),
         catalog.map(s => s.id)
@@ -39,7 +39,7 @@ test('every catalog server is listed in catalog order, with its own theme or nul
 });
 
 test('an override for a server the catalog no longer holds is not listed', () => {
-    const view = appearanceView({ appearance: { theme: 'stone', servers: { gone: 'wilderness' }, custom: [] }, catalog });
+    const view = appearanceView({ appearance: { theme: 'stone', servers: { gone: 'wilderness' }, custom: [] }, catalog, presets: [] });
     assert.equal(
         view.servers.some(s => s.id === 'gone'),
         false
@@ -54,7 +54,7 @@ const night: Theme = {
 };
 
 test('custom themes come after the built-ins, marked as custom, with their pictures', () => {
-    const view = appearanceView({ appearance: { theme: 'custom-0000000a', servers: { lostcity: 'custom-0000000a' }, custom: [night] }, catalog });
+    const view = appearanceView({ appearance: { theme: 'custom-0000000a', servers: { lostcity: 'custom-0000000a' }, custom: [night] }, catalog, presets: [] });
     assert.deepEqual(
         view.themes.map(t => [t.id, t.custom]),
         [...THEMES.map(t => [t.id, false]), ['custom-0000000a', true]]
@@ -63,6 +63,13 @@ test('custom themes come after the built-ins, marked as custom, with their pictu
     assert.equal(view.theme, 'custom-0000000a');
     assert.deepEqual(view.look, { colors: night.colors, background: night.background });
     assert.equal(view.servers.find(s => s.id === 'lostcity')?.theme, 'custom-0000000a');
+});
+
+test("the kit's own pictures travel as they are given, for the editor's gallery", () => {
+    const presets = [{ id: 'lava', name: 'Lava', fit: 'tile' as const, picture: `${'a'.repeat(64)}.png` }];
+    const view = appearanceView({ appearance: { theme: 'stone', servers: {}, custom: [] }, catalog, presets });
+    assert.deepEqual(view.presets, presets);
+    assert.notEqual(view.presets[0], presets[0]);
 });
 
 test('the delete question says who wears the theme and what they will wear instead', () => {
@@ -128,7 +135,7 @@ test('closing Settings asks only about a draft with changes, and never while qui
 });
 
 test('while a theme is being edited, Settings wears it, and the app theme is still named', () => {
-    const view = appearanceView({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, catalog, editing: { look: { colors: themeById('wilderness').colors, background: null }, name: 'Mine', changed: true } });
+    const view = appearanceView({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, catalog, presets: [], editing: { look: { colors: themeById('wilderness').colors, background: null }, name: 'Mine', changed: true } });
     assert.equal(view.theme, 'zanaris');
     assert.deepEqual(view.look, { colors: themeById('wilderness').colors, background: null });
 });

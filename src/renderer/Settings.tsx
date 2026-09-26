@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { SettingsState } from '../shared/ipc';
+import { TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ThemeDraft } from '../shared/themes';
 import type { Editing } from '../main/appearance.ts';
 import Appearance from './settings/Appearance';
 import Servers, { QuietButton } from './settings/Servers';
 import Tab from './tab';
+import TopBar from './topBar';
 import { applyTheme } from './theme';
 
 type Section = 'servers' | 'appearance';
@@ -13,6 +15,9 @@ const SECTIONS: readonly { id: Section; label: string }[] = [
     { id: 'servers', label: 'Servers' },
     { id: 'appearance', label: 'Appearance' }
 ];
+
+/** A game window's tab bar's height, so the window buttons sit on both the same. */
+const BAR: CSSProperties = { height: TAB_BAR_HEIGHT, flexShrink: 0 };
 
 /** The theme being edited and what its editor opened on. Held here rather than in the editor so a trip to Servers and back keeps it. */
 export interface ThemeEditing {
@@ -59,13 +64,14 @@ function useReportEditing(editing: ThemeEditing | null): void {
 
 /**
  * The Settings window's page. One window for the whole app, so everything on
- * it is app-wide. Two sections, Servers and Appearance, chosen from a row of
- * tabs drawn as chat's and Your world's are; it opens on Servers.
+ * it is app-wide. Two sections, Servers and Appearance, chosen from a strip of
+ * tabs across the top, drawn as chat's and Your world's are; it opens on
+ * Servers.
  *
- * Framed as a tool pane's body is, a `tile`: the kit's panels are raised
- * stone with their lists sunk into it, and a page on ink alone reads as the
- * inverse of every other panel in the app. The app theme's picture is the
- * box around it, showing through that stone.
+ * Below the strip, framed as a tool pane's body is, a `tile`: the kit's
+ * panels are raised stone with their lists sunk into it, and a page on ink
+ * alone reads as the inverse of every other panel in the app. The app theme's
+ * picture is the box around it, showing through that stone.
  *
  * It wears `state.appearance.look`, which main makes the draft's look while
  * the theme editor is open. The draft is held here, above the sections, so
@@ -101,18 +107,23 @@ export default function Settings(): ReactNode {
 
     return (
         // The picture is the outer box's own image, under the frame's see-through stone.
-        <div className="picture h-full bg-ink">
-            <div className="tile flex h-full flex-col text-cream">
-                {/*
-                 * Buttons with aria-current, as chat's and Your world's rows are,
-                 * since there is no tabpanel here that a tablist could point at.
-                 */}
-                <div role="group" aria-label="Settings" className="flex flex-wrap items-center gap-[5px] px-2.5 pt-2.5 pb-2">
+        <div className="picture flex h-full flex-col bg-ink text-cream">
+            {/*
+             * The sections are a strip across the top, as a game window's tabs
+             * are, because on macOS both are their window's title bar. Buttons with
+             * aria-current, as chat's and Your world's rows are, since there is
+             * no tabpanel here that a tablist could point at.
+             */}
+            <TopBar frame={state.frame} style={BAR}>
+                <div role="group" aria-label="Settings" className="flex min-w-0 flex-1 items-center gap-[5px]">
                     {SECTIONS.map(s => (
                         <Tab key={s.id} role="button" label={s.label} open={section === s.id} onSelect={() => setSection(s.id)} />
                     ))}
                 </div>
+            </TopBar>
 
+            {/* The 8px above the first section is the gap the row of sections used to leave under itself, when it sat inside this stone. */}
+            <div className="tile flex min-h-0 flex-1 flex-col pt-2">
                 {section === 'servers' && (
                     <>
                         <Servers view={state.servers} />

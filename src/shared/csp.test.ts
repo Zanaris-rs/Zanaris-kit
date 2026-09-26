@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 /*
  * The shell's CSP refuses an image it does not allow with nothing on screen to
- * say so. The stone's grain was two `data:` SVGs, and every surface drew as its
- * flat base for as long as they were: no test failed and nothing looked broken.
+ * say so. The stone's grain, since removed, was two `data:` SVGs, and every
+ * surface drew as its flat base for as long as they were: no test failed and
+ * nothing looked broken.
  * These hold the images the renderer names to what the page will draw.
  */
 
@@ -42,7 +43,7 @@ test("the renderer names no data: image while the page's CSP refuses them", { sk
 });
 
 test('the build inlines no asset as data:, since the CSP would refuse it', { skip: !refusesData }, () => {
-    // Vite's default inlines anything under 4 KB, which is every sprite and both layers of the grain.
+    // Vite's default inlines anything under 4 KB, which is every sprite.
     const config = readFileSync(new URL('../../electron.vite.config.ts', import.meta.url), 'utf8');
     assert.match(config, /renderer:[^\n]*assetsInlineLimit: 0\b/);
 });

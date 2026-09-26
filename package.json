@@ -16,6 +16,7 @@
     "fresh": "node scripts/fresh-profile.mjs",
     "stage:engine": "node scripts/stage-engine.mjs",
     "pin:engine": "node scripts/pin-engine.mjs",
+    "make:pictures": "electron scripts/make-pictures.mjs",
     "dist": "node scripts/dist.mjs"
   },
   "devDependencies": {

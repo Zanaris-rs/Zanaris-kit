@@ -2,8 +2,8 @@
 
 /*
  * The 2004 client's own interface, not the website that links to it: warm olive
- * stone with visible grain, a hard two-colour bevel on every surface, gold pixel
- * headings, and a black shadow under every glyph.
+ * stone, a hard two-colour bevel on every surface, gold pixel headings, and a
+ * black shadow under every glyph.
  *
  * The bevel is the whole system, and it is explicit rather than derived. CSS
  * `outset`/`inset` compute both edges from one border-color, which browsers do
@@ -78,31 +78,12 @@
 }
 
 /*
- * The grain, defined once and worn by every stone surface. Two turbulence
- * layers: a fine one for the tooth you see at arm's length, a coarse one at a
- * ~190px period so large panels do not visibly tile.
- *
- * They are grey noise composited with `overlay`, which lightens wherever the
- * noise sits above mid-grey and darkens below it — and with fractal noise the
- * lightening wins, so the result reads brighter than its base. That is why the
- * bases below are darker than the values sampled off the client: #443d31 is the
- * panel mid (#504d3b–#565344) minus what the grain will add back, and grained
- * it averages about #4e4638. Change a base to the sampled value and the
- * surface comes out washed out.
- *
- * The layers are files, not `data:` URLs. The page's CSP refuses `data:`
- * images with nothing on screen to say so: they were inline once, and every
- * surface drew as its flat base until 2026-09-25. `csp.test.ts` holds it.
- *
- * Every surface wears it as `var(--grain, var(--stone-grain))`. A theme whose
- * picture shows through sets `--grain` to `none`: the noise has an alpha of
- * its own and blends only with the surface's colour, so over a see-through
- * surface it would paint its grey on the picture. The picture is the texture
- * there instead (`themeVars`).
+ * The stone is flat. Its bases sit a little below the panel mid sampled off
+ * the client (#504d3b–#565344), because they were set for a grain of noise to
+ * lighten. The grain drew for one day, 2026-09-25, and went on the owner's
+ * call: the flat stone is the look the kit had shown every day before it, and
+ * these are its values.
  */
-:root {
-    --stone-grain: url('./grain/fine.svg'), url('./grain/blotch.svg');
-}
 
 html,
 body,
@@ -167,11 +148,9 @@ input[type='color'] {
 }
 
 /*
- * Grain is texture, never contrast — it eats the bottom of the value range and
- * a thin glyph with it. The hard black shadow is what holds text off the noise,
- * which is why it is applied to the surfaces themselves rather than opted into
- * per label: any text that lands on stone gets it. Remove it and cream on
- * #443d31 goes soft at 13px.
+ * The hard black shadow the client puts under every glyph. It is applied to
+ * the surfaces themselves rather than opted into per label, so any text that
+ * lands on stone gets it. Remove it and cream on #443d31 goes soft at 13px.
  */
 .tile,
 .sunk,
@@ -183,8 +162,6 @@ input[type='color'] {
 /* Raised interface stone: panels, tab strips, the frame itself. */
 .tile {
     background-color: var(--color-stone);
-    background-image: var(--grain, var(--stone-grain));
-    background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-dark);
     border-top-color: var(--color-edge-lit);
     border-left-color: var(--color-edge-lit);
@@ -193,8 +170,6 @@ input[type='color'] {
 /* The same bevel inverted: a recess that holds a list, a field or a value. */
 .sunk {
     background-color: var(--color-well);
-    background-image: var(--grain, var(--stone-grain));
-    background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-lit);
     border-top-color: var(--color-edge-dark);
     border-left-color: var(--color-edge-dark);
@@ -212,8 +187,6 @@ input[type='color'] {
     align-items: center;
     justify-content: center;
     background-color: var(--color-tab);
-    background-image: var(--grain, var(--stone-grain));
-    background-blend-mode: overlay, overlay;
     border: 1px solid var(--color-edge-dark);
     box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.35);
 }
@@ -241,8 +214,6 @@ input[type='color'] {
     justify-content: center;
     padding: 3px 12px;
     background-color: var(--color-stone);
-    background-image: var(--grain, var(--stone-grain));
-    background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-dark);
     border-top-color: var(--color-edge-lit);
     border-left-color: var(--color-edge-lit);
@@ -296,6 +267,20 @@ input[type='color'] {
 }
 
 /*
+ * A window's top row where it stands in for the OS's title bar, on macOS
+ * (`windowFrame.ts`): pressing it moves the window, as a title bar does,
+ * except on a tab or a button, which keep their presses. The system takes a
+ * press on a drag region before the page sees it, so anything pressable left
+ * out of the exception would stop working here.
+ */
+.title-bar {
+    -webkit-app-region: drag;
+}
+.title-bar :is(button, .tab) {
+    -webkit-app-region: no-drag;
+}
+
+/*
  * The chat dock, and the rail's exception mirrored onto the other axis. The
  * dock's top edge meets the game rather than the window, so a highlight along
  * it would draw a bright line straight across the chrome; the groove goes
@@ -305,8 +290,6 @@ input[type='color'] {
  */
 .dock {
     background-color: var(--color-stone);
-    background-image: var(--grain, var(--stone-grain));
-    background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-dark);
     border-left-color: var(--color-edge-lit);
     border-right: none;
@@ -380,17 +363,18 @@ input[type='color'] {
 }
 
 /* The scrollbar is stone too, rather than a modern floating sliver: a channel
-   cut through the panel with a tile running in it. */
+   cut through the panel with a tile running in it. Where a box scrolls both
+   ways the two channels meet in a corner, cut the same, which Chromium would
+   otherwise paint white. */
 ::-webkit-scrollbar {
     width: 12px;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
     background: var(--color-edge-dark);
 }
 ::-webkit-scrollbar-thumb {
     background-color: var(--color-stone);
-    background-image: var(--grain, var(--stone-grain));
-    background-blend-mode: overlay, overlay;
     border: 2px solid var(--color-edge-dark);
     border-top-color: var(--color-edge-lit);
     border-left-color: var(--color-edge-lit);

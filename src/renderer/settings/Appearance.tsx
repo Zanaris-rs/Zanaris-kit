@@ -140,6 +140,7 @@ export default function Appearance({
             <ThemeEditor
                 initial={editing.initial}
                 draft={editing.draft}
+                presets={view.presets}
                 onChange={update => setEditing(e => (e ? { ...e, draft: update(e.draft) } : e))}
                 onClose={() => setEditing(null)}
             />

@@ -93,6 +93,7 @@ export const IPC = {
     appearanceSaveCustom: 'zanaris:appearance-save-custom',
     appearanceDeleteCustom: 'zanaris:appearance-delete-custom',
     appearanceChoosePicture: 'zanaris:appearance-choose-picture',
+    appearancePresetPicture: 'zanaris:appearance-preset-picture',
     appearanceImportTheme: 'zanaris:appearance-import-theme',
     appearanceExportTheme: 'zanaris:appearance-export-theme',
     appearanceEditing: 'zanaris:appearance-editing'
@@ -119,6 +120,21 @@ export interface Rect {
     height: number;
 }
 
+/**
+ * How the OS frames a window's top row: `windowFrame.ts` decides, and the
+ * shell and Settings draw from it.
+ */
+export interface WindowFrame {
+    /**
+     * The row stands in for the OS's title bar, which is not drawn: it moves
+     * the window, and the theme runs to the window's top edge. On macOS only;
+     * Windows and Linux keep the system's bar, which holds their menu bar.
+     */
+    ownTitleBar: boolean;
+    /** How far in from the window's left edge the row's first control must start, to clear the window buttons macOS draws over it. Zero where there are none to clear: off macOS, and in full screen. */
+    buttonsInset: number;
+}
+
 export interface ShellState {
     windowId: number;
     server: ServerDef;
@@ -137,6 +153,8 @@ export interface ShellState {
         /** The region the active tab's panes are laid out in: everything below the bar. */
         tree: Rect;
     };
+    /** How the OS frames the tab bar, which is the window's title bar on macOS. */
+    frame: WindowFrame;
     /** This window's workspace tabs. Each is a whole arrangement of the same server's things, not a different server. */
     tabs: TabView[];
     /**
@@ -184,6 +202,8 @@ export interface SettingsState {
     servers: ServersView;
     /** The Appearance section: the app theme, every theme's palette, and each server's own. */
     appearance: AppearanceView;
+    /** How the OS frames the row of sections, which is the window's title bar on macOS. */
+    frame: WindowFrame;
 }
 
 export interface ZanarisApi {
@@ -433,6 +453,8 @@ export interface ZanarisApi {
         deleteCustom(id: string): Promise<boolean>;
         /** A picture from a file, picked in a dialog of main's and stored: its name — a hash, never a path — or why not, or null when cancelled. */
         choosePicture(): Promise<{ picture: string } | { error: string } | null>;
+        /** One of the kit's own pictures, by its id, stored as a chosen file is: its name, or why not. Null from anywhere but Settings. */
+        presetPicture(id: string): Promise<{ picture: string } | { error: string } | null>;
         /** A theme file, picked in a dialog of main's, added as a new theme: its name, or why not, or null when cancelled. */
         importTheme(): Promise<{ name: string } | { error: string } | null>;
         /** Writes the editor's theme, saved or not, to a file the player picks. Null when written or cancelled; otherwise why not. */

@@ -3,6 +3,7 @@ import { IPC, type Rect, type SettingsState } from '../shared/ipc';
 import { loadShell, preloadPath } from './renderer';
 import { paintsFrames } from './serverWindow';
 import { settingsBounds, type SettingsHandle } from './settingsWindow';
+import { frameOptions } from './windowFrame';
 
 /** What Settings asks for: room for four servers and the add form without scrolling. */
 const SIZE = { width: 520, height: 640 };
@@ -38,6 +39,8 @@ export interface SettingsWindow extends SettingsHandle {
 export function createSettingsWindow(opts: {
     anchor: Rect | null;
     onClosed: () => void;
+    /** Full screen came or went, which on macOS takes the window buttons off the row of sections or puts them back (`windowFrame`). */
+    onFrameChanged: () => void;
     background: string;
     closeQuestion: () => { message: string; detail: string } | null;
     onDiscard: () => void;
@@ -49,6 +52,9 @@ export function createSettingsWindow(opts: {
         minWidth: 380,
         minHeight: 420,
         title: 'Settings',
+        // No title bar on macOS: the row of sections stands in for it, as a
+        // game window's tab bar does (`windowFrame.ts`).
+        ...frameOptions(process.platform),
         // The ground of what Settings wears — the app theme, or the theme
         // being edited: what shows before the page draws, and at an edge a
         // resize has not yet repainted. `setBackground` keeps it to the theme
@@ -119,6 +125,8 @@ export function createSettingsWindow(opts: {
     // draft too.
     win.webContents.on('did-finish-load', opts.onPageReset);
     win.webContents.on('render-process-gone', () => opts.onPageReset());
+    win.on('enter-full-screen', opts.onFrameChanged);
+    win.on('leave-full-screen', opts.onFrameChanged);
     // Read now: once the window closes its contents are destroyed and the id with them.
     const contentsId = win.webContents.id;
     const loaded = new Promise<void>(resolve => win.webContents.once('did-finish-load', () => resolve()));

@@ -11,6 +11,7 @@ import Grip from './grip';
 import Launcher from './Launcher';
 import PaneHeader, { type Grab } from './paneHeader';
 import Tab from './tab';
+import TopBar from './topBar';
 import { gameSprite } from './sprites';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
@@ -32,8 +33,6 @@ function revisionOf(state: ShellState): string {
  * decided by stylesheet order, which is not something to leave to chance.
  */
 
-/** The bar spans the window, so only its underside is bevelled. */
-const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
 /** Sized inline for the reason `tab.tsx` sizes its own box inline: `.tab` carries a fixed 36x34 square and is unlayered CSS, which beats a utility of equal specificity whatever the order. */
 const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 /** The tabs' height, with `.btn`'s padding traded for room on the caret's side. Inline for the same reason as the box above. */
@@ -366,7 +365,7 @@ export default function Shell(): ReactNode {
 
     return (
         <div className="picture relative h-full overflow-hidden bg-ink text-cream">
-            <div style={at(rects.tabBar)} className="flex flex-col">
+            <TopBar frame={state.frame} style={at(rects.tabBar)}>
                 {/*
                  * Tabs and the control that makes one, then Sharing while a
                  * live link has no pane to mark, and Settings, Setups and Add
@@ -377,141 +376,137 @@ export default function Shell(): ReactNode {
                  * about the game is easiest to believe beside the game. It is
                  * in the game pane's own header now.
                  */}
-                <header style={STRIP_BAR} className="tile flex flex-1 items-center gap-[5px] px-1.5">
+                {/*
+                 * The tablist is its own box so Setups and Add pane, menu
+                 * buttons rather than tabs, sit outside it. `min-w-0` is
+                 * what lets the tabs give way to them as they multiply,
+                 * and `overflow-hidden` keeps what still does not fit
+                 * inside the box: on a window narrower than the bar's
+                 * buttons, which closing a pane beside the game can now
+                 * make, the tabs and the new-tab plus are cut off at its
+                 * edge instead of painting over the gear.
+                 */}
+                <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px] overflow-hidden">
                     {/*
-                     * The tablist is its own box so Setups and Add pane, menu
-                     * buttons rather than tabs, sit outside it. `min-w-0` is
-                     * what lets the tabs give way to them as they multiply,
-                     * and `overflow-hidden` keeps what still does not fit
-                     * inside the box: on a window narrower than the bar's
-                     * buttons, which closing a pane beside the game can now
-                     * make, the tabs and the new-tab plus are cut off at its
-                     * edge instead of painting over the gear.
+                     * A tab and its close are one object: the close sits inside
+                     * the tab it shuts, so it reads as part of that workspace
+                     * rather than as another piece of the bar's furniture. Main
+                     * asks first when the tab holds the game. A right-click
+                     * raises the tab's own menu, which offers Close Tab and
+                     * which main builds, as it does every pane menu. Setups
+                     * are the bar's Setups menu, which opens into the tab in
+                     * front.
                      */}
-                    <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px] overflow-hidden">
-                        {/*
-                         * A tab and its close are one object: the close sits inside
-                         * the tab it shuts, so it reads as part of that workspace
-                         * rather than as another piece of the bar's furniture. Main
-                         * asks first when the tab holds the game. A right-click
-                         * raises the tab's own menu, which offers Close Tab and
-                         * which main builds, as it does every pane menu. Setups
-                         * are the bar's Setups menu, which opens into the tab in
-                         * front.
-                         */}
-                        {state.tabs.map(tab => (
-                            <Tab
-                                key={tab.id}
-                                role="tab"
-                                label={tab.label}
-                                title={tabTitle(tab)}
-                                open={tab.active}
-                                after={<TabMarks tab={tab} />}
-                                onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
-                                onClose={() => void window.zanaris.panes.closeTab(tab.id)}
-                                onContextMenu={event => {
-                                    event.preventDefault();
-                                    void window.zanaris.panes.tabMenu(tab.id, event.clientX, event.clientY);
-                                }}
-                            />
-                        ))}
-                        <button
-                            type="button"
-                            title="New tab"
-                            aria-label="New tab"
-                            onClick={() => void window.zanaris.panes.newTab()}
-                            style={NEW_TAB_BOX}
-                            className="tab shrink-0"
-                        >
-                            <Plus />
-                        </button>
-                    </div>
-                    {/*
-                     * A live link with no pane showing Your world, so no tab
-                     * can carry the mark. It opens the pane, whose Friends
-                     * section is where the link is copied or stopped.
-                     */}
-                    {state.sharingWithoutPane && (
-                        <button
-                            type="button"
-                            title="Your world is shared with a link, and no pane shows it. Open Your world"
-                            onClick={() => void window.zanaris.panes.showYourWorld()}
-                            style={SHARING_BOX}
-                            className="btn shrink-0"
-                        >
-                            Sharing
-                        </button>
-                    )}
-                    {/*
-                     * Settings: a window of its own rather than a pane, since
-                     * everything in it is the app's rather than this window's. A
-                     * gear and no word, beside a button that already has one; its
-                     * name is on the tooltip and the label.
-                     */}
+                    {state.tabs.map(tab => (
+                        <Tab
+                            key={tab.id}
+                            role="tab"
+                            label={tab.label}
+                            title={tabTitle(tab)}
+                            open={tab.active}
+                            after={<TabMarks tab={tab} />}
+                            onSelect={() => void window.zanaris.panes.selectTab(tab.id)}
+                            onClose={() => void window.zanaris.panes.closeTab(tab.id)}
+                            onContextMenu={event => {
+                                event.preventDefault();
+                                void window.zanaris.panes.tabMenu(tab.id, event.clientX, event.clientY);
+                            }}
+                        />
+                    ))}
                     <button
                         type="button"
-                        title="Settings"
-                        aria-label="Settings"
-                        onClick={() => void window.zanaris.settings.open()}
-                        style={GEAR_BOX}
-                        className="btn shrink-0 justify-center"
+                        title="New tab"
+                        aria-label="New tab"
+                        onClick={() => void window.zanaris.panes.newTab()}
+                        style={NEW_TAB_BOX}
+                        className="tab shrink-0"
                     >
-                        <Gear />
+                        <Plus />
                     </button>
-                    {/*
-                     * Setups: a set of panes in a shape, one click away. Main's
-                     * menu, as Add pane's is, since it drops down over the panes;
-                     * a setup chosen from it replaces the panes of the tab in
-                     * front and, when it holds the game and has a size, sizes
-                     * the window around the game.
-                     */}
+                </div>
+                {/*
+                 * A live link with no pane showing Your world, so no tab
+                 * can carry the mark. It opens the pane, whose Friends
+                 * section is where the link is copied or stopped.
+                 */}
+                {state.sharingWithoutPane && (
                     <button
                         type="button"
-                        title="Open this tab in a setup, or save it as one"
-                        aria-haspopup="menu"
-                        onClick={event => {
-                            const box = event.currentTarget.getBoundingClientRect();
-                            void window.zanaris.panes.setupsMenu(box.left, box.bottom);
-                        }}
-                        style={ADD_PANE_BOX}
-                        className="btn shrink-0 gap-[3px]"
+                        title="Your world is shared with a link, and no pane shows it. Open Your world"
+                        onClick={() => void window.zanaris.panes.showYourWorld()}
+                        style={SHARING_BOX}
+                        className="btn shrink-0"
                     >
-                        Setups
-                        <Caret />
+                        Sharing
                     </button>
-                    {/*
-                     * How a pane gets added, at the far end of the bar from the
-                     * tabs. It replaced the tool rail down the window's right
-                     * edge, which could reach the tools and none of the links,
-                     * and put what it opened in whichever pane had focus — so
-                     * nothing on screen said a second pane was possible, and a
-                     * click could replace the page you were reading.
-                     *
-                     * Words and a caret rather than a second plus: a plus in
-                     * this bar already means "new tab", and two of them side by
-                     * side is a guess about which is which. A raised `.btn`
-                     * rather than a tab's face, so it does not read as one more
-                     * tab. The menu is main's, like every pane menu, and opens
-                     * under the button.
-                     */}
-                    <button
-                        type="button"
-                        title="Add a pane to this tab"
-                        aria-haspopup="menu"
-                        onClick={event => {
-                            const box = event.currentTarget.getBoundingClientRect();
-                            void window.zanaris.panes.addPaneMenu(box.left, box.bottom);
-                        }}
-                        style={ADD_PANE_BOX}
-                        className="btn shrink-0 gap-[3px]"
-                    >
-                        Add pane
-                        <Caret />
-                    </button>
-                </header>
-                {/* The client parts its bars with a dark rule lit along the top, never a flat hairline. */}
-                <div className="h-[2px] shrink-0 bg-edge-dark shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]" />
-            </div>
+                )}
+                {/*
+                 * Settings: a window of its own rather than a pane, since
+                 * everything in it is the app's rather than this window's. A
+                 * gear and no word, beside a button that already has one; its
+                 * name is on the tooltip and the label.
+                 */}
+                <button
+                    type="button"
+                    title="Settings"
+                    aria-label="Settings"
+                    onClick={() => void window.zanaris.settings.open()}
+                    style={GEAR_BOX}
+                    className="btn shrink-0 justify-center"
+                >
+                    <Gear />
+                </button>
+                {/*
+                 * Setups: a set of panes in a shape, one click away. Main's
+                 * menu, as Add pane's is, since it drops down over the panes;
+                 * a setup chosen from it replaces the panes of the tab in
+                 * front and, when it holds the game and has a size, sizes
+                 * the window around the game.
+                 */}
+                <button
+                    type="button"
+                    title="Open this tab in a setup, or save it as one"
+                    aria-haspopup="menu"
+                    onClick={event => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        void window.zanaris.panes.setupsMenu(box.left, box.bottom);
+                    }}
+                    style={ADD_PANE_BOX}
+                    className="btn shrink-0 gap-[3px]"
+                >
+                    Setups
+                    <Caret />
+                </button>
+                {/*
+                 * How a pane gets added, at the far end of the bar from the
+                 * tabs. It replaced the tool rail down the window's right
+                 * edge, which could reach the tools and none of the links,
+                 * and put what it opened in whichever pane had focus — so
+                 * nothing on screen said a second pane was possible, and a
+                 * click could replace the page you were reading.
+                 *
+                 * Words and a caret rather than a second plus: a plus in
+                 * this bar already means "new tab", and two of them side by
+                 * side is a guess about which is which. A raised `.btn`
+                 * rather than a tab's face, so it does not read as one more
+                 * tab. The menu is main's, like every pane menu, and opens
+                 * under the button.
+                 */}
+                <button
+                    type="button"
+                    title="Add a pane to this tab"
+                    aria-haspopup="menu"
+                    onClick={event => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        void window.zanaris.panes.addPaneMenu(box.left, box.bottom);
+                    }}
+                    style={ADD_PANE_BOX}
+                    className="btn shrink-0 gap-[3px]"
+                >
+                    Add pane
+                    <Caret />
+                </button>
+            </TopBar>
 
             {state.panes.map(pane => (
                 <Fragment key={pane.paneId}>

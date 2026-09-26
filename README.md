@@ -370,19 +370,19 @@ The client is dressed as the game it launches. The 2004 interface is built from
 warm olive stone: panels around `#443d31`, tabs cut into it at `#342e24`, lists
 recessed to `#37311f`, gold headings, cream text and yellow-green values. Those
 numbers were sampled out of a screenshot of the running client, quantising each
-region so the stone separated from the text, rather than guessed.
+region so the stone separated from the text, rather than guessed. The panels
+sit a little below the client's own panel mid, `#504d3b`–`#565344`: they were
+set for a grain of noise to lighten, and with the grain gone the stone is flat
+and a shade darker than the client's.
 
-Three things carry the period feel, and all three are load-bearing rather than
+Two things carry the period feel, and both are load-bearing rather than
 decorative:
 
 - **Bevels are explicit.** Light above and left, shadow below and right, on
   every raised surface, inverted for every recess. CSS `outset` derives its
   edges from a single colour and always reads flat by comparison.
-- **Stone has grain.** Two layers of noise, a fine one and a slower blotch,
-  blended over the base colour. Overlay blending of this noise lightens more
-  than it darkens, so the base sits below the sampled mid to compensate.
 - **Every glyph has a hard black shadow.** The client does this, and without it
-  text fights the grain and loses.
+  cream text on the stone goes soft at the sizes the kit sets it.
 
 Tabs are not a row of buttons on a dark strip: they are cut *into* the stone,
 resting ones sunk with an inner shadow and the open one raised and lit. That is
@@ -411,6 +411,13 @@ restyles every window of its server. A change applies at once and reloads
 nothing. The game and the reference pages are the servers' own, and are never
 themed.
 
+On macOS a theme runs to the window's top edge. The system's title bar can't
+wear one, since its colour is the system's light or dark whatever the frame
+is, so the kit's windows don't draw it: the tab bar stands in for it, and in
+Settings the row of sections does. It moves the window as a title bar does,
+and the window buttons sit at its left end, level with the tabs. Windows and
+Linux keep the system's title bar, because their menu bar hangs in it.
+
 Each place is sampled rather than invented, like the stone.
 `scripts/sample-floors.mjs` reads the 274 map and ranks the floors laid in a
 place by how much more of it they cover than of the whole map — by plain count
@@ -418,8 +425,8 @@ almost everywhere is grass — and the theme takes a ground colour and a trim
 colour from the top of that list. One rule, in `src/shared/themes.ts`, turns
 the pair into every colour the frame uses: each takes the place's hue and
 keeps the stone's own lightness — or goes darker where the place is darker
-than the stone, as the Wilderness's rock is, and never lighter — so the grain
-and the text's contrast behave as they do on the stone. Zanaris in 274 is brown floors and bright
+than the stone, as the Wilderness's rock is, and never lighter — so the
+text's contrast behaves as it does on the stone. Zanaris in 274 is brown floors and bright
 grass in black void, not the blue of later years. A test holds every theme to
 the stone's own contrast, pair by pair.
 
@@ -440,10 +447,17 @@ bar, the headers and every panel, with the game and the pages covering their
 own part of it. The stone turns partly see-through over it, by as much as the
 theme says, up to 60%; the bevels and the words stay solid, and a list inside
 a panel shows less of the picture than the panel's frame, so the text sits on
-the most solid stone. The picture stands in for the stone's grain, which would
-only lay a grey haze over it. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB and
-a 5K screen's worth of pixels, checked by its own bytes rather than its name; the kit keeps a copy in its
-data folder, under `backgrounds/`.
+the most solid stone.
+
+The picture can be one of the kit's own, from the gallery at the top of the
+editor's Picture section: the 2004 title screen, laid as the client lays it,
+or one of eleven of the textures the game puts on its walls, roofs and floors
+— lava, water, swamp, marble, brick, cobbles, sandstone, rock, roof tiles,
+thatch and oak — tiled. They are the game's own art, made from the 274
+content by `npm run make:pictures` into `static/pictures/`. Or it can be your
+own: a PNG, JPEG, WebP or GIF of up to 10 MB and a 5K screen's worth of
+pixels, checked by its own bytes rather than its name. Either way the kit
+keeps a copy in its data folder, under `backgrounds/`.
 
 Export…, in the editor, writes the theme as the editor holds it, saved or
 not, to a `.zktheme` file, its picture inside it, to hand to someone else;
@@ -971,6 +985,8 @@ src/main/servers.ts         pure: Settings' Servers section — rows, isRemovabl
                             startup picks, the add form                             (tested)
 src/main/settingsWindow.ts  pure: the Settings window's slot, and where it opens   (tested)
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
+src/main/windowFrame.ts     pure: the title bar macOS doesn't draw, and where its
+                            window buttons go                                       (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
 src/main/appState.ts        the state.json store                                    (tested)
@@ -1013,6 +1029,7 @@ src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
 src/renderer/grip.tsx       one draggable seam, and its keyboard path
 src/renderer/dropIndicator.tsx where a dragged pane will land
 src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
+src/renderer/topBar.tsx     the strip across a window's top, its title bar on macOS
 src/renderer/tools/Worlds.tsx
 src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect

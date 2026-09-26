@@ -18,6 +18,7 @@ import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
+import { frameOptions, windowFrame } from './windowFrame';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
 import { layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, type BuiltInSetupId } from './setups';
@@ -45,9 +46,11 @@ function defaultContent(serverId: string): { width: number; height: number; game
 }
 /**
  * Room left on the display for the window's own frame, which a content size
- * does not include: a title bar on macOS, a caption and borders on Windows.
- * Generous rather than measured, since the frame cannot be asked for before the
- * window exists and an opening size a few pixels short costs nothing.
+ * does not include: a caption and borders on Windows and Linux. macOS's is
+ * nothing, since the tab bar stands in for its title bar (`windowFrame.ts`),
+ * and the allowance there is only room to spare. Generous rather than
+ * measured, since the frame cannot be asked for before the window exists and
+ * an opening size a few pixels short costs nothing.
  */
 const FRAME_ALLOWANCE = 40;
 const PROBE_EVERY_MS = 10_000;
@@ -401,6 +404,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         useContentSize: true,
         ...(deps.position ?? {}),
         title: spec.title,
+        // No title bar on macOS: the tab bar stands in for it (`windowFrame.ts`).
+        ...frameOptions(process.platform),
         // The theme's ground, which shows only until the shell draws.
         backgroundColor: deps.theme().colors.window,
         show: false,
@@ -545,6 +550,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             title: title(),
             gameLabel: gameLabel(),
             rects,
+            frame: windowFrame(process.platform, !win.isDestroyed() && win.isFullScreen()),
             tabs: host.tabs(),
             panes: host.panes(),
             seams: host.seams(),
@@ -621,7 +627,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     win.on('resize', () => applyLayout());
     // A maximise or a fullscreen changes the content bounds without a resize
-    // event on every platform, so the layout is re-run for both.
+    // event on every platform, so the layout is re-run for both. Full screen
+    // is also where macOS takes its window buttons off the tab bar, and the
+    // state the layout pushes carries that (`windowFrame`).
     win.on('maximize', () => applyLayout());
     win.on('unmaximize', () => applyLayout());
     win.on('enter-full-screen', () => applyLayout());
