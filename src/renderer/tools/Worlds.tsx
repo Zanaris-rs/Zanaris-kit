@@ -127,7 +127,7 @@ export default function Worlds({ view }: { view: WorldsView }): ReactNode {
                 </button>
                 <p className="min-w-0 flex-1 text-[12px]" aria-live="polite">
                     {view.error ? (
-                        <span className="text-warn">Couldn't load the list: {view.error}</span>
+                        <span className="text-warn">{view.error}</span>
                     ) : (
                         <span className="text-dim">{age(view.fetchedAt, now) || (loading ? 'Loading the list' : '')}</span>
                     )}

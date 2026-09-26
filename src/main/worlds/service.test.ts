@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { WorldsService, type WorldsIo } from './service.ts';
+import { HttpStatusError, WORLDS_RATE_LIMITED, WORLDS_SERVER_PROBLEM, WORLDS_UNREACHABLE, WORLDS_UNREADABLE, WorldsService, type WorldsIo } from './service.ts';
 import type { WorldsDef } from '../../shared/worlds.ts';
 
 const LOSTHQ_JSON: unknown = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'losthq-worlds.json'), 'utf8'));
@@ -93,7 +93,7 @@ test('a failed fetch keeps the last good list and reports the error', async () =
     f.fail('boom');
     const view = await service.list(true);
     assert.equal(view.status, 'error');
-    assert.equal(view.error, 'boom');
+    assert.equal(view.error, WORLDS_UNREACHABLE, 'the player is told what to do, not what broke');
     assert.equal(view.worlds.length, 5, 'the old rows stay');
     assert.equal(view.fetchedAt, 1_000_000, 'and so does their time');
 });
@@ -171,4 +171,24 @@ test('view returns copies', async () => {
     await service.list();
     service.view().worlds[0]!.latencyMs = 999;
     assert.equal(service.view().worlds[0]!.latencyMs, null);
+});
+
+test('a failed refresh says what the player can do, by what went wrong', async () => {
+    const answer = async (failure: unknown): Promise<string | null> => {
+        const f = fake();
+        const service = new WorldsService(LOSTCITY, { ...f.io, fetchJson: async () => { throw failure; } });
+        return (await service.list()).error;
+    };
+    assert.equal(await answer(new TypeError('fetch failed')), WORLDS_UNREACHABLE);
+    assert.equal(await answer(new DOMException('The operation was aborted due to timeout', 'TimeoutError')), WORLDS_UNREACHABLE);
+    assert.equal(await answer(new HttpStatusError(503)), WORLDS_SERVER_PROBLEM);
+    assert.equal(await answer(new HttpStatusError(429)), WORLDS_RATE_LIMITED);
+    assert.equal(await answer(new HttpStatusError(404)), WORLDS_UNREADABLE);
+    assert.equal(await answer(new SyntaxError('Unexpected token < in JSON')), WORLDS_UNREADABLE);
+});
+
+test('a list that arrives in a shape the kit cannot read is unreadable, not unreachable', async () => {
+    const f = fake();
+    const service = new WorldsService(LOSTCITY, { ...f.io, fetchJson: async () => ({ not: 'a list' }) });
+    assert.equal((await service.list()).error, WORLDS_UNREADABLE);
 });

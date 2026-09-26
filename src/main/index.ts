@@ -39,7 +39,7 @@ import { SettingsWindowSlot } from './settingsWindow';
 import { createSettingsWindow, type SettingsWindow } from './settingsView';
 import { windowFrame } from './windowFrame';
 import { installMenu, type MenuActions, type MenuWindowState } from './menu';
-import { WorldsService } from './worlds/service';
+import { HttpStatusError, WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
 import { ChatService, offlineChat, tlsConnect, type SettingsChange } from './chat/service';
 import { canSeal, open as openSecret, seal } from './chat/secret';
@@ -306,7 +306,7 @@ function chatView(): ChatView {
 
 async function fetchJson(url: string): Promise<unknown> {
     const response = await net.fetch(url, { signal: AbortSignal.timeout(8_000) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) throw new HttpStatusError(response.status);
     return response.json();
 }
 
