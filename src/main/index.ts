@@ -760,9 +760,10 @@ const actions: MenuActions = {
         const tab = sw?.state().tabs[index];
         if (sw && tab) sw.selectTab(tab.id);
     },
-    // Only https reaches the system browser, as in serverWindow's window-open
-    // handler: this opens whatever the menu carries, and the update item's url
-    // came off the network.
+    // Only https reaches the system browser from here: this opens whatever the
+    // menu carries, and the update item's url came off the network. (A game or
+    // a page asking for a new window is let through on http too, in
+    // serverWindow and paneHost.)
     openExternal: url => {
         if (!/^https:\/\//.test(url)) {
             log(`[main] refused to open ${url}: not https`);
@@ -1298,13 +1299,13 @@ ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
  * shows the server's own curated links, and a hiscores page is not one of them
  * — `openPage` refuses any url that is not in `server.bookmarks`, and widening
  * that to "anything on an allowed host" would give the shell an address box it
- * does not have. So the page opens outside the kit, and the panel's own label
+ * does not have. So the page opens outside the kit, and the pane's own label
  * says where the link goes rather than letting the browser window be how the
  * user finds out.
  *
- * https only, as in `openExternal` above and serverWindow's window-open
- * handler: `servers.json` is a file the user edits by hand, so this URL is no
- * more trusted than the update feed's.
+ * https only, as the menu's `openExternal` above is: `servers.json` is a file
+ * the user edits by hand, so this URL is no more trusted than the update
+ * feed's.
  */
 ipcMain.handle(IPC.hiscoresOpenSite, event => {
     const site = windowFor(event.sender)?.state().server.hiscores?.site ?? null;
