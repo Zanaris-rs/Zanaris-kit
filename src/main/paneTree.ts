@@ -826,21 +826,29 @@ function payFrom(node: PaneNode, paneId: string, from: Size, to: Size): PaneNode
  * the tab grows or shrinks by exactly what the game did. Raised to the tree's
  * own floor, where the other panes take up the slack.
  *
+ * A `saved` size below the tree's floor — a tab saved from a window squeezed
+ * past its panes' minimums, or a file edited by hand — is read as the floor.
+ * Measured at the size it says, `allocate` would scale every pane down, the
+ * game would read as smaller than it is anywhere the tree fits, and the tab
+ * would come out too small to hold it at `want`.
+ *
  * A null size — the setup has no game, or no size was saved with it — means the
  * tree is to be fitted to the tab as it is, by its fractions, as a setup
  * always was before sizes were saved.
  */
 export function arrangeForGame(tree: PaneNode, saved: Size | null, want: Size | null): { tree: PaneNode; size: Size | null } {
     if (!saved) return { tree, size: null };
-    const had = gameSize(tree, saved);
+    const floor = { width: minimumOf(tree, 'x'), height: minimumOf(tree, 'y') };
+    const from = { width: Math.max(saved.width, floor.width), height: Math.max(saved.height, floor.height) };
+    const had = gameSize(tree, from);
     if (!had) return { tree, size: null };
     const game = want ?? had;
     const delta = { width: game.width - had.width, height: game.height - had.height };
     const size = {
-        width: Math.max(saved.width + delta.width, minimumOf(tree, 'x')),
-        height: Math.max(saved.height + delta.height, minimumOf(tree, 'y'))
+        width: Math.max(from.width + delta.width, floor.width),
+        height: Math.max(from.height + delta.height, floor.height)
     };
-    return { tree: holdGame(tree, saved, size, delta), size };
+    return { tree: holdGame(tree, from, size, delta), size };
 }
 
 /** The game's pixels in whichever of `trees` holds it, laid out at `size`, or null when none does. */

@@ -765,6 +765,16 @@ test("a game smaller than a setup's floors leaves the tab at its floor", () => {
     assert.equal(arranged.size!.height, 80, "the height stops at a pane's floor");
 });
 
+test("a setup saved below its own floor is measured at the floor, so the game still comes out at the size wanted", () => {
+    // At 1x1 every pane is scaled to nothing. Measured there, the game read
+    // as 0 wide, the tab came out 766 wide, and the game was drawn 642 in it.
+    const row = split('s', 'x', [cgGame, cgHiscores], [0.5, 0.5]);
+    const want = { width: 765, height: 503 };
+    const arranged = arrangeForGame(row, { width: 1, height: 1 }, want);
+    assert.deepEqual(cgDrawn(arranged.tree, arranged.size!, 'g'), want);
+    assert.deepEqual(arranged.size, { width: 765 + 4 + 120, height: 503 }, 'hiscores at the floor it was measured at');
+});
+
 test('the game is found in whichever tab holds it', () => {
     const size = { width: 1089, height: 567 };
     const row = split('s', 'x', [cgGame, cgHiscores], [765 / 1085, 320 / 1085]);
