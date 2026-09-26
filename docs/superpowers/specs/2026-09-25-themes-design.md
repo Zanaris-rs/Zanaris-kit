@@ -27,6 +27,11 @@ pages are native `WebContentsView`s the shell cannot style, and nothing is
 ever injected into a game page. The OS title bar, menus and dialogs are the
 system's.
 
+> Since changed on macOS: the kit's windows draw no title bar there, and the
+> tab bar stands in for it, so a theme runs to the window's top edge
+> (`src/main/windowFrame.ts`). Windows and Linux keep the system's, which
+> holds their menu bar.
+
 Every colour in the frame was sampled from the 2004 client rather than
 invented (README, "How it looks"). Themes keep to that: each is sampled from
 the game's own map.

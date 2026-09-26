@@ -34,6 +34,7 @@ import { ServerWindows, type WindowSpec } from './windows';
 import { createServerWindow, type ServerWindow } from './serverWindow';
 import { SettingsWindowSlot } from './settingsWindow';
 import { createSettingsWindow, type SettingsWindow } from './settingsView';
+import { windowFrame } from './windowFrame';
 import { installMenu, type MenuActions, type MenuWindowState } from './menu';
 import { WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
@@ -480,14 +481,16 @@ function openServer(server: ServerDef): ServerWindow {
 
 /** The one Settings window, or none. Its rules are `settingsWindow.ts`'s; this only builds it. */
 const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
-    createSettingsWindow({ anchor, onClosed, background: themeFor(appState.appearance(), null).colors.window })
+    createSettingsWindow({ anchor, onClosed, onFrameChanged: pushSettings, background: themeFor(appState.appearance(), null).colors.window })
 );
 
 /** What Settings draws, built when asked for, like a shell's state. */
 function settingsState(): SettingsState {
+    const win = settings.current()?.window;
     return {
         servers: serversView({ catalog: catalog.list(), startup: appState.startupIds(), openCounts: windowCounts() }),
-        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list() })
+        appearance: appearanceView({ appearance: appState.appearance(), catalog: catalog.list() }),
+        frame: windowFrame(process.platform, win !== undefined && !win.isDestroyed() && win.isFullScreen())
     };
 }
 
