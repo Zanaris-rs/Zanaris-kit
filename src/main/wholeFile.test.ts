@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeWhole } from './wholeFile.ts';
+import { writeAll, writeWhole } from './wholeFile.ts';
 
 const dirs: string[] = [];
 const tempDir = (): string => {
@@ -36,4 +36,17 @@ test('a write that fails leaves the old contents whole', () => {
     mkdirSync(`${file}.incoming`);
     assert.throws(() => writeWhole(file, 'new'));
     assert.equal(readFileSync(file, 'utf8'), 'old');
+});
+
+test('writeAll keeps writing after a short write, and refuses one that writes nothing', () => {
+    const written: number[] = [];
+    const bytes = Uint8Array.from([1, 2, 3, 4, 5, 6, 7]);
+    // At most three bytes a call, as a disk filling up might allow.
+    writeAll(0, bytes, (_fd, from, offset, length) => {
+        const n = Math.min(3, length);
+        written.push(...from.subarray(offset, offset + n));
+        return n;
+    });
+    assert.deepEqual(written, [1, 2, 3, 4, 5, 6, 7]);
+    assert.throws(() => writeAll(0, bytes, () => 0), /wrote 0 of 7 bytes/);
 });

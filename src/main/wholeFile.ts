@@ -1,5 +1,23 @@
 import { closeSync, fsyncSync, openSync, renameSync, writeSync } from 'node:fs';
 
+type Write = (fd: number, bytes: Uint8Array, offset: number, length: number) => number;
+
+/**
+ * Every byte, however many calls it takes. One `writeSync` can write part of
+ * what it was given and return the count rather than throw — a disk filling
+ * mid-write is exactly that — and a count ignored is a file cut short, which
+ * the rename would then put over the good one. `write` is injected so a test
+ * can make the writes short.
+ */
+export function writeAll(fd: number, bytes: Uint8Array, write: Write = writeSync): void {
+    let done = 0;
+    while (done < bytes.length) {
+        const wrote = write(fd, bytes, done, bytes.length - done);
+        if (wrote <= 0) throw new Error(`wrote ${done} of ${bytes.length} bytes`);
+        done += wrote;
+    }
+}
+
 /**
  * Replaces a file's contents whole or not at all.
  *
@@ -18,7 +36,7 @@ export function writeWhole(file: string, text: string): void {
     const incoming = `${file}.incoming`;
     const fd = openSync(incoming, 'w');
     try {
-        writeSync(fd, text);
+        writeAll(fd, Buffer.from(text, 'utf8'));
         fsyncSync(fd);
     } finally {
         closeSync(fd);
