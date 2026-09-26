@@ -320,7 +320,7 @@ tab has not been fitted since, and is near enough.
   is under the no-migrations licence.
 - **The file** keeps `kind: "zanaris-kit-layout"`, version 1, and gains
   `size: { width, height }`: the active tab's tree size when it was saved.
-- **Reading it.** `readLayout` answers `{ tree, size }`, where `size` is
+- **Reading it.** `readSetup` answers `{ tree, size }`, where `size` is
   null when the file has none.
   - Integers from 1 to 16384 are accepted.
   - Anything else in `size` refuses the whole file, as every other bad field
@@ -378,7 +378,7 @@ tab has not been fitted since, and is near enough.
   - no game;
   - no size;
   - the minimum.
-- `readLayout` and `writeLayout`: size round trip, missing, and each bad
+- `readSetup` and `writeLayout`: size round trip, missing, and each bad
   size.
 - `grownFrame` with a negative `by`.
 

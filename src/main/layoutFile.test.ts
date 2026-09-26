@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, leaf, paneIds, split, type PaneNode } from './paneTree.ts';
-import { instantiateLayout, layoutEntries, layoutFileName, readLayout, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
+import { instantiateLayout, layoutEntries, layoutFileName, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
 const LINKS = [
@@ -24,8 +24,8 @@ const arranged: PaneNode = split(
 
 const file = (tree: unknown, extra: Record<string, unknown> = {}): string => JSON.stringify({ kind: 'zanaris-kit-layout', version: 1, server: 'lostcity', tree, ...extra });
 
-test('a layout round-trips through its file: shape, seams and contents', () => {
-    assert.deepEqual(readLayout(writeLayout(arranged, 'lostcity')), storeTree(arranged));
+test('a setup round-trips through its file: shape, seams and contents', () => {
+    assert.deepEqual(readSetup(writeLayout(arranged, 'lostcity'))?.tree, storeTree(arranged));
 });
 
 test('a file carries no pane or split ids — those belong to the window that loads it', () => {
@@ -34,41 +34,41 @@ test('a file carries no pane or split ids — those belong to the window that lo
     assert.equal(JSON.parse(text).server, 'lostcity', 'where it was made is noted');
 });
 
-test('something that is not a layout file is refused rather than half-read', () => {
+test('something that is not a setup file is refused rather than half-read', () => {
     const good = storeTree(arranged);
     for (const text of ['', '{ nope', 'null', '42', '[]', JSON.stringify({ tree: good }), file(good, { kind: 'something-else' }), file(good, { version: 2 }), file(null)]) {
-        assert.equal(readLayout(text), null, `expected ${text.slice(0, 60)} to be refused`);
+        assert.equal(readSetup(text), null, `expected ${text.slice(0, 60)} to be refused`);
     }
 });
 
 test('a split that could not have been made is refused', () => {
     const one: StoredNode = { kind: 'leaf', content: { kind: 'empty' } };
-    assert.equal(readLayout(file({ kind: 'split', axis: 'x', children: [one], fractions: [1] })), null, 'one child');
-    assert.equal(readLayout(file({ kind: 'split', axis: 'z', children: [one, one], fractions: [1, 1] })), null, 'no such axis');
-    assert.equal(readLayout(file({ kind: 'split', axis: 'x', children: [one, one], fractions: [1] })), null, 'fractions short of children');
-    assert.equal(readLayout(file({ kind: 'split', axis: 'x', children: [one, one], fractions: [1, 0] })), null, 'a zero share');
-    assert.equal(readLayout(file({ kind: 'split', axis: 'x', children: [one, one], fractions: [1, 'half'] })), null, 'a share that is not a number');
+    assert.equal(readSetup(file({ kind: 'split', axis: 'x', children: [one], fractions: [1] })), null, 'one child');
+    assert.equal(readSetup(file({ kind: 'split', axis: 'z', children: [one, one], fractions: [1, 1] })), null, 'no such axis');
+    assert.equal(readSetup(file({ kind: 'split', axis: 'x', children: [one, one], fractions: [1] })), null, 'fractions short of children');
+    assert.equal(readSetup(file({ kind: 'split', axis: 'x', children: [one, one], fractions: [1, 0] })), null, 'a zero share');
+    assert.equal(readSetup(file({ kind: 'split', axis: 'x', children: [one, one], fractions: [1, 'half'] })), null, 'a share that is not a number');
 });
 
 test('contents the kit does not know are refused', () => {
-    assert.equal(readLayout(file({ kind: 'leaf', content: { kind: 'tool', tool: 'telescope' } })), null);
-    assert.equal(readLayout(file({ kind: 'leaf', content: { kind: 'page', bookmark: '' } })), null);
-    assert.equal(readLayout(file({ kind: 'leaf', content: { kind: 'window' } })), null);
+    assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'tool', tool: 'telescope' } })), null);
+    assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'page', bookmark: '' } })), null);
+    assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'window' } })), null);
 });
 
 test('a second game is refused — the window has one game view', () => {
     const game: StoredNode = { kind: 'leaf', content: { kind: 'game' } };
-    assert.equal(readLayout(file({ kind: 'split', axis: 'x', children: [game, game], fractions: [1, 1] })), null);
+    assert.equal(readSetup(file({ kind: 'split', axis: 'x', children: [game, game], fractions: [1, 1] })), null);
 });
 
 test('shares are renormalised, so a hand-written [2, 1] means two thirds and one third', () => {
     const one: StoredNode = { kind: 'leaf', content: { kind: 'empty' } };
-    const read = readLayout(file({ kind: 'split', axis: 'x', children: [one, one], fractions: [2, 1] }));
+    const read = readSetup(file({ kind: 'split', axis: 'x', children: [one, one], fractions: [2, 1] }))?.tree;
     assert.ok(read && read.kind === 'split');
     assert.deepEqual(read.fractions, [2 / 3, 1 / 3]);
 });
 
-test('a loaded layout gets fresh ids from the window, and nothing collides', () => {
+test('an opened setup gets fresh ids from the window, and nothing collides', () => {
     const tree = instantiateLayout(storeTree(arranged), { tools: TOOLS, links: LINKS, ...counters(7, 3) });
     assert.deepEqual(paneIds(tree), ['pane-7', 'pane-8', 'pane-9']);
     assert.equal(tree.kind === 'split' && tree.splitId, 'split-3');
@@ -77,7 +77,7 @@ test('a loaded layout gets fresh ids from the window, and nothing collides', () 
     assert.deepEqual(contentOf(tree, 'pane-9'), { kind: 'tool', tool: 'chat' });
 });
 
-test("whatever this window cannot show comes up empty, and the rest of the layout survives", () => {
+test("whatever this window cannot show comes up empty, and the rest of the setup survives", () => {
     const stored = storeTree(
         split(
             's',
@@ -113,7 +113,6 @@ test('the Setups menu lists the folder’s setup files, by name, in the order a 
 test('a setup carries the size of the tab it was saved from', () => {
     const text = writeLayout(arranged, 'lostcity', { width: 1089, height: 803 });
     assert.deepEqual(readSetup(text), { tree: storeTree(arranged), size: { width: 1089, height: 803 } });
-    assert.deepEqual(readLayout(text), storeTree(arranged), 'the tree alone reads as it always did');
 });
 
 test('a file with no size reads with none', () => {

@@ -26,8 +26,8 @@ export const LAYOUT_VERSION = 1;
  * A pane tree as a file holds it: its shape, its seams and what each pane
  * shows, with none of the ids.
  *
- * The ids are the window's, not the layout's. A view is keyed by its pane id for
- * as long as it lives, and a tab loaded beside others would collide with them if
+ * The ids are the window's, not the setup's. A view is keyed by its pane id for
+ * as long as it lives, and a tab opened beside others would collide with them if
  * it brought its own — so a file carries none, and `instantiateLayout` hands out
  * fresh ones from the window's counters on the way in.
  */
@@ -40,7 +40,7 @@ export function storeTree(node: PaneNode): StoredNode {
 
 /**
  * The file's text. `server` is a note about where it was made, not a lock: a
- * layout saved on one server loads on another, and whatever that server does
+ * setup saved on one server opens on another, and whatever that server does
  * not offer comes up empty (see `instantiateLayout`).
  *
  * `size` is the tab's own size in pixels when it was saved. It is what lets a
@@ -57,17 +57,17 @@ export function writeLayout(tree: PaneNode, serverId: string, size?: Size): stri
 const SIZE_MAX = 16384;
 
 /**
- * A layout file's tree and the size it was saved at, or null when anything at
+ * A setup file's tree and the size it was saved at, or null when anything at
  * all about it is wrong.
  *
- * Refused whole rather than repaired, as stored layouts always were: a half-
- * understood file is a tab that loads wrong with nothing to say about why,
+ * Refused whole rather than repaired, as saved setups always were: a half-
+ * understood file is a tab that opens wrong with nothing to say about why,
  * while a refusal can say "that isn't a setup" and leave the tab as it was.
  *
  * The refusals that are not merely shape: at most one game, because the window
  * has exactly one game view and a second leaf would point at nothing; and a
  * version newer than this kit knows, because a later kit may mean something by
- * it that this one would silently get wrong. A file with no size is a layout
+ * it that this one would silently get wrong. A file with no size is a setup
  * saved before sizes were, and reads with a null one; a size that is there
  * and wrong refuses the file like any other bad field.
  */
@@ -86,11 +86,6 @@ export function readSetup(text: string): { tree: StoredNode; size: Size | null }
     let games = 0;
     const tree = readNode(file.tree, () => games++);
     return tree && games <= 1 ? { tree, size } : null;
-}
-
-/** `readSetup`'s tree alone. */
-export function readLayout(text: string): StoredNode | null {
-    return readSetup(text)?.tree ?? null;
 }
 
 function readSize(x: unknown): Size | null {
@@ -146,7 +141,7 @@ function readContent(x: unknown): PaneContent | null {
  * A stored tree made real in one window: fresh ids, and anything this window
  * cannot show turned into an empty pane.
  *
- * Empty rather than refused, because the rest of the layout is still worth
+ * Empty rather than refused, because the rest of the setup is still worth
  * having. A tool this window does not offer — Hiscores on a server with
  * no lookup, Your world anywhere but its own window — and a page that is not
  * one of this server's links both come up as the launcher, which is honest
