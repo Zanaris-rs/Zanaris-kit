@@ -371,17 +371,14 @@ recessed to `#37311f`, gold headings, cream text and yellow-green values. Those
 numbers were sampled out of a screenshot of the running client, quantising each
 region so the stone separated from the text, rather than guessed.
 
-Three things carry the period feel, and all three are load-bearing rather than
+Two things carry the period feel, and both are load-bearing rather than
 decorative:
 
 - **Bevels are explicit.** Light above and left, shadow below and right, on
   every raised surface, inverted for every recess. CSS `outset` derives its
   edges from a single colour and always reads flat by comparison.
-- **Stone has grain.** Two layers of noise, a fine one and a slower blotch,
-  blended over the base colour. Overlay blending of this noise lightens more
-  than it darkens, so the base sits below the sampled mid to compensate.
 - **Every glyph has a hard black shadow.** The client does this, and without it
-  text fights the grain and loses.
+  cream text on the stone goes soft at the sizes the kit sets it.
 
 Tabs are not a row of buttons on a dark strip: they are cut *into* the stone,
 resting ones sunk with an inner shadow and the open one raised and lit. That is
@@ -417,8 +414,8 @@ almost everywhere is grass — and the theme takes a ground colour and a trim
 colour from the top of that list. One rule, in `src/shared/themes.ts`, turns
 the pair into every colour the frame uses: each takes the place's hue and
 keeps the stone's own lightness — or goes darker where the place is darker
-than the stone, as the Wilderness's rock is, and never lighter — so the grain
-and the text's contrast behave as they do on the stone. Zanaris in 274 is brown floors and bright
+than the stone, as the Wilderness's rock is, and never lighter — so the
+text's contrast behaves as it does on the stone. Zanaris in 274 is brown floors and bright
 grass in black void, not the blue of later years. A test holds every theme to
 the stone's own contrast, pair by pair.
 
@@ -437,8 +434,7 @@ bar, the headers and every panel, with the game and the pages covering their
 own part of it. The stone turns partly see-through over it, by as much as the
 theme says, up to 60%; the bevels and the words stay solid, and a list inside
 a panel shows less of the picture than the panel's frame, so the text sits on
-the most solid stone. The picture stands in for the stone's grain, which would
-only lay a grey haze over it. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB and
+the most solid stone. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB and
 a 5K screen's worth of pixels, checked by its own bytes rather than its name; the kit keeps a copy in its
 data folder, under `backgrounds/`.
 

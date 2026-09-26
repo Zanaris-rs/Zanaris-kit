@@ -411,28 +411,28 @@ block are the same values, and a test keeps them so.
 
 A built-in theme is derived from a ground and a trim colour sampled off the
 map, never typed in by hand; `scripts/sample-floors.mjs` is where the samples
-come from. Every built-in is dark, because the black glyph shadow and the
-grain's overlay blend assume it, and `contrastWarnings` finds nothing in any
-of them. A player's own theme can be anything: the editor shows its warnings,
+come from. Every built-in is dark, because the black glyph shadow assumes
+it, and `contrastWarnings` finds nothing in any of them. A player's own theme can be anything: the editor shows its warnings,
 and saving is theirs. Built-in ids sit in `state.json` and theme files, so one
 once shipped is never renamed.
 
 **Every image the renderer draws is a file.** The shell's CSP takes images
 from `'self'` and, for theme pictures, `zanaris-bg:`, and refuses a `data:`
-one with nothing on screen to say so. The grain was two `data:` SVGs, and
-every surface drew as its flat base until 2026-09-25 with no test failing.
-`assetsInlineLimit: 0` keeps Vite from inlining the small ones, and
-`csp.test.ts` fails on a `data:` image in the renderer while the CSP refuses
-them. Themes are checked on flat colours, so a change to the grain or a base
-is checked by `npm run capture`, not by a test.
+one with nothing on screen to say so. The stone's grain, since removed, was
+two `data:` SVGs, and every surface drew as its flat base until 2026-09-25
+with no test failing. `assetsInlineLimit: 0` keeps Vite from inlining the
+small ones, and `csp.test.ts` fails on a `data:` image in the renderer while
+the CSP refuses them. Themes are checked on flat colours, so a change to a
+base, or to how a picture shows through the stone, is checked by
+`npm run capture`, not by a test.
 
-**Over a picture the grain is off.** Every surface wears it as
-`var(--grain, var(--stone-grain))`, and `themeVars` sets `--grain` to `none`
-when a picture shows through, `initial` otherwise, so a theme change always
-resets it. The noise has an alpha of its own and blends only with the
-surface's colour, so on a see-through surface it paints grey over the
-picture: at `show` 0.4 the capture's dusk sky all but disappeared. A new
-grained surface uses the same `var()`, or it greys every picture theme.
+**The stone is flat.** A grain of noise drew over the shell's stone for one
+day, 2026-09-25 — the offline and starting pages, which have no CSP, had
+drawn theirs all along — and went from both on the owner's call on
+2026-09-26: they prefer the flat stone the shell had shown every day before. The bases are still the values
+set for a grain to lighten, a little below the sampled panel mid, because
+flat they are that look. A texture on the stone is the owner's decision, not
+a fix; the way to wear one is a theme's picture.
 
 ## Theme pictures
 

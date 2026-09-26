@@ -195,10 +195,8 @@ const TEXT: readonly ThemeToken[] = ['cream', 'dim', 'faint'];
  * replacing the hue keeps the small differences between stone's own tokens,
  * so the rule applied to the reference gives stone back exactly.
  *
- * Lightness stays stone's, token by token. That keeps the grain's
- * compensation true — each base sits below its sampled mid by what the
- * overlay blend adds back — and keeps contrast close to stone's by
- * construction; `themes.test.ts` is what holds it. A place darker than the
+ * Lightness stays stone's, token by token, which keeps contrast close to
+ * stone's by construction; `themes.test.ts` is what holds it. A place darker than the
  * reference darkens the frame by that much, and a lighter one never lightens
  * it, since the black glyph shadow needs a dark ground.
  *
@@ -503,9 +501,5 @@ export function themeVars(look: ThemeLook): Record<string, string> {
     vars['--picture'] = background ? `url("${pictureUrl(background.picture)}")` : 'none';
     vars['--picture-size'] = background && background.fit !== 'tile' ? background.fit : 'auto';
     vars['--picture-repeat'] = background?.fit === 'tile' ? 'repeat' : 'no-repeat';
-    // The grain is noise with an alpha of its own, blended with the surface's colour and nothing behind it: over a
-    // see-through surface it paints its grey on the picture instead of texturing the stone. So a picture takes its
-    // place. `initial` unsets it, and `styles.css` falls back to the stone's grain.
-    vars['--grain'] = background ? 'none' : 'initial';
     return vars;
 }
