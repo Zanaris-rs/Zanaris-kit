@@ -62,7 +62,7 @@ import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timer
 import { readAlertSound } from './timers/electron';
 import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
 import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing, type Editing } from './appearance';
-import { devBranding } from './branding';
+import { APP_ID, APP_NAME, devBranding } from './branding';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
 import { presetCards, presetFile, readPreset, type PresetCard } from './presets';
 import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
@@ -158,18 +158,22 @@ for (const entry of migrationPlan(legacyUserData, userData, existsSync)) {
 }
 if (migrated.length > 0) log(`[main] moved ${migrated.join(', ')} from ${legacyUserData} into ${userData}`);
 
-// ── the name and icon, for a run inside Electron's own bundle ─────────────
+// ── the name, and the icon for a run inside Electron's own bundle ─────────
 //
-// After the userData move on purpose: the name it moves to is the package
-// name, and setName leaves getPath('userData') where Electron fixed it at
-// startup (probed on 2026-09-25), so the dev profile stays at zanaris-kit
-// whatever the app is called. What is set here has to be set before the menu
-// is built, which reads app.name. The Dock icon waits for ready, below.
+// The name in every run, packaged too: a packaged build's package.json has no
+// productName (`branding.APP_NAME`), so the app menu's About, Hide and Quit
+// would otherwise name the package. After the userData move on purpose: the
+// name it moves to is the package name, and setName leaves
+// getPath('userData') where Electron fixed it at startup (probed on
+// 2026-09-25), so the profile stays at zanaris-kit whatever the app is
+// called. What is set here has to be set before the menu is built, which
+// reads app.name. The Dock icon waits for ready, below.
+app.setName(APP_NAME);
+// Windows drops a banner whose app id no shortcut carries, and a packaged
+// run's default is not the one the installer gave the Start menu's.
+if (app.isPackaged && process.platform === 'win32') app.setAppUserModelId(APP_ID);
 const branding = devBranding({ packaged: app.isPackaged, root: join(__dirname, '../..'), version: app.getVersion() });
-if (branding) {
-    app.setName(branding.name);
-    app.setAboutPanelOptions(branding.about);
-}
+if (branding) app.setAboutPanelOptions(branding.about);
 
 /** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
 const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
