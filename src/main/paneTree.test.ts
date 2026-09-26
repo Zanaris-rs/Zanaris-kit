@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendColumn, arrangedAt, canAppendColumn, clearGame, closeGivingBack, closePane, contentOf, evenOut, halvable, keepGame, layoutTree, leaf, makeRoom, movePane, paneIds, parentSplitOf, refit, resetGame, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
+import { appendColumn, arrangedAt, arrangeForGame, canAppendColumn, clearGame, closeGivingBack, closePane, contentOf, evenOut, gameSizeIn, halvable, keepGame, layoutTree, leaf, makeRoom, movePane, paneIds, parentSplitOf, refit, resetGame, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -730,4 +730,44 @@ test('a close that collapses its split into the column around it still gives bac
     assert.equal(closed.tree.kind === 'split' && closed.tree.children.length, 3, 'game, chat and timers in one column');
     assert.equal(cgDrawn(closed.tree, to, 'g').width, before.width);
     assert.ok(Math.abs(cgDrawn(closed.tree, to, 'g').height - before.height) <= 2, "and within the absorb's seam of its height");
+});
+
+test('a setup is arranged around the game as it is now, and its other panes keep their saved pixels', () => {
+    const saved = { width: 1089, height: 803 };
+    const tree = split('s1', 'x', [split('s2', 'y', [cgGame, cgChat], [567 / 799, 232 / 799]), cgHiscores], [765 / 1085, 320 / 1085]);
+    const arranged = arrangeForGame(tree, saved, { width: 900, height: 600 });
+    assert.deepEqual(arranged.size, { width: 1224, height: 836 });
+    assert.deepEqual(cgDrawn(arranged.tree, arranged.size!, 'g'), { width: 900, height: 600 });
+    assert.deepEqual(cgDrawn(arranged.tree, arranged.size!, 'c'), { width: 900, height: 232 });
+    assert.deepEqual(cgDrawn(arranged.tree, arranged.size!, 'h'), { width: 320, height: 836 });
+});
+
+test('a setup with no game running keeps its own game size', () => {
+    const saved = { width: 1089, height: 803 };
+    const tree = split('s1', 'x', [split('s2', 'y', [cgGame, cgChat], [567 / 799, 232 / 799]), cgHiscores], [765 / 1085, 320 / 1085]);
+    const arranged = arrangeForGame(tree, saved, null);
+    assert.deepEqual(arranged.size, saved);
+    assert.deepEqual(cgDrawn(arranged.tree, saved, 'g'), { width: 765, height: 567 });
+});
+
+test('a setup with no game, or no saved size, is fitted to the tab as it is', () => {
+    const tools = split('s', 'x', [cgChat, cgHiscores], [0.5, 0.5]);
+    assert.deepEqual(arrangeForGame(tools, { width: 800, height: 600 }, { width: 765, height: 567 }), { tree: tools, size: null });
+    const row = split('s', 'x', [cgGame, cgHiscores], [0.7, 0.3]);
+    assert.deepEqual(arrangeForGame(row, null, { width: 765, height: 567 }), { tree: row, size: null });
+});
+
+test("a game smaller than a setup's floors leaves the tab at its floor", () => {
+    const saved = { width: 1089, height: 567 };
+    const row = split('s', 'x', [cgGame, cgHiscores], [765 / 1085, 320 / 1085]);
+    const arranged = arrangeForGame(row, saved, { width: 50, height: 50 });
+    assert.equal(arranged.size!.width, 1089 - 715, 'the game gives 715 of width down to 50');
+    assert.equal(arranged.size!.height, 80, "the height stops at a pane's floor");
+});
+
+test('the game is found in whichever tab holds it', () => {
+    const size = { width: 1089, height: 567 };
+    const row = split('s', 'x', [cgGame, cgHiscores], [765 / 1085, 320 / 1085]);
+    assert.deepEqual(gameSizeIn([leaf('e', { kind: 'empty' }), row], size), { width: 765, height: 567 });
+    assert.equal(gameSizeIn([leaf('e', { kind: 'empty' })], size), null);
 });

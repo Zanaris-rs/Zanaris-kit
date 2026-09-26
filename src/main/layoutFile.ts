@@ -1,4 +1,4 @@
-import { leaf, split, type PaneContent, type PaneNode } from './paneTree.ts';
+import { leaf, split, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
 import type { PaneLink } from './paneMenu.ts';
 import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
 
@@ -8,9 +8,9 @@ import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
  * Nothing is saved on its own any more. The window used to write its whole
  * arrangement to `state.json` after every split and every seam drag, which made
  * "how I left it" and "how I want it" the same thing — so an experiment could
- * not be walked away from, and there was nothing to hand anyone else. A layout
- * is now a file, saved from a tab's right-click menu into that server's own
- * folder, loaded from the same menu, and shared by copying it.
+ * not be walked away from, and there was nothing to hand anyone else. A setup
+ * is now a file, saved from the tab bar's Setups menu into that server's own
+ * `setups/` folder, loaded from the same menu, and shared by copying it.
  *
  * Pure for the reason every rule in this kit is, and for one of its own: a file
  * that came from somebody else is untrusted input, so what it may contain and
@@ -42,24 +42,36 @@ export function storeTree(node: PaneNode): StoredNode {
  * The file's text. `server` is a note about where it was made, not a lock: a
  * layout saved on one server loads on another, and whatever that server does
  * not offer comes up empty (see `instantiateLayout`).
+ *
+ * `size` is the tab's own size in pixels when it was saved. It is what lets a
+ * setup open with every pane at the size it was saved at and the window sized
+ * around them (`paneTree.arrangeForGame`), where fractions alone would stretch
+ * or squeeze everything, the game included, to whatever window it opens in.
  */
-export function writeLayout(tree: PaneNode, serverId: string): string {
-    return `${JSON.stringify({ kind: LAYOUT_KIND, version: LAYOUT_VERSION, server: serverId, tree: storeTree(tree) }, null, 2)}\n`;
+export function writeLayout(tree: PaneNode, serverId: string, size?: Size): string {
+    const sized = size ? { size: { width: Math.round(size.width), height: Math.round(size.height) } } : {};
+    return `${JSON.stringify({ kind: LAYOUT_KIND, version: LAYOUT_VERSION, server: serverId, ...sized, tree: storeTree(tree) }, null, 2)}\n`;
 }
 
+/** A setup's size: no side under a pixel or past any display there is. */
+const SIZE_MAX = 16384;
+
 /**
- * A layout file's tree, or null when anything at all about it is wrong.
+ * A layout file's tree and the size it was saved at, or null when anything at
+ * all about it is wrong.
  *
  * Refused whole rather than repaired, as stored layouts always were: a half-
  * understood file is a tab that loads wrong with nothing to say about why,
- * while a refusal can say "that isn't a layout" and leave the tab as it was.
+ * while a refusal can say "that isn't a setup" and leave the tab as it was.
  *
  * The refusals that are not merely shape: at most one game, because the window
  * has exactly one game view and a second leaf would point at nothing; and a
  * version newer than this kit knows, because a later kit may mean something by
- * it that this one would silently get wrong.
+ * it that this one would silently get wrong. A file with no size is a layout
+ * saved before sizes were, and reads with a null one; a size that is there
+ * and wrong refuses the file like any other bad field.
  */
-export function readLayout(text: string): StoredNode | null {
+export function readSetup(text: string): { tree: StoredNode; size: Size | null } | null {
     let parsed: unknown;
     try {
         parsed = JSON.parse(text);
@@ -69,9 +81,23 @@ export function readLayout(text: string): StoredNode | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
     const file = parsed as Record<string, unknown>;
     if (file.kind !== LAYOUT_KIND || file.version !== LAYOUT_VERSION) return null;
+    const size = file.size === undefined ? null : readSize(file.size);
+    if (file.size !== undefined && size === null) return null;
     let games = 0;
     const tree = readNode(file.tree, () => games++);
-    return tree && games <= 1 ? tree : null;
+    return tree && games <= 1 ? { tree, size } : null;
+}
+
+/** `readSetup`'s tree alone. */
+export function readLayout(text: string): StoredNode | null {
+    return readSetup(text)?.tree ?? null;
+}
+
+function readSize(x: unknown): Size | null {
+    if (typeof x !== 'object' || x === null) return null;
+    const { width, height } = x as Record<string, unknown>;
+    const side = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= SIZE_MAX;
+    return side(width) && side(height) ? { width, height } : null;
 }
 
 function readNode(x: unknown, countGame: () => void): StoredNode | null {

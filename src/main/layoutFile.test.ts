@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, leaf, paneIds, split, type PaneNode } from './paneTree.ts';
-import { instantiateLayout, layoutEntries, layoutFileName, readLayout, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
+import { instantiateLayout, layoutEntries, layoutFileName, readLayout, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
 const LINKS = [
@@ -102,10 +102,27 @@ test('a file name is suggested from the tab label, safe on every platform', () =
     assert.equal(layoutFileName('x'.repeat(200)).length, 80 + '.json'.length);
 });
 
-test('the Load Layout list is the folder’s layout files, by name, in the order a person reads them', () => {
+test("the Load Layout list is the folder's layout files, by name, in the order a person reads them", () => {
     assert.deepEqual(layoutEntries(['Raids 10.json', '.DS_Store', 'notes.txt', 'raids 2.JSON', 'Game.json', '.hidden.json']), [
         { name: 'Game', file: 'Game.json' },
         { name: 'raids 2', file: 'raids 2.JSON' },
         { name: 'Raids 10', file: 'Raids 10.json' }
     ]);
+});
+
+test('a setup carries the size of the tab it was saved from', () => {
+    const text = writeLayout(arranged, 'lostcity', { width: 1089, height: 803 });
+    assert.deepEqual(readSetup(text), { tree: storeTree(arranged), size: { width: 1089, height: 803 } });
+    assert.deepEqual(readLayout(text), storeTree(arranged), 'the tree alone reads as it always did');
+});
+
+test('a file with no size reads with none', () => {
+    assert.deepEqual(readSetup(writeLayout(arranged, 'lostcity')), { tree: storeTree(arranged), size: null });
+});
+
+test('a size that is there and wrong refuses the whole file', () => {
+    const good = storeTree(arranged);
+    for (const size of [null, 'big', { width: 0, height: 600 }, { width: 800 }, { width: 800.5, height: 600 }, { width: 800, height: 16385 }, { width: -1, height: 600 }, { width: '800', height: 600 }]) {
+        assert.equal(readSetup(file(good, { size })), null, `expected size ${JSON.stringify(size)} to be refused`);
+    }
 });

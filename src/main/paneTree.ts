@@ -814,3 +814,40 @@ function payFrom(node: PaneNode, paneId: string, from: Size, to: Size): PaneNode
     const child = payFrom(node.children[at]!, paneId, resized(from, had[at]!), resized(to, sizes[at]!));
     return { ...node, children: node.children.map((c, i) => (i === at ? child : c)), fractions: sizes.map(px => px / gross) };
 }
+
+/**
+ * A setup's tree made for the game as it is now, and the size of tab that
+ * holds it — what opening a setup sizes the window to.
+ *
+ * `saved` is the tab size the setup was made at, and `want` the game's pixels
+ * now, or null when no game is running, when the setup's own game size stands.
+ * The game's side of every split is moved by the difference, the same walk
+ * `keepGame` makes, so every other pane keeps the pixels it was saved with and
+ * the tab grows or shrinks by exactly what the game did. Raised to the tree's
+ * own floor, where the other panes take up the slack.
+ *
+ * A null size — the setup has no game, or no size was saved with it — means the
+ * tree is to be fitted to the tab as it is, by its fractions, as a setup
+ * always was before sizes were saved.
+ */
+export function arrangeForGame(tree: PaneNode, saved: Size | null, want: Size | null): { tree: PaneNode; size: Size | null } {
+    if (!saved) return { tree, size: null };
+    const had = gameSize(tree, saved);
+    if (!had) return { tree, size: null };
+    const game = want ?? had;
+    const delta = { width: game.width - had.width, height: game.height - had.height };
+    const size = {
+        width: Math.max(saved.width + delta.width, minimumOf(tree, 'x')),
+        height: Math.max(saved.height + delta.height, minimumOf(tree, 'y'))
+    };
+    return { tree: holdGame(tree, saved, size, delta), size };
+}
+
+/** The game's pixels in whichever of `trees` holds it, laid out at `size`, or null when none does. */
+export function gameSizeIn(trees: readonly PaneNode[], size: Size): Size | null {
+    for (const tree of trees) {
+        const found = gameSize(tree, size);
+        if (found) return found;
+    }
+    return null;
+}
