@@ -349,11 +349,14 @@ input[type='color'] {
 }
 
 /* The scrollbar is stone too, rather than a modern floating sliver: a channel
-   cut through the panel with a tile running in it. */
+   cut through the panel with a tile running in it. Where a box scrolls both
+   ways the two channels meet in a corner, cut the same, which Chromium would
+   otherwise paint white. */
 ::-webkit-scrollbar {
     width: 12px;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
     background: var(--color-edge-dark);
 }
 ::-webkit-scrollbar-thumb {
