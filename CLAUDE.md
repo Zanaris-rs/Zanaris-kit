@@ -445,6 +445,15 @@ file — shown in the kit's own pages. Keep these true:
   worth, read off the header: a tiny PNG can decode to gigabytes. It is named by its
   sha-256, and `path` answers only for a name shaped that way, so no name
   reaches outside `<userData>/backgrounds/`.
+- **The kit's own pictures are asked for by id.** The gallery's twelve are
+  files in `static/pictures/`, made by `npm run make:pictures` from the
+  content checkout and listed in `PRESETS` (`src/main/presets.ts`), which the
+  script reads too. The page sends an id; main looks it up, never joins it
+  into a path, and stores the file through `PictureStore` like any other, so
+  no theme names a preset and no preset id is ever saved: the set can change
+  between releases. `zanaris-bg://preset/<id>` serves the thumbnails from the
+  same lookup. `presets.test.ts` holds the folder to the list, and every file
+  to what the store keeps.
 - **`zanaris-bg:` is handled on the default session only**, where the shell and
   Settings are. The game and page views are partitions of their own and must
   never get it: a page could then read every picture by guessing nothing more
@@ -473,6 +482,7 @@ file — shown in the kit's own pages. Keep these true:
 | `npm run fresh` | set the profile aside so the next launch is a first launch, keeping the builds and the characters |
 | `npm run stage:engine -- <id>` | stage a recipe into `engine-dist/` and `engine-<id>.tar.gz` |
 | `npm run pin:engine -- <id>` | write a published build's size and digest into its recipe |
+| `npm run make:pictures [-- <content-dir>]` | make the kit's own pictures into `static/pictures/` from the content checkout, under Electron for `nativeImage` |
 | `npm run dist` | electron-builder output |
 
 **The capture hazard.** `npm run capture` opens real windows and makes real

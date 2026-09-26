@@ -15,12 +15,12 @@ import {
     CUSTOM_MAX,
     DEFAULT_THEME,
     PICTURE_SCHEME,
-    deriveTheme,
     THEMES,
     isThemeId,
     newCustomId as newThemeId,
     readThemeDraft,
     serverOverride,
+    themeById,
     themeFor,
     uniqueName,
     type Background,
@@ -2273,38 +2273,25 @@ async function captureAndExit(dir: string): Promise<void> {
             appearanceChanged();
         }
 
-        // A custom theme with a picture, the way a player makes one: a picture
-        // stored through the store, a theme saved around it, worn as the app
-        // theme. The picture is drawn here — a dusk sky over a band of ground —
-        // so the run needs no file of its own. Then Settings on Appearance with
-        // the theme's card, and the editor open on it, each opened by clicking
-        // as a person would and read back before the shot.
+        // A custom theme with one of the kit's own pictures, the way a player
+        // makes one: the Title screen stored through the store, a theme saved
+        // around it, worn as the app theme. Then Settings on Appearance with
+        // the theme's card, and the editor open on it with the gallery marking
+        // the Title screen, each opened by clicking as a person would and read
+        // back before the shot. Then Cobbles clicked in the gallery and the
+        // theme saved from the page — main's handler, the store and Save, as
+        // a player's click takes them — and the window shot wearing it, tiled.
         {
-            const width = 480;
-            const height = 270;
-            const pixels = Buffer.alloc(width * height * 4);
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const sky = y / height;
-                    const ground = y > height * 0.72;
-                    const glow = Math.max(0, 1 - Math.hypot(x - width * 0.7, y - height * 0.3) / 90);
-                    const i = (y * width + x) * 4;
-                    // BGRA, as createFromBitmap reads it.
-                    pixels[i] = ground ? 40 : Math.round(120 - 60 * sky + 120 * glow);
-                    pixels[i + 1] = ground ? 70 : Math.round(40 + 30 * sky + 150 * glow);
-                    pixels[i + 2] = ground ? 45 : Math.round(40 + 90 * sky + 120 * glow);
-                    pixels[i + 3] = 255;
-                }
-            }
-            const stored = pictures.add(nativeImage.createFromBitmap(pixels, { width, height }).toPNG());
+            const title = readPreset(PRESET_DIR, 'title');
+            const stored = title ? pictures.add(title) : { error: `the Title screen is not in ${PRESET_DIR}` };
             if ('error' in stored) {
                 fault(`custom theme: the picture was refused: ${stored.error}`);
             } else {
                 const id = 'custom-ca97e001';
                 const saved = appState.saveCustomTheme({
                     id,
-                    name: 'Zanaris at dusk',
-                    colors: deriveTheme('#3a4a7a', '#9a5ab0'),
+                    name: 'Title screen',
+                    colors: themeById(DEFAULT_THEME).colors,
                     background: { picture: stored.picture, fit: 'cover', show: 0.4 }
                 });
                 if (!saved) fault('custom theme: it would not save');
@@ -2335,7 +2322,23 @@ async function captureAndExit(dir: string): Promise<void> {
                 if (!(await heading()).includes('Edit theme')) fault('settings-editor: the editor could not be opened, so the shot would show the list');
                 await wait(500);
                 await shootShell('settings-editor', settingsWindow);
+                // The gallery, as a person uses it: Cobbles clicked, the draft read back, then Save.
+                const cobbles = `document.querySelector('button[aria-label="Cobbles"]')`;
+                if (!(await contents.executeJavaScript(`(() => { const b = ${cobbles}; if (!b) return false; b.click(); return true; })()`))) {
+                    fault('settings-editor-preset: the gallery has no Cobbles to click');
+                }
+                for (let tries = 0; tries < 20 && !(await contents.executeJavaScript(`${cobbles}?.getAttribute('aria-pressed') === 'true'`)); tries++) await wait(250);
+                await wait(500);
+                await shootShell('settings-editor-preset', settingsWindow);
+                await click('Save');
+                const worn = (): Background | null | undefined => appState.appearance().custom.find(theme => theme.id === id)?.background;
+                for (let tries = 0; tries < 20 && worn()?.fit !== 'tile'; tries++) await wait(250);
+                const tiled = worn();
+                if (tiled?.fit !== 'tile') fault('theme-preset-tile: Cobbles, picked and saved, never reached the theme');
                 settingsWindow.window.close();
+                await wait(800);
+                log(`[capture] preset theme: ${tiled?.picture ?? 'no picture'}, ${tiled?.fit ?? 'no fit'}`);
+                await shootShell('theme-preset-tile', first);
             }
             for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
             appState.setTheme(DEFAULT_THEME);

@@ -434,9 +434,17 @@ bar, the headers and every panel, with the game and the pages covering their
 own part of it. The stone turns partly see-through over it, by as much as the
 theme says, up to 60%; the bevels and the words stay solid, and a list inside
 a panel shows less of the picture than the panel's frame, so the text sits on
-the most solid stone. A picture is a PNG, JPEG, WebP or GIF of up to 10 MB and
-a 5K screen's worth of pixels, checked by its own bytes rather than its name; the kit keeps a copy in its
-data folder, under `backgrounds/`.
+the most solid stone.
+
+The picture can be one of the kit's own, from the gallery at the top of the
+editor's Picture section: the 2004 title screen, laid as the client lays it,
+or one of eleven of the textures the game puts on its walls, roofs and floors
+— lava, water, swamp, marble, brick, cobbles, sandstone, rock, roof tiles,
+thatch and oak — tiled. They are the game's own art, made from the 274
+content by `npm run make:pictures` into `static/pictures/`. Or it can be your
+own: a PNG, JPEG, WebP or GIF of up to 10 MB and a 5K screen's worth of
+pixels, checked by its own bytes rather than its name. Either way the kit
+keeps a copy in its data folder, under `backgrounds/`.
 
 Export… writes a theme to a `.zktheme` file, its picture inside it, to hand to
 someone else; Import theme… adds one as a new theme beside yours and never
