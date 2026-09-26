@@ -1,4 +1,4 @@
-import type { Rect, Size } from './paneTree.ts';
+import type { Edge, Rect, Size } from './paneTree.ts';
 
 /**
  * How a window grows to hold a pane it has just been given, on the display it
@@ -28,7 +28,9 @@ export function roomFor(frame: Rect, workArea: Rect): Size {
  *
  * A window already hanging off the left or the top is left there rather than
  * pulled further: the player put it there, and moving it is for keeping the
- * new pane on screen, not for tidying the window.
+ * new pane on screen, not for tidying the window. A negative `by` shrinks it
+ * from the right and the bottom, where it is (`serverWindow.sizeWindow`, Task 7,
+ * relies on this).
  */
 export function grownFrame(frame: Rect, workArea: Rect, by: Size): Rect {
     const width = frame.width + by.width;
@@ -38,5 +40,20 @@ export function grownFrame(frame: Rect, workArea: Rect, by: Size): Rect {
         y: Math.max(Math.min(frame.y, workArea.y + workArea.height - height), Math.min(frame.y, workArea.y)),
         width,
         height
+    };
+}
+
+/**
+ * `frame` less `by`, taken off at `edge`: the window giving back a closed
+ * pane's room (`paneTree.closeGivingBack`). A pane that was left of the game, or
+ * above it, moves the window's left or top edge in, so the game stays where it
+ * was on screen; one right of it or below moves the right or bottom edge.
+ */
+export function shrunkFrame(frame: Rect, by: Size, edge: Edge): Rect {
+    return {
+        x: edge === 'left' ? frame.x + by.width : frame.x,
+        y: edge === 'top' ? frame.y + by.height : frame.y,
+        width: frame.width - by.width,
+        height: frame.height - by.height
     };
 }

@@ -717,3 +717,99 @@ export function swapPanes(node: PaneNode, a: string, b: string): PaneNode {
     };
     return traded(node);
 }
+
+/** A side of the window: the one that moves when a close gives space back. */
+export type Edge = 'left' | 'right' | 'top' | 'bottom';
+
+/**
+ * Closes a pane and, when that would have grown the game, gives the space back
+ * to the screen instead — the explicit close's counterpart to `makeRoom`.
+ *
+ * `closePane` hands a closed pane's share to its siblings, and when the game is
+ * one of them it grows: a canvas of fixed pixels in a bigger pane is a border of
+ * nothing, and the player has to drag a seam back to where it was. So along the
+ * closed pane's split, the window shrinks by the pane and its seam, and every
+ * pane left keeps the pixels it had. `edge` is the side of the window that moves
+ * in — the closed pane's own side of the game — so the game stays where it was
+ * on screen, and null when nothing shrank.
+ *
+ * `room` is how far the window may shrink, per axis: nothing while it is
+ * maximised or full screen. The shrink stops at the tree's own floor too. What
+ * the window cannot give up is shared by the closed pane's siblings in
+ * proportion, exactly as `closePane` shares it, so with no room at all the
+ * answer is `closePane`'s own tree.
+ *
+ * Only the gesture that says "close" comes here. A drop also closes a pane on
+ * its way to moving it, and a drop must never resize the window, so
+ * `closePane` itself stays as it is.
+ *
+ * The tree returned is arranged at `size` less `shrunk` (`arrangedAt`).
+ */
+export function closeGivingBack(node: PaneNode, paneId: string, size: Size, room: Size): { tree: PaneNode; shrunk: Size; edge: Edge | null } {
+    const after = closePane(node, paneId);
+    const none = { tree: after, shrunk: { width: 0, height: 0 }, edge: null };
+    const parent = parentOf(node, paneId);
+    const was = gameSize(node, size);
+    const now = gameSize(after, size);
+    if (!parent || !was || !now) return none;
+    const across = parent.axis === 'x';
+    if ((across ? now.width - was.width : now.height - was.height) <= 0) return none;
+
+    const panes = layoutTree(node, { x: 0, y: 0, width: size.width, height: size.height }).panes;
+    const closed = panes.get(paneId)!;
+    const game = panes.get(paneIds(node).find(id => contentOf(node, id)?.kind === 'game')!)!;
+    const extent = (across ? closed.width : closed.height) + SEAM;
+    const floor = (across ? size.width : size.height) - minimumOf(after, parent.axis);
+    const shrink = Math.max(0, Math.min(extent, across ? room.width : room.height, floor));
+    if (shrink === 0) return none;
+
+    const to = across ? { width: size.width - shrink, height: size.height } : { width: size.width, height: size.height - shrink };
+    const before = across ? closed.x < game.x : closed.y < game.y;
+    return {
+        tree: closePane(payFrom(node, paneId, size, to), paneId),
+        shrunk: { width: size.width - to.width, height: size.height - to.height },
+        edge: across ? (before ? 'left' : 'right') : before ? 'top' : 'bottom'
+    };
+}
+
+/** The split holding `paneId` as a direct child, or null when the pane is the whole tree or not in it. */
+function parentOf(node: PaneNode, paneId: string): Extract<PaneNode, { kind: 'split' }> | null {
+    if (node.kind === 'leaf') return null;
+    if (node.children.some(child => child.kind === 'leaf' && child.paneId === paneId)) return node;
+    for (const child of node.children) {
+        const found = parentOf(child, paneId);
+        if (found) return found;
+    }
+    return null;
+}
+
+/**
+ * `node` arranged at `to` rather than `from`, with the whole difference taken
+ * from the named pane: down its path, each split's child on the path gives up
+ * the difference along that split's axis and every other child keeps the pixels
+ * it had.
+ *
+ * The pane about to be closed is the one named, so its share can end up at
+ * nothing or a seam's width below it — a size no pane is ever drawn at, and
+ * none is, since `closePane` removes it before anything lays the tree out. What
+ * closing it then hands its siblings is exactly what is left of it, which is
+ * nothing when the window gave up the whole pane and its seam.
+ */
+function payFrom(node: PaneNode, paneId: string, from: Size, to: Size): PaneNode {
+    if (node.kind === 'leaf') return node;
+    const at = node.children.findIndex(child => paneIds(child).includes(paneId));
+    if (at < 0) return node;
+    const across = node.axis === 'x';
+    const seams = SEAM * (node.children.length - 1);
+    const had = allocate(
+        node.fractions,
+        (across ? from.width : from.height) - seams,
+        node.children.map(child => minimumOf(child, node.axis))
+    );
+    const gross = (across ? to.width : to.height) - seams;
+    const lost = (across ? from.width : from.height) - (across ? to.width : to.height);
+    const sizes = had.map((px, i) => (i === at ? px - lost : px));
+    const resized = (size: Size, px: number): Size => (across ? { width: px, height: size.height } : { width: size.width, height: px });
+    const child = payFrom(node.children[at]!, paneId, resized(from, had[at]!), resized(to, sizes[at]!));
+    return { ...node, children: node.children.map((c, i) => (i === at ? child : c)), fractions: sizes.map(px => px / gross) };
+}
