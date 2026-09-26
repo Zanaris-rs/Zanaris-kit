@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
-import { FITS, NICK_COLOURS, SHOW_MAX, contrastWarnings, themeVars, type Fit, type ThemeColors, type ThemeDraft, type ThemeLook, type ThemeToken } from '../../shared/themes.ts';
+import type { PresetCard } from '../../main/presets.ts';
+import { FITS, NICK_COLOURS, SHOW_MAX, contrastWarnings, presetUrl, themeVars, type Fit, type ThemeColors, type ThemeDraft, type ThemeLook, type ThemeToken } from '../../shared/themes.ts';
 import { FIELD, QuietButton } from './Servers';
 
 /*
@@ -23,6 +24,8 @@ const PREVIEW_BUTTON: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 const HEX_FIELD = 'sunk w-[84px] shrink-0 px-[7px] py-[3px] font-mono text-[13px] text-cream';
 /* The slider and the colour wells wear the gold the client's own accents do. */
 const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
+/* The picture the draft wears, marked as a chosen theme card is: gold over `.sunk`'s bevel. */
+const CHOSEN: CSSProperties = { borderColor: 'var(--color-gold)' };
 
 /** Every token, in the words a player would use for it, grouped by what it paints. Each of the 21 appears once. */
 const GROUPS: readonly { title: string; rows: readonly [ThemeToken, string][] }[] = [
@@ -127,6 +130,44 @@ function Preview({ look }: { look: ThemeLook }): ReactNode {
 }
 
 /**
+ * The kit's own pictures, as thumbnails six to a row, each named under it.
+ * A thumbnail shows its picture as a window lays it — a texture tiled, two
+ * repeats across, and the title screen filling the square — at full
+ * strength rather than through the stone, so the picture itself is what is
+ * chosen. The one the draft wears is marked; a click asks main to store it,
+ * as Choose your own… does a file.
+ */
+function Gallery({ presets, chosen, busy, onPick }: { presets: readonly PresetCard[]; chosen: string | null; busy: boolean; onPick: (preset: PresetCard) => void }): ReactNode {
+    return (
+        <ul className="grid grid-cols-6 gap-1.5">
+            {presets.map(preset => {
+                const on = preset.picture === chosen;
+                return (
+                    <li key={preset.id} className="flex min-w-0 flex-col gap-0.5">
+                        <button
+                            type="button"
+                            disabled={busy}
+                            aria-pressed={on}
+                            aria-label={preset.name}
+                            title={preset.name}
+                            onClick={() => onPick(preset)}
+                            style={{
+                                backgroundImage: `url("${presetUrl(preset.id)}")`,
+                                backgroundSize: preset.fit === 'tile' ? '50%' : 'cover',
+                                backgroundPosition: 'center',
+                                ...(on ? CHOSEN : null)
+                            }}
+                            className="sunk aspect-square w-full"
+                        />
+                        <span className={`truncate text-center text-[11px] ${on ? 'text-cream' : 'text-dim'}`}>{preset.name}</span>
+                    </li>
+                );
+            })}
+        </ul>
+    );
+}
+
+/**
  * One colour: its name, a colour well, and a hex field. The field holds what
  * is typed and applies it only once it is a whole `#rrggbb`, so typing a
  * colour out never paints a half one; the well always holds a whole one.
@@ -160,10 +201,11 @@ function ColorRow({ token, label, value, onChange }: { token: ThemeToken; label:
 /**
  * The theme editor, in place of the Appearance section while it is open.
  * Every colour is the player's to set; the warnings say when a pair reads
- * worse than 2004 stone's, and saving is still their call. A picture is
- * chosen in a dialog of main's, which answers its stored name.
+ * worse than 2004 stone's, and saving is still their call. A picture is one
+ * of the kit's own, from the gallery, or a file chosen in a dialog of
+ * main's; either way main stores it and answers its stored name.
  */
-export default function ThemeEditor({ initial, onClose }: { initial: ThemeDraft; onClose: () => void }): ReactNode {
+export default function ThemeEditor({ initial, presets, onClose }: { initial: ThemeDraft; presets: readonly PresetCard[]; onClose: () => void }): ReactNode {
     const [draft, setDraft] = useState<ThemeDraft>(initial);
     const [busy, setBusy] = useState(false);
     const [said, setSaid] = useState<{ text: string; alert: boolean } | null>(null);
@@ -194,6 +236,14 @@ export default function ThemeEditor({ initial, onClose }: { initial: ThemeDraft;
             if (answer === null) return;
             if ('error' in answer) setSaid({ text: answer.error, alert: true });
             else setDraft(d => ({ ...d, background: { picture: answer.picture, fit: d.background?.fit ?? 'cover', show: d.background?.show ?? FIRST_SHOW } }));
+        });
+
+    /** A preset brings its own fit — a texture tiles, the title screen fills — and keeps how much the draft lets through. */
+    const pickPreset = (preset: PresetCard): Promise<void> =>
+        run(window.zanaris.appearance.presetPicture(preset.id), answer => {
+            if (answer === null) return;
+            if ('error' in answer) setSaid({ text: answer.error, alert: true });
+            else setDraft(d => ({ ...d, background: { picture: answer.picture, fit: preset.fit, show: d.background?.show ?? FIRST_SHOW } }));
         });
 
     const save = (): Promise<void> =>
@@ -240,9 +290,10 @@ export default function ThemeEditor({ initial, onClose }: { initial: ThemeDraft;
 
             <h3 className="px-2.5 pt-3 pb-1 font-pixel text-[14px] text-gold">Picture</h3>
             <div className="flex flex-col gap-1.5 px-2.5">
+                {presets.length > 0 && <Gallery presets={presets} chosen={draft.background?.picture ?? null} busy={busy} onPick={preset => void pickPreset(preset)} />}
                 <div className="flex items-center gap-2">
                     <QuietButton disabled={busy} onClick={() => void choosePicture()}>
-                        {draft.background ? 'Choose another picture…' : 'Choose picture…'}
+                        Choose your own…
                     </QuietButton>
                     {draft.background && (
                         <QuietButton disabled={busy} onClick={() => setDraft(d => ({ ...d, background: null }))}>
@@ -295,7 +346,7 @@ export default function ThemeEditor({ initial, onClose }: { initial: ThemeDraft;
                         <p className="text-[12px] text-faint">The picture shows across the whole window, through the stone. The game and the pages cover it.</p>
                     </>
                 ) : (
-                    <p className="text-[12px] text-faint">A PNG, JPEG, WebP or GIF of up to 10 MB, shown across the whole window through the stone.</p>
+                    <p className="text-[12px] text-faint">One of the kit&apos;s, or a PNG, JPEG, WebP or GIF of your own of up to 10 MB, shown across the whole window through the stone.</p>
                 )}
             </div>
 
