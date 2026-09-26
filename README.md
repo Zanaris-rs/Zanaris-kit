@@ -75,16 +75,19 @@ over the game would sit underneath it.
 
 A **server window** is bound to one catalog entry for its whole life. The game
 pane's own header reads "Lost City · W5 · low · 43 ms": the server, the world,
-the detail level and the latency to that world's host, measured every ten
-seconds. It is the window's fact rather than the pane's — one server, one game —
-and it sat at the left of the tab bar for exactly that reason, until it became
+the detail level and the latency to that world's host, measured as the game
+loads and every fifteen minutes while it is open — every probe is a connect to
+somebody else's server, and every open kit makes them. It is the window's fact
+rather than the pane's — one server, one game — and it sat at the left of the
+tab bar for exactly that reason, until it became
 clear that a read-out nobody can place is a read-out nobody reads. Beside the
 game it describes, it is obviously about the thing under it, and the bar is left
 to tabs. The first of the server's tools is **Worlds**, opened from **Add pane**
 at the right end of the tab bar like everything else a pane can hold. What it
 shows is Low / High detail, then every world with region, players online, members or free, and
-latency, the current world marked. Choosing a world loads it in the same
-window; flipping detail reloads the current world. The world and detail you
+latency, the current world marked — measured as the pane opens and every
+fifteen minutes while it stays open, or now with Refresh. Choosing a world
+loads it in the same window; flipping detail reloads the current world. The world and detail you
 chose are remembered per server; the next window for that server opens there.
 
 Either switch asks first. The dialog names where you are going and says the

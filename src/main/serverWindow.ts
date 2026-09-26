@@ -53,7 +53,17 @@ function defaultContent(serverId: string): { width: number; height: number; game
  * an opening size a few pixels short costs nothing.
  */
 const FRAME_ALLOWANCE = 40;
-const PROBE_EVERY_MS = 10_000;
+/**
+ * How often a latency is measured again while something shows it: the game's
+ * header, or a Worlds pane. Each is also measured once when it opens — a game
+ * as it loads, Worlds as its pane does — and Refresh measures on demand.
+ *
+ * Every probe is a TCP connect to a server somebody else runs, and every open
+ * kit makes them: every ten seconds, as this once was, a thousand idle kits
+ * sent Lost City's world hosts about a hundred connects a second. A figure a
+ * quarter of an hour old still says which world is near.
+ */
+const PROBE_EVERY_MS = 15 * 60_000;
 const PROBE_TIMEOUT_MS = 3_000;
 
 /**
@@ -639,7 +649,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     let panelProbe: NodeJS.Timeout | null = null;
 
-    /** The whole list is probed only while a Worlds pane is open somewhere in this window. */
+    /** The whole list is probed only while a Worlds pane is open somewhere in this window: once as it opens, then every `PROBE_EVERY_MS`. */
     function syncPanelProbe(): void {
         const worlds = deps.worlds;
         const wanted = openTools().includes('worlds') && worldSwitch !== null && worlds !== null;
@@ -1440,7 +1450,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         pushState();
     }
 
-    if (worldSwitch) currentProbe = setInterval(() => void probeCurrent(), PROBE_EVERY_MS);
+    // Only while there is a game to read it beside: with the game's pane
+    // closed nothing shows the figure, so nothing measures it. The game's
+    // load measures it at once when it comes back.
+    if (worldSwitch) currentProbe = setInterval(() => {
+        if (gameView) void probeCurrent();
+    }, PROBE_EVERY_MS);
     const unsubscribeWorlds = deps.worlds?.subscribe(() => pushState()) ?? null;
 
     // ── lifecycle ────────────────────────────────────────────────────────
