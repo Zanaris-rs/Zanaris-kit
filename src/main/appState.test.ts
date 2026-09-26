@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppState } from './appState.ts';
@@ -745,13 +745,14 @@ test('a save that cannot be written leaves the custom themes as they were, so tr
     const state = new AppState(file);
     state.load();
     state.saveCustomTheme(night());
-    // A file that cannot be written, as on a full disk.
-    chmodSync(file, 0o400);
+    // A save that cannot be written, as on a full disk: a directory where the
+    // save writes before it renames over the file.
+    mkdirSync(`${file}.incoming`);
     try {
         assert.throws(() => state.saveCustomTheme(night('custom-0000000b', 'Second')));
         assert.throws(() => state.deleteCustomTheme('custom-0000000a'));
     } finally {
-        chmodSync(file, 0o600);
+        rmSync(`${file}.incoming`, { recursive: true });
     }
     assert.deepEqual(
         state.appearance().custom.map(t => t.id),

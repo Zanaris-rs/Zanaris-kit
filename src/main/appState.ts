@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
@@ -9,6 +9,7 @@ import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
 import { readYourWorldBuild, readYourWorldSettings } from './yourworld/settings.ts';
 import { CUSTOM_MAX, DEFAULT_THEME, isThemeId, readCustomTheme, type Appearance, type Theme } from '../shared/themes.ts';
+import { writeWhole } from './wholeFile.ts';
 
 interface StateFile {
     version: 1;
@@ -507,6 +508,6 @@ export class AppState {
             startup: [...this.startup],
             appearance: this.appearance()
         };
-        writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
+        writeWhole(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }

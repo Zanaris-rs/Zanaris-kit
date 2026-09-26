@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { NewServerInput, ServerDef, WikiDef } from '../shared/catalog.ts';
 import type { HiscoresDef } from '../shared/hiscores.ts';
@@ -8,6 +8,7 @@ import { DEFAULT_BUILD } from '../shared/engines.ts';
 import { isWorldsDef } from './worlds/sources.ts';
 import { newServerTimers } from './timers/defs.ts';
 import { recipeRevision } from './yourworld/recipes.ts';
+import { writeWhole } from './wholeFile.ts';
 
 /** LostHQ has no discoverable search endpoint (its index.php?search= returns the homepage). */
 const LOSTHQ: WikiDef = { home: 'https://2004.losthq.rs/', search: null };
@@ -670,7 +671,7 @@ export class Catalog {
     private save(): void {
         mkdirSync(dirname(this.file), { recursive: true });
         const data: CatalogFile = { version: 5, servers: this.servers };
-        writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
+        writeWhole(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }
 
