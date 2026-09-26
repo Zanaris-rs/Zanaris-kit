@@ -1,5 +1,7 @@
-import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { SettingsState } from '../shared/ipc';
+import type { ThemeDraft } from '../shared/themes';
+import type { Editing } from '../main/appearance.ts';
 import Appearance from './settings/Appearance';
 import Servers, { QuietButton } from './settings/Servers';
 import Tab from './tab';
@@ -12,6 +14,49 @@ const SECTIONS: readonly { id: Section; label: string }[] = [
     { id: 'appearance', label: 'Appearance' }
 ];
 
+/** The theme being edited and what its editor opened on. Held here rather than in the editor so a trip to Servers and back keeps it. */
+export interface ThemeEditing {
+    initial: ThemeDraft;
+    draft: ThemeDraft;
+}
+
+/**
+ * Tells main about the theme being edited, which every window wears until the
+ * editor closes — one report in flight at a time, the newest waiting its turn
+ * and anything between dropped. A colour well reports on every step of a drag
+ * and each report restyles every window, so queueing them all would leave the
+ * windows trailing the well long after it stopped.
+ */
+function useReportEditing(editing: ThemeEditing | null): void {
+    const waiting = useRef<{ report: Editing | null } | null>(null);
+    const sending = useRef(false);
+    useEffect(() => {
+        waiting.current = {
+            report: editing
+                ? {
+                      look: { colors: editing.draft.colors, background: editing.draft.background },
+                      name: editing.draft.name,
+                      changed: JSON.stringify(editing.draft) !== JSON.stringify(editing.initial)
+                  }
+                : null
+        };
+        if (sending.current) return;
+        sending.current = true;
+        void (async () => {
+            while (waiting.current) {
+                const { report } = waiting.current;
+                waiting.current = null;
+                try {
+                    await window.zanaris.appearance.editing(report);
+                } catch {
+                    // Nothing to show: the next change reports again, and closing the editor reports null.
+                }
+            }
+            sending.current = false;
+        })();
+    }, [editing]);
+}
+
 /**
  * The Settings window's page. One window for the whole app, so everything on
  * it is app-wide. Two sections, Servers and Appearance, chosen from a row of
@@ -21,10 +66,16 @@ const SECTIONS: readonly { id: Section; label: string }[] = [
  * stone with their lists sunk into it, and a page on ink alone reads as the
  * inverse of every other panel in the app. The app theme's picture is the
  * box around it, showing through that stone.
+ *
+ * It wears `state.appearance.look`, which main makes the draft's look while
+ * the theme editor is open. The draft is held here, above the sections, so
+ * switching to Servers and back returns to the editor as it was.
  */
 export default function Settings(): ReactNode {
     const [state, setState] = useState<SettingsState | null>(null);
     const [section, setSection] = useState<Section>('servers');
+    const [editing, setEditing] = useState<ThemeEditing | null>(null);
+    useReportEditing(editing);
 
     useEffect(() => {
         let alive = true;
@@ -38,7 +89,8 @@ export default function Settings(): ReactNode {
         };
     }, []);
 
-    // Settings wears the app theme: it belongs to no one server.
+    // Settings wears the app theme, since it belongs to no one server — or,
+    // while the editor is open, the theme being edited, as every window does.
     useLayoutEffect(() => {
         if (state) applyTheme(state.appearance.look);
     }, [state]);
@@ -80,7 +132,7 @@ export default function Settings(): ReactNode {
                         </div>
                     </>
                 )}
-                {section === 'appearance' && <Appearance view={state.appearance} />}
+                {section === 'appearance' && <Appearance view={state.appearance} editing={editing} setEditing={setEditing} />}
             </div>
         </div>
     );

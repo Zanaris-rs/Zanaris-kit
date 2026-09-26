@@ -424,13 +424,15 @@ the stone's own contrast, pair by pair.
 
 **Your own themes.** Customise, under any theme's card in Settings > Appearance,
 opens an editor on a copy of it. Every one of the frame's 21 colours can be
-set there, by a colour well or by hex, beside a preview drawn with the kit's
-own panels, tabs and buttons that follows each change as it is made. When a
-pair of colours reads worse than it does in 2004 stone, the editor says which
-and by how much; saving is still yours. The windows wearing a theme change
-when it is saved, and Cancel changes nothing. Up to 32 themes of your own are
-kept, and each is chosen from its card, per server and from View > Server
-Theme like any other.
+set there, by a colour well or by hex. While the editor is open, every window
+— Settings and every server's, whatever each would otherwise wear — wears the
+theme as it is being edited, so each change shows on the app itself as it is
+made. When a pair of colours reads worse than it does in 2004 stone, the
+editor says which and by how much; saving is still yours. Save keeps the
+theme and makes it the app theme; a server with its own theme goes back to
+that one. Cancel puts every window back as it was, and closing Settings with
+changes unsaved asks first. Up to 32 themes of your own are kept, and each is
+chosen from its card, per server and from View > Server Theme like any other.
 
 A theme can carry a picture, shown across the whole window: behind the tab
 bar, the headers and every panel, with the game and the pages covering their
@@ -442,10 +444,10 @@ only lay a grey haze over it. A picture is a PNG, JPEG, WebP or GIF of up to 10 
 a 5K screen's worth of pixels, checked by its own bytes rather than its name; the kit keeps a copy in its
 data folder, under `backgrounds/`.
 
-Export… writes a theme to a `.zktheme` file, its picture inside it, to hand to
-someone else; Import theme… adds one as a new theme beside yours and never
-over one. A theme file carries the look and nothing else — no server, no
-layout.
+Export…, in the editor, writes the theme as the editor holds it, saved or
+not, to a `.zktheme` file, its picture inside it, to hand to someone else;
+Import theme… adds one as a new theme beside yours and never over one. A
+theme file carries the look and nothing else — no server, no layout.
 
 The mockups this was ported from live in `design/`: `build.mjs` generates the
 artboards, and `seed-canvas.mjs` from the design skill packages them into a

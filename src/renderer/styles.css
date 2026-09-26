@@ -123,7 +123,7 @@ body {
 
 /*
  * A theme's picture, painted on the one element that spans a page — the
- * shell's root, Settings' — and on each card and preview that shows a theme.
+ * shell's root, Settings' — and on each card that shows a theme.
  * `themeVars` sets these, to `none` when a theme has no picture, and every
  * surface over it lets `show` of it through (`shared/themes.ts`). Painted as
  * the element's own image, over its ink, rather than on the page behind it:
