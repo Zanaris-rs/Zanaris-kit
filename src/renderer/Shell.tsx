@@ -457,8 +457,8 @@ export default function Shell(): ReactNode {
                      * Setups: a set of panes in a shape, one click away. Main's
                      * menu, as Add pane's is, since it drops down over the panes;
                      * a setup chosen from it replaces the panes of the tab in
-                     * front and, when it holds the game, sizes the window
-                     * around the game.
+                     * front and, when it holds the game and has a size, sizes
+                     * the window around the game.
                      */}
                     <button
                         type="button"
