@@ -32,13 +32,18 @@
         preparing: ['Getting the world ready', 'The first start copies the game files. This takes a moment.'],
         starting: ['Starting your world', 'Loading the map and everyone in it.'],
         stopping: ['Stopping the world', 'Saving and shutting down.'],
-        stopped: ['The world is stopped', 'Open it again from the panel.'],
+        // A window's world is stopped only on its way back up: a change in
+        // World, a switch of build. Nothing in the kit stops it and leaves it
+        // stopped while a window wants it — the last window closing stops it
+        // with this page gone — so this says what is about to happen rather
+        // than asking the player to do anything.
+        stopped: ['Restarting your world', 'Saved and stopped. It starts again by itself.'],
         failed: ["The world couldn't start", q.get('reason') || 'No reason was given.'],
         pagefailed: ["The game didn't load", q.get('reason') || 'The world is running, but its page did not load.']
     };
     const [heading, detail] = copy[state] || copy.starting;
     title.textContent = heading;
-    if (state === 'downloading' || state === 'preparing' || state === 'starting' || state === 'stopping') {
+    if (state === 'downloading' || state === 'preparing' || state === 'starting' || state === 'stopping' || state === 'stopped') {
         const dots = document.createElement('span');
         dots.className = 'dots';
         title.appendChild(dots);
