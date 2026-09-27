@@ -92,6 +92,9 @@ export class YourWorldService {
     private process: WorldProcess | null = null;
     private windows = 0;
     private starting: Promise<string> | null = null;
+    /** How many stops have begun, and how many had when `starting` began: a start a stop has since overtaken is one that is going to fail. */
+    private stops = 0;
+    private startingAfter = 0;
     private stopping: Promise<void> | null = null;
     /** Bumped by every start, so a stop can tell whether the world is still the one it took. */
     private generation = 0;
@@ -359,16 +362,27 @@ export class YourWorldService {
 
     private ensure(): Promise<string> {
         if (this.status === 'ready' && this.url) return Promise.resolve(this.url);
+        // A start a stop has overtaken is on its way to "Stopped while…", and
+        // a restart that took it as its own would be left at stopped with a
+        // window waiting: a switch of build or a change in World made while
+        // the world was still getting ready. So that one is waited out, and
+        // this start begins after it.
+        if (this.starting && this.startingAfter !== this.stops) {
+            const next = (): Promise<string> => (this.windows === 0 ? Promise.reject(new Failure('No window is waiting for the world')) : this.ensure());
+            return this.starting.then(next, next);
+        }
         if (this.starting) return this.starting;
         // A stop in flight owns the world's state until it finishes; queue behind it,
         // or its tail would clear the ports and url this start is about to establish.
         // The window that queued this can close while the stop runs, and a world
         // started for nobody would never be released — so refuse when none is left.
         if (this.stopping) return this.stopping.then(() => (this.windows === 0 ? Promise.reject(new Failure('No window is waiting for the world')) : this.ensure()));
-        this.starting = this.start().finally(() => {
-            this.starting = null;
+        this.startingAfter = this.stops;
+        const starting = this.start().finally(() => {
+            if (this.starting === starting) this.starting = null;
         });
-        return this.starting;
+        this.starting = starting;
+        return starting;
     }
 
     private set(status: YourWorldStatus): void {
@@ -588,6 +602,7 @@ export class YourWorldService {
     }
 
     private async doStop(): Promise<void> {
+        this.stops++;
         const process = this.process;
         const ports = this.ports;
         const generation = this.generation;
