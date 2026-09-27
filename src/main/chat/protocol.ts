@@ -80,6 +80,70 @@ export function formatCommand(command: string, params: string[]): string {
     return parts.join(' ');
 }
 
+/** RFC 1459's ceiling on one line, its CRLF included. A server cuts anything longer. */
+export const LINE_MAX = 512;
+
+/**
+ * The longest "!user@host" a server hangs on a line it relays: an ident of
+ * ten behind the "~" of an unverified one, and a host of 64 — InspIRCd's
+ * limits, and a byte more than UnrealIRCd's. This client never learns its
+ * own, so it allows for the longest.
+ */
+const RELAY_USERHOST = `!~${'u'.repeat(10)}@${'h'.repeat(64)}`;
+
+const UTF8 = new TextEncoder();
+
+/**
+ * Whether a command reaches everyone whole. A server relays
+ * "PRIVMSG #room :text" to the others as ":nick!user@host PRIVMSG #room
+ * :text", and the whole of that has to fit in LINE_MAX, which counts bytes:
+ * text past it is cut off where they read it, while the echo here shows every
+ * word. So the line is measured as the others receive it, in UTF-8 — where an
+ * accented letter is two bytes and most emoji four, so a message the box let
+ * through by its characters can still be too long.
+ */
+export function fitsRelayed(nick: string, command: string, params: string[]): boolean {
+    return UTF8.encode(`:${nick}${RELAY_USERHOST} ${formatCommand(command, params)}\r\n`).length <= LINE_MAX;
+}
+
+/**
+ * What a server says as it closes the link on something other than a ban, in
+ * the wording InspIRCd, UnrealIRCd and the hybrid family use: reconnecting too
+ * fast, too many connections from one address, a session limit, a flood.
+ * These pass, so waiting and trying again is the answer, and they are checked
+ * first: one that also calls itself a line ("Z-lined: Throttled") is still a
+ * throttle.
+ */
+const PASSING = /throttl|too fast|too many (?:host |user )?connections|no more connections|session limit|excess flood/i;
+
+/**
+ * A ban, as an ERROR's text names one: a K-, G-, Z- or D-line (InspIRCd writes
+ * "G-lined: reason", UnrealIRCd "Banned (G-Lined): reason", the hybrid family
+ * "K-Lined"), or plain words to the same effect. Deliberately narrow: a false
+ * match would leave someone offline who only had to wait.
+ */
+const BANNED = /\b[KGZD][:-]lined\b|\bbanned from\b|\byou(?:'re| are) banned\b/i;
+
+/**
+ * Whether an ERROR is the server banning us, and why. Null when it is not a
+ * ban — a ping timeout, a throttle, a kill, the answer to our own QUIT — and
+ * the reason otherwise, which is "" when the server kept it to itself.
+ *
+ * An ERROR wraps its reason as "Closing link: (user@host) [reason]" or
+ * "Closing Link: nick[host] (reason)", and the ban's own label leads the
+ * reason; both are taken off, so what is left is what an operator wrote. A
+ * kill is left alone whatever its reason says: an operator's "you'll be banned
+ * from here" is a warning, and the kill is not a ban.
+ */
+export function banReason(error: string): string | null {
+    const text = stripFormatting(error).trim();
+    if (PASSING.test(text) || !BANNED.test(text)) return null;
+    const wrapped = /^closing link:\s*\S+\s*[[(](.*)[\])]$/i.exec(text);
+    const reason = (wrapped?.[1] ?? text).trim();
+    if (/^killed\b/i.test(reason)) return null;
+    return reason.replace(/^(?:banned\s*)?\(?[KGZD][:-]lined\)?\s*:?\s*/i, '').trim();
+}
+
 /** Re-exported so the chat code keeps one import for everything about IRC; the Settings form reads the same rules from shared. */
 export { asChannel, foldName, isChannel, sameName } from '../../shared/ircNames.ts';
 

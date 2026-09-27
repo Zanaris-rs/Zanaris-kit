@@ -16,8 +16,10 @@ export interface ServerRow {
     notes: string | null;
     /** How many windows of this server are open, so a row can say so. */
     open: number;
-    /** Whether a launch opens this one. */
+    /** Whether a launch opens this one — the first entry included when nothing else is ticked, since a launch opens it then. */
     atStartup: boolean;
+    /** The only server a launch opens, whose box cannot be unticked: a launch always opens one (`nextStartup`). */
+    onlyStartup: boolean;
     removable: boolean;
 }
 
@@ -63,9 +65,29 @@ export function startupServers(stored: readonly string[], catalog: readonly Serv
     return first ? [first] : [];
 }
 
+/**
+ * The ids to store after a startup box in Settings changes.
+ *
+ * The boxes show what a launch opens (`startupServers`), fallback included:
+ * with nothing ticked the first entry opens, so its box is ticked, where it
+ * used to show empty while Lost City opened anyway. Two rules follow. Ticking
+ * another while only the fallback is in effect keeps the fallback, which was
+ * shown ticked and should not untick itself. And the last server a launch
+ * opens cannot be unticked, since a launch always opens one and the box would
+ * only come straight back.
+ *
+ * The answer is the ids a launch would open, so a stale id stored earlier is
+ * dropped on the way.
+ */
+export function nextStartup(stored: readonly string[], catalog: readonly ServerDef[], id: string, on: boolean): string[] {
+    const opening = startupServers(stored, catalog).map(server => server.id);
+    if (on) return opening.includes(id) || !catalog.some(server => server.id === id) ? opening : [...opening, id];
+    return opening.length > 1 ? opening.filter(open => open !== id) : opening;
+}
+
 /** Every catalog entry as a row. The list holds them all; only Remove is ever withheld. */
 export function serversView(opts: { catalog: readonly ServerDef[]; startup: readonly string[]; openCounts: ReadonlyMap<string, number> }): ServersView {
-    const wanted = new Set(opts.startup);
+    const opening = new Set(startupServers(opts.startup, opts.catalog).map(server => server.id));
     return {
         rows: opts.catalog.map(server => ({
             id: server.id,
@@ -73,9 +95,25 @@ export function serversView(opts: { catalog: readonly ServerDef[]; startup: read
             revision: server.revision,
             notes: server.notes,
             open: opts.openCounts.get(server.id) ?? 0,
-            atStartup: wanted.has(server.id),
+            atStartup: opening.has(server.id),
+            onlyStartup: opening.size === 1 && opening.has(server.id),
             removable: isRemovable(server.id)
         }))
+    };
+}
+
+/**
+ * What Remove asks before it removes. Removing is permanent: the name,
+ * address, revision and notes were typed by hand and nothing puts them back.
+ * The windows open on it are not closed — each keeps its copy of the server
+ * until it is — so the question says so rather than leaving it to be guessed.
+ */
+export function removeQuestion(server: { name: string }, openWindows: number): { message: string; detail: string } {
+    const windows =
+        openWindows === 0 ? '' : openWindows === 1 ? ' The window open on it stays open until you close it.' : ` The ${openWindows} windows open on it stay open until you close them.`;
+    return {
+        message: `Remove ${server.name}?`,
+        detail: `Its address and notes are removed with it, and adding it again means typing them again.${windows}`
     };
 }
 

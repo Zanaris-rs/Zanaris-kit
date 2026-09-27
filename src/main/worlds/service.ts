@@ -8,6 +8,52 @@ export interface WorldsIo {
     now(): number;
 }
 
+/**
+ * What `WorldsIo.fetchJson` throws for an answer that arrived with a status
+ * other than 2xx, so a server turning the request away reads differently from
+ * a network that never reached it.
+ */
+export class HttpStatusError extends Error {
+    readonly status: number;
+    constructor(status: number) {
+        super(`HTTP ${status}`);
+        this.name = 'HttpStatusError';
+        this.status = status;
+    }
+}
+
+/** A failure inside the fetch, as opposed to one reading what it fetched. */
+class FetchFailure extends Error {
+    readonly reason: unknown;
+    constructor(reason: unknown) {
+        super(reason instanceof Error ? reason.message : String(reason));
+        this.reason = reason;
+    }
+}
+
+export const WORLDS_UNREACHABLE = "Couldn't reach the world list. Check your connection, then press Refresh.";
+export const WORLDS_RATE_LIMITED = 'The server is turning requests away for now. Try Refresh in a minute.';
+export const WORLDS_SERVER_PROBLEM = "The world list's server is having a problem. Try Refresh shortly.";
+export const WORLDS_UNREADABLE = "The world list came back in a form the kit can't read.";
+
+/**
+ * Why a refresh failed, in the pane's words. The raw error — `HTTP 503`,
+ * `net::ERR_NAME_NOT_RESOLVED`, a parser's "expected a list" — is the kit's
+ * business, not the player's; what the player can do about it is the only
+ * part worth saying. Hiscores says its own failures the same way.
+ */
+export function worldsError(err: unknown): string {
+    if (!(err instanceof FetchFailure)) return WORLDS_UNREADABLE;
+    const reason = err.reason;
+    if (reason instanceof HttpStatusError) {
+        if (reason.status === 429) return WORLDS_RATE_LIMITED;
+        return reason.status >= 500 ? WORLDS_SERVER_PROBLEM : WORLDS_UNREADABLE;
+    }
+    // Reached, and answered with something that is not JSON.
+    if (reason instanceof SyntaxError) return WORLDS_UNREADABLE;
+    return WORLDS_UNREACHABLE;
+}
+
 export interface ServiceView {
     status: 'idle' | 'loading' | 'ready' | 'error';
     worlds: WorldRow[];
@@ -55,7 +101,15 @@ export class WorldsService {
         this.emit();
         this.inFlight = (async () => {
             try {
-                const worlds = await listWorlds(this.def, this.io.fetchJson);
+                // Each fetch wrapped, so `worldsError` can tell a failure to
+                // reach the list from a list that came back unreadable.
+                const worlds = await listWorlds(this.def, async url => {
+                    try {
+                        return await this.io.fetchJson(url);
+                    } catch (err) {
+                        throw new FetchFailure(err);
+                    }
+                });
                 const latency = new Map(this.rows.map(r => [r.id, r.latencyMs]));
                 this.rows = worlds.map(w => ({ ...w, latencyMs: latency.get(w.id) ?? null }));
                 this.fetchedAt = this.io.now();
@@ -63,7 +117,7 @@ export class WorldsService {
                 this.error = null;
             } catch (err) {
                 this.status = 'error';
-                this.error = err instanceof Error ? err.message : String(err);
+                this.error = worldsError(err);
             } finally {
                 this.inFlight = null;
             }

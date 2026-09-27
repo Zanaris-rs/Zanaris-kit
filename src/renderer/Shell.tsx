@@ -9,6 +9,7 @@ import { applyTheme } from './theme';
 import DropIndicator from './dropIndicator';
 import Grip from './grip';
 import Launcher from './Launcher';
+import PaneNotice, { PaneBoundary } from './paneNotice';
 import PaneHeader, { type Grab } from './paneHeader';
 import Tab from './tab';
 import TopBar from './topBar';
@@ -21,9 +22,14 @@ import Worlds from './tools/Worlds';
 
 const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height });
 
-/** Your world's header names the revision of the line it runs, which a switch changes under an open window. */
-function revisionOf(state: ShellState): string {
-    if (state.yourWorld) return `rev ${state.yourWorld.revision}`;
+/**
+ * The revision the read-out adds after the game's label, or null when the
+ * label names it already. Your world's does, beside the world's status, since
+ * a switch of build changes it under an open window; adding it here too
+ * printed it twice.
+ */
+function revisionOf(state: ShellState): string | null {
+    if (state.yourWorld) return null;
     return state.server.revision === null ? 'rev unknown' : `rev ${state.server.revision}`;
 }
 
@@ -37,8 +43,12 @@ function revisionOf(state: ShellState): string {
 const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 /** The tabs' height, with `.btn`'s padding traded for room on the caret's side. Inline for the same reason as the box above. */
 const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
-/** The tabs' height and a square face for one glyph. Inline for the same reason as the boxes above. */
-const GEAR_BOX: CSSProperties = { height: 26, width: 28, padding: 0 };
+/**
+ * The tabs' height and a square face for one glyph, and a wider gap before it
+ * than the bar's own 5px, which is what parts the app's control from the tab's.
+ * Inline for the same reason as the boxes above.
+ */
+const GEAR_BOX: CSSProperties = { height: 26, width: 28, padding: 0, marginLeft: 7 };
 /** The tabs' height, in the warn colour Your world's own sharing notice uses. Inline because `.btn` sets its gold in unlayered CSS. */
 const SHARING_BOX: CSSProperties = { height: 26, color: 'var(--color-warn)' };
 
@@ -80,17 +90,36 @@ function tabTitle(tab: TabView): string {
  * the header, so the shell leaves the rest of the pane empty exactly as it left
  * the old content rect empty. A page's back, forward and reload moved up into
  * the header with everything else that names a pane rather than works in one.
+ * The exception is a game or page that has crashed or hung: main hides its
+ * view and sends the pane a notice, which is drawn where the view was.
  *
- * Every pane the shell draws itself — a tool, and the launcher an empty pane
- * shows — is inset by the same 10px on every side, here and only here, so no
- * tool can drift from another. A tool no longer insets its own edge; it spaces
- * its own top-level blocks with one `gap-2` instead.
+ * Every pane the shell draws itself — a tool, the launcher an empty pane
+ * shows, and a notice — is inset by the same 10px on every side, here and
+ * only here, so no tool can drift from another. A tool no longer insets its
+ * own edge; it spaces its own top-level blocks with one `gap-2` instead. A
+ * tool is drawn inside a boundary, keyed by what the pane holds, so one that
+ * throws shows its own notice rather than taking the shell with it.
  */
 function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
+    if (pane.notice) {
+        const notice = pane.notice;
+        return (
+            <div className="flex min-h-0 flex-1 flex-col p-2.5">
+                <PaneNotice
+                    notice={notice}
+                    onAction={action => {
+                        if (action !== 'retry') void window.zanaris.panes.notice(pane.paneId, action);
+                    }}
+                />
+            </div>
+        );
+    }
     if (pane.content.kind === 'game' || pane.content.kind === 'page') return null;
     return (
         <div className="flex min-h-0 flex-1 flex-col p-2.5">
-            <PaneContentBody pane={pane} state={state} />
+            <PaneBoundary key={pane.content.kind === 'tool' ? pane.content.tool : 'empty'} name={pane.name} paneId={pane.paneId}>
+                <PaneContentBody pane={pane} state={state} />
+            </PaneBoundary>
         </div>
     );
 }
@@ -137,13 +166,19 @@ const ROOM_FOR_REVISION = 300;
  * while the world and the latency beside it are the whole reason to look — so
  * it is the half worth losing. The title attribute keeps the full read-out
  * reachable however narrow the pane gets.
+ *
+ * Your world is the exception. Its label carries the revision itself, before
+ * the world's status, since a switch of build changes it under an open window
+ * (`revisionOf`), so nothing is added after it and nothing is dropped: a
+ * narrow pane cuts the label from its end, status first.
  */
 function GameReadout({ state, width }: { state: ShellState; width: number }): ReactNode {
+    const revision = revisionOf(state);
     /* No shadow of its own: the header is a `.tile`, and every tile already puts one under its text. */
     return (
-        <span title={`${state.gameLabel} · ${revisionOf(state)}`} className="flex min-w-0 shrink items-center gap-[7px] truncate">
+        <span title={revision === null ? state.gameLabel : `${state.gameLabel} · ${revision}`} className="flex min-w-0 shrink items-center gap-[7px] truncate">
             <span className="truncate">{state.gameLabel}</span>
-            {width >= ROOM_FOR_REVISION && <span className="shrink-0 text-[12px] text-faint">{revisionOf(state)}</span>}
+            {revision !== null && width >= ROOM_FOR_REVISION && <span className="shrink-0 text-[12px] text-faint">{revision}</span>}
         </span>
     );
 }
@@ -368,8 +403,9 @@ export default function Shell(): ReactNode {
             <TopBar frame={state.frame} style={at(rects.tabBar)}>
                 {/*
                  * Tabs and the control that makes one, then Sharing while a
-                 * live link has no pane to mark, and Settings, Setups and Add
-                 * pane at the far end, and nothing else. The game's
+                 * live link has no pane to mark, then the two menus that act
+                 * on the tab in front, Setups and Add pane, side by side, and
+                 * Settings alone in the corner, and nothing else. The game's
                  * read-out used to sit at this bar's left on the grounds that
                  * it was the window's rather than any tab's — true, but it
                  * left the bar reading as two unrelated things, and a read-out
@@ -384,7 +420,7 @@ export default function Shell(): ReactNode {
                  * inside the box: on a window narrower than the bar's
                  * buttons, which closing a pane beside the game can now
                  * make, the tabs and the new-tab plus are cut off at its
-                 * edge instead of painting over the gear.
+                 * edge instead of painting over the buttons after it.
                  */}
                 <div role="tablist" className="flex min-w-0 flex-1 items-center gap-[5px] overflow-hidden">
                     {/*
@@ -441,22 +477,6 @@ export default function Shell(): ReactNode {
                     </button>
                 )}
                 {/*
-                 * Settings: a window of its own rather than a pane, since
-                 * everything in it is the app's rather than this window's. A
-                 * gear and no word, beside a button that already has one; its
-                 * name is on the tooltip and the label.
-                 */}
-                <button
-                    type="button"
-                    title="Settings"
-                    aria-label="Settings"
-                    onClick={() => void window.zanaris.settings.open()}
-                    style={GEAR_BOX}
-                    className="btn shrink-0 justify-center"
-                >
-                    <Gear />
-                </button>
-                {/*
                  * Setups: a set of panes in a shape, one click away. Main's
                  * menu, as Add pane's is, since it drops down over the panes;
                  * a setup chosen from it replaces the panes of the tab in
@@ -506,6 +526,27 @@ export default function Shell(): ReactNode {
                     Add pane
                     <Caret />
                 </button>
+                {/*
+                 * Settings: a window of its own rather than a pane, since
+                 * everything in it is the app's rather than this tab's or this
+                 * window's. So it sits last, in the corner where a window's
+                 * settings are looked for, and set a little apart from the two
+                 * menus before it, which only ever change the tab in front.
+                 * Between them and the tabs, where it used to be, it split the
+                 * tab's own controls from the tabs they act on. A gear and no
+                 * word, beside buttons that already have words; its name is on
+                 * the tooltip and the label.
+                 */}
+                <button
+                    type="button"
+                    title="Settings"
+                    aria-label="Settings"
+                    onClick={() => void window.zanaris.settings.open()}
+                    style={GEAR_BOX}
+                    className="btn shrink-0 justify-center"
+                >
+                    <Gear />
+                </button>
             </TopBar>
 
             {state.panes.map(pane => (
@@ -532,14 +573,17 @@ export default function Shell(): ReactNode {
                          * so the two read as the same object: a bevelled panel
                          * with its list sunk into it. A game or page pane keeps
                          * the ink, since a native view covers all of it but
-                         * the header.
+                         * the header — or, while it has stopped, the notice
+                         * drawn where the hidden view was, which reads on ink
+                         * as the view's own ground.
                          */
                         className={`flex flex-col overflow-hidden bg-ink${pane.content.kind === 'tool' || pane.content.kind === 'empty' ? ' tile' : ''}`}
                     >
                         {/*
                          * Every pane, including the two whose bodies are holes
                          * for a native view: the header is the only part of a
-                         * game or page pane the shell draws, and the only place
+                         * running game or page pane the shell draws (one that
+                         * has stopped also gets its notice), and the only place
                          * either can say what it is — and so the only place
                          * any pane can say it is the focused one. The dot is
                          * shown only when there is a choice: a tab's lone pane

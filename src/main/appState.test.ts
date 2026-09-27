@@ -1,9 +1,9 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AppState } from './appState.ts';
+import { AppState, STATE_VERSION } from './appState.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
 import { CUSTOM_MAX, themeById, type Theme } from '../shared/themes.ts';
 
@@ -556,6 +556,19 @@ test('setting a server off removes it, and setting one on twice does not duplica
     assert.deepEqual(a.startupIds(), []);
 });
 
+test('setStartup replaces the whole list, de-duplicated and capped as a stored one is', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setStartup(['lostcity', 'zanaris', 'lostcity']);
+    assert.deepEqual(a.startupIds(), ['lostcity', 'zanaris']);
+    a.setStartup(Array.from({ length: 20 }, (_unused, i) => `s${i}`));
+    assert.equal(a.startupIds().length, 16);
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.startupIds(), a.startupIds());
+});
+
 test('a hand-edited startup entry that is not a string costs its own row and not the file', () => {
     const file = tempFile();
     writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, startup: ['zanaris', 7, '', 'lostcity'] }));
@@ -745,13 +758,14 @@ test('a save that cannot be written leaves the custom themes as they were, so tr
     const state = new AppState(file);
     state.load();
     state.saveCustomTheme(night());
-    // A file that cannot be written, as on a full disk.
-    chmodSync(file, 0o400);
+    // A save that cannot be written, as on a full disk: a directory where the
+    // save writes before it renames over the file.
+    mkdirSync(`${file}.incoming`);
     try {
         assert.throws(() => state.saveCustomTheme(night('custom-0000000b', 'Second')));
         assert.throws(() => state.deleteCustomTheme('custom-0000000a'));
     } finally {
-        chmodSync(file, 0o600);
+        rmSync(`${file}.incoming`, { recursive: true });
     }
     assert.deepEqual(
         state.appearance().custom.map(t => t.id),
@@ -759,17 +773,70 @@ test('a save that cannot be written leaves the custom themes as they were, so tr
     );
 });
 
-test('fromFile says whether the state was read from its file: not when there was none, and not when it was broken', () => {
+test("a newer kit's state.json is read as far as it goes and never written", () => {
     const file = tempFile();
+    const text = JSON.stringify({ version: STATE_VERSION + 1, worlds: { lostcity: { world: 3, detail: 'high', url: 'https://w3-2004.lostcity.rs/rs2.cgi' } }, alwaysOnTop: true, somethingNew: { kept: true } });
+    writeFileSync(file, text);
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.newerVersion(), STATE_VERSION + 1);
+    assert.equal(state.alwaysOnTop(), true, 'what this kit can read, it reads');
+    state.setAlwaysOnTop(false);
+    state.setStartup(['zanaris']);
+    assert.equal(readFileSync(file, 'utf8'), text, 'the newer kit finds its file as it left it');
+    assert.equal(state.alwaysOnTop(), false, 'a change lasts for the run');
+    assert.equal(readdirSync(join(file, '..')).some(n => n.includes('.broken-')), false, 'and nothing is set aside');
+});
+
+test("a newer kit's file in a shape this one cannot read is still not set aside", () => {
+    const file = tempFile();
+    const text = JSON.stringify({ version: STATE_VERSION + 4, places: [] });
+    writeFileSync(file, text);
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.newerVersion(), STATE_VERSION + 4);
+    assert.equal(state.setAsideAt(), null);
+    state.setWarnOnSwitch(false);
+    assert.equal(readFileSync(file, 'utf8'), text);
+});
+
+test("this kit's own version, and a file from before versions, read and save as ever", () => {
+    for (const version of [STATE_VERSION, undefined]) {
+        const file = tempFile();
+        writeFileSync(file, JSON.stringify({ version, worlds: {} }));
+        const state = new AppState(file);
+        state.load();
+        assert.equal(state.newerVersion(), null);
+        state.setAlwaysOnTop(true);
+        assert.equal(JSON.parse(readFileSync(file, 'utf8')).alwaysOnTop, true);
+    }
+});
+
+test('a state.json that will not read is set aside, and says where', () => {
+    const file = tempFile();
+    writeFileSync(file, '{ "version": 1, "worlds": {');
+    const state = new AppState(file);
+    state.load();
+    const aside = state.setAsideAt();
+    assert.ok(aside && aside.startsWith(`${file}.broken-`));
+    assert.equal(readFileSync(aside, 'utf8'), '{ "version": 1, "worlds": {');
+});
+
+test('the pictures a set-aside state named are found in it, cut short or not', () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    state.saveCustomTheme(night());
+    const whole = readFileSync(file, 'utf8');
+    // Cut off mid-way through the theme after its picture, as a crash mid-write once left it.
+    writeFileSync(file, whole.slice(0, whole.indexOf(PICTURE) + PICTURE.length + 5));
     const fresh = new AppState(file);
     fresh.load();
-    assert.equal(fresh.fromFile(), false);
-    fresh.saveCustomTheme(night());
-    const read = new AppState(file);
-    read.load();
-    assert.equal(read.fromFile(), true);
-    writeFileSync(file, '{ broken');
-    const broken = new AppState(file);
-    broken.load();
-    assert.equal(broken.fromFile(), false);
+    assert.ok(fresh.setAsideAt(), 'the cut-short file was set aside');
+    assert.deepEqual(fresh.appearance().custom, [], 'and the state started empty');
+    fresh.setAlwaysOnTop(true);
+    assert.deepEqual(fresh.picturesSetAside(), [PICTURE], 'yet its picture is still named, after the empty state was saved');
+    const later = new AppState(file);
+    later.load();
+    assert.deepEqual(later.picturesSetAside(), [PICTURE], 'and on every launch after');
 });

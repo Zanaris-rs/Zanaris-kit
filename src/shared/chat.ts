@@ -73,7 +73,7 @@ export interface ChatSettingsView {
     autoJoin: string[];
     /** Nicks whose messages are dropped unseen. */
     ignore: string[];
-    /** Whether a mention or a private message raises a system notification while the kit is in the background. */
+    /** Whether mentions and private messages raise system notifications while the kit is in the background: a few seconds apart at the least, so a flood raises one. */
     notify: boolean;
     hasPassword: boolean;
     /** Whether a password given now outlives this run. False where the OS has no secure store to keep it in. */
@@ -87,7 +87,11 @@ export interface ChatView {
     channels: ViewChannel[];
     active: string;
     lines: ChatLine[];
-    /** Set when the connection failed; the panel shows it rather than an empty log. */
+    /**
+     * Why the connection failed, or why the server turned it away, in words
+     * for a player; what the socket itself said is in Status. The panel shows
+     * it under its tabs, whichever page is open.
+     */
     error: string | null;
     /** True until a nick is chosen. The panel opens on Settings instead of a log. */
     needsNick: boolean;
@@ -105,7 +109,7 @@ export interface ChatSettings {
     autoConnect: boolean;
     /** Nicks whose messages are dropped unseen. Written by Settings and by /ignore and /unignore. */
     ignore: string[];
-    /** Whether a mention or a private message raises a system notification while the kit is in the background. */
+    /** Whether mentions and private messages raise system notifications while the kit is in the background: a few seconds apart at the least, so a flood raises one. */
     notify: boolean;
 }
 

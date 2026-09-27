@@ -1,5 +1,5 @@
 import { WebContentsView, shell, type BrowserWindow } from 'electron';
-import { decidePageNavigation } from './guard.ts';
+import { decidePageNavigation, isPress, mayOpenBrowser } from './guard.ts';
 import {
     appendColumn,
     arrangedAt,
@@ -31,6 +31,7 @@ import { closeTab, closingTab, labelOfTab, loadingLayout, marksOfTab, moveGame, 
 import { instantiateLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
+import { troubleNotice, type PaneTrouble } from '../shared/paneNotice.ts';
 
 /**
  * One tab's panes, and the native views inside them.
@@ -62,6 +63,8 @@ export interface PaneHostDeps {
     window: BrowserWindow;
     /** The live game view, or null when there is no game running. Positioned here, owned by the window. */
     gameView: () => WebContentsView | null;
+    /** The game's renderer has crashed or hung, which the window watches: its view is hidden and its pane says so. */
+    gameTrouble: () => PaneTrouble | null;
     /** This server's own links. A page pane may hold nothing else. */
     bookmarks: () => readonly { url: string; name: string }[];
     /** The tools this window offers, in its own order — the first half of what a pane's header offers to become. */
@@ -112,6 +115,15 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
     const pageViews = new Map<string, WebContentsView>();
     const pageStates = new Map<string, PageState>();
+    /** Pages whose renderer crashed or hung. Hidden while here, so the shell's notice shows where the page was. */
+    const pageTrouble = new Map<string, PaneTrouble>();
+    /**
+     * Until when a page's renderer going is one the kit asked for: a reload
+     * of a hung page kills its renderer first, which reports as gone, and
+     * that is not a crash to say anything about. Once only, so a fresh
+     * renderer that crashes for real inside those seconds is still reported.
+     */
+    const expectGone = new Map<string, number>();
     let rects = new Map<string, Rect>();
     /** The rect the active tab was last laid out in. A drop is judged against it, since whether a pane can be halved depends on its size. */
     let bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -159,14 +171,17 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             // another application. That is what `backgroundThrottling: false`
             // is for, and it is the one thing the tab design rests on that no
             // test here can prove.
+            // A game in trouble is hidden too, under the notice its pane
+            // shows: a crashed view draws nothing, and a hung one its last
+            // frame, and either would sit over the notice.
             const rect = gamePane ? rects.get(gamePane) : undefined;
             if (rect) game.setBounds(below(rect));
-            game.setVisible(Boolean(rect) && !dragging);
+            game.setVisible(Boolean(rect) && !dragging && !deps.gameTrouble());
         }
         for (const [paneId, view] of pageViews) {
             const rect = rects.get(paneId);
             if (rect) view.setBounds(below(rect));
-            view.setVisible(Boolean(rect) && !dragging);
+            view.setVisible(Boolean(rect) && !dragging && !pageTrouble.has(paneId));
         }
     }
 
@@ -197,11 +212,23 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         }
     }
 
+    /** What a pane says instead of its view: the game's trouble or a page's, as `troubleNotice` words it. */
+    function noticeOf(paneId: string, content: PaneContent): PaneView['notice'] {
+        if (content.kind === 'game') {
+            const trouble = deps.gameTrouble();
+            return trouble ? troubleNotice('game', trouble) : null;
+        }
+        const trouble = content.kind === 'page' ? pageTrouble.get(paneId) : undefined;
+        return trouble ? troubleNotice('page', trouble) : null;
+    }
+
     function destroyPageView(paneId: string): void {
         const view = pageViews.get(paneId);
         if (!view) return;
         pageViews.delete(paneId);
         pageStates.delete(paneId);
+        pageTrouble.delete(paneId);
+        expectGone.delete(paneId);
         if (!deps.window.isDestroyed()) deps.window.contentView.removeChildView(view);
         if (!view.webContents.isDestroyed()) view.webContents.close();
     }
@@ -258,6 +285,32 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.log(`pane ${paneId} could not load ${failed}: ${description} (${code})`);
         });
         wc.on('focus', () => focus(paneId));
+        const troubled = (trouble: PaneTrouble): void => {
+            pageTrouble.set(paneId, trouble);
+            place();
+            deps.touched();
+        };
+        wc.on('render-process-gone', (_event, details) => {
+            if (details.reason === 'clean-exit' || pageViews.get(paneId) !== view) return;
+            const expected = expectGone.get(paneId) ?? 0;
+            expectGone.delete(paneId);
+            if (expected > Date.now()) return;
+            deps.log(`pane ${paneId}'s page stopped: ${details.reason}`);
+            troubled({ kind: 'crashed', reason: details.reason });
+        });
+        // No `responsive` handler, unlike the game's. Hiding a page is itself
+        // what Chromium answers with `responsive` — a hidden view's hang timer
+        // is stopped, and stopping it reports the page as answering again — so
+        // a notice cleared by it would clear the moment it went up, and show
+        // the hung page again. A page's notice ends with Wait or a reload. The
+        // game keeps its handler: its view has `backgroundThrottling: false`,
+        // which spares it being treated as hidden (the reason a game plays on
+        // in a background tab), so its `responsive` means what it says.
+        wc.on('unresponsive', () => {
+            if (pageTrouble.has(paneId)) return;
+            deps.log(`pane ${paneId}'s page stopped responding`);
+            troubled({ kind: 'unresponsive' });
+        });
         // A right-click on a page never reaches the shell — this view is
         // stacked above it — so the pane menu is raised from here instead, with
         // the view's own coordinates put back into the window's. The header
@@ -270,25 +323,52 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.contextMenu(paneId, view.x + params.x, view.y + params.y);
         });
 
-        const policy = (event: { preventDefault: () => void }, target: string): void => {
+        /** When the player last pressed anything in this page, which is what lets it open the browser. */
+        let lastPress = -Infinity;
+        // `input-event` sees only the page's own frame; the other two are
+        // asked of the whole page first, so a press in an embedded frame — a
+        // video, a Discord widget — counts too, as far as Electron reports one.
+        const pressed = (type: string): void => {
+            if (isPress(type)) lastPress = Date.now();
+        };
+        wc.on('input-event', (_event, input) => pressed(input.type));
+        wc.on('before-mouse-event', (_event, mouse) => pressed(mouse.type));
+        wc.on('before-input-event', (_event, input) => pressed(input.type));
+        /**
+         * The page's own navigation: through when it stays on the allowlist,
+         * to the system browser when it leaves it on a press of the player's
+         * (`guard.mayOpenBrowser`), and dropped when nothing asked for it.
+         */
+        const policy = (event: { preventDefault: () => void }, target: string, via: 'navigate' | 'redirect'): void => {
             const decision = decidePageNavigation({ target, hosts: deps.hosts() });
             if (decision === 'allow') return;
             event.preventDefault();
-            if (decision === 'open-external') {
+            if (decision === 'open-external' && mayOpenBrowser({ via, mainFrame: true, sincePress: Date.now() - lastPress })) {
+                lastPress = -Infinity;
                 deps.log(`sent ${target} to the system browser`);
                 void shell.openExternal(target);
             } else {
-                deps.log(`blocked ${target}`);
+                deps.log(`blocked ${target}${decision === 'open-external' ? ', which no press asked for' : ''}`);
             }
         };
-        wc.on('will-navigate', policy);
+        wc.on('will-navigate', (event, target) => policy(event, target, 'navigate'));
         // Not optional: `tools.losthq.rs/map` answers a 301 and LostHQ's
         // bestiary a 302, so a redirect is the ordinary case rather than the
         // exotic one, and a policy that only saw `will-navigate` would let a
-        // redirect carry a page anywhere.
-        wc.on('will-redirect', policy);
+        // redirect carry a page anywhere. The main frame's only: a frame's
+        // redirect stays in its frame, as a frame's navigation always did —
+        // `will-navigate` is the main frame's alone — and an ad's frame
+        // redirecting used to open the player's browser by itself.
+        wc.on('will-redirect', details => {
+            if (details.isMainFrame) policy(details, details.url, 'redirect');
+        });
         wc.setWindowOpenHandler(({ url: target }) => {
-            if (/^https?:\/\//.test(target)) void shell.openExternal(target);
+            if (/^https?:\/\//.test(target) && mayOpenBrowser({ via: 'window-open', mainFrame: true, sincePress: Date.now() - lastPress })) {
+                lastPress = -Infinity;
+                void shell.openExternal(target);
+            } else {
+                deps.log(`refused a new window for ${target}`);
+            }
             return { action: 'deny' };
         });
 
@@ -376,7 +456,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                     // Only the launcher draws a list; every other pane reaches
                     // the same one through its header, which main pops as a
                     // native menu and builds on the spot.
-                    contents: content.kind === 'empty' ? paneContentItems({ trees, paneId, tools: deps.tools(), links: deps.bookmarks() }) : null
+                    contents: content.kind === 'empty' ? paneContentItems({ trees, paneId, tools: deps.tools(), links: deps.bookmarks() }) : null,
+                    notice: noticeOf(paneId, content)
                 };
             });
         },
@@ -591,6 +672,26 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             }
         },
 
+        pageNotice(paneId: string, action: 'reload' | 'wait'): void {
+            const view = pageViews.get(paneId);
+            const trouble = pageTrouble.get(paneId);
+            if (!view || !trouble || view.webContents.isDestroyed()) return;
+            if (action === 'wait') {
+                if (trouble.kind !== 'unresponsive') return;
+            } else {
+                // A hung renderer is killed before it is reloaded, as Electron
+                // documents: a reload asked of it would wait on the hang.
+                if (trouble.kind === 'unresponsive') {
+                    expectGone.set(paneId, Date.now() + 5_000);
+                    view.webContents.forcefullyCrashRenderer();
+                }
+                view.webContents.reload();
+            }
+            pageTrouble.delete(paneId);
+            place();
+            deps.touched();
+        },
+
         repaintBackground(): void {
             for (const view of pageViews.values()) view.setBackgroundColor(deps.background());
         },
@@ -657,6 +758,8 @@ export interface PaneHost {
     dragSeam: (splitId: string, index: number, px: number) => number;
     pageWebContents: () => WebContentsView | null;
     go: (where: 'back' | 'forward' | 'reload') => void;
+    /** A page pane's notice: reload the page, or wait out a hang and show it again. Nothing for a pane with no notice. */
+    pageNotice: (paneId: string, action: 'reload' | 'wait') => void;
     /** The theme changed: every page view takes the new ground. The next one made takes it too, through `deps.background`. */
     repaintBackground: () => void;
     destroy: () => void;

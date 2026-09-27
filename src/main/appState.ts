@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import type { RememberedWorld } from '../shared/worlds.ts';
 import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
@@ -9,6 +9,16 @@ import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
 import { readYourWorldBuild, readYourWorldSettings } from './yourworld/settings.ts';
 import { CUSTOM_MAX, DEFAULT_THEME, isThemeId, readCustomTheme, type Appearance, type Theme } from '../shared/themes.ts';
+import { writeWhole } from './wholeFile.ts';
+import { picturesNamedIn } from './pictures.ts';
+
+/**
+ * The version of state.json this kit writes and reads. A file of a later one
+ * was written by a newer kit, and is read as far as this one can and never
+ * written (`newerVersion`): going back to an older kit for a day must not
+ * cost what the newer one had saved.
+ */
+export const STATE_VERSION = 1;
 
 interface StateFile {
     version: 1;
@@ -191,9 +201,10 @@ function readAppearance(x: unknown): Appearance {
  * server's own, all living alongside the rest for want of a second file worth
  * keeping. It also holds the player's own countdowns and timers,
  * and their changes to a server's built-in ones, since both are app-wide
- * rather than a single server's. Loading never fails and never complains; a
- * file that cannot be read is kept aside and the state starts empty, since
- * nothing here is worth interrupting a launch for.
+ * rather than a single server's. Loading never fails: a file that cannot be
+ * read is kept aside and the state starts empty (`setAsideAt`, which main
+ * tells the player about), and a newer kit's file is read as far as it goes
+ * and never written (`newerVersion`).
  */
 export class AppState {
     readonly file: string;
@@ -217,8 +228,10 @@ export class AppState {
     private startup: string[] = [];
     // The look the kit has always had, until asked otherwise.
     private appearanceState: Appearance = defaultAppearance();
-    // Whether the last load read a file, rather than starting empty for want of one that would read.
-    private readFile = false;
+    // The version of a state.json a newer kit wrote, which this one reads and never writes.
+    private newer: number | null = null;
+    // Where the last load set aside a state.json it could not read.
+    private asideAt: string | null = null;
 
     constructor(file: string) {
         this.file = file;
@@ -236,42 +249,109 @@ export class AppState {
         this.timersState = emptyTimersState();
         this.startup = [];
         this.appearanceState = defaultAppearance();
-        this.readFile = false;
+        this.newer = null;
+        this.asideAt = null;
         if (!existsSync(this.file)) return;
+        let parsed: Partial<StateFile> | null;
         try {
-            const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
-            const worlds = parsed?.worlds;
-            if (typeof worlds !== 'object' || worlds === null) throw new Error('not a state file');
-            for (const [id, value] of Object.entries(worlds)) {
-                if (isRemembered(value)) this.worlds.set(id, { ...value });
-            }
-            // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
-            if (typeof parsed?.warnOnSwitch === 'boolean') this.warn = parsed.warnOnSwitch;
-            this.chatSettings = readChat(parsed?.chat);
-            this.nickservSealed = readSealed(parsed?.chat);
-            this.yourWorld = readYourWorldSettings(parsed?.singlePlayer);
-            this.yourWorldBuildId = readYourWorldBuild((parsed?.singlePlayer as { build?: unknown } | undefined)?.build);
-            this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
-            // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
-            if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
-            this.timersState = readTimers(parsed?.timers);
-            this.startup = readStartup(parsed?.startup);
-            this.appearanceState = readAppearance(parsed?.appearance);
-            this.readFile = true;
+            parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<StateFile> | null;
         } catch {
-            renameSync(this.file, `${this.file}.broken-${Date.now()}`);
+            this.setAside();
+            return;
+        }
+        // Checked before the shape: a newer kit's file may have moved a field
+        // this one requires, and that must not read as a broken file to set
+        // aside. It is read field by field, as far as it goes, and left as it is.
+        const version = (parsed as { version?: unknown } | null)?.version;
+        if (typeof version === 'number' && version > STATE_VERSION) {
+            this.newer = version;
+            try {
+                this.readFields(parsed, false);
+            } catch {
+                // What it could not read stays at its default for this run.
+            }
+            return;
+        }
+        try {
+            this.readFields(parsed, true);
+        } catch {
+            this.setAside();
         }
     }
 
-    /**
-     * Whether the last load read the state from its file. False with no file
-     * and with one that could not be read — which was set aside, holding what
-     * the player had, so nothing should be thrown away on the strength of the
-     * empty state that replaced it: pictures its themes named, above all.
-     */
-    fromFile(): boolean {
-        return this.readFile;
+    /** A file that could not be read, kept beside it rather than lost. */
+    private setAside(): void {
+        const aside = `${this.file}.broken-${Date.now()}`;
+        renameSync(this.file, aside);
+        this.asideAt = aside;
     }
+
+    /** Every field, each read on its own terms. `strict` refuses a file with no worlds at all, which is not a state file. */
+    private readFields(parsed: Partial<StateFile> | null, strict: boolean): void {
+        const worlds = parsed?.worlds;
+        if (typeof worlds === 'object' && worlds !== null) {
+            for (const [id, value] of Object.entries(worlds)) {
+                if (isRemembered(value)) this.worlds.set(id, { ...value });
+            }
+        } else if (strict) {
+            throw new Error('not a state file');
+        }
+        // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
+        if (typeof parsed?.warnOnSwitch === 'boolean') this.warn = parsed.warnOnSwitch;
+        this.chatSettings = readChat(parsed?.chat);
+        this.nickservSealed = readSealed(parsed?.chat);
+        this.yourWorld = readYourWorldSettings(parsed?.singlePlayer);
+        this.yourWorldBuildId = readYourWorldBuild((parsed?.singlePlayer as { build?: unknown } | undefined)?.build);
+        this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
+        // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
+        if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
+        this.timersState = readTimers(parsed?.timers);
+        this.startup = readStartup(parsed?.startup);
+        this.appearanceState = readAppearance(parsed?.appearance);
+    }
+
+    /**
+     * The version of the state.json a newer kit wrote, or null. While it is
+     * set nothing is saved: a change lasts for this run, and the file stays
+     * as the newer kit left it.
+     */
+    newerVersion(): number | null {
+        return this.newer;
+    }
+
+    /** Where the last load set aside a state.json it could not read, or null. */
+    setAsideAt(): string | null {
+        return this.asideAt;
+    }
+
+    /**
+     * The pictures named in every state.json set aside beside this one, this
+     * launch or any before. A reset starts from an empty state, and the next
+     * save writes it, so from then on nothing in state.json names the
+     * pictures the set-aside themes wore; without this, the next prune would
+     * delete every one, and restoring the old file by hand would bring back
+     * themes with their pictures gone.
+     */
+    picturesSetAside(): string[] {
+        const dir = dirname(this.file);
+        const prefix = `${basename(this.file)}.broken-`;
+        let names: string[];
+        try {
+            names = readdirSync(dir).filter(name => name.startsWith(prefix));
+        } catch {
+            return [];
+        }
+        const found = new Set<string>();
+        for (const name of names) {
+            try {
+                for (const picture of picturesNamedIn(readFileSync(join(dir, name), 'utf8'))) found.add(picture);
+            } catch {
+                // Unreadable now: the next prune asks again.
+            }
+        }
+        return [...found];
+    }
+
 
     world(serverId: string): RememberedWorld | null {
         const found = this.worlds.get(serverId);
@@ -411,6 +491,14 @@ export class AppState {
         return [...this.startup];
     }
 
+    /** The whole list at once, as `servers.nextStartup` answers it, capped as a stored list is. */
+    setStartup(ids: readonly string[]): void {
+        const next = readStartup(ids);
+        if (next.length === this.startup.length && next.every((id, i) => id === this.startup[i])) return;
+        this.startup = next;
+        this.save();
+    }
+
     setStartupServer(id: string, on: boolean): void {
         const at = this.startup.indexOf(id);
         if (on && at < 0) {
@@ -494,6 +582,8 @@ export class AppState {
     }
 
     save(): void {
+        // A newer kit's file is left exactly as that kit wrote it (`newerVersion`).
+        if (this.newer !== null) return;
         mkdirSync(dirname(this.file), { recursive: true });
         const data: StateFile = {
             version: 1,
@@ -507,6 +597,6 @@ export class AppState {
             startup: [...this.startup],
             appearance: this.appearance()
         };
-        writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
+        writeWhole(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }

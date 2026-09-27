@@ -44,6 +44,18 @@ The kit checks the releases page once each time it starts and, when there is
 a newer version, adds Help > Update Available, which opens that page. Set
 `ZANARIS_NO_UPDATE_CHECK=1` to turn the check off.
 
+### Reporting a problem
+
+**Help > Report a Problem…** opens a new
+[issue](https://github.com/Zanaris-rs/Zanaris-kit/issues) in your browser with
+three questions to answer and, underneath, the kit's version, Electron's and
+your system's — nothing else, no server, nick or path. That line is in the
+link, so GitHub sees it as the page opens; the issue itself is filed only when
+you press Submit. The version is also in the About panel: Zanaris Kit > About
+Zanaris Kit on macOS, Help > About Zanaris Kit on Windows, Help > About on
+Linux. A release has no Developer Tools; a build run from source does, in the
+View menu.
+
 ## What it does
 
 There are game windows, and one Settings window for the app; new game windows
@@ -59,32 +71,36 @@ the gear at the right of every window's tab bar or from Settings…
 another. It has two sections, Servers and Appearance, which holds the themes
 (see How it looks). Its Servers section lists every server with how many of its windows
 are open, an Open button that starts another, and a checkbox for whether a
-launch opens it: tick two servers and relaunching opens both, untick every row
-and a launch falls back to the catalog's first entry, exactly what an empty
-list has always done. The same section adds a server through a short form and
-removes one — except the handful the kit ships with, which nothing in the app
-can put back once gone, so it does not offer to take them out. Below the list,
+launch opens it: tick two servers and relaunching opens both. A launch always
+opens one, the catalog's first entry — Lost City — when nothing else is
+chosen, so that one starts ticked, and the last box ticked cannot be unticked
+until another is. The same section adds a server through a short form and
+removes one, after asking, since the address and notes typed into it go with
+it — except the handful the kit ships with, which nothing in the app can put
+back once gone, so it does not offer to take them out. Below the list,
 Edit server list… opens `servers.json` itself, for the fields no form here
 exposes — a server's worlds source, its bookmarks, its map — and the kit
 re-reads that file whenever a window regains focus, so it is safe to edit with
-the kit running. Settings opens when you ask for it and never on its own; a
-launch with nothing ticked opens Lost City, as it always has. It is a window
+the kit running. Settings opens when you ask for it and never on its own. It is a window
 rather than a pane or a popover because the game is a
 native view drawn above the tab bar's own page, so anything that page drew
 over the game would sit underneath it.
 
 A **server window** is bound to one catalog entry for its whole life. The game
 pane's own header reads "Lost City · W5 · low · 43 ms": the server, the world,
-the detail level and the latency to that world's host, measured every ten
-seconds. It is the window's fact rather than the pane's — one server, one game —
-and it sat at the left of the tab bar for exactly that reason, until it became
+the detail level and the latency to that world's host, measured as the game
+loads and every fifteen minutes while it is open — every probe is a connect to
+somebody else's server, and every open kit makes them. It is the window's fact
+rather than the pane's — one server, one game — and it sat at the left of the
+tab bar for exactly that reason, until it became
 clear that a read-out nobody can place is a read-out nobody reads. Beside the
 game it describes, it is obviously about the thing under it, and the bar is left
 to tabs. The first of the server's tools is **Worlds**, opened from **Add pane**
 at the right end of the tab bar like everything else a pane can hold. What it
 shows is Low / High detail, then every world with region, players online, members or free, and
-latency, the current world marked. Choosing a world loads it in the same
-window; flipping detail reloads the current world. The world and detail you
+latency, the current world marked — measured as the pane opens and every
+fifteen minutes while it stays open, or now with Refresh. Choosing a world
+loads it in the same window; flipping detail reloads the current world. The world and detail you
 chose are remembered per server; the next window for that server opens there.
 
 Either switch asks first. The dialog names where you are going and says the
@@ -188,9 +204,12 @@ lookup, a map panned to where you are standing and a drop table scrolled to
 the right row are all still there when you come back to them. A page pane's
 header carries back, forward and reload and no address box: it browses freely
 within the hosts that server allows, and a link off them opens in your system
-browser instead. Every seam drags, on both axes, and the pane before a seam —
-the one to its left, or above it — is the one that grows as you push the seam
-away from it.
+browser instead — when you clicked it, one link per click. A page can no more
+open your browser on its own than it can leave its hosts: a `window.open`
+nobody pressed for goes nowhere, and an ad's frame redirecting stays in its
+frame rather than opening a tab. Every seam drags, on both axes, and the
+pane before a seam — the one to its left, or above it — is the one that grows
+as you push the seam away from it.
 
 **Your world** needs no server at all: File > New Window For > Your world
 starts a world on this computer. The kit does not carry the server itself. The
@@ -278,13 +297,19 @@ conversation in the order they were opened:
   message of the day, notices and anything refused. It can't be closed either.
 - **A private message opens a tab** named for whoever sent it, and `/query
   nick` opens one yourself. A notice never opens one, so NickServ's answers
-  stay in Status. The tab follows its person through a nick change.
+  stay in Status. The tab follows its person through a nick change. Twenty is
+  the most: past that, a message from someone new lands in Status, marked pm,
+  until you close one.
 - **Every channel has its own close.** Closing a tab leaves that channel for
   the session, and `/join` joins one for the session. Only Settings changes the
   saved list, and each Connect joins that list again.
 - **The nick works the same way.** A `/nick`, the underscore added to a taken
-  nick, or a services rename to a guest nick lasts for the session. Settings
-  shows the saved nick and, while they differ, what the connection is called.
+  nick, or a services rename to a guest nick lasts until the connection drops:
+  every connection, a reconnect included, starts from the saved nick. A saved
+  nick the server refuses — taken, with its three underscored tries, or not
+  one it will take at all — stops chat with a message rather than retrying,
+  and Connect tries again. Settings shows the saved nick and, while they
+  differ, what the connection is called.
 - **Disconnect is remembered.** A kit you disconnected stays offline on its
   next launch until you press Connect.
 - **The NickServ password** is sent when the server welcomes you, as
@@ -313,7 +338,8 @@ and a channel name joins it, which is how an invite is accepted. Tab finishes
 a nick, a channel or a command, and pressing it again moves to the next match.
 Up and Down bring back what you sent. While the kit is in the background, a
 line that names you or a private message raises a system notification, unless
-Settings turns them off.
+Settings turns them off — at most one every five seconds, and one a minute
+from any one person.
 
 Chat is a pane like anything else: drag its header to wherever you want it, drag
 its seams, close it. A new window opens with it already there, in a pane below the game —
@@ -355,7 +381,14 @@ voice when they lose op. The client is
 pure over an injected `send`, so the whole conversation can be driven in tests
 without a socket. The service around it owns the TLS socket and the reconnect
 backoff, which grows and caps: a client that retries harder the longer a
-network is down is a client that gets banned.
+network is down is a client that gets banned. It starts over only after a
+connection has stayed up a minute, so a server that takes the kit and drops it
+at once is not answered every second, and each wait is spread by a quarter
+either way, so kits dropped together do not come back together. A ban — a 465,
+or an ERROR naming a K-, G-, Z- or D-line — is not retried at all: chat goes
+offline with the server's reason, and Connect tries again. A message is
+measured in bytes as the server will relay it, and one too long is refused
+rather than cut off.
 
 Not carried over from LostKit, which reaches LostHQ's community through
 `https://irc.losthq.rs/`, a hosted web client rather than a server: that host
@@ -648,7 +681,11 @@ rather than offered and then refused, and so is Close on a tab's only pane when
 it is already empty, since closing it would empty an empty pane. The same four are in the View menu with
 Cmd/Ctrl+D, Cmd/Ctrl+Shift+D, Cmd/Ctrl+W and Cmd/Ctrl+Alt+=; tabs are
 Cmd/Ctrl+T, Cmd/Ctrl+Shift+W and Cmd/Ctrl+1 to 9. **Cmd/Ctrl+W closes a pane,
-not the window** — the window goes when its last tab does.
+not the window** — the window goes when its last tab does, or from File >
+Close Window, which has no shortcut of its own: Electron's close gave it
+Cmd/Ctrl+W, which took the keys from Close Pane, and on Windows and Linux its
+Window menu carried a second Close with the same keys, so that menu is
+written out there with Minimize alone.
 
 Each tab carries its close inside it and is named for its **first pane**, the
 top-left one, in the words that pane's header uses — a link's curated name, a
@@ -729,7 +766,7 @@ window opens tall enough for both and no taller than the display it opens on;
 on a display too short for that, chat gives way to its 80px floor before the
 game loses any height.
 
-**Setups**, in the tab bar between the gear and Add pane, is a set of panes in a
+**Setups**, in the tab bar just before Add pane, is a set of panes in a
 shape, one click away. Whatever you pick replaces the panes of the tab in front:
 
 - **Game**, **Game and Chat** and **Game, Chat and Tools** are the kit's own.
@@ -743,10 +780,9 @@ shape, one click away. Whatever you pick replaces the panes of the tab in front:
 - **Save This Tab as a Setup…** writes the tab in front — the splits, the seam
   positions, what each pane shows, and the tab's size in pixels — to a file
   named for the tab, in that folder. The save dialog lets you rename it.
-- **Open Setup File…** opens one from anywhere, such as a file somebody sent
-  you, without copying it into the folder.
 - **Open Setups Folder** opens the folder in Finder or Explorer, which is how a
-  setup is shared: copy the file out, or drop somebody else's in.
+  setup is shared: copy the file out, or drop somebody else's in and it is
+  listed with your own.
 
 A setup opens around the game. The game keeps the pixels it has — or, with no
 game running, the ones the setup was saved with — every other pane gets the
@@ -770,6 +806,11 @@ The window used to save its arrangement after every split and seam drag, which
 made the last accident the thing the next window opened with, and left nothing
 to hand anyone.
 
+A setup holds up to ten panes. It is passed between people, and every page in
+one is a browser process of its own, so a file of hundreds would start hundreds
+the moment it opened; a tab with more than ten is refused when it is saved,
+with a sheet saying so, rather than written into a file no kit would open.
+
 A setup file holds no pane or split ids — the window hands out its own when it
 opens one — and is validated whole and refused whole, with a sheet saying the
 file is not a setup and the tab left as it was. A setup made on another server
@@ -785,6 +826,27 @@ that it exists, not the point at which its content is comfortable. A pane that
 lands under it is held there and its siblings pay; when even the minimums do not
 fit, every pane is cut by the same proportion, because clipping everything a
 little beats clipping one pane to nothing.
+
+**When something stops, its pane says so.** Every pane that can go wrong shows
+the same notice, drawn by one component (`renderer/paneNotice.tsx`, its words
+in `shared/paneNotice.ts`), with a way back beside it:
+
+- A game or a page whose renderer crashes is hidden, and its pane says it
+  stopped, and why in words — out of memory, closed by something outside the
+  kit — with **Reload game** or **Reload page**, and **Close pane**. The game's
+  says a reload is a fresh login, because it is. Closing a crashed game's pane
+  does not ask, since there is no login left to lose.
+- One that stops responding is hidden the same way, with **Wait**, which shows
+  it again, and a reload, which kills the hung renderer first. The game's
+  clears itself if the game comes back; a page's waits for Wait, since hiding a
+  page is itself what makes Chromium call it responsive again.
+- A tool that throws while drawing shows its own notice with **Open again** and
+  **Close pane**, rather than taking the tab bar and every other pane with it.
+- The shell and Settings are reloaded by themselves when their renderer goes,
+  up to three times a minute; the game under a shell keeps running through it.
+  A page-wide throw shows the same notice with Reload — across the whole of
+  Settings, and in a game window in the tab bar's strip, the one part of it no
+  game or page view ever covers.
 
 ## Running it
 
@@ -919,7 +981,10 @@ right-click menu's splits.
 `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`,
 `webSecurity: true` on every view. The game view accepts no page-initiated
 navigation at all: links, `location` changes, form submits and mouse back or
-forward gestures are blocked, and web links open in the system browser. The
+forward gestures are blocked, and web links open in the system browser — only
+as the answer to a press in the view, within five seconds of it, one link per
+press (`guard.mayOpenBrowser`), so no page opens the browser by itself or
+opens a tab for every loop of a script. The
 one exception is our own offline page returning to the page main asked for.
 The only way the game view changes page is main calling `loadURL`, which is
 how a world switch happens, and the history is cleared after every load so

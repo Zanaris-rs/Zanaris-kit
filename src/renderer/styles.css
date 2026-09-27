@@ -154,7 +154,6 @@ input[type='color'] {
  */
 .tile,
 .sunk,
-.dock,
 .btn {
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.78);
 }
@@ -281,35 +280,16 @@ input[type='color'] {
 }
 
 /*
- * The chat dock, and the rail's exception mirrored onto the other axis. The
- * dock's top edge meets the game rather than the window, so a highlight along
- * it would draw a bright line straight across the chrome; the groove goes
- * there instead and only the left edge, which really is the window's, stays
- * lit. The right edge is dropped where it meets the rail, as the panel's is,
- * so the two do not stack a doubled dark band between them.
- */
-.dock {
-    background-color: var(--color-stone);
-    border: 2px solid var(--color-edge-dark);
-    border-left-color: var(--color-edge-lit);
-    border-right: none;
-    box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.28);
-}
-
-/*
- * The two resize grips: the dock's top edge and the reference pane's seam.
+ * The grips: one on every seam between two panes (`Shell.tsx`'s `Seam`).
  *
- * The dock's sits exactly on the groove `.dock`'s own box-shadow already draws
- * along the top, inside the border rather than before it. The pane's is the
- * strip of shell main leaves between the game view and the page view, which is
- * the only thing there is to grab: both of those are native views stacked
- * above everything drawn on this side.
+ * A seam is the strip of shell main leaves between two panes, and either side
+ * of it may be a native view — the game or a page — stacked above everything
+ * drawn on this side, so the strip is the only thing there is to grab.
  *
- * Neither paints anything of its own at rest — the groove and the dark gap
- * already read as seams. Hover and focus are what turn one into a control: a
- * highlight that was there all the time would be a second line drawn across
- * the window whenever the dock or the pane is open, whether anyone meant to
- * grab it or not.
+ * None paints anything of its own at rest: the seam's dark gap already reads
+ * as a divider. Hover and focus are what turn one into a control — a highlight
+ * that was there all the time would be a line drawn between every pair of
+ * panes, whether anyone meant to grab it or not.
  */
 .grip {
     /* A custom pointer drag, not a scroll or a browser gesture. */
@@ -325,17 +305,14 @@ input[type='color'] {
     background: rgba(255, 255, 255, 0.16);
 }
 /*
- * Focus does not get the global gold ring. A grip's edges are flush with
- * native WebContentsViews — the game, and the pane's page — which are stacked
- * above everything the shell draws and reachable by no z-index on this side;
- * the dock's right edge, when it runs under an open panel, sits exactly on
- * the rail, a later DOM sibling that paints over anything bleeding past the
- * dock's own box. A ring drawn outward from a strip this thin loses those
- * edges: a partial frame, not a focus indicator. `outline: none` here
- * is not the usual anti-pattern of deleting the indicator — it is replaced by
- * a fill entirely inside the grip's own 4px, which nothing can paint over,
- * the same way `.tab-on` shows "selected" as lit stone rather than a ring
- * around a tab.
+ * Focus does not get the global gold ring. A grip's edges are flush with the
+ * panes either side, and those may be native WebContentsViews — the game, a
+ * page — stacked above everything the shell draws and reachable by no z-index
+ * on this side. A ring drawn outward from a strip this thin loses those
+ * edges: a partial frame, not a focus indicator. `outline: none` here is not
+ * the usual anti-pattern of deleting the indicator — it is replaced by a fill
+ * entirely inside the seam's own 4px, which nothing can paint over, the same
+ * way `.tab-on` shows "selected" as lit stone rather than a ring around a tab.
  */
 .grip:focus-visible {
     outline: none;
