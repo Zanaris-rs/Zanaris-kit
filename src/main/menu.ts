@@ -127,7 +127,12 @@ export function installMenu(
                 { label: 'Reload Server List', click: () => actions.reloadServers() },
                 ...(isMac ? [] : [settingsItem]),
                 { type: 'separator' },
-                { role: 'close' }
+                // Not `role: 'close'`, which brings Electron's own Cmd/Ctrl+W,
+                // and File is searched before View: that took the keys from
+                // Close Pane, so Cmd/Ctrl+W offered to close the whole window
+                // with two panes open. No shortcut here, then; a window goes
+                // when its last tab does (Cmd/Ctrl+Shift+W), or from here.
+                { label: 'Close Window', click: (_item, window) => window?.close() }
             ]
         },
         { role: 'editMenu' },

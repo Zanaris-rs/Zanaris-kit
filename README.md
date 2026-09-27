@@ -681,7 +681,10 @@ rather than offered and then refused, and so is Close on a tab's only pane when
 it is already empty, since closing it would empty an empty pane. The same four are in the View menu with
 Cmd/Ctrl+D, Cmd/Ctrl+Shift+D, Cmd/Ctrl+W and Cmd/Ctrl+Alt+=; tabs are
 Cmd/Ctrl+T, Cmd/Ctrl+Shift+W and Cmd/Ctrl+1 to 9. **Cmd/Ctrl+W closes a pane,
-not the window** — the window goes when its last tab does.
+not the window** — the window goes when its last tab does, or from File >
+Close Window, which has no shortcut of its own: Electron's close gave it
+Cmd/Ctrl+W, and with File searched before View it took the keys from Close
+Pane.
 
 Each tab carries its close inside it and is named for its **first pane**, the
 top-left one, in the words that pane's header uses — a link's curated name, a
