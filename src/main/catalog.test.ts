@@ -987,3 +987,15 @@ test("a newer kit's list with nothing this kit can read runs on the defaults, an
     assert.deepEqual(catalog.list().map(s => s.id), DEFAULT_SERVERS.map(s => s.id));
     assert.equal(readFileSync(file, 'utf8'), text);
 });
+
+test("a newer kit's list still gets the kit's own knowledge of its built-ins, your world's url above all", () => {
+    const file = tempFile();
+    const builtIn = DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!;
+    const moved = DEFAULT_SERVERS.map(s => (s.id === 'singleplayer' ? { ...s, url: 'http://example.com/elsewhere/rs2.cgi' } : s));
+    const text = JSON.stringify({ version: CATALOG_VERSION + 1, servers: moved });
+    writeFileSync(file, text);
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.get('singleplayer')?.url, builtIn.url, 'the loopback page this kit serves, not the newer file\'s');
+    assert.equal(readFileSync(file, 'utf8'), text, 'and still nothing written');
+});

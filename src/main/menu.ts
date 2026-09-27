@@ -127,11 +127,12 @@ export function installMenu(
                 { label: 'Reload Server List', click: () => actions.reloadServers() },
                 ...(isMac ? [] : [settingsItem]),
                 { type: 'separator' },
-                // Not `role: 'close'`, which brings Electron's own Cmd/Ctrl+W,
-                // and File is searched before View: that took the keys from
-                // Close Pane, so Cmd/Ctrl+W offered to close the whole window
-                // with two panes open. No shortcut here, then; a window goes
-                // when its last tab does (Cmd/Ctrl+Shift+W), or from here.
+                // Not `role: 'close'`, which brings Electron's own Cmd/Ctrl+W:
+                // on macOS File is searched before View, so it took the keys
+                // from Close Pane, and Cmd/Ctrl+W offered to close the whole
+                // window with two panes open. No shortcut here, then; a
+                // window goes when its last tab does (Cmd/Ctrl+Shift+W), or
+                // from here.
                 { label: 'Close Window', click: (_item, window) => window?.close() }
             ]
         },
@@ -205,7 +206,10 @@ export function installMenu(
                 ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const }])
             ]
         },
-        { role: 'windowMenu' },
+        // Electron's Window menu off macOS ends in a Close of its own, with
+        // Ctrl+W again — the same theft as File's, by a menu Windows and
+        // Linux read after View — so there it is written out without one.
+        isMac ? { role: 'windowMenu' } : { label: 'Window', submenu: [{ role: 'minimize' }] },
         {
             role: 'help',
             submenu: [

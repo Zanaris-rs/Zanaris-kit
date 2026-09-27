@@ -201,9 +201,10 @@ function readAppearance(x: unknown): Appearance {
  * server's own, all living alongside the rest for want of a second file worth
  * keeping. It also holds the player's own countdowns and timers,
  * and their changes to a server's built-in ones, since both are app-wide
- * rather than a single server's. Loading never fails and never complains; a
- * file that cannot be read is kept aside and the state starts empty, since
- * nothing here is worth interrupting a launch for.
+ * rather than a single server's. Loading never fails: a file that cannot be
+ * read is kept aside and the state starts empty (`setAsideAt`, which main
+ * tells the player about), and a newer kit's file is read as far as it goes
+ * and never written (`newerVersion`).
  */
 export class AppState {
     readonly file: string;
@@ -227,8 +228,6 @@ export class AppState {
     private startup: string[] = [];
     // The look the kit has always had, until asked otherwise.
     private appearanceState: Appearance = defaultAppearance();
-    // Whether the last load read a file, rather than starting empty for want of one that would read.
-    private readFile = false;
     // The version of a state.json a newer kit wrote, which this one reads and never writes.
     private newer: number | null = null;
     // Where the last load set aside a state.json it could not read.
@@ -250,7 +249,6 @@ export class AppState {
         this.timersState = emptyTimersState();
         this.startup = [];
         this.appearanceState = defaultAppearance();
-        this.readFile = false;
         this.newer = null;
         this.asideAt = null;
         if (!existsSync(this.file)) return;
@@ -272,12 +270,10 @@ export class AppState {
             } catch {
                 // What it could not read stays at its default for this run.
             }
-            this.readFile = true;
             return;
         }
         try {
             this.readFields(parsed, true);
-            this.readFile = true;
         } catch {
             this.setAside();
         }
@@ -356,15 +352,6 @@ export class AppState {
         return [...found];
     }
 
-    /**
-     * Whether the last load read the state from its file. False with no file
-     * and with one that could not be read — which was set aside, holding what
-     * the player had, so nothing should be thrown away on the strength of the
-     * empty state that replaced it: pictures its themes named, above all.
-     */
-    fromFile(): boolean {
-        return this.readFile;
-    }
 
     world(serverId: string): RememberedWorld | null {
         const found = this.worlds.get(serverId);

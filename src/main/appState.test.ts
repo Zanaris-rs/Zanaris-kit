@@ -773,21 +773,6 @@ test('a save that cannot be written leaves the custom themes as they were, so tr
     );
 });
 
-test('fromFile says whether the state was read from its file: not when there was none, and not when it was broken', () => {
-    const file = tempFile();
-    const fresh = new AppState(file);
-    fresh.load();
-    assert.equal(fresh.fromFile(), false);
-    fresh.saveCustomTheme(night());
-    const read = new AppState(file);
-    read.load();
-    assert.equal(read.fromFile(), true);
-    writeFileSync(file, '{ broken');
-    const broken = new AppState(file);
-    broken.load();
-    assert.equal(broken.fromFile(), false);
-});
-
 test("a newer kit's state.json is read as far as it goes and never written", () => {
     const file = tempFile();
     const text = JSON.stringify({ version: STATE_VERSION + 1, worlds: { lostcity: { world: 3, detail: 'high', url: 'https://w3-2004.lostcity.rs/rs2.cgi' } }, alwaysOnTop: true, somethingNew: { kept: true } });
@@ -796,7 +781,6 @@ test("a newer kit's state.json is read as far as it goes and never written", () 
     state.load();
     assert.equal(state.newerVersion(), STATE_VERSION + 1);
     assert.equal(state.alwaysOnTop(), true, 'what this kit can read, it reads');
-    assert.equal(state.fromFile(), true);
     state.setAlwaysOnTop(false);
     state.setStartup(['zanaris']);
     assert.equal(readFileSync(file, 'utf8'), text, 'the newer kit finds its file as it left it');

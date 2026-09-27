@@ -683,8 +683,9 @@ Cmd/Ctrl+D, Cmd/Ctrl+Shift+D, Cmd/Ctrl+W and Cmd/Ctrl+Alt+=; tabs are
 Cmd/Ctrl+T, Cmd/Ctrl+Shift+W and Cmd/Ctrl+1 to 9. **Cmd/Ctrl+W closes a pane,
 not the window** — the window goes when its last tab does, or from File >
 Close Window, which has no shortcut of its own: Electron's close gave it
-Cmd/Ctrl+W, and with File searched before View it took the keys from Close
-Pane.
+Cmd/Ctrl+W, which took the keys from Close Pane, and on Windows and Linux its
+Window menu carried a second Close with the same keys, so that menu is
+written out there with Minimize alone.
 
 Each tab carries its close inside it and is named for its **first pane**, the
 top-left one, in the words that pane's header uses — a link's curated name, a

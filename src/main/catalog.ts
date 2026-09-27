@@ -493,6 +493,14 @@ export class Catalog {
                 const readable = Array.isArray(listed) ? listed.filter(isServerDef) : [];
                 this.servers = readable.length > 0 && uniqueIds(readable) ? readable.map(copy) : DEFAULT_SERVERS.map(copy);
                 this.newer = version;
+                // The kit's own knowledge of its built-ins, re-adopted as on
+                // every launch — your world's url, above all, which must be
+                // this kit's loopback page and not whatever a newer kit wrote.
+                // In memory only: nothing is saved while `newer` is set.
+                this.refreshYourWorld();
+                this.refreshHiscores();
+                this.refreshBookmarks();
+                this.refreshTimers();
                 return;
             }
             const migrated = migrateCatalog(parsed);

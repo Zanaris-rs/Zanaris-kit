@@ -659,6 +659,7 @@ async function continueWithNewerFiles(): Promise<boolean> {
     const listNewer = catalog.newer !== null;
     if (!settingsNewer && !listNewer) return true;
     const what = settingsNewer && listNewer ? 'settings and server list are' : settingsNewer ? 'settings are' : 'server list is';
+    const lost = settingsNewer && listNewer ? 'anything you change' : settingsNewer ? 'changes to themes, chat, timers and the rest' : 'servers you add or remove';
     log(`[main] ${what} from a newer kit; reading ${settingsNewer && listNewer ? 'them' : 'it'} and writing nothing`);
     const { response } = await dialog.showMessageBox({
         type: 'warning',
@@ -666,8 +667,7 @@ async function continueWithNewerFiles(): Promise<boolean> {
         defaultId: 0,
         cancelId: 1,
         message: `Your ${what} from a newer version of Zanaris Kit.`,
-        detail:
-            "This version uses what it can read and leaves the files as they are, so anything you change until you update won't be kept. The newer version is on the releases page, and Help > Update Available opens it once the kit has found it."
+        detail: `This version uses what it can read and leaves ${settingsNewer && listNewer ? 'both files' : 'the file'} as ${settingsNewer && listNewer ? 'they are' : 'it is'}, so ${lost} until you update won't be kept. The newer version is on the releases page, and Help > Update Available opens it once the kit has found it.`
     });
     return response === 0;
 }
@@ -2785,7 +2785,7 @@ app.whenReady().then(async () => {
         void dialog.showMessageBox({
             type: 'warning',
             message: "Your settings couldn't be read and were reset.",
-            detail: `Themes, chat's nick and password, timers and the servers opened at launch start again from the defaults. The old file was kept beside the new one, as ${basename(aside)}.`
+            detail: `Themes, chat's nick and password, timers and the servers opened at launch start again from the defaults. The old file was kept in the same folder, as ${basename(aside)}.`
         });
     }
     if (branding) app.dock?.setIcon(branding.dockIcon);
@@ -2920,7 +2920,9 @@ app.whenReady().then(async () => {
         await captureAndExit(CAPTURE_DIR);
         return;
     }
-    // Asked before any window opens, so Quit leaves nothing half started.
+    // Asked before the launch opens its windows, so Quit leaves nothing half
+    // started. A second launch or a dock click while it is up can still open
+    // one of its own, as they always could.
     if (!(await continueWithNewerFiles())) {
         app.quit();
         return;
