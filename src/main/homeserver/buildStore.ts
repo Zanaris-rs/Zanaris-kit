@@ -1,5 +1,5 @@
 import type { Artifact, Recipe } from '../../shared/engines.ts';
-import type { BuildLine, BuildState, YourWorldVersion } from '../../shared/yourworld.ts';
+import type { BuildLine, BuildState, HomeServerVersion } from '../../shared/homeserver.ts';
 import { parseVersion } from './config.ts';
 
 /** Where downloads land and unpack, beside the builds; cleared at start and after every attempt. */
@@ -16,7 +16,7 @@ export interface InstalledBuild {
 }
 
 export interface BuildStoreDeps {
-    /** <userData>/yourworld/builds: one folder per line. */
+    /** <userData>/homeserver/builds: one folder per line. */
     dir: string;
     /** The lines this kit knows, in the order they are listed. */
     recipes: readonly Recipe[];
@@ -42,7 +42,7 @@ interface Flight {
 }
 
 /**
- * Your world's builds on this computer: one folder per line, each holding
+ * Home server's builds on this computer: one folder per line, each holding
  * the build the kit pins for it or nothing. A build gets there only by being
  * downloaded, checked against its pinned size and digest, unpacked beside the
  * others, checked again by the VERSION.json it unpacked to, and renamed into
@@ -53,7 +53,7 @@ export class BuildStore {
     private readonly deps: BuildStoreDeps;
     private readonly listeners = new Set<() => void>();
     /** What each line's folder holds now, as last read. */
-    private readonly onDisk = new Map<string, YourWorldVersion | null>();
+    private readonly onDisk = new Map<string, HomeServerVersion | null>();
     private readonly flights = new Map<string, Flight>();
     private readonly errors = new Map<string, string>();
 
@@ -201,7 +201,7 @@ export class BuildStore {
         this.onDisk.set(id, this.version(this.deps.join(this.folder(id), 'VERSION.json')));
     }
 
-    private version(path: string): YourWorldVersion | null {
+    private version(path: string): HomeServerVersion | null {
         try {
             return this.deps.fs.exists(path) ? parseVersion(this.deps.fs.readText(path)) : null;
         } catch {

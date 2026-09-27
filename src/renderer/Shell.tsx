@@ -16,7 +16,7 @@ import TopBar from './topBar';
 import { gameSprite } from './sprites';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
-import YourWorld from './tools/YourWorld';
+import HomeServer from './tools/HomeServer';
 import Timers from './tools/Timers';
 import Worlds from './tools/Worlds';
 
@@ -24,12 +24,12 @@ const at = (r: Rect): CSSProperties => ({ position: 'absolute', left: r.x, top: 
 
 /**
  * The revision the read-out adds after the game's label, or null when the
- * label names it already. Your world's does, beside the world's status, since
+ * label names it already. Home server's does, beside the world's status, since
  * a switch of build changes it under an open window; adding it here too
  * printed it twice.
  */
 function revisionOf(state: ShellState): string | null {
-    if (state.yourWorld) return null;
+    if (state.homeServer) return null;
     return state.server.revision === null ? 'rev unknown' : `rev ${state.server.revision}`;
 }
 
@@ -49,12 +49,12 @@ const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
  * Inline for the same reason as the boxes above.
  */
 const GEAR_BOX: CSSProperties = { height: 26, width: 28, padding: 0, marginLeft: 7 };
-/** The tabs' height, in the warn colour Your world's own sharing notice uses. Inline because `.btn` sets its gold in unlayered CSS. */
+/** The tabs' height, in the warn colour Home server's own sharing notice uses. Inline because `.btn` sets its gold in unlayered CSS. */
 const SHARING_BOX: CSSProperties = { height: 26, color: 'var(--color-warn)' };
 
 /**
  * What a tab in the background still has running, after its label: the game's
- * minimap flag, and Sharing while a link to Your world is live. Main decides
+ * minimap flag, and Sharing while a link to your home server is live. Main decides
  * which (`tabs.marksOfTab`), and the tab in front never has any, because what
  * it holds is on screen.
  *
@@ -140,7 +140,7 @@ function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState })
                 case 'hiscores':
                     return state.hiscores ? <Hiscores view={state.hiscores} width={pane.rect.width} /> : null;
                 case 'singleplayer':
-                    return state.yourWorld ? <YourWorld view={state.yourWorld} share={state.share} width={pane.rect.width} /> : null;
+                    return state.homeServer ? <HomeServer view={state.homeServer} share={state.share} width={pane.rect.width} /> : null;
                 case 'timers':
                     return <Timers view={state.timers} width={pane.rect.width} />;
             }
@@ -167,7 +167,7 @@ const ROOM_FOR_REVISION = 300;
  * it is the half worth losing. The title attribute keeps the full read-out
  * reachable however narrow the pane gets.
  *
- * Your world is the exception. Its label carries the revision itself, before
+ * Home server is the exception. Its label carries the revision itself, before
  * the world's status, since a switch of build changes it under an open window
  * (`revisionOf`), so nothing is added after it and nothing is dropped: a
  * narrow pane cuts the label from its end, status first.
@@ -461,7 +461,7 @@ export default function Shell(): ReactNode {
                     </button>
                 </div>
                 {/*
-                 * A live link with no pane showing Your world, so no tab
+                 * A live link with no pane showing Home server, so no tab
                  * can carry the mark. It opens the pane, whose Friends
                  * section is where the link is copied or stopped.
                  */}
@@ -469,7 +469,7 @@ export default function Shell(): ReactNode {
                     <button
                         type="button"
                         title="Your home server is shared with a link, and no pane shows it. Open Home server"
-                        onClick={() => void window.zanaris.panes.showYourWorld()}
+                        onClick={() => void window.zanaris.panes.showHomeServer()}
                         style={SHARING_BOX}
                         className="btn shrink-0"
                     >

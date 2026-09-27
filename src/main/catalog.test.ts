@@ -37,13 +37,13 @@ test('the built-in list is per server, Lost City first, with the settled revisio
     assert.equal(byId['zanaris']!.revision, 274);
     assert.equal(byId['lostcitylabs']!.revision, null);
     assert.equal(byId['lostcitylabs']!.notes, 'May 2005 per Lost City Labs');
-    assert.equal(byId['local'], undefined, 'your world superseded the local server');
+    assert.equal(byId['local'], undefined, 'your home server superseded the local server');
     assert.equal(byId['lostcity']!.wiki?.home, 'https://2004.losthq.rs/');
     assert.equal(byId['zanaris']!.wiki?.home, 'https://2004.losthq.rs/');
     assert.equal(byId['lostcitylabs']!.wiki, null);
 });
 
-test('the entry for your world runs on this computer and carries the default line\'s revision', () => {
+test('the entry for your home server runs on this computer and carries the default line\'s revision', () => {
     const sp = DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!;
     assert.equal(sp.kind, 'singleplayer');
     assert.equal(sp.name, 'Home server');
@@ -56,7 +56,7 @@ test('the entry for your world runs on this computer and carries the default lin
     for (const server of DEFAULT_SERVERS) assert.equal(server.kind, server.id === 'singleplayer' ? 'singleplayer' : 'remote');
 });
 
-test('a version 2 file gains kind and the entry for your world, and loses local', () => {
+test('a version 2 file gains kind and the entry for your home server, and loses local', () => {
     const v2 = {
         version: 2,
         servers: [
@@ -73,7 +73,7 @@ test('a version 2 file gains kind and the entry for your world, and loses local'
     assert.equal(migrated[0]!.hiscores?.source.kind, 'lostcity', 'a version 2 file gets the version 3 step too');
 });
 
-test('a version 2 file without local gets the entry for your world appended', () => {
+test('a version 2 file without local gets the entry for your home server appended', () => {
     const created = createServer(input(), []);
     assert.ok(created.ok);
     const custom: ServerDef = { ...created.server };
@@ -442,7 +442,7 @@ const v3File = (): Record<string, unknown> => ({
 test('a v3 file loses the local entry and keeps the rest, in order', () => {
     const migrated = migrateCatalog(v3File());
     assert.ok(migrated);
-    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'my-server'], 'your world superseded the local server');
+    assert.deepEqual(migrated.map(s => s.id), ['lostcity', 'my-server'], 'your home server superseded the local server');
 });
 
 test("a v3 file's Lost City template becomes the structured lookup, with the site the panel links to", () => {
@@ -648,14 +648,14 @@ test('Catalog.load migrates a v1 file in place and rewrites it as v5', () => {
     assert.equal(written.servers[0].id, 'lostcity');
 });
 
-test('a stored entry for your world follows the revision of the line the world runs, keeping the rest of the entry', () => {
+test('a stored entry for your home server follows the revision of the line the world runs, keeping the rest of the entry', () => {
     const file = tempFile();
     const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
     const stored = servers.find(s => s.id === 'singleplayer')!;
     stored.revision = 1;
     stored.bookmarks = [{ name: 'Mine', url: 'https://example.com/' }];
     writeFileSync(file, JSON.stringify({ version: 5, servers }));
-    const catalog = new Catalog(file, { yourWorldRevision: () => 289 });
+    const catalog = new Catalog(file, { homeServerRevision: () => 289 });
     catalog.load();
     assert.equal(catalog.recovered, false);
     const loaded = catalog.get('singleplayer')!;
@@ -666,7 +666,7 @@ test('a stored entry for your world follows the revision of the line the world r
     assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, 289);
 });
 
-test('without a line to follow, the stored entry for your world takes the default line\'s revision', () => {
+test('without a line to follow, the stored entry for your home server takes the default line\'s revision', () => {
     const file = tempFile();
     const servers = DEFAULT_SERVERS.map(s => structuredClone(s) as ServerDef);
     servers.find(s => s.id === 'singleplayer')!.revision = 1;
@@ -676,14 +676,14 @@ test('without a line to follow, the stored entry for your world takes the defaul
     assert.equal(catalog.get('singleplayer')!.revision, 274);
 });
 
-test('followYourWorld takes the revision again after a switch, and writes only when it changed', () => {
+test('followHomeServer takes the revision again after a switch, and writes only when it changed', () => {
     const file = tempFile();
     let revision = 274;
-    const catalog = new Catalog(file, { yourWorldRevision: () => revision });
+    const catalog = new Catalog(file, { homeServerRevision: () => revision });
     catalog.load();
-    assert.equal(catalog.followYourWorld(), false);
+    assert.equal(catalog.followHomeServer(), false);
     revision = 289;
-    assert.equal(catalog.followYourWorld(), true);
+    assert.equal(catalog.followHomeServer(), true);
     assert.equal(catalog.get('singleplayer')!.revision, 289);
     const written = JSON.parse(readFileSync(file, 'utf8')) as { servers: ServerDef[] };
     assert.equal(written.servers.find(s => s.id === 'singleplayer')!.revision, 289);
@@ -988,7 +988,7 @@ test("a newer kit's list with nothing this kit can read runs on the defaults, an
     assert.equal(readFileSync(file, 'utf8'), text);
 });
 
-test("a newer kit's list still gets the kit's own knowledge of its built-ins, your world's url above all", () => {
+test("a newer kit's list still gets the kit's own knowledge of its built-ins, your home server's url above all", () => {
     const file = tempFile();
     const builtIn = DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!;
     const moved = DEFAULT_SERVERS.map(s => (s.id === 'singleplayer' ? { ...s, url: 'http://example.com/elsewhere/rs2.cgi' } : s));

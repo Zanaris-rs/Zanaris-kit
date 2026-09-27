@@ -5,7 +5,7 @@ import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
-import { lineTitle, type YourWorldView } from '../shared/yourworld';
+import { lineTitle, type HomeServerView } from '../shared/homeserver';
 import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
@@ -100,9 +100,9 @@ const GAME_PAGE_CSS = `
 
 export type LoadResult = 'loaded' | 'failed';
 
-/** What a window running your world needs of the service; the service itself satisfies it. */
-export interface YourWorldHandle {
-    view(): YourWorldView;
+/** What a window running your home server needs of the service; the service itself satisfies it. */
+export interface HomeServerHandle {
+    view(): HomeServerView;
     subscribe(fn: () => void): () => void;
     acquire(): Promise<string>;
     release(): void;
@@ -111,14 +111,14 @@ export interface YourWorldHandle {
     download(): Promise<void>;
 }
 
-/** What a window running your world needs of sharing: a view to draw, and a count of the windows that can stop it. */
+/** What a window running your home server needs of sharing: a view to draw, and a count of the windows that can stop it. */
 export interface ShareHandle {
     view(): ShareView;
     acquire(): void;
     release(): void;
 }
 
-const STATUS_WORD: Record<YourWorldView['status'], string> = {
+const STATUS_WORD: Record<HomeServerView['status'], string> = {
     stopped: 'stopped',
     missing: 'not downloaded',
     downloading: 'downloading',
@@ -129,7 +129,7 @@ const STATUS_WORD: Record<YourWorldView['status'], string> = {
     failed: 'failed'
 };
 
-function statusWord(status: YourWorldView['status']): string {
+function statusWord(status: HomeServerView['status']): string {
     return STATUS_WORD[status];
 }
 
@@ -156,7 +156,7 @@ export interface ServerWindowDeps {
     position: { x: number; y: number } | null;
     /** The server's shared world list and latency, or null when the server has one page. */
     worlds: WorldsService | null;
-    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of the menus of a window running your world. */
+    /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of the menus of a window running your home server. */
     hiscores: HiscoresService | null;
     /**
      * The one conversation, which is the app's rather than this window's: every
@@ -190,8 +190,8 @@ export interface ServerWindowDeps {
     /** Latency of one host, for the current world's readout. */
     probe: (host: string, port: number, timeoutMs: number) => Promise<number | null>;
     /** The world this computer runs, for a window of kind singleplayer; null otherwise. */
-    yourWorld: YourWorldHandle | null;
-    /** Sharing that world. Only a window running your world takes it. */
+    homeServer: HomeServerHandle | null;
+    /** Sharing that world. Only a window running your home server takes it. */
     share: ShareHandle | null;
     /**
      * This window's clock definitions — its server's built-ins with the
@@ -224,11 +224,11 @@ export interface ServerWindow extends ServerWindowHandle {
      */
     addPane(content: PaneContent): void;
     /**
-     * The bar's Sharing button: Your world's pane, added as `addPane` adds one,
+     * The bar's Sharing button: Home server's pane, added as `addPane` adds one,
      * or in a new tab of its own when the active tab has no room for a column.
-     * Nothing on a window that is not Your world's.
+     * Nothing on a window that is not Home server's.
      */
-    showYourWorld(): void;
+    showHomeServer(): void;
     /** Raises the tab bar's Add pane menu at a point in the window. */
     showAddPaneMenu(x: number, y: number): void;
     /** Raises the tab bar's Setups menu at a point in the window. */
@@ -345,7 +345,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const { server } = spec;
     const tag = `[${spec.title}]`;
     const worldSwitch = server.worlds && deps.worlds ? new WorldSwitch(server.worlds, server.url, deps.remembered) : null;
-    const single = server.kind === 'singleplayer' ? deps.yourWorld : null;
+    const single = server.kind === 'singleplayer' ? deps.homeServer : null;
     const shared = single ? deps.share : null;
     /**
      * The tools this window offers. Chat is app-scoped, so every window offers
@@ -584,7 +584,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             worlds: worldsView(),
             hiscores: deps.hiscores?.view() ?? null,
             chat: deps.chat(),
-            yourWorld: single?.view() ?? null,
+            homeServer: single?.view() ?? null,
             share: shared?.view() ?? null,
             sharingWithoutPane: sharingWithoutPane(host.trees(), linkLive()),
             timers: { clocks: clocks.view(), customsFull },
@@ -768,7 +768,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         win.setBounds(shrunkFrame(win.getBounds(), by, edge));
     }
 
-    function showYourWorld(): void {
+    function showHomeServer(): void {
         if (!single) return;
         const content: PaneContent = { kind: 'tool', tool: 'singleplayer' };
         if (paneHolding(host.tree(), content) || canAppendColumn(host.tree(), rects.tree.width)) {
@@ -1023,7 +1023,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * first for a game that may still be connected. A page's reload and wait
      * are the host's, which owns page views; the game's are here.
      *
-     * A reload of the game is a load like any other — Your world's through the
+     * A reload of the game is a load like any other — Home server's through the
      * service's state, so a world that is not ready shows its starting page —
      * and a hung renderer is killed first, which Electron documents as the way
      * to reload one.
@@ -1054,7 +1054,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // rather than recognised as already showing.
             loadedGameUrl = null;
             shownStarting = null;
-            syncYourWorld();
+            syncHomeServer();
         } else {
             void loadGame(expected);
         }
@@ -1325,10 +1325,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     /**
      * The starting page in the state the service is in. Only a window
-     * running your world shows it. `pagefailed` is the page's own state, not the world's:
+     * running your home server shows it. `pagefailed` is the page's own state, not the world's:
      * the world is up and its page is what would not load.
      */
-    function showStarting(override?: { state: YourWorldView['status'] | 'pagefailed'; reason: string }): void {
+    function showStarting(override?: { state: HomeServerView['status'] | 'pagefailed'; reason: string }): void {
         if (!single || win.isDestroyed()) return;
         const view = single.view();
         const line = view.builds.find(l => l.id === view.selected);
@@ -1365,7 +1365,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     /** The world changed state: load the game when it is ready, show the page otherwise. */
     let loadedGameUrl: string | null = null;
-    function syncYourWorld(): void {
+    function syncHomeServer(): void {
         if (!single) return;
         const view = single.view();
         refreshLabels();
@@ -1450,12 +1450,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 deps.log(`${tag} retrying the world`);
                 // Forgetting the url is what lets the same one be loaded again: when the
                 // world is already up and only its page failed, retry() resolves off the
-                // ready status without changing it, so nothing notifies and syncYourWorld
+                // ready status without changing it, so nothing notifies and syncHomeServer
                 // would otherwise see the url it has already loaded and do nothing.
                 loadedGameUrl = null;
                 void single?.retry().then(
-                    () => syncYourWorld(),
-                    () => syncYourWorld()
+                    () => syncHomeServer(),
+                    () => syncHomeServer()
                 );
                 return;
             }
@@ -1656,12 +1656,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         loadPromise = new Promise<LoadResult>(resolve => {
             loadWaiter = resolve;
         });
-        unsubscribeSingle = single.subscribe(syncYourWorld);
+        unsubscribeSingle = single.subscribe(syncHomeServer);
         showStarting();
         void single.acquire().then(
-            () => syncYourWorld(),
+            () => syncHomeServer(),
             () => {
-                syncYourWorld();
+                syncHomeServer();
                 settleLoad('failed');
             }
         );
@@ -1679,7 +1679,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         },
         close: () => win.close(),
         addPane,
-        showYourWorld,
+        showHomeServer,
         showAddPaneMenu,
         // Asked of the window rather than answered from a flag kept alongside
         // it. The window is where the state actually lives, so a copy here

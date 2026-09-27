@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_YOUR_WORLD_SETTINGS, type YourWorldSettings } from '../../shared/yourworld.ts';
+import { DEFAULT_HOME_SERVER_SETTINGS, type HomeServerSettings } from '../../shared/homeserver.ts';
 import { gameUrl, parseVersion, stampMatches, worldJson } from './config.ts';
 
 const ports = { web: 40001, management: 40002, tcp: 40003 };
-const settings = (patch: Partial<YourWorldSettings> = {}): YourWorldSettings => ({ ...DEFAULT_YOUR_WORLD_SETTINGS, ...patch });
+const settings = (patch: Partial<HomeServerSettings> = {}): HomeServerSettings => ({ ...DEFAULT_HOME_SERVER_SETTINGS, ...patch });
 
 test('worldJson binds loopback, disables the servers, and sets the staff level from cheats', () => {
     const off = JSON.parse(worldJson({ ports, settings: settings(), revision: 274 }));

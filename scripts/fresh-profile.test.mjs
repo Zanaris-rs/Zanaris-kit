@@ -44,11 +44,11 @@ test('two resets in the same second do not land on the same name', () => {
     assert.equal(uniquePath('/t/free', () => false), '/t/free');
 });
 
-test('what survives a reset is the two folders that are expensive to rebuild', () => {
+test('what survives a reset is the folders that are expensive to rebuild', () => {
     // Builds are 50 MB a line, and the saves are someone's characters. Everything
     // else — state.json above all, which is what makes a launch a first launch —
     // is what the reset is for.
-    assert.deepEqual(KEPT, ['yourworld', 'singleplayer']);
+    assert.deepEqual(KEPT, ['homeserver', 'yourworld', 'singleplayer']);
     assert.ok(!KEPT.includes('state.json'), 'keeping it would leave the next launch not fresh');
     assert.ok(!KEPT.includes('Partitions'), 'keeping the logins would not be a fresh profile');
 });

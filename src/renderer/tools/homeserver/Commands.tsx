@@ -42,7 +42,7 @@ export default function Commands({ cheats, wide }: { cheats: boolean; wide: bool
 
     useEffect(() => {
         let live = true;
-        void window.zanaris.yourWorld.commands().then(list => {
+        void window.zanaris.homeServer.commands().then(list => {
             if (live) setProcs(list);
         });
         return () => {

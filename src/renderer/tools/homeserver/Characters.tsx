@@ -1,6 +1,6 @@
 import { useId, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import { NAME_INPUT_MAX, nameProblem, toDisplayName } from '../../../shared/names';
-import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterAction, type CharacterInfo, type CharacterOutcome, type SaveSummary, type YourWorldView } from '../../../shared/yourworld';
+import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterAction, type CharacterInfo, type CharacterOutcome, type SaveSummary, type HomeServerView } from '../../../shared/homeserver';
 import { Caret } from '../../icons';
 import { scrollClass, sectionClass } from './fill';
 
@@ -70,7 +70,7 @@ function Row({ character, busy, wide, choose }: { character: CharacterInfo; busy
         if (busy) return;
         const box = event.currentTarget.getBoundingClientRect();
         const byKey = event.type === 'click' && event.detail === 0;
-        void window.zanaris.yourWorld.characterMenu(character.name, byKey ? box.left : event.clientX, byKey ? box.bottom : event.clientY).then(action => {
+        void window.zanaris.homeServer.characterMenu(character.name, byKey ? box.left : event.clientX, byKey ? box.bottom : event.clientY).then(action => {
             if (action !== null) choose(action);
         });
     };
@@ -98,9 +98,9 @@ function Row({ character, busy, wide, choose }: { character: CharacterInfo; busy
  * only asks for changes, and main asks the player before any that could lose
  * something.
  */
-export default function Characters({ view, wide }: { view: YourWorldView; wide: boolean }): ReactNode {
+export default function Characters({ view, wide }: { view: HomeServerView; wide: boolean }): ReactNode {
     const id = useId();
-    const api = window.zanaris.yourWorld;
+    const api = window.zanaris.homeServer;
     const [prompt, setPrompt] = useState<Prompt | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);

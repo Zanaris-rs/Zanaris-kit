@@ -7,7 +7,7 @@ import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
-import type { CharacterAction, CharacterOutcome, ImportPick, YourWorldSection, YourWorldSettings, YourWorldView } from './yourworld';
+import type { CharacterAction, CharacterOutcome, ImportPick, HomeServerSection, HomeServerSettings, HomeServerView } from './homeserver';
 import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
@@ -36,7 +36,7 @@ export const IPC = {
     tabContextMenu: 'zanaris:tab-context-menu',
     tabAddPaneMenu: 'zanaris:tab-add-pane-menu',
     tabSetupsMenu: 'zanaris:tab-setups-menu',
-    tabShowYourWorld: 'zanaris:tab-show-your-world',
+    tabShowHomeServer: 'zanaris:tab-show-home-server',
     paneOpenExternal: 'zanaris:pane-open-external',
     paneNotice: 'zanaris:pane-notice',
     worldsRefresh: 'zanaris:worlds-refresh',
@@ -54,23 +54,23 @@ export const IPC = {
     chatDisconnect: 'zanaris:chat-disconnect',
     chatOpenLink: 'zanaris:chat-open-link',
     chatUserMenu: 'zanaris:chat-user-menu',
-    yourWorldSetSetting: 'zanaris:yourworld-set-setting',
-    yourWorldRetry: 'zanaris:yourworld-retry',
-    yourWorldOpenSaves: 'zanaris:yourworld-open-saves',
-    yourWorldShowLog: 'zanaris:yourworld-show-log',
-    yourWorldPickImport: 'zanaris:yourworld-pick-import',
-    yourWorldImport: 'zanaris:yourworld-import',
-    yourWorldExport: 'zanaris:yourworld-export',
-    yourWorldRename: 'zanaris:yourworld-rename',
-    yourWorldDuplicate: 'zanaris:yourworld-duplicate',
-    yourWorldDelete: 'zanaris:yourworld-delete',
-    yourWorldCommands: 'zanaris:yourworld-commands',
-    yourWorldCopyTo: 'zanaris:yourworld-copy-to',
-    yourWorldCharacterMenu: 'zanaris:yourworld-character-menu',
-    yourWorldSectionMenu: 'zanaris:yourworld-section-menu',
-    yourWorldUseBuild: 'zanaris:yourworld-use-build',
-    yourWorldDownloadBuild: 'zanaris:yourworld-download-build',
-    yourWorldRemoveBuild: 'zanaris:yourworld-remove-build',
+    homeServerSetSetting: 'zanaris:homeserver-set-setting',
+    homeServerRetry: 'zanaris:homeserver-retry',
+    homeServerOpenSaves: 'zanaris:homeserver-open-saves',
+    homeServerShowLog: 'zanaris:homeserver-show-log',
+    homeServerPickImport: 'zanaris:homeserver-pick-import',
+    homeServerImport: 'zanaris:homeserver-import',
+    homeServerExport: 'zanaris:homeserver-export',
+    homeServerRename: 'zanaris:homeserver-rename',
+    homeServerDuplicate: 'zanaris:homeserver-duplicate',
+    homeServerDelete: 'zanaris:homeserver-delete',
+    homeServerCommands: 'zanaris:homeserver-commands',
+    homeServerCopyTo: 'zanaris:homeserver-copy-to',
+    homeServerCharacterMenu: 'zanaris:homeserver-character-menu',
+    homeServerSectionMenu: 'zanaris:homeserver-section-menu',
+    homeServerUseBuild: 'zanaris:homeserver-use-build',
+    homeServerDownloadBuild: 'zanaris:homeserver-download-build',
+    homeServerRemoveBuild: 'zanaris:homeserver-remove-build',
     shareStart: 'zanaris:share-start',
     shareStop: 'zanaris:share-stop',
     shareCopy: 'zanaris:share-copy',
@@ -172,16 +172,16 @@ export interface ShellState {
     tools: ToolId[];
     /** Null when the server has one page. */
     worlds: WorldsView | null;
-    /** Null when the server offers no hiscores — your world above all, where a one-player world has nothing to rank. */
+    /** Null when the server offers no hiscores — your home server above all, where a one-player world has nothing to rank. */
     hiscores: HiscoresView | null;
     /** One connection serves every window, so this is the same in all of them. */
     chat: ChatView;
     /** The world this computer runs; null for every other kind of window. */
-    yourWorld: YourWorldView | null;
-    /** Whether that world is shared with a link; null wherever `yourWorld` is. */
+    homeServer: HomeServerView | null;
+    /** Whether that world is shared with a link; null wherever `homeServer` is. */
     share: ShareView | null;
     /**
-     * A link to Your world is live and no pane in any tab shows it, so no tab
+     * A link to your home server is live and no pane in any tab shows it, so no tab
      * can carry the mark and the bar shows it instead. Main's, from
      * `tabs.sharingWithoutPane`.
      */
@@ -355,16 +355,16 @@ export interface ZanarisApi {
         setupsMenu(x: number, y: number): Promise<void>;
         /**
          * The bar's Sharing button, shown while a link is live and no pane
-         * shows Your world: opens its pane as a column down the active tab's
+         * shows Home server: opens its pane as a column down the active tab's
          * right edge, or in a new tab of its own when there is no room for one.
          */
-        showYourWorld(): Promise<void>;
+        showHomeServer(): Promise<void>;
         /** Opens one of this server's links in the system browser instead of a pane. Refused, like `setContent`, for anything that is not one of them. */
         openExternal(url: string): Promise<void>;
     };
-    yourWorld: {
+    homeServer: {
         /** Changes one of the world's settings. Asks first when the world is running, since the change restarts it. */
-        setSetting<K extends keyof YourWorldSettings>(key: K, value: YourWorldSettings[K]): Promise<void>;
+        setSetting<K extends keyof HomeServerSettings>(key: K, value: HomeServerSettings[K]): Promise<void>;
         retry(): Promise<void>;
         openSaves(): Promise<void>;
         showLog(): Promise<void>;
@@ -393,7 +393,7 @@ export interface ZanarisApi {
          */
         characterMenu(name: string, x: number, y: number): Promise<CharacterAction | null>;
         /** Raises the menu of sections a narrow tool shows in place of its tabs, with `open` ticked. Null when it was dismissed. */
-        sectionMenu(open: YourWorldSection, x: number, y: number): Promise<YourWorldSection | null>;
+        sectionMenu(open: HomeServerSection, x: number, y: number): Promise<HomeServerSection | null>;
         /**
          * Makes a build line the one the world runs, downloading it first if it
          * is not here. Asks first when the world is running, since it restarts.

@@ -3,7 +3,7 @@ import { Caret, CloseRoom } from './icons';
 
 /**
  * The text-bearing interface tab, worn by the window strip, by the chat
- * pane's row of Settings, Status and channels, and by the Your world
+ * pane's row of Settings, Status and channels, and by the Home server
  * tool's rows of sections and command lists.
  *
  * It lives here rather than in either of them because they are the same
@@ -77,7 +77,7 @@ export default function Tab({
     /** A right-click anywhere on the tab, close included. The window strip's tabs raise their tab menu (Close Tab) with it; chat's tabs have none. */
     onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
     /**
-     * The tab opens a menu rather than being chosen: Your world's, in a
+     * The tab opens a menu rather than being chosen: Home server's, in a
      * narrow pane, in place of its row of sections. It says so to a screen
      * reader rather than claiming to be current, and carries the caret the
      * kit's other menus do. Only for a tab with `onSelect` and no close.

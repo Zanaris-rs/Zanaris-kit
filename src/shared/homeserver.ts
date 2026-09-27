@@ -1,17 +1,17 @@
-/** Your world, as the shell draws it. */
+/** Home server, as the shell draws it. */
 
 /**
  * - missing: a window wants the world, and the selected build is not downloaded.
  * - downloading: the same, while that build is on its way down.
  */
-export type YourWorldStatus = 'stopped' | 'missing' | 'downloading' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
+export type HomeServerStatus = 'stopped' | 'missing' | 'downloading' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
 
 /**
  * True while a world may be running or on its way up or down: every status
  * but stopped, failed, and the two that wait for a build. A change that costs
  * a restart, or that a logout could write over, asks first while this holds.
  */
-export function worldRunning(status: YourWorldStatus): boolean {
+export function worldRunning(status: HomeServerStatus): boolean {
     return status !== 'stopped' && status !== 'failed' && status !== 'missing' && status !== 'downloading';
 }
 
@@ -24,7 +24,7 @@ export function isXpRate(value: unknown): value is XpRate {
 }
 
 /** What the player chooses about their world. Each one is written into world.json, so a change takes a restart. */
-export interface YourWorldSettings {
+export interface HomeServerSettings {
     /** node.localStaffLevel: 4 on, 0 off. */
     cheats: boolean;
     /** node.xpRate. */
@@ -33,7 +33,7 @@ export interface YourWorldSettings {
     members: boolean;
 }
 
-export const DEFAULT_YOUR_WORLD_SETTINGS: Readonly<YourWorldSettings> = Object.freeze({ cheats: false, xpRate: 1, members: true });
+export const DEFAULT_HOME_SERVER_SETTINGS: Readonly<HomeServerSettings> = Object.freeze({ cheats: false, xpRate: 1, members: true });
 
 /**
  * Where a line's build stands on this computer.
@@ -65,7 +65,7 @@ export interface BuildLine {
 }
 
 /** What the build the world runs is, from its VERSION.json. */
-export interface YourWorldVersion {
+export interface HomeServerVersion {
     /** The line it was staged from; null in a stage from before builds had recipes. */
     id: string | null;
     name: string | null;
@@ -77,8 +77,8 @@ export interface YourWorldVersion {
     built: string;
 }
 
-export interface YourWorldView {
-    status: YourWorldStatus;
+export interface HomeServerView {
+    status: HomeServerStatus;
     /** The web port while starting or ready. */
     port: number | null;
     /** The game URL while ready. */
@@ -87,9 +87,9 @@ export interface YourWorldView {
     reason: string | null;
     /** The last lines the world printed. */
     logTail: string[];
-    version: YourWorldVersion | null;
-    /** What the player chose for the world; see YourWorldSettings. */
-    settings: YourWorldSettings;
+    version: HomeServerVersion | null;
+    /** What the player chose for the world; see HomeServerSettings. */
+    settings: HomeServerSettings;
     /** The saves folder, newest first, as last read. A character being played shows its last save. */
     characters: CharacterInfo[];
     /** The id of the line the world runs. */
@@ -177,10 +177,10 @@ export function characterMenu(character: Pick<CharacterInfo, 'summary'>, otherRe
     ];
 }
 
-export type YourWorldSection = 'world' | 'characters' | 'commands' | 'builds' | 'friends';
+export type HomeServerSection = 'world' | 'characters' | 'commands' | 'builds' | 'friends';
 
-/** The Your world tool's sections, in the order its tabs and its narrow menu list them. */
-export const YOUR_WORLD_SECTIONS: readonly { id: YourWorldSection; label: string }[] = [
+/** The Home server tool's sections, in the order its tabs and its narrow menu list them. */
+export const HOME_SERVER_SECTIONS: readonly { id: HomeServerSection; label: string }[] = [
     { id: 'world', label: 'World' },
     { id: 'characters', label: 'Characters' },
     { id: 'commands', label: 'Commands' },
@@ -189,12 +189,12 @@ export const YOUR_WORLD_SECTIONS: readonly { id: YourWorldSection; label: string
 ];
 
 /** The sections a window's tool offers: Friends only where main sends a share. */
-export function sectionsOffered(shared: boolean): { id: YourWorldSection; label: string }[] {
-    return YOUR_WORLD_SECTIONS.filter(section => section.id !== 'friends' || shared);
+export function sectionsOffered(shared: boolean): { id: HomeServerSection; label: string }[] {
+    return HOME_SERVER_SECTIONS.filter(section => section.id !== 'friends' || shared);
 }
 
-export function isSection(value: unknown): value is YourWorldSection {
-    return YOUR_WORLD_SECTIONS.some(section => section.id === value);
+export function isSection(value: unknown): value is HomeServerSection {
+    return HOME_SERVER_SECTIONS.some(section => section.id === value);
 }
 
 /**
