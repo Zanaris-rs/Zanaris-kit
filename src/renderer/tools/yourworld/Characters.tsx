@@ -1,6 +1,7 @@
 import { useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { NAME_INPUT_MAX, nameProblem, toDisplayName } from '../../../shared/names';
 import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterInfo, type CharacterOutcome, type SaveSummary, type YourWorldView } from '../../../shared/yourworld';
+import { scrollClass, sectionClass } from './fill';
 
 /*
  * `.btn` and the base `button` rule are unlayered CSS, which beats a Tailwind
@@ -19,9 +20,10 @@ type Prompt = { kind: 'import'; token: string; summary: SaveSummary; draft: stri
 
 const ACTION: Record<Prompt['kind'], string> = { import: 'Import', rename: 'Rename', duplicate: 'Copy' };
 
+/** A secondary action. A label of more than one word wraps inside it in a narrow pane, as Timers' does, rather than running past the edge of its row. */
 function QuietButton({ onClick, disabled = false, size = BUTTON_SIZE, children }: { onClick: () => void; disabled?: boolean; size?: CSSProperties; children: ReactNode }): ReactNode {
     return (
-        <button type="button" disabled={disabled} onClick={onClick} style={size} className="btn group shrink-0">
+        <button type="button" disabled={disabled} onClick={onClick} style={size} className="btn group">
             <span className={disabled ? 'text-faint' : 'text-dim group-hover:text-cream'}>{children}</span>
         </button>
     );
@@ -59,11 +61,13 @@ function Row({
          * Two lines whatever the width: who the character is, then what can be
          * done with it. Sharing one line squeezed the levels into a word-wide
          * column in a narrow pane, and wrapping only some rows made a list
-         * whose rows don't line up.
+         * whose rows don't line up. A name wider than the row, as twelve
+         * letters can be at `PANE_MIN_WIDTH`, breaks rather than scrolling
+         * the list sideways.
          */
         <li className="flex flex-col gap-1 border-b border-edge-dark py-1.5 last:border-b-0">
             <div className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-cream">{character.displayName}</span>
+                <span className="min-w-0 text-cream wrap-anywhere">{character.displayName}</span>
                 <span className={`text-[12px] ${usable ? 'text-dim' : 'text-warn'}`}>
                     {character.summary ? summaryLine(character.summary) : PROBLEM_LABEL[character.problem ?? 'unreadable']}
                 </span>
@@ -99,7 +103,7 @@ function Row({
  * only asks for changes, and main asks the player before any that could lose
  * something.
  */
-export default function Characters({ view }: { view: YourWorldView }): ReactNode {
+export default function Characters({ view, wide }: { view: YourWorldView; wide: boolean }): ReactNode {
     const id = useId();
     const api = window.zanaris.yourWorld;
     const [prompt, setPrompt] = useState<Prompt | null>(null);
@@ -162,8 +166,9 @@ export default function Characters({ view }: { view: YourWorldView }): ReactNode
     };
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
-            <div className="sunk min-h-0 flex-1 overflow-y-auto px-2 py-1">
+        <div className={sectionClass(wide)}>
+            {/* Narrow, the list's sides are 4px, as the launcher's rows are, which leaves a row 76px at `PANE_MIN_WIDTH` with the tool's scrollbar showing. */}
+            <div className={`sunk ${scrollClass(wide)} py-1 ${wide ? 'px-2' : 'px-1'}`}>
                 {view.characters.length === 0 ? (
                     <p className="py-1 text-dim">No characters yet. Type any name at the game's login screen to make one; it shows here once the game has saved it.</p>
                 ) : (
@@ -195,10 +200,17 @@ export default function Characters({ view }: { view: YourWorldView }): ReactNode
 
             {prompt !== null && (
                 <form onSubmit={submit} className="flex flex-col gap-0.5">
-                    <label htmlFor={`${id}-name`} className="text-[12px] text-dim">
+                    {/* The names here, and in Copy to…, break where one is wider than the pane, as the list's do. */}
+                    <label htmlFor={`${id}-name`} className="text-[12px] text-dim wrap-anywhere">
                         {promptLabel(prompt)}
                     </label>
-                    <div className="flex items-center gap-1.5">
+                    {/*
+                     * Narrow, the row wraps, so the box, which is as wide as the
+                     * row, has a line to itself and its buttons go under it:
+                     * beside them it was 14px at `PANE_MIN_WIDTH`, and Cancel
+                     * ran out of the pane.
+                     */}
+                    <div className={`flex items-center gap-1.5${wide ? '' : ' flex-wrap'}`}>
                         <input
                             id={`${id}-name`}
                             autoFocus
@@ -220,7 +232,7 @@ export default function Characters({ view }: { view: YourWorldView }): ReactNode
                         </button>
                         <QuietButton onClick={() => setPrompt(null)}>Cancel</QuietButton>
                     </div>
-                    <span id={`${id}-note`} className={`text-[12px] ${shown !== null ? 'text-warn' : 'text-dim'}`}>
+                    <span id={`${id}-note`} className={`text-[12px] wrap-anywhere ${shown !== null ? 'text-warn' : 'text-dim'}`}>
                         {shown ??
                             (problem === null ? (
                                 <>
@@ -236,7 +248,7 @@ export default function Characters({ view }: { view: YourWorldView }): ReactNode
 
             {copying !== null && (
                 <div className="flex flex-col gap-0.5">
-                    <span className="text-[12px] text-dim">
+                    <span className="text-[12px] text-dim wrap-anywhere">
                         Copy {toDisplayName(copying)} from rev {view.revision} to
                     </span>
                     <div className="flex flex-wrap items-center gap-1.5">

@@ -1,8 +1,31 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useState, type ReactNode } from 'react';
 import { COMMAND_FILTERS, usage, visibleCommands, type CommandFilter, type CommandRef } from '../../../shared/commands';
 import Tab from '../../tab';
+import { scrollClass, sectionClass } from './fill';
 
 const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
+
+/**
+ * A command as it is typed, with a place to break after each underscore. To
+ * the browser a debug proc's name is one word, `::~npc_del_change_static`
+ * 173px of it, and it scrolled the list sideways in any pane narrower than
+ * 225. It breaks after an underscore now, and anywhere at all where even a
+ * part is wider than the line, as at `PANE_MIN_WIDTH` (the row's
+ * `wrap-anywhere`). A `<wbr>` adds nothing to what is copied.
+ */
+function breakable(typed: string): ReactNode {
+    const parts = typed.split('_');
+    return parts.map((part, i) => (
+        <Fragment key={i}>
+            {part}
+            {i < parts.length - 1 && (
+                <>
+                    _<wbr />
+                </>
+            )}
+        </Fragment>
+    ));
+}
 
 /**
  * The Commands section: the content's debug procs and the engine's own
@@ -10,7 +33,7 @@ const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-
  * the game reads keys and has no paste, so these are to read and type by
  * hand. Main hands over the procs when the section opens.
  */
-export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
+export default function Commands({ cheats, wide }: { cheats: boolean; wide: boolean }): ReactNode {
     const id = useId();
     /* Undefined while main is asked; null when this build has no list. */
     const [procs, setProcs] = useState<CommandRef[] | null | undefined>(undefined);
@@ -31,7 +54,7 @@ export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
     const shown = visibleCommands(procs === undefined ? [] : procs, filter, query);
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <div className={sectionClass(wide)}>
             <div className="flex flex-col gap-1.5">
                 {!cheats && <p className="text-[12px] text-warn">These need cheats on, in World. With cheats off the world ignores them.</p>}
                 <p className="text-[12px] text-dim">
@@ -58,7 +81,8 @@ export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
                 )}
             </div>
 
-            <div id={`${id}-list`} className="sunk min-h-0 flex-1 overflow-y-auto px-2 py-1">
+            {/* Narrow, the list's sides are 4px, as Characters' are. */}
+            <div id={`${id}-list`} className={`sunk ${scrollClass(wide)} py-1 ${wide ? 'px-2' : 'px-1'}`}>
                 {procs === undefined ? (
                     <p className="py-1 text-dim">Loading…</p>
                 ) : shown.length === 0 ? (
@@ -66,9 +90,10 @@ export default function Commands({ cheats }: { cheats: boolean }): ReactNode {
                 ) : (
                     <ul>
                         {shown.map(ref => (
-                            <li key={`${ref.kind}:${ref.name}`} className="py-[3px]">
+                            /* A word wider than the line breaks, in a note as in a command: ::getcoord's level,mx,mz,lx,lz is one. */
+                            <li key={`${ref.kind}:${ref.name}`} className="py-[3px] wrap-anywhere">
                                 {/* Selectable, unlike the rest of the shell, so a command can be copied out by hand. */}
-                                <code className="font-mono text-[12px] text-cream select-text">{usage(ref)}</code>
+                                <code className="font-mono text-[12px] text-cream select-text">{breakable(usage(ref))}</code>
                                 {ref.note !== null && <span className="block text-[12px] text-dim">{ref.note}</span>}
                             </li>
                         ))}

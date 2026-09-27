@@ -1895,7 +1895,8 @@ const shotOfThePage =
  * Then, in this order: Settings; a split, a swap and a move on the first
  * loaded window; the Worlds tool, maximised, a world switch and a split down;
  * Hiscores on each server that has it; Timers; a seam dragged and a pane
- * closed giving its room back; the Your world tool; the reference pane — the
+ * closed giving its room back; the Your world tool, as it opens and on World
+ * at `PANE_MIN_WIDTH`; the reference pane — the
  * launcher, two pages beside the game, and the first of them brought back to
  * prove a tab switch did not reload it; a second instance of the first
  * server (slots and partitions), with a setup saved and opened into a new tab
@@ -2291,6 +2292,21 @@ async function captureAndExit(dir: string): Promise<void> {
             await wait(500);
             await shoot('yourworld-tool', single);
             log(`[capture] your world: ${single.state().yourWorld?.status} on port ${single.state().yourWorld?.port}`);
+
+            // And narrow: the seam before the tool dragged as far as it goes,
+            // which leaves the tool at `PANE_MIN_WIDTH`. The tool opens on
+            // World, so this shows World's narrow shape: each switch's note
+            // under it rather than beside it, as in the shot above.
+            const tool = single.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'singleplayer');
+            const seam = tool && single.state().seams.find(s => s.axis === 'x' && Math.abs(s.rect.x + s.rect.width - tool.rect.x) <= 1);
+            if (tool && seam) {
+                single.setSeam(seam.splitId, seam.index, seam.max);
+                await wait(500);
+                log(`[capture] your world: narrowed from ${tool.rect.width}px to ${single.state().panes.find(p => p.paneId === tool.paneId)?.rect.width}px`);
+                await shoot('yourworld-tool-narrow', single);
+            } else {
+                log('[capture] your world: not narrowed, since no seam sits before the tool');
+            }
         }
 
         // The reference pane. Last, because it is the one thing here that
