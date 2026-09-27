@@ -18,8 +18,12 @@ const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', border
 export default function TopBar({ frame, style, children }: { frame: WindowFrame; style: CSSProperties; children: ReactNode }): ReactNode {
     return (
         <div style={style} className={frame.ownTitleBar ? 'title-bar flex flex-col' : 'flex flex-col'}>
-            {/* An inset of zero leaves `px-1.5`'s own left padding. Inline because a utility could not carry a number main sends. */}
-            <header style={{ ...STRIP_BAR, paddingLeft: frame.buttonsInset || undefined }} className="tile flex flex-1 items-center gap-[5px] px-1.5">
+            {/*
+             * 5px at the ends, as between the controls and above and below them
+             * (`TAB_BAR_HEIGHT`). An inset of zero leaves that left padding.
+             * Inline because a utility could not carry a number main sends.
+             */}
+            <header style={{ ...STRIP_BAR, paddingLeft: frame.buttonsInset || undefined }} className="tile flex flex-1 items-center gap-[5px] px-[5px]">
                 {children}
             </header>
             {/* The client parts its bars with a dark rule lit along the top, never a flat hairline. */}

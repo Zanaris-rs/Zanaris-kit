@@ -25,8 +25,8 @@ export const MAC_BUTTON = { size: 14, pitch: 23 } as const;
 /**
  * Where the close button's top left goes. 9 in from the left edge is macOS
  * 27's own inset. Down, the buttons' middle meets the tabs': the bar less its
- * 2px rule and the strip's 2px bevelled underside is 32, the tabs are centred
- * in that, and 16 less half a button is 9.
+ * 2px rule and the strip's 2px bevelled underside is 36, the tabs are centred
+ * in that, and 18 less half a button is 11.
  */
 export const MAC_BUTTONS_AT = { x: 9, y: (TAB_BAR_HEIGHT - 4) / 2 - MAC_BUTTON.size / 2 };
 

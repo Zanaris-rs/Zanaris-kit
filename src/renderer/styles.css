@@ -153,9 +153,19 @@ input[type='color'] {
  * lands on stone gets it. Remove it and cream on #443d31 goes soft at 13px.
  */
 .tile,
+.stone,
 .sunk,
 .btn {
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.78);
+}
+
+/*
+ * The stone with no bevel of its own: the body of a pane the shell paints.
+ * The seams around a pane are its edges, so a tool pane is framed exactly as
+ * the game's is, by its header's bevel above and the seams at its sides.
+ */
+.stone {
+    background-color: var(--color-stone);
 }
 
 /* Raised interface stone: panels, tab strips, the frame itself. */
