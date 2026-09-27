@@ -527,14 +527,19 @@ export default function Shell(): ReactNode {
                             void window.zanaris.panes.contextMenu(pane.paneId, event.clientX, event.clientY);
                         }}
                         /*
-                         * The stone frame goes on every pane the shell paints
-                         * itself — a tool, and the launcher an empty pane shows —
-                         * so the two read as the same object: a bevelled panel
-                         * with its list sunk into it. A game or page pane keeps
-                         * the ink, since a native view covers all of it but
-                         * the header.
+                         * The stone goes on every pane the shell paints itself —
+                         * a tool, and the launcher an empty pane shows — so the
+                         * two read as the same object: a panel with its list
+                         * sunk into it. A game or page pane keeps the ink, since
+                         * a native view covers all of it but the header.
+                         *
+                         * No pane gets a bevel round it. The header's is the
+                         * only frame any pane has, so a tool reads as the same
+                         * weight as the game beside it; a `.tile` here stacked
+                         * its own lit edge on the header's and drew a second
+                         * one down each side.
                          */
-                        className={`flex flex-col overflow-hidden bg-ink${pane.content.kind === 'tool' || pane.content.kind === 'empty' ? ' tile' : ''}`}
+                        className={`flex flex-col overflow-hidden ${pane.content.kind === 'tool' || pane.content.kind === 'empty' ? 'stone' : 'bg-ink'}`}
                     >
                         {/*
                          * Every pane, including the two whose bodies are holes

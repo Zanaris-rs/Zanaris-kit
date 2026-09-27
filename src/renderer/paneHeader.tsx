@@ -52,7 +52,7 @@ const BUTTON: CSSProperties = { height: 22, width: 24 };
  * way the name beside it does.
  */
 const DOT: CSSProperties = { width: 6, height: 6, boxShadow: '1px 1px 0 rgba(0, 0, 0, 0.78)' };
-/** The header spans the pane, so its sides are the pane's edge rather than its own. */
+/** The header spans the pane, and a pane has no sides of its own: the seam beside it is its edge. */
 const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', borderRight: 'none' };
 /**
  * A floor under the name, so a squeeze takes the end of it rather than all of
@@ -61,9 +61,9 @@ const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', b
  * showing its buttons and no idea what it is looking at.
  *
  * 2em rather than more because the floor has to fit the narrowest pane there
- * is: a tool pane at the 120px minimum has 116px inside its bevel, and the
+ * is: a tool pane at the 120px minimum has all 120 across its header, and the
  * padding, the dot, the dropdown, the close and the gaps between them take 86
- * of it, leaving exactly the 30px this is at 15px. A floor past that pushes the
+ * of it, leaving 34 for the 30px this is at 15px. A floor past that pushes the
  * close off the pane's edge on the focused pane — it was 2.5em until the dot
  * arrived and took 11px — and the title attribute already carries the full
  * name for a pane that narrow.
