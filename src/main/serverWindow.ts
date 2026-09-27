@@ -1,5 +1,5 @@
 import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage, type WebContents } from 'electron';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
@@ -10,17 +10,18 @@ import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
 import type { ThemeLook } from '../shared/themes';
+import type { PaneTrouble } from '../shared/paneNotice';
 import type { ListedTimer } from './timers/defs';
 import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
-import { decideNavigation } from './guard';
+import { allowPermission, decideNavigation, isPress, mayOpenBrowser } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, windowFrame } from './windowFrame';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
-import { layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
+import { SETUP_PANES_MAX, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, type BuiltInSetupId } from './setups';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
@@ -53,8 +54,20 @@ function defaultContent(serverId: string): { width: number; height: number; game
  * an opening size a few pixels short costs nothing.
  */
 const FRAME_ALLOWANCE = 40;
-const PROBE_EVERY_MS = 10_000;
+/**
+ * How often a latency is measured again while something shows it: the game's
+ * header, or a Worlds pane. Each is also measured once when it opens — a game
+ * as it loads, Worlds as its pane does — and Refresh measures on demand.
+ *
+ * Every probe is a TCP connect to a server somebody else runs, and every open
+ * kit makes them: every ten seconds, as this once was, a thousand idle kits
+ * sent Lost City's world hosts about a hundred connects a second. A figure a
+ * quarter of an hour old still says which world is near.
+ */
+const PROBE_EVERY_MS = 15 * 60_000;
 const PROBE_TIMEOUT_MS = 3_000;
+/** Past this a file in the setups folder is refused unread. Ten panes of the longest bookmark come to a few kilobytes. */
+const SETUP_FILE_MAX = 256 * 1024;
 
 /**
  * Injected into every game page. The stock client is `body{overflow:auto}` around
@@ -257,6 +270,8 @@ export interface ServerWindow extends ServerWindowHandle {
     evenOutFocused(): void;
     /** The focused page pane's toolbar. */
     pageGo(where: 'back' | 'forward' | 'reload'): void;
+    /** A button on a pane's notice: reload the game or page that stopped, wait for one that hung, or close the pane. */
+    paneNotice(paneId: string, action: 'reload' | 'wait' | 'close'): void;
     newTab(): void;
     /**
      * Closes a tab and everything in it. Asks first when the tab holds the
@@ -306,6 +321,8 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
+    /** Capture mode only: kills a view's renderer, as a crash would, to show what the window does about it. */
+    crashForCapture(what: 'game' | 'shell' | 'page'): void;
     /**
      * The focused page pane, for capture mode. Resolves with null when no pane
      * holds a page: there is no view to shoot. Rejects when the page is not
@@ -375,6 +392,20 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * `index.ts` says so first.
      */
     let gameView: WebContentsView | null = null;
+    /**
+     * The game's renderer crashed or hung. Its view is hidden while this is
+     * set and its pane shows a notice instead (`paneNotice.troubleNotice`),
+     * so a game that has stopped reads as stopped rather than as a frozen
+     * frame or an empty pane — the layout invariant's "obviously suspended".
+     */
+    let gameTrouble: PaneTrouble | null = null;
+    /**
+     * The game's renderer is about to go because the kit killed a hung one to
+     * reload it, so the next `render-process-gone` is not a crash. Once only,
+     * and only within a few seconds: a fresh renderer that then crashes for
+     * real is reported like any other.
+     */
+    let expectGameGoneUntil = 0;
     let failedOver = false;
     let loadWaiter: ((result: LoadResult) => void) | null = null;
     let loadPromise: Promise<LoadResult> = Promise.resolve('loaded');
@@ -482,6 +513,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     win.contentView.addChildView(shellView);
+    // A shell that goes mid-drag is reloaded (`loadShell`) with no drag of its
+    // own to end, and every native view stays hidden until one ends — the
+    // game out of sight with nothing saying why. So its going ends the drag.
+    shellView.webContents.on('render-process-gone', () => host.endDrag());
     gameView = makeGameView();
 
     /**
@@ -492,6 +527,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     const host: PaneHost = createPaneHost({
         window: win,
         gameView: () => gameView,
+        gameTrouble: () => gameTrouble,
         bookmarks: () => server.bookmarks,
         tools: () => tools,
         hosts: () => server.hosts,
@@ -525,16 +561,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function worldsView(): WorldsView | null {
         if (!worldSwitch || !deps.worlds || !server.worlds) return null;
         return { ...deps.worlds.view(), current: worldSwitch.world, detail: worldSwitch.detail, showDetail: server.worlds.detail };
-    }
-
-    /** Which tools are placed in a pane in the active tab, so the Worlds probe runs only while there is a list to show. */
-    function openTools(): ToolId[] {
-        const tree = host.tree();
-        const placed = paneIds(tree)
-            .map(id => contentOf(tree, id))
-            .filter(content => content?.kind === 'tool')
-            .map(content => (content as { kind: 'tool'; tool: ToolId }).tool);
-        return tools.filter(id => placed.includes(id));
     }
 
     /** Whether anyone with the link can reach this world right now. Before `live` the link does not work yet, so there is nothing to mark. */
@@ -639,10 +665,19 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     let panelProbe: NodeJS.Timeout | null = null;
 
-    /** The whole list is probed only while a Worlds pane is open somewhere in this window. */
+    /**
+     * The whole list is probed only while a Worlds pane is open somewhere in
+     * this window, in any tab: once as it opens, then every `PROBE_EVERY_MS`.
+     * Any tab rather than the one in front, so switching tabs neither starts a
+     * pass nor leaves a Worlds pane unmeasured when its tab comes back.
+     */
     function syncPanelProbe(): void {
         const worlds = deps.worlds;
-        const wanted = openTools().includes('worlds') && worldSwitch !== null && worlds !== null;
+        const anywhere = host.trees().some(tree => paneIds(tree).some(id => {
+            const content = contentOf(tree, id);
+            return content?.kind === 'tool' && content.tool === 'worlds';
+        }));
+        const wanted = anywhere && worldSwitch !== null && worlds !== null;
         if (wanted && worlds && !panelProbe) {
             const probeAll = (): void => {
                 void worlds.probeAll(worldSwitch!.detail);
@@ -920,7 +955,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     async function closePane(paneId: string): Promise<void> {
         const isGame = contentOf(host.tree(), paneId)?.kind === 'game';
         if (isGame) {
-            if (!(await deps.confirmCloseGame('pane'))) return;
+            // A game whose renderer has gone is already disconnected, so there
+            // is no login left for the question to protect.
+            if (gameTrouble?.kind !== 'crashed' && !(await deps.confirmCloseGame('pane'))) return;
             destroyGame('pane');
         }
         const given = host.close(paneId, roomToShrink());
@@ -970,9 +1007,69 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             win.contentView.removeChildView(gameView);
             if (!gameView.webContents.isDestroyed()) gameView.webContents.close();
             gameView = null;
+            gameTrouble = null;
             clocks.gameGone();
         }
         deps.log(`${tag} closed the game ${via === 'setup' ? 'to open a setup' : via} and disconnected`);
+    }
+
+    function setGameTrouble(trouble: PaneTrouble | null): void {
+        gameTrouble = trouble;
+        applyLayout();
+    }
+
+    /**
+     * A button on a pane's notice. Close is the pane's own close, which asks
+     * first for a game that may still be connected. A page's reload and wait
+     * are the host's, which owns page views; the game's are here.
+     *
+     * A reload of the game is a load like any other — Your world's through the
+     * service's state, so a world that is not ready shows its starting page —
+     * and a hung renderer is killed first, which Electron documents as the way
+     * to reload one.
+     */
+    function paneNotice(paneId: string, action: 'reload' | 'wait' | 'close'): void {
+        if (action === 'close') {
+            void closePane(paneId);
+            return;
+        }
+        const content = contentOf(host.tree(), paneId);
+        if (content?.kind === 'page') {
+            host.pageNotice(paneId, action);
+            return;
+        }
+        if (content?.kind !== 'game' || !gameView || !gameTrouble || gameView.webContents.isDestroyed()) return;
+        if (action === 'wait') {
+            if (gameTrouble.kind === 'unresponsive') setGameTrouble(null);
+            return;
+        }
+        if (gameTrouble.kind === 'unresponsive') {
+            expectGameGoneUntil = Date.now() + 5_000;
+            gameView.webContents.forcefullyCrashRenderer();
+        }
+        deps.log(`${tag} reloading the game after it stopped`);
+        // The load below ends the trouble, as any load into the view does.
+        if (single) {
+            // Forgotten, both, so the page the world is on is loaded again
+            // rather than recognised as already showing.
+            loadedGameUrl = null;
+            shownStarting = null;
+            syncYourWorld();
+        } else {
+            void loadGame(expected);
+        }
+    }
+
+    /**
+     * A load into the game view ends whatever it was in trouble with: a
+     * reload from the notice, and equally a world picked in Worlds or Your
+     * world's page changing, either of which would otherwise load into a view
+     * still hidden under "The game stopped".
+     */
+    function troubleEnds(): void {
+        if (!gameTrouble) return;
+        gameTrouble = null;
+        applyLayout();
     }
 
     // ── setups ───────────────────────────────────────────────────────────
@@ -1026,10 +1123,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 : saved.map(entry => ({ label: entry.name, click: () => void openSetupChosen(tabId, join(deps.setupsDir, entry.file)) }))),
             { type: 'separator' },
             { label: 'Save This Tab as a Setup…', click: () => void saveSetupAs(tabId) },
-            // A setup somebody sent, wherever it was saved to. Opening it does
-            // not copy it into the folder: that is still the player's to
-            // decide, by saving it again.
-            { label: 'Open Setup File…', click: () => void openSetupFromFile(tabId) },
+            // A setup somebody sent is dropped into this folder, and is then
+            // listed above like any other.
             { label: 'Open Setups Folder', click: () => void openSetupsFolder() }
         ];
         Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
@@ -1047,6 +1142,18 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     async function saveSetupAs(tabId: string): Promise<void> {
         const label = host.tabs().find(tab => tab.id === tabId)?.label;
         if (label === undefined) return;
+        // Refused before the dialog, not after: a file of more panes than a
+        // setup holds is one no kit would open (`layoutFile.SETUP_PANES_MAX`).
+        const tree = host.treeOf(tabId);
+        const panes = tree ? paneIds(tree).length : 0;
+        if (panes > SETUP_PANES_MAX) {
+            await dialog.showMessageBox(win, {
+                type: 'info',
+                message: `A setup holds up to ${SETUP_PANES_MAX} panes, and this tab has ${panes}.`,
+                detail: 'Close a few of its panes, then save it again.'
+            });
+            return;
+        }
         try {
             mkdirSync(deps.setupsDir, { recursive: true });
             const { canceled, filePath } = await dialog.showSaveDialog(win, {
@@ -1083,23 +1190,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         deps.log(`${tag} saved setup ${basename(path)}`);
     }
 
-    async function openSetupFromFile(tabId: string): Promise<void> {
-        try {
-            mkdirSync(deps.setupsDir, { recursive: true });
-        } catch {
-            // The folder is only where the dialog starts; a file anywhere else still opens.
-        }
-        const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-            title: 'Open Setup',
-            defaultPath: deps.setupsDir,
-            properties: ['openFile'],
-            filters: [{ name: 'Zanaris Kit setup', extensions: ['json'] }]
-        });
-        const path = filePaths[0];
-        if (canceled || !path || win.isDestroyed()) return;
-        await openSetupChosen(tabId, path);
-    }
-
     /** Opening from the menu: the same open, and a sheet rather than silence when the file was not a setup. */
     async function openSetupChosen(tabId: string, path: string): Promise<void> {
         if ((await openSetupFrom(tabId, path)) !== 'unreadable' || win.isDestroyed()) return;
@@ -1114,6 +1204,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     async function openSetupFrom(tabId: string, path: string): Promise<'opened' | 'unreadable' | 'cancelled' | 'missing'> {
         let text: string;
         try {
+            // Sized before it is read: a setup is a few kilobytes, and anything
+            // dropped into the folder is listed.
+            if (statSync(path).size > SETUP_FILE_MAX) throw new Error('far larger than any setup');
             text = readFileSync(path, 'utf8');
         } catch (err) {
             deps.log(`${tag} could not read ${path}: ${(err as Error).message}`);
@@ -1213,6 +1306,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * load's result rather than left hanging.
      */
     function loadGame(url: string): Promise<LoadResult> {
+        troubleEnds();
         expected = url;
         failedOver = false;
         gameLoadPending = true;
@@ -1263,6 +1357,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // did-finish-load settles nothing, so the waiter would wait forever.
         if (gameLoadPending) settleLoad('failed');
         failedOver = true;
+        troubleEnds();
         void gameView?.webContents.loadFile(STARTING_PAGE, { query });
     }
     /** The query of the starting page last loaded, so an identical one is not loaded again. */
@@ -1305,6 +1400,41 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      */
     function wireGameView(view: WebContentsView): void {
         const wc = view.webContents;
+        /** When the player last pressed anything in this view, which is what lets it open the browser. */
+        let lastPress = -Infinity;
+        // Crashes and hangs, which hide the view under its pane's notice
+        // until the player chooses what to do (`paneNotice`). Only this view's,
+        // and only while it is still the window's game.
+        wc.on('render-process-gone', (_event, details) => {
+            if (details.reason === 'clean-exit' || view !== gameView) return;
+            if (Date.now() < expectGameGoneUntil) {
+                expectGameGoneUntil = 0;
+                return;
+            }
+            deps.log(`${tag} the game stopped: ${details.reason}`);
+            if (gameLoadPending) settleLoad('failed');
+            // The login went with the renderer, and its idle timer with it.
+            clocks.gameGone();
+            setGameTrouble({ kind: 'crashed', reason: details.reason });
+        });
+        wc.on('unresponsive', () => {
+            if (view !== gameView || gameTrouble) return;
+            deps.log(`${tag} the game stopped responding`);
+            setGameTrouble({ kind: 'unresponsive' });
+        });
+        wc.on('responsive', () => {
+            if (view === gameView && gameTrouble?.kind === 'unresponsive') setGameTrouble(null);
+        });
+        // The game's partition has no handler until this one, and a session
+        // with none grants every permission unasked (`guard.allowPermission`).
+        // Set again for each game view, which replaces rather than adds: the
+        // partition is this window's slot, and outlives any one view.
+        wc.session.setPermissionRequestHandler((_contents, permission, callback) => {
+            const allowed = allowPermission(permission, 'game');
+            if (!allowed) deps.log(`${tag} refused the game's request for ${permission}`);
+            callback(allowed);
+        });
+        wc.session.setPermissionCheckHandler((_contents, permission) => allowPermission(permission, 'game'));
         // Nothing the page does may replace the game. The one exception is our
         // own offline page returning to the page main asked for.
         wc.on('will-navigate', (event, url) => {
@@ -1329,15 +1459,23 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 );
                 return;
             }
-            if (decision === 'open-external') {
+            if (decision === 'open-external' && mayOpenBrowser({ via: 'navigate', mainFrame: true, sincePress: Date.now() - lastPress })) {
+                lastPress = -Infinity;
                 deps.log(`${tag} sent ${url} to the system browser`);
                 void shell.openExternal(url);
             } else {
-                deps.log(`${tag} blocked navigation to ${url}`);
+                deps.log(`${tag} blocked navigation to ${url}${decision === 'open-external' ? ', which no press asked for' : ''}`);
             }
         });
+        // A new window is a web link for the system browser, and only when the
+        // player has just pressed something (`guard.mayOpenBrowser`).
         wc.setWindowOpenHandler(({ url }) => {
-            if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+            if (/^https?:\/\//.test(url) && mayOpenBrowser({ via: 'window-open', mainFrame: true, sincePress: Date.now() - lastPress })) {
+                lastPress = -Infinity;
+                void shell.openExternal(url);
+            } else {
+                deps.log(`${tag} refused a new window for ${url}`);
+            }
             return { action: 'deny' };
         });
         // The game's own menu is refused — nothing Chromium offers on a canvas
@@ -1354,11 +1492,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // putting the view's coordinates back into the window's.
             if (gamePane && rect) showPaneMenu(gamePane, rect.x + params.x, rect.y + Math.min(PANE_HEADER_HEIGHT, rect.height) + params.y);
         });
-        // Mouse back and forward buttons would walk the history of world switches.
-        win.on('app-command', (event, command) => {
-            if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
-        });
-
         wc.on('did-start-navigation', (_event, url) => {
             // A retry from the offline page is a fresh attempt.
             if (!url.startsWith('file:')) failedOver = false;
@@ -1370,7 +1503,17 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // click beside the canvas restarts these while the client's timer runs
         // on, and they can warn late.
         wc.on('input-event', (_event, input) => {
+            if (isPress(input.type)) lastPress = Date.now();
             if (isGameInput(input.type, wc.getURL())) clocks.input();
+        });
+        // `input-event` sees only the page's own frame. These two are asked
+        // of the whole page before it is handed anything, so a press in one
+        // of its frames counts too, as far as Electron reports one.
+        wc.on('before-mouse-event', (_event, mouse) => {
+            if (isPress(mouse.type)) lastPress = Date.now();
+        });
+        wc.on('before-input-event', (_event, input) => {
+            if (isPress(input.type)) lastPress = Date.now();
         });
         // A page that actually loads in the game view — a world switch, a
         // detail switch, a retry, the kit's offline or starting page — ends
@@ -1454,13 +1597,24 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         pushState();
     }
 
-    if (worldSwitch) currentProbe = setInterval(() => void probeCurrent(), PROBE_EVERY_MS);
+    // Only while there is a game to read it beside: with the game's pane
+    // closed nothing shows the figure, so nothing measures it. The game's
+    // load measures it at once when it comes back.
+    if (worldSwitch) currentProbe = setInterval(() => {
+        if (gameView) void probeCurrent();
+    }, PROBE_EVERY_MS);
     const unsubscribeWorlds = deps.worlds?.subscribe(() => pushState()) ?? null;
 
     // ── lifecycle ────────────────────────────────────────────────────────
 
     // The page keeps its own title; the window keeps the server's name and world.
     win.on('page-title-updated', event => event.preventDefault());
+    // Mouse back and forward buttons would walk the history of world switches.
+    // Once per window, not per game view: a game closed and chosen again is
+    // a new view, and each used to add another of these.
+    win.on('app-command', (event, command) => {
+        if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
+    });
     win.on('close', event => {
         if (!deps.confirmClose(spec.title)) event.preventDefault();
     });
@@ -1468,8 +1622,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         clocks.dispose();
         if (currentProbe) clearInterval(currentProbe);
         if (panelProbe) clearInterval(panelProbe);
-        // The views go with the window; the `persist:pages` session does not, so
-        // a LostHQ login outlives both this window and this launch.
+        // A view does not go with its window: Electron leaves a closed
+        // window's views running, and a game left running is a character
+        // still standing in the world after the confirm said it would be
+        // logged out. So every view is closed here — the game, the shell and,
+        // in `host.destroy`, the pages. The `persist:pages` session is not,
+        // so a LostHQ login outlives both this window and this launch.
+        if (gameView && !gameView.webContents.isDestroyed()) gameView.webContents.close();
+        gameView = null;
+        if (!shellView.webContents.isDestroyed()) shellView.webContents.close();
         host.destroy();
         unsubscribeWorlds?.();
         unsubscribeSingle?.();
@@ -1561,6 +1722,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             if (splitId) host.evenOut(splitId);
         },
         pageGo: where => host.go(where),
+        paneNotice,
         newTab: () => host.newTab(),
         closeTab,
         selectTab: tabId => host.selectTab(tabId),
@@ -1606,6 +1768,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         settle: () => paintsFrames(shellView.webContents),
         captureShell: () => shellView.webContents.capturePage(),
         captureGame: () => gameView?.webContents.capturePage() ?? Promise.reject(new Error('no game view')),
+        crashForCapture: what => {
+            const view = what === 'game' ? gameView : what === 'shell' ? shellView : host.pageWebContents();
+            if (view && !view.webContents.isDestroyed()) view.webContents.forcefullyCrashRenderer();
+        },
         capturePage: async () => {
             const view = host.pageWebContents();
             if (!view || view.webContents.isDestroyed()) return null;

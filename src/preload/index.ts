@@ -48,6 +48,7 @@ const api: ZanarisApi = {
         setSeam: (splitId, index, px) => ipcRenderer.invoke(IPC.paneSetSeam, splitId, index, px),
         evenOut: splitId => ipcRenderer.invoke(IPC.paneEvenOut, splitId),
         go: where => ipcRenderer.invoke(IPC.paneGo, where),
+        notice: (paneId, action) => ipcRenderer.invoke(IPC.paneNotice, paneId, action),
         contextMenu: (paneId, x, y) => ipcRenderer.invoke(IPC.paneContextMenu, paneId, x, y),
         beginDrag: from => ipcRenderer.invoke(IPC.paneBeginDrag, from),
         drop: (from, to, zone) => ipcRenderer.invoke(IPC.paneDrop, from, to, zone),

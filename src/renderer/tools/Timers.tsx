@@ -126,7 +126,7 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
                 )}
                 {view.customsFull && <span className="text-[12px] text-dim">{CUSTOM_TIMERS_MAX} of your own is the most.</span>}
             </div>
-            <p className="text-[12px] text-dim">Timers run with the panel closed.</p>
+            <p className="text-[12px] text-dim">Timers run with the pane closed.</p>
         </div>
     );
 }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -29,6 +29,8 @@ import {
 import type { PaneContent } from './paneTree';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { roomFor } from './windowRoom';
+import { allowPermission } from './guard';
+import { readNoticeAction } from '../shared/paneNotice';
 import { COLUMN_PREFERRED_WIDTH, SEAM } from '../shared/layout';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
@@ -38,7 +40,7 @@ import { SettingsWindowSlot } from './settingsWindow';
 import { createSettingsWindow, type SettingsWindow } from './settingsView';
 import { windowFrame } from './windowFrame';
 import { installMenu, type MenuActions, type MenuWindowState } from './menu';
-import { WorldsService } from './worlds/service';
+import { HttpStatusError, WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
 import { ChatService, offlineChat, tlsConnect, type SettingsChange } from './chat/service';
 import { canSeal, open as openSecret, seal } from './chat/secret';
@@ -59,9 +61,10 @@ import { ShareService, shareDialogs } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
-import { isRemovable, readNewServerInput, serversView, startupServers } from './servers';
+import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversView, startupServers } from './servers';
 import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing, type Editing } from './appearance';
-import { devBranding } from './branding';
+import { APP_ID, APP_NAME, aboutOptions, devBranding } from './branding';
+import { reportUrl } from './report';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
 import { presetCards, presetFile, readPreset, type PresetCard } from './presets';
 import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
@@ -157,18 +160,22 @@ for (const entry of migrationPlan(legacyUserData, userData, existsSync)) {
 }
 if (migrated.length > 0) log(`[main] moved ${migrated.join(', ')} from ${legacyUserData} into ${userData}`);
 
-// ── the name and icon, for a run inside Electron's own bundle ─────────────
+// ── the name, and the icon for a run inside Electron's own bundle ─────────
 //
-// After the userData move on purpose: the name it moves to is the package
-// name, and setName leaves getPath('userData') where Electron fixed it at
-// startup (probed on 2026-09-25), so the dev profile stays at zanaris-kit
-// whatever the app is called. What is set here has to be set before the menu
-// is built, which reads app.name. The Dock icon waits for ready, below.
+// The name in every run, packaged too: a packaged build's package.json has no
+// productName (`branding.APP_NAME`), so the app menu's About, Hide and Quit
+// would otherwise name the package. After the userData move on purpose: the
+// name it moves to is the package name, and setName leaves
+// getPath('userData') where Electron fixed it at startup (probed on
+// 2026-09-25), so the profile stays at zanaris-kit whatever the app is
+// called. What is set here has to be set before the menu is built, which
+// reads app.name. The Dock icon waits for ready, below.
+app.setName(APP_NAME);
+// Windows drops a banner whose app id no shortcut carries, and a packaged
+// run's default is not the one the installer gave the Start menu's.
+if (app.isPackaged && process.platform === 'win32') app.setAppUserModelId(APP_ID);
 const branding = devBranding({ packaged: app.isPackaged, root: join(__dirname, '../..'), version: app.getVersion() });
-if (branding) {
-    app.setName(branding.name);
-    app.setAboutPanelOptions(branding.about);
-}
+app.setAboutPanelOptions(branding?.about ?? aboutOptions(app.getVersion()));
 
 /** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
 const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
@@ -199,9 +206,25 @@ let presetView: PresetCard[] | undefined;
  */
 let editing: Editing | null = null;
 
-/** Every picture a custom theme names: what pruning keeps. */
+/**
+ * Every picture a theme names — a theme of the state's, or of a state.json
+ * set aside because it would not read, this launch or any before
+ * (`AppState.picturesSetAside`): what pruning keeps.
+ */
 function keptPictures(): Set<string> {
-    return new Set(appState.appearance().custom.flatMap(theme => (theme.background ? [theme.background.picture] : [])));
+    const named = appState.appearance().custom.flatMap(theme => (theme.background ? [theme.background.picture] : []));
+    return new Set([...named, ...appState.picturesSetAside()]);
+}
+
+/**
+ * Deletes the stored pictures no theme names, set-aside ones included. Never
+ * while state.json is a newer kit's: that file is not written, so a theme
+ * saved or deleted this run is not in it, and the newer kit may name
+ * pictures this one cannot read out of it.
+ */
+function prunePictures(): void {
+    if (appState.newerVersion() !== null) return;
+    pictures.prune(keptPictures());
 }
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
@@ -301,7 +324,7 @@ function chatView(): ChatView {
 
 async function fetchJson(url: string): Promise<unknown> {
     const response = await net.fetch(url, { signal: AbortSignal.timeout(8_000) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) throw new HttpStatusError(response.status);
     return response.json();
 }
 
@@ -383,12 +406,15 @@ app.on('browser-window-focus', (_event, win) => {
  * Raises a system notification for a mention or a private message, but only
  * while no window of the kit's is in front: someone looking at the kit sees
  * the gold edge and the badge already. Clicking it brings the last window
- * back with that conversation open.
+ * back with that conversation open. Says whether it raised one, so chat's
+ * rate limit counts only the banners that were shown.
  */
-function notifyMention(line: ChatLine): void {
-    if (BrowserWindow.getFocusedWindow() !== null || !Notification.isSupported()) return;
+function notifyMention(line: ChatLine): boolean {
+    if (BrowserWindow.getFocusedWindow() !== null || !Notification.isSupported()) return false;
     const where = line.channel === SERVER_LOG ? 'Status' : line.channel;
-    const title = line.nick === null ? where : line.nick === line.channel ? `${line.nick} (private)` : `${line.nick} in ${where}`;
+    // A private message past the most conversations lands in Status, marked
+    // `private`, and is still somebody writing to you rather than a mention.
+    const title = line.nick === null ? where : line.nick === line.channel || line.kind === 'private' ? `${line.nick} (private)` : `${line.nick} in ${where}`;
     const note = new Notification({ title, body: line.kind === 'action' ? `* ${line.nick} ${line.text}` : line.text });
     note.on('click', () => {
         chat?.select(line.channel);
@@ -396,6 +422,7 @@ function notifyMention(line: ChatLine): void {
         sw?.focus();
     });
     note.show();
+    return true;
 }
 
 /**
@@ -621,6 +648,30 @@ function loadCatalog(): void {
     }
 }
 
+/**
+ * Whether to run on files a newer kit wrote. Both are read as far as this kit
+ * can and never written (`AppState.newerVersion`, `Catalog.newer`), which on
+ * its own would go unnoticed until a change the player made did not come
+ * back. So it is said once, at launch, with Quit beside Continue.
+ */
+async function continueWithNewerFiles(): Promise<boolean> {
+    const settingsNewer = appState.newerVersion() !== null;
+    const listNewer = catalog.newer !== null;
+    if (!settingsNewer && !listNewer) return true;
+    const what = settingsNewer && listNewer ? 'settings and server list are' : settingsNewer ? 'settings are' : 'server list is';
+    const lost = settingsNewer && listNewer ? 'anything you change' : settingsNewer ? 'changes to themes, chat, timers and the rest' : 'servers you add or remove';
+    log(`[main] ${what} from a newer kit; reading ${settingsNewer && listNewer ? 'them' : 'it'} and writing nothing`);
+    const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Continue', 'Quit'],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Your ${what} from a newer version of Zanaris Kit.`,
+        detail: `This version uses what it can read and leaves ${settingsNewer && listNewer ? 'both files' : 'the file'} as ${settingsNewer && listNewer ? 'they are' : 'it is'}, so ${lost} until you update won't be kept. The newer version is on the releases page, and Help > Update Available opens it once the kit has found it.`
+    });
+    return response === 0;
+}
+
 /** Re-read servers.json if it changed since the last load. Runs when the app regains focus. */
 function reloadCatalogIfChanged(): void {
     if (catalogMtime() === catalogSeen) return;
@@ -755,16 +806,21 @@ const actions: MenuActions = {
         const tab = sw?.state().tabs[index];
         if (sw && tab) sw.selectTab(tab.id);
     },
-    // Only https reaches the system browser, as in serverWindow's window-open
-    // handler: this opens whatever the menu carries, and the update item's url
-    // came off the network.
+    // Only https reaches the system browser from here: this opens whatever the
+    // menu carries, and the update item's url came off the network. (A game or
+    // a page asking for a new window is let through on http too, in
+    // serverWindow and paneHost, but only straight after a press in it.)
     openExternal: url => {
         if (!/^https:\/\//.test(url)) {
             log(`[main] refused to open ${url}: not https`);
             return;
         }
         void shell.openExternal(url);
-    }
+    },
+    reportProblem: () =>
+        actions.openExternal(
+            reportUrl({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch, osVersion: process.getSystemVersion() })
+        )
 };
 
 // ── ipc ───────────────────────────────────────────────────────────────────
@@ -876,7 +932,7 @@ ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } |
         log(`[main] saved ${placed.id} but could not write it down as the app theme: ${(err as Error).message}`);
     }
     editing = null;
-    pictures.prune(keptPictures());
+    prunePictures();
     appearanceChanged();
     return { id: placed.id };
 });
@@ -908,7 +964,7 @@ ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<b
         return false;
     }
     editing = null;
-    pictures.prune(keptPictures());
+    prunePictures();
     appearanceChanged();
     return true;
 });
@@ -986,14 +1042,14 @@ ipcMain.handle(IPC.appearanceImportTheme, async (event): Promise<{ name: string 
         const placed = placeTheme(read.theme.name, null);
         const theme: Theme = { ...placed, colors: read.theme.colors, background };
         if (!appState.saveCustomTheme(theme)) {
-            pictures.prune(keptPictures());
+            prunePictures();
             return { error: TOO_MANY_THEMES };
         }
         appearanceChanged();
         return { name: placed.name };
     } catch (err) {
         log(`[main] could not import a theme: ${(err as Error).message}`);
-        pictures.prune(keptPictures());
+        prunePictures();
         return { error: "Couldn't add the theme: the kit couldn't write it down." };
     }
 });
@@ -1163,6 +1219,12 @@ ipcMain.handle(IPC.paneGo, (event, where: unknown) => {
     windowFor(event.sender)?.pageGo(where);
 });
 
+ipcMain.handle(IPC.paneNotice, (event, paneId: unknown, action: unknown) => {
+    const act = readNoticeAction(action);
+    if (typeof paneId !== 'string' || !act) return;
+    windowFor(event.sender)?.paneNotice(paneId, act);
+});
+
 ipcMain.handle(IPC.paneContextMenu, (event, paneId: unknown, x: unknown, y: unknown) => {
     if (typeof paneId !== 'string' || typeof x !== 'number' || typeof y !== 'number') return;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -1293,13 +1355,13 @@ ipcMain.handle(IPC.hiscoresLookup, async (event, name: unknown) => {
  * shows the server's own curated links, and a hiscores page is not one of them
  * — `openPage` refuses any url that is not in `server.bookmarks`, and widening
  * that to "anything on an allowed host" would give the shell an address box it
- * does not have. So the page opens outside the kit, and the panel's own label
+ * does not have. So the page opens outside the kit, and the pane's own label
  * says where the link goes rather than letting the browser window be how the
  * user finds out.
  *
- * https only, as in `openExternal` above and serverWindow's window-open
- * handler: `servers.json` is a file the user edits by hand, so this URL is no
- * more trusted than the update feed's.
+ * https only, as the menu's `openExternal` above is: `servers.json` is a file
+ * the user edits by hand, so this URL is no more trusted than the update
+ * feed's.
  */
 ipcMain.handle(IPC.hiscoresOpenSite, event => {
     const site = windowFor(event.sender)?.state().server.hiscores?.site ?? null;
@@ -1757,7 +1819,7 @@ ipcMain.handle(IPC.serversOpen, (event, id: unknown) => {
 ipcMain.handle(IPC.serversStartup, (event, id: unknown, on: unknown) => {
     if (!mayManageServers(event.sender) || typeof id !== 'string' || typeof on !== 'boolean') return;
     if (!catalog.get(id)) return;
-    appState.setStartupServer(id, on);
+    appState.setStartup(nextStartup(appState.startupIds(), catalog.list(), id, on));
     pushSettings();
 });
 
@@ -1776,12 +1838,27 @@ ipcMain.handle(IPC.serversAdd, (event, raw: unknown): string | null => {
     return null;
 });
 
-ipcMain.handle(IPC.serversRemove, (event, id: unknown): string | null => {
-    if (!mayManageServers(event.sender)) return null;
+ipcMain.handle(IPC.serversRemove, async (event, id: unknown): Promise<string | null> => {
+    const win = settingsWindowFor(event.sender);
+    if (!win) return null;
     if (typeof id !== 'string') return 'That is not a server.';
     // The guard is here and in the row's `removable`, both from `isRemovable`:
     // nothing in the app puts a removed built-in back.
     if (!isRemovable(id)) return 'That server came with the kit and cannot be removed.';
+    const server = catalog.get(id);
+    if (!server) return 'That server is no longer in the list.';
+    // Asked first, since nothing puts it back (`servers.removeQuestion`).
+    // Cancel is an answer with nothing to say, as a remove that went is.
+    const question = removeQuestion(server, windowCounts().get(id) ?? 0);
+    const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        message: question.message,
+        detail: question.detail,
+        buttons: ['Remove', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1
+    });
+    if (response !== 0) return null;
     if (!catalog.remove(id)) return 'That server is no longer in the list.';
     // Otherwise a later add can reuse this id (`uniqueId` only avoids ids that
     // currently exist) and inherit a tick nobody meant for it — or a theme.
@@ -1931,7 +2008,7 @@ async function captureAndExit(dir: string): Promise<void> {
         appState.setTheme(DEFAULT_THEME);
         for (const id of Object.keys(appState.appearance().servers)) appState.setServerTheme(id, null);
         for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
-        pictures.prune(keptPictures());
+        prunePictures();
         // Your world needs its build on disk. Where there is none the entry is
         // dropped rather than left to wait on a download — so a capture wants the
         // selected build already downloaded in the real profile.
@@ -2294,14 +2371,29 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] ${id} focused back on ${firstPage.paneId}: "${shown?.title ?? 'nothing'}" (${shown?.url ?? '—'}), ${shown?.loading ? 'still loading' : 'loaded'}`);
                 await shoot(`${id}-pages-back`, reader);
                 await save(`${id}-page-back`, shotOfThePage(reader));
+
+                // A page opening a window with nobody pressing anything, as
+                // one could on a timer: refused, never the player's browser
+                // (`guard.mayOpenBrowser`). The refusal is the pane's own log
+                // line, "refused a new window for", just after this one.
+                const view = webContents.getAllWebContents().find(wc => shown?.url && wc.getURL() === shown.url);
+                if (view) {
+                    log(`[capture] ${id}: the page asks for a window with no press — expect it refused`);
+                    await view.executeJavaScript(`window.open('https://example.com/zanaris-capture-unpressed'); true`);
+                    await wait(500);
+                }
             }
         } else {
             log('[capture] pages skipped: no loaded window offers any links');
         }
 
+        // Every view that exists now is some other window's, so what is new
+        // once the second window has loaded is its own: its shell and its game.
+        const beforeSecond = new Set(webContents.getAllWebContents().map(wc => wc.id));
         const second = openServer(first.state().server);
         log(`[capture] ${second.state().title}: ${await loaded(second)}`);
         await wait(Math.min(settleMs, 8_000));
+        const secondViews = webContents.getAllWebContents().filter(wc => !beforeSecond.has(wc.id));
         await shoot(`${first.state().server.id}-2`, second);
 
         // A setup saved and opened, driven on the window rather than through
@@ -2388,6 +2480,60 @@ async function captureAndExit(dir: string): Promise<void> {
             appState.setServerTheme(own, null);
             appState.setTheme(DEFAULT_THEME);
             appearanceChanged();
+        }
+
+        // A crash, on the second window, which is closed next anyway. The
+        // game's tab brought to the front first — the step before left
+        // another tab there, and a notice is drawn only in the tab in front.
+        // The game's renderer killed as a crash would: its pane should say so
+        // in place of the view, with Reload game first, and Reload game should
+        // start a fresh load that lands with the notice gone. Then the
+        // shell's, which should come back by itself and paint. That one is
+        // not shot: redrawn, it is the same picture as before it went.
+        {
+            const title = second.state().title;
+            const gameTab = second.state().tabs.find(tab => tab.marks.includes('game'));
+            if (gameTab) second.selectTab(gameTab.id);
+            await wait(500);
+            const gamePane = (): ShellState['panes'][number] | undefined => second.state().panes.find(p => p.content.kind === 'game');
+            if (!gamePane()) fault(`crash: ${title} has no game pane in front to crash`);
+            second.crashForCapture('game');
+            await wait(1_500);
+            const notice = gamePane()?.notice ?? null;
+            log(`[capture] ${title}: game crashed — notice ${notice ? `"${notice.title}" [${notice.actions.map(a => a.label).join(', ')}]` : 'none'}`);
+            if (!notice) fault(`crash: ${title}'s game pane showed no notice after its renderer went`);
+            else if (notice.actions[0]?.id !== 'reload') fault(`crash: the game's notice does not offer a reload first (${notice.actions.map(a => a.id).join(', ')})`);
+            await shootShell('crash-notice', second);
+            const before = second.whenGameLoaded();
+            const pane = gamePane();
+            if (pane) second.paneNotice(pane.paneId, 'reload');
+            const fresh = second.whenGameLoaded() !== before;
+            const reloaded = await loaded(second);
+            await wait(1_000);
+            const after = gamePane()?.notice ?? null;
+            log(`[capture] ${title}: Reload game — ${fresh ? 'a fresh load' : 'no new load'}, ${reloaded}, notice ${after ? 'still up' : 'gone'}`);
+            if (!fresh || reloaded !== 'loaded' || after) fault(`crash: Reload game did not bring the game back (${fresh ? 'a fresh load' : 'no new load'}, ${reloaded}, notice ${after ? 'still up' : 'gone'})`);
+
+            second.crashForCapture('shell');
+            await wait(3_000);
+            const painted = await second.settle();
+            log(`[capture] ${title}: shell crashed — ${painted ? 'reloaded and painting' : 'not painting'}`);
+            if (!painted) fault(`crash: ${title}'s shell did not come back after its renderer went`);
+        }
+
+        // The second window closed: its views must go with it. Electron leaves
+        // a closed window's views running, and a game left running is a
+        // character still logged in with nothing on screen. `destroy` rather
+        // than `close`, which would raise a confirm nothing here can answer;
+        // both end in the same `closed`, which is where the views are closed.
+        {
+            const title = second.state().title;
+            second.window.destroy();
+            await wait(1_000);
+            const left = secondViews.filter(wc => !wc.isDestroyed());
+            log(`[capture] ${title} closed: ${secondViews.length} view(s) of its own, ${left.length} still running`);
+            if (secondViews.length === 0) fault(`window close: no views of ${title}'s own were found, so their closing was not checked`);
+            if (left.length > 0) fault(`window close: ${title} left ${left.length} view(s) running after its window closed: ${left.map(wc => wc.getURL()).join(', ')}`);
         }
 
         // A custom theme with one of the kit's own pictures, the way a player
@@ -2498,7 +2644,7 @@ async function captureAndExit(dir: string): Promise<void> {
             }
             for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
             appState.setTheme(DEFAULT_THEME);
-            pictures.prune(keptPictures());
+            prunePictures();
             appearanceChanged();
         }
 
@@ -2630,13 +2776,25 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // The catalog says so when it resets; state.json used to reset in silence,
+    // costing the themes, the chat nick and password, the timers and the
+    // startup set with nothing on screen to say where they went.
+    const aside = appState.setAsideAt();
+    if (aside) {
+        log(`[main] ${appState.file} could not be read; it was kept as ${basename(aside)} and the kit started from the defaults`);
+        void dialog.showMessageBox({
+            type: 'warning',
+            message: "Your settings couldn't be read and were reset.",
+            detail: `Themes, chat's nick and password, timers and the servers opened at launch start again from the defaults. The old file was kept in the same folder, as ${basename(aside)}.`
+        });
+    }
     if (branding) app.dock?.setIcon(branding.dockIcon);
     // A picture no theme names — its theme deleted, or chosen in an editor that
-    // was then closed — goes, and the scheme serves whatever is left. Only when
-    // the state really was read: a state.json that could not be was set aside
-    // with the themes that name these pictures in it, and the empty state
-    // standing in for it names none.
-    if (appState.fromFile()) pictures.prune(keptPictures());
+    // was then closed — goes, and the scheme serves whatever is left. A
+    // state.json that could not be read was set aside with the themes that
+    // name its pictures, and those are kept too (`keptPictures`), this launch
+    // and every one after.
+    prunePictures();
     protocol.handle(PICTURE_SCHEME, request => {
         const url = new URL(request.url);
         let name: string;
@@ -2669,7 +2827,10 @@ app.whenReady().then(async () => {
     // did not ask for, and none of the permissions a browser would prompt over.
     const pages = session.fromPartition('persist:pages');
     pages.on('will-download', event => event.preventDefault());
-    pages.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    pages.setPermissionRequestHandler((_contents, permission, callback) => callback(allowPermission(permission, 'page')));
+    // Asked without a request by some APIs — `Notification.permission`, a
+    // permissions query — which a request handler alone never sees.
+    pages.setPermissionCheckHandler((_contents, permission) => allowPermission(permission, 'page'));
     // Offline until a nick is set, which is why a capture run — whose profile has
     // none — never opens a socket. The password is opened here, after ready,
     // because the OS store is not available before it.
@@ -2757,6 +2918,13 @@ app.whenReady().then(async () => {
 
     if (CAPTURE_DIR) {
         await captureAndExit(CAPTURE_DIR);
+        return;
+    }
+    // Asked before the launch opens its windows, so Quit leaves nothing half
+    // started. A second launch or a dock click while it is up can still open
+    // one of its own, as they always could.
+    if (!(await continueWithNewerFiles())) {
+        app.quit();
         return;
     }
     // `startupServers` falls back to the catalog's first entry, so an empty answer

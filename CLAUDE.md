@@ -227,6 +227,12 @@ Hand-written IRC over raw TLS (`node:tls`), no library, no WebSocket.
   the server, `ChatService` sends a `PING`; with nothing back in `ANSWER_MS` it
   drops the socket and reconnects. Any bytes count as an answer, and a wake from
   sleep pings at once, because timers stand still while the machine sleeps.
+- **A ban or a refused nick is not retried.** A 465, an `ERROR` naming a
+  K-, G-, Z- or D-line (`protocol.banReason`), a 432, or a 433/437 with its
+  underscores spent ends the attempt through `IrcClient.turnedAway()`: chat
+  goes offline with the reason, Connect tries again, and `autoConnect` is not
+  written. Throttles, floods and session limits keep backing off, and the
+  backoff starts over only after `STABLE_MS` online.
 
 **The password never enters a log line or the renderer.** `identify()` writes
 straight to `send` and never through `push()`. `ChatView.settings` carries only
@@ -267,7 +273,7 @@ the aliases `/j /q /wi /back`. Everything else goes to the server as typed
 (`Input` kind `raw`), and the reply lands in Status.
 
 **A conversation with one person is a tab named by their nick.** A PRIVMSG to
-us opens one; a notice never does, and neither does `/msg`, so NickServ's
+us opens one, up to `MAX_CONVERSATIONS`, past which it lands in Status; a notice never does, and neither does `/msg`, so NickServ's
 answers stay in Status. A conversation is never in the auto-join list, is not
 reopened on reconnect, and follows its person through a NICK. Anything said
 to NickServ, in a conversation or by `/msg`, is echoed with its secret words
@@ -512,10 +518,13 @@ file — shown in the kit's own pages, or one of the kit's own. Keep these true:
 - **A picture no theme names is pruned** at launch and after a save or a
   delete. The editor is the only place a picture is chosen, and it saves or
   cancels before anything else in Settings can prune. Save and Delete end the
-  draft before they prune, so no window wears a picture that has gone. At
-  launch only when `appState.fromFile()`: a broken `state.json` is set aside
-  with the themes that name the pictures, and pruning against the empty
-  state that replaced it would delete every one.
+  draft before they prune, so no window wears a picture that has gone.
+  Every prune goes through `prunePictures`, which keeps the pictures named in
+  any `state.json.broken-*` too (`AppState.picturesSetAside`, read as text,
+  since a set-aside file need not parse): the empty state that replaced one,
+  and every save of it after, names none of them. And none runs while
+  `state.json` is a newer kit's (`AppState.newerVersion`), which is never
+  written.
 
 ## Commands
 

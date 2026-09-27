@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { COMMANDS } from '../../shared/chatInput.ts';
-import { DEFAULT_ISUPPORT, formatCommand, isChannel, mentions, modeChanges, parseInput, parseLine, readIsupport, stripFormatting } from './protocol.ts';
+import { banReason, DEFAULT_ISUPPORT, fitsRelayed, formatCommand, isChannel, LINE_MAX, mentions, modeChanges, parseInput, parseLine, readIsupport, stripFormatting } from './protocol.ts';
 
 // ── parseLine ─────────────────────────────────────────────────────────────
 
@@ -300,4 +300,61 @@ test('every command offered as it is typed is one the kit reads itself', () => {
         const typed = parseInput(`/${command} bob #LostHQ some words`);
         assert.ok(typed !== null && typed.kind !== 'raw' && typed.kind !== 'unknown', `/${command} is offered but goes to the server as typed`);
     }
+});
+
+// ── bans ──────────────────────────────────────────────────────────────────
+
+test('a ban is read out of the ERROR each server family sends, down to what the operator wrote', () => {
+    for (const [error, reason] of [
+        // InspIRCd, which SwiftIRC runs: "<letter>-lined: reason", or the label alone when the network hides reasons.
+        ['Closing link: (~mage@203.0.113.9) [G-lined: Spamming]', 'Spamming'],
+        ['Closing link: (~mage@203.0.113.9) [K-lined: Ban evasion]', 'Ban evasion'],
+        ['Closing link: (~mage@203.0.113.9) [Z-lined]', ''],
+        // Its connectban module, which Z-lines an address that reconnects too often, for hours: a ban, and retrying keeps it going.
+        [
+            'Closing link: (~mage@203.0.113.9) [Z-lined: Your IP range has been attempting to connect too many times in too short a duration. Wait a while, and you will be able to connect.]',
+            'Your IP range has been attempting to connect too many times in too short a duration. Wait a while, and you will be able to connect.'
+        ],
+        // UnrealIRCd.
+        ['Closing Link: mage[203.0.113.9] (Banned (G-Lined): Spamming)', 'Spamming'],
+        ['Closing Link: mage[203.0.113.9] (User has been banned from SwiftIRC (Spamming))', 'User has been banned from SwiftIRC (Spamming)'],
+        // The hybrid family.
+        ['Closing Link: 203.0.113.9 (K-Lined)', ''],
+        ['Closing Link: 203.0.113.9 (D-lined)', ''],
+        ['You are banned from this server', 'You are banned from this server']
+    ] as const) {
+        assert.equal(banReason(error), reason, error);
+    }
+});
+
+test('an ERROR that is not a ban is null, including a throttle that calls itself a line, and a kill that mentions one', () => {
+    for (const error of [
+        'Closing link: (~mage@203.0.113.9) [Quit: Zanaris Kit]',
+        'Closing link: (~mage@203.0.113.9) [Ping timeout: 240 seconds]',
+        'Closing link: (~mage@203.0.113.9) [Excess Flood]',
+        'Closing link: (~mage@203.0.113.9) [SendQ exceeded]',
+        'Closing Link: [203.0.113.9] (Throttled: Reconnecting too fast - Email abuse@example.net for more information.)',
+        'Closing Link: 203.0.113.9 (Reconnecting too fast, throttled.)',
+        'Closing link: (~mage@203.0.113.9) [No more connections allowed from your host via this connect class (local)]',
+        'Closing Link: mage[203.0.113.9] (Too many connections from your IP)',
+        'Closing Link: 203.0.113.9 (Too many host connections (local))',
+        'Closing link: (~mage@203.0.113.9) [Z-lined: Throttled]',
+        'Closing link: (~mage@203.0.113.9) [Killed (Oper (you will be banned from here next time))]',
+        'Closing link: (~mage@203.0.113.9) [Killed (NickServ (GHOST command used by mage_))]',
+        'the server closed the connection'
+    ]) {
+        assert.equal(banReason(error), null, error);
+    }
+});
+
+// ── the line limit ────────────────────────────────────────────────────────
+
+test('a relayed line is measured in UTF-8 bytes, with the longest prefix a server adds and the CRLF', () => {
+    // ":mage!~ + 10 + @ + 64 + space" is 83 bytes; "PRIVMSG #04scape :" 18; the CRLF 2.
+    const room = LINE_MAX - 83 - 18 - 2; // 409
+    assert.equal(fitsRelayed('mage', 'PRIVMSG', ['#04scape', `${'a'.repeat(room - 2)} b`]), true);
+    assert.equal(fitsRelayed('mage', 'PRIVMSG', ['#04scape', `${'a'.repeat(room - 1)} b`]), false);
+    assert.equal(fitsRelayed('mage', 'PRIVMSG', ['#04scape', `${'é'.repeat(203)} b`]), true, 'two bytes a letter: 408 of 409');
+    assert.equal(fitsRelayed('mage', 'PRIVMSG', ['#04scape', `${'é'.repeat(204)} b`]), false, '410 of 409');
+    assert.equal(fitsRelayed('averyveryverylongnickname', 'PRIVMSG', ['#04scape', `${'a'.repeat(room - 2)} b`]), false, 'a longer nick leaves less room');
 });

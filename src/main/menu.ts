@@ -3,6 +3,7 @@ import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
 import type { LatestRelease } from './update';
 import { THEMES, type Theme } from '../shared/themes';
+import { REPO_URL } from './branding';
 
 export interface MenuActions {
     /** Another window of the focused window's server, or of the first server when none is focused. */
@@ -28,6 +29,8 @@ export interface MenuActions {
     setServerTheme(themeId: string | null): void;
     /** Opens a web page in the system browser: the release page, the repository. */
     openExternal(url: string): void;
+    /** Help > Report a Problem…: a new issue on GitHub, with the kit's version and the system filled in (`report.reportUrl`). */
+    reportProblem(): void;
 }
 
 /**
@@ -124,7 +127,13 @@ export function installMenu(
                 { label: 'Reload Server List', click: () => actions.reloadServers() },
                 ...(isMac ? [] : [settingsItem]),
                 { type: 'separator' },
-                { role: 'close' }
+                // Not `role: 'close'`, which brings Electron's own Cmd/Ctrl+W:
+                // on macOS File is searched before View, so it took the keys
+                // from Close Pane, and Cmd/Ctrl+W offered to close the whole
+                // window with two panes open. No shortcut here, then; a
+                // window goes when its last tab does (Cmd/Ctrl+Shift+W), or
+                // from here.
+                { label: 'Close Window', click: (_item, window) => window?.close() }
             ]
         },
         { role: 'editMenu' },
@@ -190,15 +199,26 @@ export function installMenu(
                 },
                 { type: 'separator' },
                 { role: 'togglefullscreen' },
-                { role: 'toggleDevTools' }
+                // Development only. In a release it opens a console on the
+                // pages that carry the preload, and "paste this into the
+                // console" is how people are talked into running a
+                // stranger's code; with no item, its shortcut goes too.
+                ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const }])
             ]
         },
-        { role: 'windowMenu' },
+        // Electron's Window menu off macOS ends in a Close of its own, with
+        // Ctrl+W again — the same theft as File's, by a menu Windows and
+        // Linux read after View — so there it is written out without one.
+        isMac ? { role: 'windowMenu' } : { label: 'Window', submenu: [{ role: 'minimize' }] },
         {
             role: 'help',
             submenu: [
                 ...(update?.newer ? [{ label: `Update Available: ${update.latest}`, click: () => actions.openExternal(update.url) }] : []),
-                { label: 'Zanaris Kit on GitHub', click: () => actions.openExternal('https://github.com/Zanaris-rs/Zanaris-kit') }
+                { label: 'Report a Problem…', click: () => actions.reportProblem() },
+                { label: 'Zanaris Kit on GitHub', click: () => actions.openExternal(REPO_URL) },
+                // macOS has About in the app menu already. Elsewhere this is
+                // the one place the version shows, which a report needs.
+                ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'about' as const }])
             ]
         }
     ];

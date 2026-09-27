@@ -750,6 +750,35 @@ test('switching builds while the world runs stops it, follows the line to its ow
     assert.equal(h.saves.has(`${SAVES}/zezima.sav`), true, 'rev 274 keeps its characters');
 });
 
+test('switching builds while the world is still getting ready starts the new one, rather than stopping at stopped', async () => {
+    const h = harness();
+    let letCopyFinish!: () => void;
+    const gate = new Promise<void>(resolve => {
+        letCopyFinish = resolve;
+    });
+    h.deps.fs.copyDir = async (from, to) => {
+        h.copies.push([from, to]);
+        h.dirs.add(to);
+        await gate;
+    };
+    h.builds.installs.set('lostcity-289', { id: 'lostcity-289', resources: '/res289', revision: 289, tag: 't289' });
+    h.builds.onLand('lostcity-289');
+    const service = new YourWorldService(h.deps);
+    const first = service.acquire();
+    first.catch(() => undefined);
+    await tick();
+    assert.equal(service.view().status, 'preparing', 'the copy is in flight');
+    h.statusQueue.push(200);
+    const switched = service.useBuild('lostcity-289');
+    letCopyFinish();
+    await switched;
+    await settle();
+    const view = service.view();
+    assert.equal(view.selected, 'lostcity-289');
+    assert.equal(view.status, 'ready', 'the start the switch overtook is not the one the window is left waiting on');
+    assert.equal(h.processes.at(-1)?.spec.entry, '/res289/src/app.js');
+});
+
 test('switching to a build not downloaded yet downloads it while the old world keeps running', async () => {
     const h = harness({ stamp: true });
     const service = new YourWorldService(h.deps);

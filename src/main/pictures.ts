@@ -110,6 +110,18 @@ export function pictureName(bytes: Uint8Array): string | null {
 /** A name `PictureStore` made, or one about to be: its hash and type, or the same with `.incoming` while it is written. */
 const STORED = new RegExp(`^(?:${PICTURE_NAME.source.slice(1, -1)})(?:\\.incoming)?$`);
 
+/**
+ * Every stored picture's name that appears anywhere in some text. A
+ * state.json the kit set aside is read this way for the pictures its themes
+ * named, so pruning keeps them: it may be cut short, or not JSON at all,
+ * which is why it was set aside, but a name — 64 hex characters and a type —
+ * is nothing else a state file holds, and reads the same in any fragment.
+ */
+export function picturesNamedIn(text: string): string[] {
+    const found = text.match(new RegExp(`(?<![0-9a-f])${PICTURE_NAME.source.slice(1, -1)}`, 'g')) ?? [];
+    return [...new Set(found)];
+}
+
 export class PictureStore {
     readonly dir: string;
 

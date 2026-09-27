@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { NewServerInput, ServerDef, WikiDef } from '../shared/catalog.ts';
 import type { HiscoresDef } from '../shared/hiscores.ts';
@@ -8,6 +8,7 @@ import { DEFAULT_BUILD } from '../shared/engines.ts';
 import { isWorldsDef } from './worlds/sources.ts';
 import { newServerTimers } from './timers/defs.ts';
 import { recipeRevision } from './yourworld/recipes.ts';
+import { writeWhole } from './wholeFile.ts';
 
 /** LostHQ has no discoverable search endpoint (its index.php?search= returns the homepage). */
 const LOSTHQ: WikiDef = { home: 'https://2004.losthq.rs/', search: null };
@@ -440,11 +441,15 @@ function withYourWorld(servers: ServerDef[]): ServerDef[] {
     return after < 0 ? [...servers, entry] : [...servers.slice(0, after + 1), entry, ...servers.slice(after + 1)];
 }
 
+/** The version of servers.json this kit writes. A file of a later one is a newer kit's (`Catalog.newer`). */
+export const CATALOG_VERSION = 5;
+
 /**
  * The server list on disk. Loading never fails: a missing file gets the
  * defaults, and a file that cannot be used is renamed aside (kept, not lost)
  * and replaced with the defaults, with `recovered` set so the launcher can say
- * so.
+ * so. A file a newer kit wrote is neither: it is read as far as this kit can
+ * and never written, with `newer` set.
  */
 export interface CatalogOptions {
     /** The revision of the build line your world runs. Without it, the default line's. */
@@ -455,6 +460,13 @@ export class Catalog {
     readonly file: string;
     /** True when the file on disk could not be used and the defaults were written in its place. */
     recovered = false;
+    /**
+     * The version of a servers.json a newer kit wrote, or null. While it is
+     * set nothing is saved — an added or removed server lasts for this run —
+     * so going back to this kit for a day cannot cost the newer one its list,
+     * which setting the file aside as unreadable once did.
+     */
+    newer: number | null = null;
     private servers: ServerDef[] = [];
     private readonly options: CatalogOptions;
 
@@ -465,6 +477,7 @@ export class Catalog {
 
     load(): void {
         this.recovered = false;
+        this.newer = null;
         if (!existsSync(this.file)) {
             this.servers = DEFAULT_SERVERS.map(copy);
             this.save();
@@ -472,6 +485,24 @@ export class Catalog {
         }
         try {
             const parsed: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
+            const version = (parsed as { version?: unknown } | null)?.version;
+            if (typeof version === 'number' && version > CATALOG_VERSION) {
+                // Every entry this kit can read as its own, or the defaults
+                // for this run when there is none; the file is left alone.
+                const listed = (parsed as { servers?: unknown }).servers;
+                const readable = Array.isArray(listed) ? listed.filter(isServerDef) : [];
+                this.servers = readable.length > 0 && uniqueIds(readable) ? readable.map(copy) : DEFAULT_SERVERS.map(copy);
+                this.newer = version;
+                // The kit's own knowledge of its built-ins, re-adopted as on
+                // every launch — your world's url, above all, which must be
+                // this kit's loopback page and not whatever a newer kit wrote.
+                // In memory only: nothing is saved while `newer` is set.
+                this.refreshYourWorld();
+                this.refreshHiscores();
+                this.refreshBookmarks();
+                this.refreshTimers();
+                return;
+            }
             const migrated = migrateCatalog(parsed);
             if (!migrated) throw new Error('not a catalog');
             this.servers = migrated;
@@ -668,9 +699,11 @@ export class Catalog {
     }
 
     private save(): void {
+        // A newer kit's file is left exactly as that kit wrote it (`newer`).
+        if (this.newer !== null) return;
         mkdirSync(dirname(this.file), { recursive: true });
-        const data: CatalogFile = { version: 5, servers: this.servers };
-        writeFileSync(this.file, `${JSON.stringify(data, null, 2)}\n`);
+        const data: CatalogFile = { version: CATALOG_VERSION, servers: this.servers };
+        writeWhole(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
 }
 

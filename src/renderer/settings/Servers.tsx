@@ -66,10 +66,23 @@ function Row({ row }: { row: ServerRow }): ReactNode {
             {row.notes && <p className="text-[12px] text-dim">{row.notes}</p>}
             {row.open > 0 && <p className="text-[12px] text-dim">{row.open} {row.open === 1 ? 'window' : 'windows'} open</p>}
             <div className="mt-1 flex items-center gap-2">
+                {/*
+                 * Ticked for what a launch opens, the fallback included, and
+                 * held ticked on the only one: a launch always opens a server,
+                 * so unticking the last would only bring it straight back
+                 * (`servers.nextStartup`). The note says why it will not move.
+                 */}
                 <label className="flex items-center gap-2 text-[12px] text-cream">
-                    <input type="checkbox" checked={row.atStartup} style={ACCENT} onChange={e => void window.zanaris.servers.setStartup(row.id, e.target.checked)} />
+                    <input
+                        type="checkbox"
+                        checked={row.atStartup}
+                        disabled={row.onlyStartup}
+                        style={ACCENT}
+                        onChange={e => void window.zanaris.servers.setStartup(row.id, e.target.checked)}
+                    />
                     Open at startup
                 </label>
+                {row.onlyStartup && <span className="text-[12px] text-dim">Tick another to stop opening this one</span>}
                 {row.removable && (
                     /* Text, not a button: removing is rare, and a red slab beside Save is the loudest thing in this section. Routed through the same `send` round-trip as `Timers.tsx`'s Delete, so the built-in guard and a servers.json changed by hand since Settings last read it both surface here rather than vanishing silently. */
                     <button

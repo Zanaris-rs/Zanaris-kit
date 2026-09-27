@@ -38,6 +38,7 @@ export const IPC = {
     tabSetupsMenu: 'zanaris:tab-setups-menu',
     tabShowYourWorld: 'zanaris:tab-show-your-world',
     paneOpenExternal: 'zanaris:pane-open-external',
+    paneNotice: 'zanaris:pane-notice',
     worldsRefresh: 'zanaris:worlds-refresh',
     worldsSwitch: 'zanaris:worlds-switch',
     worldsSetDetail: 'zanaris:worlds-set-detail',
@@ -305,6 +306,8 @@ export interface ZanarisApi {
         evenOut(splitId: string): Promise<void>;
         /** The focused page pane's toolbar. */
         go(where: 'back' | 'forward' | 'reload'): Promise<void>;
+        /** A button on a pane's notice (`PaneView.notice`): reload what stopped, wait for what hung, or close the pane. */
+        notice(paneId: string, action: 'reload' | 'wait' | 'close'): Promise<void>;
         /**
          * Raises the pane menu, for a right-click the shell saw. Main builds it
          * — a right-click on a game or a page never reaches the shell, so the

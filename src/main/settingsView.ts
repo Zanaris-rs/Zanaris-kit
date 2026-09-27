@@ -121,8 +121,8 @@ export function createSettingsWindow(opts: {
     // be worn by every window with nothing on screen to end it: Vite's full
     // reload in development, or a reload from the developer tools. A page
     // whose renderer is gone — crashed, killed, out of memory — has nothing
-    // on screen either, and nothing in the kit reloads it, so that ends the
-    // draft too.
+    // on screen either, so that ends the draft too, at once rather than when
+    // `loadShell`'s reload of it finishes, if it is reloaded at all.
     win.webContents.on('did-finish-load', opts.onPageReset);
     win.webContents.on('render-process-gone', () => opts.onPageReset());
     win.on('enter-full-screen', opts.onFrameChanged);
