@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { worldRunning, type BuildLine, type YourWorldView } from '../../../shared/yourworld';
+import { scrollClass, sectionClass } from './fill';
 
 /*
  * `.btn` and the base `button` rule are unlayered CSS, which beats a Tailwind
@@ -20,9 +21,10 @@ function megabytes(bytes: number): string {
     return `${Math.round(bytes / 1_000_000)} MB`;
 }
 
+/** A build's action. A label of more than one word wraps inside it in a narrow pane, as Characters' do, rather than scrolling the list sideways. */
 function QuietButton({ onClick, disabled = false, children }: { onClick: () => void; disabled?: boolean; children: ReactNode }): ReactNode {
     return (
-        <button type="button" disabled={disabled} onClick={onClick} style={BUTTON_SIZE} className="btn group shrink-0">
+        <button type="button" disabled={disabled} onClick={onClick} style={BUTTON_SIZE} className="btn group">
             <span className={disabled ? 'text-faint' : 'text-dim group-hover:text-cream'}>{children}</span>
         </button>
     );
@@ -51,11 +53,12 @@ function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: bool
                 </span>
                 <span className={`ml-auto text-[12px] ${warn ? 'text-warn' : inUse ? 'text-cream' : 'text-dim'}`}>{stateLabel(line, inUse)}</span>
             </div>
-            {line.note && <p className="text-[12px] text-warn">{line.note}</p>}
+            {/* A note or an error can hold a word wider than the row, such as a network error's name, which breaks rather than scrolling the list sideways. */}
+            {line.note && <p className="text-[12px] break-words text-warn">{line.note}</p>}
             <p className="font-mono text-[11px] text-faint">
                 engine {line.engine.slice(0, 8)} · content {line.content.slice(0, 8)}
             </p>
-            {line.error && <p className="text-[12px] text-warn">{line.error}</p>}
+            {line.error && <p className="text-[12px] break-words text-warn">{line.error}</p>}
             <div className="mt-1 flex flex-wrap items-center gap-1">
                 {/* Use on a line that is not here downloads it first; main asks before restarting a running world. */}
                 {!inUse && (line.state === 'installed' || fetchable) && (
@@ -68,7 +71,7 @@ function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: bool
                         {line.state === 'outdated' ? 'Update' : `Download`}
                     </QuietButton>
                 )}
-                {/* Text, not a button, as Delete is in Characters: rare, and main asks first. The running build is refused by main too. */}
+                {/* Text, not a button: removing is rare, and main asks first. The running build is refused by main too. */}
                 {onDisk && !(inUse && running) && (
                     <button type="button" disabled={busy} onClick={() => act(() => api.removeBuild(line.id))} className="group ml-0.5">
                         <span className="text-[12px] text-dim underline-offset-2 group-hover:text-alarm group-hover:underline">Remove</span>
@@ -84,7 +87,7 @@ function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: bool
  * this computer, and the one the world runs. The lines and their states are
  * main's; this only asks for a switch, a download or a removal.
  */
-export default function Builds({ view }: { view: YourWorldView }): ReactNode {
+export default function Builds({ view, wide }: { view: YourWorldView; wide: boolean }): ReactNode {
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const running = worldRunning(view.status);
@@ -101,8 +104,9 @@ export default function Builds({ view }: { view: YourWorldView }): ReactNode {
     };
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
-            <div className="sunk min-h-0 flex-1 overflow-y-auto px-2 py-1">
+        <div className={sectionClass(wide)}>
+            {/* Narrow, the list's sides are 4px, as Characters' are. */}
+            <div className={`sunk ${scrollClass(wide)} py-1 ${wide ? 'px-2' : 'px-1'}`}>
                 <ul>
                     {view.builds.map(line => (
                         <Row key={line.id} line={line} inUse={line.id === view.selected} running={running} busy={busy} act={act} />

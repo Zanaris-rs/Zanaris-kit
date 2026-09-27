@@ -1,5 +1,6 @@
 import { useId, type CSSProperties, type ReactNode } from 'react';
 import { worldRunning, XP_RATES, type YourWorldSettings, type YourWorldView } from '../../../shared/yourworld';
+import { scrollClass, sectionClass } from './fill';
 
 /*
  * .btn is hand-written CSS carrying the gold label, so a button that wants a
@@ -12,16 +13,28 @@ const SPENT: CSSProperties = { color: 'var(--color-faint)' };
 /* Each rate as wide as the widest label, so the row does not shift as the pressed one moves. */
 const RATE: CSSProperties = { fontSize: 13, padding: '1px 6px', minWidth: 38 };
 const QUIET: CSSProperties = { fontSize: 13, padding: '1px 8px' };
+/*
+ * A narrow switch's sides are 4px rather than the 12 `.btn` gives, as Worlds'
+ * stacked buttons are: at `PANE_MIN_WIDTH`, with the tool's scrollbar
+ * showing, a switch has 88px, and "Members" alone was 94 with the wider sides.
+ */
+const TIGHT: CSSProperties = { paddingLeft: 4, paddingRight: 4 };
 
 function change<K extends keyof YourWorldSettings>(key: K, value: YourWorldSettings[K]): void {
     void window.zanaris.yourWorld.setSetting(key, value);
 }
 
-/** An on/off setting: the button says which, and the note beside it says what on means. */
-function Switch({ label, on, busy, red = false, note, onChange }: { label: string; on: boolean; busy: boolean; red?: boolean; note: string; onChange: (on: boolean) => void }): ReactNode {
+/**
+ * An on/off setting: the button says which, and the note beside it says what
+ * on means. Narrow, the note goes under the button: beside it, the note was
+ * left a word to a line and then pushed past the section's edge, which
+ * scrolled sideways. The button keeps to its label's width there, and its
+ * label wraps inside it only in a pane narrower than that.
+ */
+function Switch({ label, on, busy, red = false, note, wide, onChange }: { label: string; on: boolean; busy: boolean; red?: boolean; note: string; wide: boolean; onChange: (on: boolean) => void }): ReactNode {
     const id = useId();
     return (
-        <div className="flex items-center gap-2">
+        <div className={wide ? 'flex items-center gap-2' : 'flex flex-col items-start gap-1'}>
             <button
                 type="button"
                 role="switch"
@@ -29,7 +42,7 @@ function Switch({ label, on, busy, red = false, note, onChange }: { label: strin
                 aria-describedby={id}
                 disabled={busy}
                 onClick={() => onChange(!on)}
-                style={busy ? SPENT : on ? undefined : MUTED}
+                style={{ ...(busy ? SPENT : on ? undefined : MUTED), ...(wide ? undefined : TIGHT) }}
                 className={`btn shrink-0${on && red && !busy ? ' btn-red' : ''}`}
             >
                 {label} {on ? 'on' : 'off'}
@@ -42,18 +55,19 @@ function Switch({ label, on, busy, red = false, note, onChange }: { label: strin
 }
 
 /** The World section: what the kit writes into world.json for the player, and the world's own files. */
-export default function World({ view }: { view: YourWorldView }): ReactNode {
+export default function World({ view, wide }: { view: YourWorldView; wide: boolean }): ReactNode {
     const id = useId();
     const busy = view.status === 'preparing' || view.status === 'starting' || view.status === 'stopping';
     const { settings } = view;
     return (
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
-            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto">
-                <Switch label="Cheats" red on={settings.cheats} busy={busy} onChange={on => change('cheats', on)} note="Developer commands such as ::tele and ::give. Off, they are refused." />
-                <Switch label="Members" on={settings.members} busy={busy} onChange={on => change('members', on)} note="Off, your world is a free one, as the free-to-play game was." />
+        <div className={sectionClass(wide)}>
+            <div className={`flex flex-col gap-2.5 ${scrollClass(wide)}`}>
+                <Switch label="Cheats" red on={settings.cheats} busy={busy} wide={wide} onChange={on => change('cheats', on)} note="Developer commands such as ::tele and ::give. Off, they are refused." />
+                <Switch label="Members" on={settings.members} busy={busy} wide={wide} onChange={on => change('members', on)} note="Off, your world is a free one, as the free-to-play game was." />
                 <div>
+                    {/* Narrow, the label has a line of its own and the rates wrap under it, rather than one rate on the label's line and the rest below. */}
                     <div role="group" aria-labelledby={`${id}-rate`} className="flex flex-wrap items-center gap-1.5">
-                        <span id={`${id}-rate`} className="mr-0.5 text-cream">
+                        <span id={`${id}-rate`} className={wide ? 'mr-0.5 text-cream' : 'w-full text-cream'}>
                             XP rate
                         </span>
                         {XP_RATES.map(rate => {

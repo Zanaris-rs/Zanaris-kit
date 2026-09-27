@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type MenuItemConstructorOptions, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -53,7 +53,7 @@ import { YourWorldService } from './yourworld/service';
 import { BuildStore } from './yourworld/buildStore';
 import { buildStoreDeps, electronDeps, readCommands, yourWorldHome } from './yourworld/electron';
 import { recipeRevision } from './yourworld/recipes';
-import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/yourworld';
+import { characterMenu, isSection, sectionsOffered, worldRunning, type CharacterAction, type CharacterOutcome, type ImportPick, type YourWorldSection } from '../shared/yourworld';
 import type { CommandRef } from '../shared/commands';
 import type { Confirm, Confirmation } from './yourworld/confirm';
 import { changesSettings, readSettingChange, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './yourworld/settings';
@@ -1658,6 +1658,54 @@ ipcMain.handle(IPC.yourWorldDelete, async (event, name: unknown): Promise<Charac
     return yourWorld.deleteCharacter(name, confirmOn(sw));
 });
 
+/**
+ * A native menu that only asks: resolves with the value of the item picked,
+ * or null when it closed on none. Settled a moment after the close rather than
+ * at it, as the nick menu is, in case the close is reported before the click
+ * that ended it. A title, when given, heads it greyed, as a nick heads its menu.
+ */
+function pickFromMenu<T>(win: BrowserWindow, items: readonly ({ label: string; value: T; enabled?: boolean; checked?: boolean } | 'separator')[], x: number, y: number, title?: string): Promise<T | null> {
+    return new Promise(resolve => {
+        let settled = false;
+        const settle = (choice: T | null): void => {
+            if (settled) return;
+            settled = true;
+            resolve(choice);
+        };
+        const template: MenuItemConstructorOptions[] = items.map(item =>
+            item === 'separator'
+                ? { type: 'separator' }
+                : { label: item.label, enabled: item.enabled ?? true, ...(item.checked === undefined ? {} : { type: 'radio' as const, checked: item.checked }), click: () => settle(item.value) }
+        );
+        if (title !== undefined) template.unshift({ label: title, enabled: false }, { type: 'separator' });
+        Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y), callback: () => setTimeout(() => settle(null), 100) });
+    });
+}
+
+/**
+ * A character's menu, from its row in Characters: native, as a nick's is,
+ * since a menu the shell drew could land under the game beside the pane. It
+ * only asks. The choice goes back to the shell, which carries it out through
+ * the calls above, so what main answers shows where it always has; and a
+ * rename or a copy wants a name, which only the shell can ask for.
+ */
+ipcMain.handle(IPC.yourWorldCharacterMenu, (event, name: unknown, x: unknown, y: unknown): Promise<CharacterAction | null> | null => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof name !== 'string' || typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x + y)) return null;
+    const character = yourWorld.view().characters.find(c => c.name === name);
+    if (!character) return null;
+    const items = characterMenu(character, yourWorld.otherRevisions()).map(item => (item.kind === 'separator' ? ('separator' as const) : { label: item.label, value: item.action, enabled: item.enabled }));
+    return pickFromMenu(sw.window, items, x, y, character.displayName);
+});
+
+/** The sections a narrow tool offers in place of its tabs, the open one ticked. */
+ipcMain.handle(IPC.yourWorldSectionMenu, (event, open: unknown, x: unknown, y: unknown): Promise<YourWorldSection | null> | null => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !isSection(open) || typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x + y)) return null;
+    const items = sectionsOffered(sw.state().share !== null).map(section => ({ label: section.label, value: section.id, checked: section.id === open }));
+    return pickFromMenu(sw.window, items, x, y);
+});
+
 /** Where to is the save dialog's question, and so is whether to write over a file already there. */
 ipcMain.handle(IPC.yourWorldExport, async (event, name: unknown): Promise<CharacterOutcome> => {
     const sw = yourWorldWindow(event.sender);
@@ -1895,7 +1943,8 @@ const shotOfThePage =
  * Then, in this order: Settings; a split, a swap and a move on the first
  * loaded window; the Worlds tool, maximised, a world switch and a split down;
  * Hiscores on each server that has it; Timers; a seam dragged and a pane
- * closed giving its room back; the Your world tool; the reference pane — the
+ * closed giving its room back; the Your world tool, as it opens and on World
+ * at `PANE_MIN_WIDTH`; the reference pane — the
  * launcher, two pages beside the game, and the first of them brought back to
  * prove a tab switch did not reload it; a second instance of the first
  * server (slots and partitions), with a setup saved and opened into a new tab
@@ -2291,6 +2340,21 @@ async function captureAndExit(dir: string): Promise<void> {
             await wait(500);
             await shoot('yourworld-tool', single);
             log(`[capture] your world: ${single.state().yourWorld?.status} on port ${single.state().yourWorld?.port}`);
+
+            // And narrow: the seam before the tool dragged as far as it goes,
+            // which leaves the tool at `PANE_MIN_WIDTH`. The tool opens on
+            // World, so this shows World's narrow shape: each switch's note
+            // under it rather than beside it, as in the shot above.
+            const tool = single.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'singleplayer');
+            const seam = tool && single.state().seams.find(s => s.axis === 'x' && Math.abs(s.rect.x + s.rect.width - tool.rect.x) <= 1);
+            if (tool && seam) {
+                single.setSeam(seam.splitId, seam.index, seam.max);
+                await wait(500);
+                log(`[capture] your world: narrowed from ${tool.rect.width}px to ${single.state().panes.find(p => p.paneId === tool.paneId)?.rect.width}px`);
+                await shoot('yourworld-tool-narrow', single);
+            } else {
+                log('[capture] your world: not narrowed, since no seam sits before the tool');
+            }
         }
 
         // The reference pane. Last, because it is the one thing here that

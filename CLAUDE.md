@@ -331,7 +331,8 @@ tag, size and sha-256. The design is
   Bun, and are not lines yet.
 - **Characters live per revision**, in `<userData>/yourworld/worlds/<rev>/`,
   which is also the world's working directory. A switch never moves a save;
-  Copy to… copies one after asking, and never replaces one there.
+  Copy to rev, in a character's menu, copies one after asking, and never
+  replaces one there.
 - Two older trees are left where they are rather than migrated, under the
   no-migrations licence below: `<userData>/singleplayer/data/players/main`,
   from before characters lived per revision, and the whole of

@@ -227,7 +227,8 @@ developer commands on for the whole world; an XP rate of 1×, 2×, 5× or 10×; 
 Members, which off makes it a free world. Each change restarts a running world,
 so it logs you out and asks first. **Characters** lists every save with its
 combat level, total level and play time, and imports, exports, renames, copies
-and deletes them; a deleted character, or one another replaces, goes to the
+and deletes them, the last four from a menu a click or a right-click on a
+character opens; a deleted character, or one another replaces, goes to the
 system trash. The game writes a save when you log out and every 15 minutes.
 **Commands** lists what cheats unlock: the content's debug procs, typed
 `::~name` in the chat box, and the engine's own `::` commands. The game cannot
@@ -235,7 +236,7 @@ paste, so the list is there to read and type from. **Builds** lists the builds
 this kit knows — Lost City 274, and Lost City 289, which Lost City itself marks
 as for developers — and downloads, switches between and removes them. Each
 revision keeps its own characters: switching from 274 to 289 starts with none,
-and switching back finds them again. Characters' Copy to… copies one across,
+and switching back finds them again. A character's Copy to rev copies it across,
 after saying the other game may read it differently, since a save holds items
 and progress from the game that wrote it. **Friends** shares the world with a
 link; see Playing with friends below.

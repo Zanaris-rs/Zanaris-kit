@@ -5,7 +5,7 @@ import { IPC, type ShellState, type ToolId } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
-import type { YourWorldView } from '../shared/yourworld';
+import { lineTitle, type YourWorldView } from '../shared/yourworld';
 import type { ShareView } from '../shared/share';
 import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
@@ -1341,7 +1341,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // What a missing world would download, and how far it has got, in tens
             // of percent: finer, and a 50 MB download would reload this page a
             // hundred times.
-            build: line ? `${line.name} · rev ${line.revision}` : '',
+            build: line ? lineTitle(line) : '',
             size: line?.size != null ? String(Math.round(line.size / 1_000_000)) : '',
             available: line && line.size !== null && line.state !== 'unavailable' ? '1' : '',
             progress: line?.progress != null ? String(Math.floor(line.progress * 10) * 10) : ''

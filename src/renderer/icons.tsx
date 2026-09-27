@@ -79,10 +79,15 @@ export function Reload(): ReactNode {
     );
 }
 
-/** The pane header's dropdown. A solid wedge, since the menu it opens is the system's and a hairline glyph would not read at 32px of stone. */
-export function Caret(): ReactNode {
+/**
+ * The pane header's dropdown. A solid wedge, since the menu it opens is the
+ * system's and a hairline glyph would not read at 32px of stone. Compact, the
+ * same wedge without the blank either side of it, for a caret that shares its
+ * line with a label: a narrow pane's tab, a character's row.
+ */
+export function Caret({ compact = false }: { compact?: boolean }): ReactNode {
     return (
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <svg width={compact ? 10 : 18} height="18" viewBox={compact ? '4 0 10 18' : '0 0 18 18'} aria-hidden="true">
             <path d="M4.5 7h9L9 12z" fill="currentColor" />
         </svg>
     );

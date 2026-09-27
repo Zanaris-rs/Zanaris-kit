@@ -140,7 +140,7 @@ function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState })
                 case 'hiscores':
                     return state.hiscores ? <Hiscores view={state.hiscores} width={pane.rect.width} /> : null;
                 case 'singleplayer':
-                    return state.yourWorld ? <YourWorld view={state.yourWorld} share={state.share} /> : null;
+                    return state.yourWorld ? <YourWorld view={state.yourWorld} share={state.share} width={pane.rect.width} /> : null;
                 case 'timers':
                     return <Timers view={state.timers} width={pane.rect.width} />;
             }
