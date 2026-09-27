@@ -206,9 +206,25 @@ let presetView: PresetCard[] | undefined;
  */
 let editing: Editing | null = null;
 
-/** Every picture a custom theme names: what pruning keeps. */
+/**
+ * Every picture a theme names — a theme of the state's, or of a state.json
+ * set aside because it would not read, this launch or any before
+ * (`AppState.picturesSetAside`): what pruning keeps.
+ */
 function keptPictures(): Set<string> {
-    return new Set(appState.appearance().custom.flatMap(theme => (theme.background ? [theme.background.picture] : [])));
+    const named = appState.appearance().custom.flatMap(theme => (theme.background ? [theme.background.picture] : []));
+    return new Set([...named, ...appState.picturesSetAside()]);
+}
+
+/**
+ * Deletes the stored pictures no theme names, set-aside ones included. Never
+ * while state.json is a newer kit's: that file is not written, so a theme
+ * saved or deleted this run is not in it, and the newer kit may name
+ * pictures this one cannot read out of it.
+ */
+function prunePictures(): void {
+    if (appState.newerVersion() !== null) return;
+    pictures.prune(keptPictures());
 }
 /** One world list per server, shared by every window of that server. Built lazily: net.fetch needs the app ready. */
 const worldsServices = new Map<string, WorldsService>();
@@ -632,6 +648,30 @@ function loadCatalog(): void {
     }
 }
 
+/**
+ * Whether to run on files a newer kit wrote. Both are read as far as this kit
+ * can and never written (`AppState.newerVersion`, `Catalog.newer`), which on
+ * its own would go unnoticed until a change the player made did not come
+ * back. So it is said once, at launch, with Quit beside Continue.
+ */
+async function continueWithNewerFiles(): Promise<boolean> {
+    const settingsNewer = appState.newerVersion() !== null;
+    const listNewer = catalog.newer !== null;
+    if (!settingsNewer && !listNewer) return true;
+    const what = settingsNewer && listNewer ? 'settings and server list are' : settingsNewer ? 'settings are' : 'server list is';
+    log(`[main] ${what} from a newer kit; reading ${settingsNewer && listNewer ? 'them' : 'it'} and writing nothing`);
+    const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Continue', 'Quit'],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Your ${what} from a newer version of Zanaris Kit.`,
+        detail:
+            "This version uses what it can read and leaves the files as they are, so anything you change until you update won't be kept. The newer version is on the releases page, and Help > Update Available opens it once the kit has found it."
+    });
+    return response === 0;
+}
+
 /** Re-read servers.json if it changed since the last load. Runs when the app regains focus. */
 function reloadCatalogIfChanged(): void {
     if (catalogMtime() === catalogSeen) return;
@@ -892,7 +932,7 @@ ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } |
         log(`[main] saved ${placed.id} but could not write it down as the app theme: ${(err as Error).message}`);
     }
     editing = null;
-    pictures.prune(keptPictures());
+    prunePictures();
     appearanceChanged();
     return { id: placed.id };
 });
@@ -924,7 +964,7 @@ ipcMain.handle(IPC.appearanceDeleteCustom, async (event, id: unknown): Promise<b
         return false;
     }
     editing = null;
-    pictures.prune(keptPictures());
+    prunePictures();
     appearanceChanged();
     return true;
 });
@@ -1002,14 +1042,14 @@ ipcMain.handle(IPC.appearanceImportTheme, async (event): Promise<{ name: string 
         const placed = placeTheme(read.theme.name, null);
         const theme: Theme = { ...placed, colors: read.theme.colors, background };
         if (!appState.saveCustomTheme(theme)) {
-            pictures.prune(keptPictures());
+            prunePictures();
             return { error: TOO_MANY_THEMES };
         }
         appearanceChanged();
         return { name: placed.name };
     } catch (err) {
         log(`[main] could not import a theme: ${(err as Error).message}`);
-        pictures.prune(keptPictures());
+        prunePictures();
         return { error: "Couldn't add the theme: the kit couldn't write it down." };
     }
 });
@@ -1968,7 +2008,7 @@ async function captureAndExit(dir: string): Promise<void> {
         appState.setTheme(DEFAULT_THEME);
         for (const id of Object.keys(appState.appearance().servers)) appState.setServerTheme(id, null);
         for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
-        pictures.prune(keptPictures());
+        prunePictures();
         // Your world needs its build on disk. Where there is none the entry is
         // dropped rather than left to wait on a download — so a capture wants the
         // selected build already downloaded in the real profile.
@@ -2604,7 +2644,7 @@ async function captureAndExit(dir: string): Promise<void> {
             }
             for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
             appState.setTheme(DEFAULT_THEME);
-            pictures.prune(keptPictures());
+            prunePictures();
             appearanceChanged();
         }
 
@@ -2736,13 +2776,25 @@ async function captureAndExit(dir: string): Promise<void> {
 app.whenReady().then(async () => {
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
+    // The catalog says so when it resets; state.json used to reset in silence,
+    // costing the themes, the chat nick and password, the timers and the
+    // startup set with nothing on screen to say where they went.
+    const aside = appState.setAsideAt();
+    if (aside) {
+        log(`[main] ${appState.file} could not be read; it was kept as ${basename(aside)} and the kit started from the defaults`);
+        void dialog.showMessageBox({
+            type: 'warning',
+            message: "Your settings couldn't be read and were reset.",
+            detail: `Themes, chat's nick and password, timers and the servers opened at launch start again from the defaults. The old file was kept beside the new one, as ${basename(aside)}.`
+        });
+    }
     if (branding) app.dock?.setIcon(branding.dockIcon);
     // A picture no theme names — its theme deleted, or chosen in an editor that
-    // was then closed — goes, and the scheme serves whatever is left. Only when
-    // the state really was read: a state.json that could not be was set aside
-    // with the themes that name these pictures in it, and the empty state
-    // standing in for it names none.
-    if (appState.fromFile()) pictures.prune(keptPictures());
+    // was then closed — goes, and the scheme serves whatever is left. A
+    // state.json that could not be read was set aside with the themes that
+    // name its pictures, and those are kept too (`keptPictures`), this launch
+    // and every one after.
+    prunePictures();
     protocol.handle(PICTURE_SCHEME, request => {
         const url = new URL(request.url);
         let name: string;
@@ -2866,6 +2918,11 @@ app.whenReady().then(async () => {
 
     if (CAPTURE_DIR) {
         await captureAndExit(CAPTURE_DIR);
+        return;
+    }
+    // Asked before any window opens, so Quit leaves nothing half started.
+    if (!(await continueWithNewerFiles())) {
+        app.quit();
         return;
     }
     // `startupServers` falls back to the catalog's first entry, so an empty answer

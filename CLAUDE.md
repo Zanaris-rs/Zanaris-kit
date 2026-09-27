@@ -518,10 +518,13 @@ file — shown in the kit's own pages, or one of the kit's own. Keep these true:
 - **A picture no theme names is pruned** at launch and after a save or a
   delete. The editor is the only place a picture is chosen, and it saves or
   cancels before anything else in Settings can prune. Save and Delete end the
-  draft before they prune, so no window wears a picture that has gone. At
-  launch only when `appState.fromFile()`: a broken `state.json` is set aside
-  with the themes that name the pictures, and pruning against the empty
-  state that replaced it would delete every one.
+  draft before they prune, so no window wears a picture that has gone.
+  Every prune goes through `prunePictures`, which keeps the pictures named in
+  any `state.json.broken-*` too (`AppState.picturesSetAside`, read as text,
+  since a set-aside file need not parse): the empty state that replaced one,
+  and every save of it after, names none of them. And none runs while
+  `state.json` is a newer kit's (`AppState.newerVersion`), which is never
+  written.
 
 ## Commands
 

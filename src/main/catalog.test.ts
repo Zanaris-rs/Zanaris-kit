@@ -14,7 +14,8 @@ import {
     isServerDef,
     serverMenuLabel,
     migrateCatalog,
-    Catalog
+    Catalog,
+    CATALOG_VERSION
 } from './catalog.ts';
 import { isWorldsDef } from './worlds/sources.ts';
 import { newServerTimers } from './timers/defs.ts';
@@ -956,4 +957,33 @@ test('a removed built-in does not come back on the next load, which is why Setti
     const b = new Catalog(file);
     b.load();
     assert.equal(b.get('lostcity'), undefined, 'nothing in load() re-adopts a missing built-in');
+});
+
+test("a newer kit's servers.json is read as far as it goes, never set aside and never written", () => {
+    const file = tempFile();
+    const created = createServer(input(), DEFAULT_SERVERS);
+    assert.ok(created.ok);
+    const mine = created.server;
+    const text = JSON.stringify({ version: CATALOG_VERSION + 1, servers: [...DEFAULT_SERVERS, mine, { id: 'from-the-future', shape: 'unknown' }] });
+    writeFileSync(file, text);
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.newer, CATALOG_VERSION + 1);
+    assert.equal(catalog.recovered, false);
+    assert.ok(catalog.get(mine.id), 'an entry this kit can read is listed');
+    assert.equal(catalog.get('from-the-future'), undefined, 'one it cannot is left out of the list, not the file');
+    catalog.remove(mine.id);
+    assert.equal(readFileSync(file, 'utf8'), text, 'the newer kit finds its list as it left it');
+    assert.equal(readdirSync(join(file, '..')).some(n => n.includes('.broken-')), false);
+});
+
+test("a newer kit's list with nothing this kit can read runs on the defaults, and still leaves the file", () => {
+    const file = tempFile();
+    const text = JSON.stringify({ version: CATALOG_VERSION + 2, servers: 'elsewhere' });
+    writeFileSync(file, text);
+    const catalog = new Catalog(file);
+    catalog.load();
+    assert.equal(catalog.newer, CATALOG_VERSION + 2);
+    assert.deepEqual(catalog.list().map(s => s.id), DEFAULT_SERVERS.map(s => s.id));
+    assert.equal(readFileSync(file, 'utf8'), text);
 });

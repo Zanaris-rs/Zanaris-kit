@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PICTURE_MAX, PICTURE_PIXELS_MAX, PictureStore, pictureName, pictureSize, pictureType } from './pictures.ts';
+import { PICTURE_MAX, PICTURE_PIXELS_MAX, PictureStore, pictureName, pictureSize, pictureType, picturesNamedIn } from './pictures.ts';
 
 const dirs: string[] = [];
 const tempDir = (): string => {
@@ -145,4 +145,14 @@ test('prune goes on past a file it cannot delete, and never throws', () => {
     mkdirSync(join(store.dir, `${'0'.repeat(64)}.png`));
     assert.doesNotThrow(() => store.prune(new Set([kept.picture])));
     assert.deepEqual(readdirSync(store.dir).sort(), [`${'0'.repeat(64)}.png`, kept.picture].sort());
+});
+
+test('picturesNamedIn finds every stored name in any text, once, and nothing that only looks like one', () => {
+    const a = `${'ab'.repeat(32)}.png`;
+    const b = `${'01'.repeat(32)}.webp`;
+    const text = `{"custom":[{"background":{"picture":"${a}"}},{"background":{"picture":"${b}"}},{"background":{"picture":"${a}"`;
+    assert.deepEqual(picturesNamedIn(text).sort(), [b, a].sort());
+    assert.deepEqual(picturesNamedIn(`${'f'.repeat(70)}.png`), [], 'not the tail of a longer hex run');
+    assert.deepEqual(picturesNamedIn(`${'ab'.repeat(32)}.svg`), [], 'not a type the store keeps');
+    assert.deepEqual(picturesNamedIn('{ broken'), []);
 });
