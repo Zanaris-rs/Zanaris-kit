@@ -33,9 +33,11 @@ export interface AboutOptions {
 
 /**
  * The About panel, in every run: Help > About on Windows and Linux, and the
- * app menu's About on macOS. A packaged Mac reads the same from its bundle,
- * but Linux shows nothing it is not handed and Windows has no bundle to read,
- * so the version a bug report needs would be nowhere on either without this.
+ * app menu's About on macOS. A packaged Mac reads the same from its bundle
+ * and Windows from the .exe's version resource, but Linux shows nothing it
+ * is not handed, so the version a bug report needs would be nowhere there
+ * without this. Set everywhere rather than on Linux alone, so the three say
+ * the same thing.
  */
 export function aboutOptions(version: string, iconPath?: string): AboutOptions {
     return { applicationName: APP_NAME, applicationVersion: version, copyright: COPYRIGHT, website: REPO_URL, ...(iconPath ? { iconPath } : {}) };

@@ -19,8 +19,9 @@ const OS_NAMES: Record<string, string> = { darwin: 'macOS', win32: 'Windows', li
  * often missing and the half the player least often knows, which is why the
  * kit writes it rather than asking.
  *
- * Nothing of the player's goes in it — no server, no nick, no path — and it
- * goes nowhere until they press Submit on GitHub, in their own browser.
+ * Nothing of the player's goes in it — no server, no nick, no path. The
+ * version line is in the link, so GitHub has it as the page opens in their
+ * own browser; the issue is filed only when they press Submit.
  */
 export function reportUrl(env: ReportEnv): string {
     const os = `${OS_NAMES[env.platform] ?? env.platform} ${env.osVersion}`.trim();
