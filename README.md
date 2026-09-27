@@ -44,6 +44,16 @@ The kit checks the releases page once each time it starts and, when there is
 a newer version, adds Help > Update Available, which opens that page. Set
 `ZANARIS_NO_UPDATE_CHECK=1` to turn the check off.
 
+### Reporting a problem
+
+**Help > Report a Problem…** opens a new
+[issue](https://github.com/Zanaris-rs/Zanaris-kit/issues) in your browser with
+three questions to answer and, underneath, the kit's version, Electron's and
+your system's — nothing else, no server, nick or path — and nothing is sent
+until you press Submit. The version is also in **About Zanaris Kit**: the
+Zanaris Kit menu on macOS, Help on Windows and Linux. A release has no
+Developer Tools; a build run from source does, in the View menu.
+
 ## What it does
 
 There are game windows, and one Settings window for the app; new game windows

@@ -63,7 +63,8 @@ import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timer
 import { readAlertSound } from './timers/electron';
 import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversView, startupServers } from './servers';
 import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing, type Editing } from './appearance';
-import { APP_ID, APP_NAME, devBranding } from './branding';
+import { APP_ID, APP_NAME, aboutOptions, devBranding } from './branding';
+import { reportUrl } from './report';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
 import { presetCards, presetFile, readPreset, type PresetCard } from './presets';
 import { THEME_FILE_EXTENSION, THEME_FILE_MAX, readThemeFile, themeFileName, writeThemeFile } from './themeFile';
@@ -174,7 +175,7 @@ app.setName(APP_NAME);
 // run's default is not the one the installer gave the Start menu's.
 if (app.isPackaged && process.platform === 'win32') app.setAppUserModelId(APP_ID);
 const branding = devBranding({ packaged: app.isPackaged, root: join(__dirname, '../..'), version: app.getVersion() });
-if (branding) app.setAboutPanelOptions(branding.about);
+app.setAboutPanelOptions(branding?.about ?? aboutOptions(app.getVersion()));
 
 /** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
 const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
@@ -775,7 +776,11 @@ const actions: MenuActions = {
             return;
         }
         void shell.openExternal(url);
-    }
+    },
+    reportProblem: () =>
+        actions.openExternal(
+            reportUrl({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch, osVersion: process.getSystemVersion() })
+        )
 };
 
 // ── ipc ───────────────────────────────────────────────────────────────────

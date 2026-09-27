@@ -3,6 +3,7 @@ import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
 import type { LatestRelease } from './update';
 import { THEMES, type Theme } from '../shared/themes';
+import { REPO_URL } from './branding';
 
 export interface MenuActions {
     /** Another window of the focused window's server, or of the first server when none is focused. */
@@ -28,6 +29,8 @@ export interface MenuActions {
     setServerTheme(themeId: string | null): void;
     /** Opens a web page in the system browser: the release page, the repository. */
     openExternal(url: string): void;
+    /** Help > Report a Problem…: a new issue on GitHub, with the kit's version and the system filled in (`report.reportUrl`). */
+    reportProblem(): void;
 }
 
 /**
@@ -190,7 +193,11 @@ export function installMenu(
                 },
                 { type: 'separator' },
                 { role: 'togglefullscreen' },
-                { role: 'toggleDevTools' }
+                // Development only. In a release it opens a console on the
+                // pages that carry the preload, and "paste this into the
+                // console" is how people are talked into running a
+                // stranger's code; with no item, its shortcut goes too.
+                ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const }])
             ]
         },
         { role: 'windowMenu' },
@@ -198,7 +205,11 @@ export function installMenu(
             role: 'help',
             submenu: [
                 ...(update?.newer ? [{ label: `Update Available: ${update.latest}`, click: () => actions.openExternal(update.url) }] : []),
-                { label: 'Zanaris Kit on GitHub', click: () => actions.openExternal('https://github.com/Zanaris-rs/Zanaris-kit') }
+                { label: 'Report a Problem…', click: () => actions.reportProblem() },
+                { label: 'Zanaris Kit on GitHub', click: () => actions.openExternal(REPO_URL) },
+                // macOS has About in the app menu already. Elsewhere this is
+                // the one place the version shows, which a report needs.
+                ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'about' as const }])
             ]
         }
     ];
