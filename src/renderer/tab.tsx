@@ -1,5 +1,5 @@
 import type { CSSProperties, MouseEvent, ReactNode } from 'react';
-import { CloseRoom } from './icons';
+import { Caret, CloseRoom } from './icons';
 
 /**
  * The text-bearing interface tab, worn by the window strip, by the chat
@@ -28,6 +28,12 @@ const BOX: CSSProperties = { height: 26, width: 'auto' };
  * the tabs drawn this way, had their labels run into their own borders.
  */
 const PADDED: CSSProperties = { ...BOX, paddingLeft: 10, paddingRight: 10 };
+/*
+ * A tab that opens a menu gives up 4px on the caret's side, and the caret
+ * comes 4px after its label rather than 7: at `PANE_MIN_WIDTH` it has 100px,
+ * and "Characters" is 66 of them.
+ */
+const MENU_PADDED: CSSProperties = { ...BOX, paddingLeft: 10, paddingRight: 6 };
 
 export default function Tab({
     label,
@@ -38,7 +44,8 @@ export default function Tab({
     after,
     onClose,
     closeLabel,
-    onContextMenu
+    onContextMenu,
+    menu = false
 }: {
     label: string;
     /** The full name, for a label that had to be shortened to fit. */
@@ -60,7 +67,7 @@ export default function Tab({
      */
     role: 'tab' | 'button';
     /** Left off for a tab that only reports which page is in front; such a tab is not a control and is not drawn as one. */
-    onSelect?: () => void;
+    onSelect?: (event: MouseEvent<HTMLElement>) => void;
     /** The detail some tabs carry to the right of the label: a revision, an unread count. */
     after?: ReactNode;
     /** Puts a close inside the tab, at its right edge. The window strip's tabs carry one, and so does every chat channel. */
@@ -69,6 +76,13 @@ export default function Tab({
     closeLabel?: string;
     /** A right-click anywhere on the tab, close included. The window strip's tabs raise their tab menu (Close Tab) with it; chat's tabs have none. */
     onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
+    /**
+     * The tab opens a menu rather than being chosen: Your world's, in a
+     * narrow pane, in place of its row of sections. It says so to a screen
+     * reader rather than claiming to be current, and carries the caret the
+     * kit's other menus do. Only for a tab with `onSelect` and no close.
+     */
+    menu?: boolean;
 }): ReactNode {
     /*
      * One pair of faces for both states, `.tab`'s own: resting is a tab cut
@@ -84,14 +98,15 @@ export default function Tab({
      * a 1px one, so a tab used to change size by two pixels on being opened.
      */
     const face = open ? 'tab tab-on' : 'tab text-dim';
-    const skin = `flex items-center gap-[7px] ${face}`;
+    const skin = `flex items-center ${menu ? 'max-w-full min-w-0 gap-1' : 'gap-[7px]'} ${face}`;
     /* A real button already has the role it needs, so only the strip's read-out names one. */
-    const announce: { role?: 'tab'; 'aria-selected'?: boolean; 'aria-current'?: true } =
-        role === 'tab' ? { role: 'tab', 'aria-selected': open } : { 'aria-current': open || undefined };
+    const announce: { role?: 'tab'; 'aria-selected'?: boolean; 'aria-current'?: true; 'aria-haspopup'?: 'menu' } =
+        role === 'tab' ? { role: 'tab', 'aria-selected': open } : menu ? { 'aria-haspopup': 'menu' } : { 'aria-current': open || undefined };
     const body = (
         <>
             <span className="truncate">{label}</span>
             {after}
+            {menu && <Caret compact />}
         </>
     );
 
@@ -126,7 +141,7 @@ export default function Tab({
     }
 
     return onSelect ? (
-        <button type="button" {...announce} title={title} onClick={onSelect} onContextMenu={onContextMenu} style={PADDED} className={skin}>
+        <button type="button" {...announce} title={title} onClick={onSelect} onContextMenu={onContextMenu} style={menu ? MENU_PADDED : PADDED} className={skin}>
             {body}
         </button>
     ) : (

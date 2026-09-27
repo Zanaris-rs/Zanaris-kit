@@ -7,7 +7,7 @@ import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes';
 import type { PaneContent } from '../main/paneTree';
-import type { CharacterOutcome, ImportPick, YourWorldSettings, YourWorldView } from './yourworld';
+import type { CharacterAction, CharacterOutcome, ImportPick, YourWorldSection, YourWorldSettings, YourWorldView } from './yourworld';
 import type { CommandRef } from './commands';
 import type { ShareView } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
@@ -66,6 +66,8 @@ export const IPC = {
     yourWorldDelete: 'zanaris:yourworld-delete',
     yourWorldCommands: 'zanaris:yourworld-commands',
     yourWorldCopyTo: 'zanaris:yourworld-copy-to',
+    yourWorldCharacterMenu: 'zanaris:yourworld-character-menu',
+    yourWorldSectionMenu: 'zanaris:yourworld-section-menu',
     yourWorldUseBuild: 'zanaris:yourworld-use-build',
     yourWorldDownloadBuild: 'zanaris:yourworld-download-build',
     yourWorldRemoveBuild: 'zanaris:yourworld-remove-build',
@@ -384,6 +386,14 @@ export interface ZanarisApi {
         remove(name: string): Promise<CharacterOutcome>;
         /** Copies a character into another revision's world, after asking. Never replaces one there. */
         copyTo(name: string, revision: number): Promise<CharacterOutcome>;
+        /**
+         * Raises a character's menu at a point in the window. It only asks:
+         * resolves with the choice, for the shell to carry out through the
+         * calls above, or null when it was dismissed or the character is gone.
+         */
+        characterMenu(name: string, x: number, y: number): Promise<CharacterAction | null>;
+        /** Raises the menu of sections a narrow tool shows in place of its tabs, with `open` ticked. Null when it was dismissed. */
+        sectionMenu(open: YourWorldSection, x: number, y: number): Promise<YourWorldSection | null>;
         /**
          * Makes a build line the one the world runs, downloading it first if it
          * is not here. Asks first when the world is running, since it restarts.

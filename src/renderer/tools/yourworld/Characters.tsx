@@ -1,6 +1,7 @@
-import { useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { useId, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import { NAME_INPUT_MAX, nameProblem, toDisplayName } from '../../../shared/names';
-import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterInfo, type CharacterOutcome, type SaveSummary, type YourWorldView } from '../../../shared/yourworld';
+import { formatPlaytime, PROBLEM_LABEL, PROBLEM_TEXT, type CharacterAction, type CharacterInfo, type CharacterOutcome, type SaveSummary, type YourWorldView } from '../../../shared/yourworld';
+import { Caret } from '../../icons';
 import { scrollClass, sectionClass } from './fill';
 
 /*
@@ -10,8 +11,15 @@ import { scrollClass, sectionClass } from './fill';
  */
 const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 const SPENT: CSSProperties = { ...BUTTON_SIZE, color: 'var(--color-faint)' };
-/* A row's own actions, a size down from the panel's so they read as belonging to it. */
-const ROW_BUTTON: CSSProperties = { fontSize: 12, padding: '0 6px' };
+
+/*
+ * A row is a bare `<button>`, so its padding is inline and its highlight is on
+ * the `<li>`, as Worlds' rows' are. Narrow, its sides are 4px, as the
+ * launcher's rows are: at `PANE_MIN_WIDTH`, with the section's scrollbar
+ * showing, that leaves a row 76px, and a name 62 beside the caret.
+ */
+const ROW_PADDING: CSSProperties = { padding: '5px 8px' };
+const ROW_PADDING_NARROW: CSSProperties = { padding: '5px 4px' };
 
 const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
 
@@ -21,9 +29,9 @@ type Prompt = { kind: 'import'; token: string; summary: SaveSummary; draft: stri
 const ACTION: Record<Prompt['kind'], string> = { import: 'Import', rename: 'Rename', duplicate: 'Copy' };
 
 /** A secondary action. A label of more than one word wraps inside it in a narrow pane, as Timers' does, rather than running past the edge of its row. */
-function QuietButton({ onClick, disabled = false, size = BUTTON_SIZE, children }: { onClick: () => void; disabled?: boolean; size?: CSSProperties; children: ReactNode }): ReactNode {
+function QuietButton({ onClick, disabled = false, children }: { onClick: () => void; disabled?: boolean; children: ReactNode }): ReactNode {
     return (
-        <button type="button" disabled={disabled} onClick={onClick} style={size} className="btn group">
+        <button type="button" disabled={disabled} onClick={onClick} style={BUTTON_SIZE} className="btn group">
             <span className={disabled ? 'text-faint' : 'text-dim group-hover:text-cream'}>{children}</span>
         </button>
     );
@@ -39,60 +47,47 @@ function promptLabel(prompt: Prompt): string {
     return prompt.kind === 'rename' ? `Rename ${who} to` : `Copy ${who} as`;
 }
 
-/** One character: its name and levels, or what is wrong with its file, and what can be done with it. */
-function Row({
-    character,
-    busy,
-    act,
-    ask,
-    copyTo
-}: {
-    character: CharacterInfo;
-    busy: boolean;
-    act: (change: () => Promise<CharacterOutcome>) => void;
-    ask: (kind: 'rename' | 'duplicate') => void;
-    /** Offers the character to another revision; null where no other revision is listed. */
-    copyTo: (() => void) | null;
-}): ReactNode {
-    const api = window.zanaris.yourWorld;
+/**
+ * One character: its name, then its levels or what is wrong with its file,
+ * two lines whatever the width so that the rows line up. The row is one
+ * button, and what can be done with the character is its menu, which a click
+ * or a right-click opens — right-click, as the game's own options are. The
+ * five buttons it replaced were a line of their own on every row in a wide
+ * pane, and five lines in a narrow one.
+ */
+function Row({ character, busy, wide, choose }: { character: CharacterInfo; busy: boolean; wide: boolean; choose: (action: CharacterAction) => void }): ReactNode {
     const usable = character.summary !== null;
+    /*
+     * The menu is main's, as a nick's is in chat. A click opens it at the
+     * pointer, and a key press, which has none, under the row. The pane's own
+     * menu is a right-click anywhere else in it, so this one stops there. A
+     * disabled button still hears a right-click, so busy is checked here too:
+     * one change at a time.
+     */
+    const open = (event: MouseEvent<HTMLButtonElement>): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (busy) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        const byKey = event.type === 'click' && event.detail === 0;
+        void window.zanaris.yourWorld.characterMenu(character.name, byKey ? box.left : event.clientX, byKey ? box.bottom : event.clientY).then(action => {
+            if (action !== null) choose(action);
+        });
+    };
     return (
-        /*
-         * Two lines whatever the width: who the character is, then what can be
-         * done with it. Sharing one line squeezed the levels into a word-wide
-         * column in a narrow pane, and wrapping only some rows made a list
-         * whose rows don't line up. A name wider than the row, as twelve
-         * letters can be at `PANE_MIN_WIDTH`, breaks rather than scrolling
-         * the list sideways.
-         */
-        <li className="flex flex-col gap-1 border-b border-edge-dark py-1.5 last:border-b-0">
-            <div className="flex flex-wrap items-baseline gap-x-2">
-                <span className="min-w-0 text-cream wrap-anywhere">{character.displayName}</span>
-                <span className={`text-[12px] ${usable ? 'text-dim' : 'text-warn'}`}>
+        <li className={`border-b border-edge-dark last:border-b-0${busy ? '' : ' hover:bg-stone-lit/40'}`}>
+            <button type="button" aria-haspopup="menu" disabled={busy} onClick={open} onContextMenu={open} style={wide ? ROW_PADDING : ROW_PADDING_NARROW} className="group block w-full text-left">
+                <span className="flex items-start gap-1">
+                    {/* A name wider than the row, as twelve letters can be at `PANE_MIN_WIDTH`, breaks rather than scrolling the list sideways. */}
+                    <span className="min-w-0 flex-1 text-cream wrap-anywhere">{character.displayName}</span>
+                    <span className="shrink-0 text-faint group-hover:text-cream">
+                        <Caret compact />
+                    </span>
+                </span>
+                <span className={`block text-[12px] ${usable ? 'text-dim' : 'text-warn'}`}>
                     {character.summary ? summaryLine(character.summary) : PROBLEM_LABEL[character.problem ?? 'unreadable']}
                 </span>
-            </div>
-            <span className="flex flex-wrap items-center gap-1">
-                {/* A damaged save can still be exported or deleted; main refuses to rename or copy one, which would only spread it. */}
-                <QuietButton size={ROW_BUTTON} disabled={busy || !usable} onClick={() => ask('rename')}>
-                    Rename
-                </QuietButton>
-                <QuietButton size={ROW_BUTTON} disabled={busy || !usable} onClick={() => ask('duplicate')}>
-                    Copy
-                </QuietButton>
-                {copyTo && (
-                    <QuietButton size={ROW_BUTTON} disabled={busy || !usable} onClick={copyTo}>
-                        Copy to…
-                    </QuietButton>
-                )}
-                <QuietButton size={ROW_BUTTON} disabled={busy} onClick={() => act(() => api.exportCharacter(character.name))}>
-                    Export
-                </QuietButton>
-                {/* Text, not a button: deleting is rare, and main asks first. */}
-                <button type="button" disabled={busy} onClick={() => act(() => api.remove(character.name))} className="group ml-0.5">
-                    <span className="text-[12px] text-dim underline-offset-2 group-hover:text-alarm group-hover:underline">Delete</span>
-                </button>
-            </span>
+            </button>
         </li>
     );
 }
@@ -109,10 +104,6 @@ export default function Characters({ view, wide }: { view: YourWorldView; wide: 
     const [prompt, setPrompt] = useState<Prompt | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
-    /** The character being offered to another revision, while the revisions are asked for. */
-    const [copying, setCopying] = useState<string | null>(null);
-    /** The revisions another listed build runs: each keeps its own characters. Main refuses any other. */
-    const others = [...new Set(view.builds.map(line => line.revision))].filter(revision => revision !== view.revision).sort((a, b) => a - b);
 
     /** Runs a change, shows a refusal, and calls `after` when the change went through. */
     const act = (change: () => Promise<CharacterOutcome>, after?: () => void): void => {
@@ -144,6 +135,21 @@ export default function Characters({ view, wide }: { view: YourWorldView; wide: 
         setPrompt({ kind, from, draft: kind === 'rename' ? toDisplayName(from) : '' });
     };
 
+    /** Carries out what a character's menu chose, through the calls its buttons used to make. */
+    const choose = (name: string, action: CharacterAction): void => {
+        switch (action.kind) {
+            case 'rename':
+            case 'duplicate':
+                return ask(action.kind, name);
+            case 'copy-to':
+                return act(() => api.copyTo(name, action.revision));
+            case 'export':
+                return act(() => api.exportCharacter(name));
+            case 'delete':
+                return act(() => api.remove(name));
+        }
+    };
+
     const problem = prompt === null ? null : nameProblem(prompt.draft);
     /* An empty field is where a prompt starts, not a mistake: the spent button says enough until something is typed. */
     const shown = prompt === null || prompt.draft.trim() === '' ? null : problem;
@@ -167,32 +173,14 @@ export default function Characters({ view, wide }: { view: YourWorldView; wide: 
 
     return (
         <div className={sectionClass(wide)}>
-            {/* Narrow, the list's sides are 4px, as the launcher's rows are, which leaves a row 76px at `PANE_MIN_WIDTH` with the tool's scrollbar showing. */}
-            <div className={`sunk ${scrollClass(wide)} py-1 ${wide ? 'px-2' : 'px-1'}`}>
+            {/* The rows carry their own sides, so that a row's highlight reaches the well's. */}
+            <div className={`sunk ${scrollClass(wide)} py-1`}>
                 {view.characters.length === 0 ? (
-                    <p className="py-1 text-dim">No characters yet. Type any name at the game's login screen to make one; it shows here once the game has saved it.</p>
+                    <p className={`py-1 text-dim ${wide ? 'px-2' : 'px-1'}`}>No characters yet. Type any name at the game's login screen to make one; it shows here once the game has saved it.</p>
                 ) : (
                     <ul>
                         {view.characters.map(character => (
-                            <Row
-                                key={character.name}
-                                character={character}
-                                busy={busy}
-                                act={act}
-                                ask={kind => {
-                                    setCopying(null);
-                                    ask(kind, character.name);
-                                }}
-                                copyTo={
-                                    others.length === 0
-                                        ? null
-                                        : () => {
-                                              setPrompt(null);
-                                              setNotice(null);
-                                              setCopying(character.name);
-                                          }
-                                }
-                            />
+                            <Row key={character.name} character={character} busy={busy} wide={wide} choose={action => choose(character.name, action)} />
                         ))}
                     </ul>
                 )}
@@ -200,7 +188,7 @@ export default function Characters({ view, wide }: { view: YourWorldView; wide: 
 
             {prompt !== null && (
                 <form onSubmit={submit} className="flex flex-col gap-0.5">
-                    {/* The names here, and in Copy to…, break where one is wider than the pane, as the list's do. */}
+                    {/* The name here breaks where it is wider than the pane, as the list's do. */}
                     <label htmlFor={`${id}-name`} className="text-[12px] text-dim wrap-anywhere">
                         {promptLabel(prompt)}
                     </label>
@@ -244,30 +232,6 @@ export default function Characters({ view, wide }: { view: YourWorldView; wide: 
                             ))}
                     </span>
                 </form>
-            )}
-
-            {copying !== null && (
-                <div className="flex flex-col gap-0.5">
-                    <span className="text-[12px] text-dim wrap-anywhere">
-                        Copy {toDisplayName(copying)} from rev {view.revision} to
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        {others.map(revision => (
-                            <button
-                                key={revision}
-                                type="button"
-                                disabled={busy}
-                                onClick={() => act(() => api.copyTo(copying, revision), () => setCopying(null))}
-                                style={busy ? SPENT : BUTTON_SIZE}
-                                className="btn shrink-0"
-                            >
-                                rev {revision}
-                            </button>
-                        ))}
-                        <QuietButton onClick={() => setCopying(null)}>Cancel</QuietButton>
-                    </div>
-                    <span className="text-[12px] text-dim">The copy is made in the other revision's world. Nothing here changes.</span>
-                </div>
             )}
 
             {notice !== null && (

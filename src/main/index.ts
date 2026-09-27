@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type MenuItemConstructorOptions, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -53,7 +53,7 @@ import { YourWorldService } from './yourworld/service';
 import { BuildStore } from './yourworld/buildStore';
 import { buildStoreDeps, electronDeps, readCommands, yourWorldHome } from './yourworld/electron';
 import { recipeRevision } from './yourworld/recipes';
-import { worldRunning, type CharacterOutcome, type ImportPick } from '../shared/yourworld';
+import { characterMenu, isSection, sectionsOffered, worldRunning, type CharacterAction, type CharacterOutcome, type ImportPick, type YourWorldSection } from '../shared/yourworld';
 import type { CommandRef } from '../shared/commands';
 import type { Confirm, Confirmation } from './yourworld/confirm';
 import { changesSettings, readSettingChange, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './yourworld/settings';
@@ -1656,6 +1656,54 @@ ipcMain.handle(IPC.yourWorldDelete, async (event, name: unknown): Promise<Charac
     const sw = yourWorldWindow(event.sender);
     if (!sw || !yourWorld || typeof name !== 'string') return NOT_A_CHANGE;
     return yourWorld.deleteCharacter(name, confirmOn(sw));
+});
+
+/**
+ * A native menu that only asks: resolves with the value of the item picked,
+ * or null when it closed on none. Settled a moment after the close rather than
+ * at it, as the nick menu is, in case the close is reported before the click
+ * that ended it. A title, when given, heads it greyed, as a nick heads its menu.
+ */
+function pickFromMenu<T>(win: BrowserWindow, items: readonly ({ label: string; value: T; enabled?: boolean; checked?: boolean } | 'separator')[], x: number, y: number, title?: string): Promise<T | null> {
+    return new Promise(resolve => {
+        let settled = false;
+        const settle = (choice: T | null): void => {
+            if (settled) return;
+            settled = true;
+            resolve(choice);
+        };
+        const template: MenuItemConstructorOptions[] = items.map(item =>
+            item === 'separator'
+                ? { type: 'separator' }
+                : { label: item.label, enabled: item.enabled ?? true, ...(item.checked === undefined ? {} : { type: 'radio' as const, checked: item.checked }), click: () => settle(item.value) }
+        );
+        if (title !== undefined) template.unshift({ label: title, enabled: false }, { type: 'separator' });
+        Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y), callback: () => setTimeout(() => settle(null), 100) });
+    });
+}
+
+/**
+ * A character's menu, from its row in Characters: native, as a nick's is,
+ * since a menu the shell drew could land under the game beside the pane. It
+ * only asks. The choice goes back to the shell, which carries it out through
+ * the calls above, so what main answers shows where it always has; and a
+ * rename or a copy wants a name, which only the shell can ask for.
+ */
+ipcMain.handle(IPC.yourWorldCharacterMenu, (event, name: unknown, x: unknown, y: unknown): Promise<CharacterAction | null> | null => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !yourWorld || typeof name !== 'string' || typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x + y)) return null;
+    const character = yourWorld.view().characters.find(c => c.name === name);
+    if (!character) return null;
+    const items = characterMenu(character, yourWorld.otherRevisions()).map(item => (item.kind === 'separator' ? ('separator' as const) : { label: item.label, value: item.action, enabled: item.enabled }));
+    return pickFromMenu(sw.window, items, x, y, character.displayName);
+});
+
+/** The sections a narrow tool offers in place of its tabs, the open one ticked. */
+ipcMain.handle(IPC.yourWorldSectionMenu, (event, open: unknown, x: unknown, y: unknown): Promise<YourWorldSection | null> | null => {
+    const sw = yourWorldWindow(event.sender);
+    if (!sw || !isSection(open) || typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x + y)) return null;
+    const items = sectionsOffered(sw.state().share !== null).map(section => ({ label: section.label, value: section.id, checked: section.id === open }));
+    return pickFromMenu(sw.window, items, x, y);
 });
 
 /** Where to is the save dialog's question, and so is whether to write over a file already there. */

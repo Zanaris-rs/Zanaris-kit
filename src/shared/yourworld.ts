@@ -152,6 +152,60 @@ export type ImportPick = { ok: true; token: string; suggestedName: string; summa
 /** How a change to a character ended. */
 export type CharacterOutcome = { kind: 'done'; name: string } | { kind: 'cancelled' } | { kind: 'refused'; message: string };
 
+/** What a character's menu can ask for. Renaming and copying as want a name, which the shell asks for; the rest go to main as they are. */
+export type CharacterAction = { kind: 'rename' } | { kind: 'duplicate' } | { kind: 'copy-to'; revision: number } | { kind: 'export' } | { kind: 'delete' };
+
+export type CharacterMenuItem = { kind: 'item'; label: string; action: CharacterAction; enabled: boolean } | { kind: 'separator' };
+
+/**
+ * A character's menu, in order. A damaged save can still be exported or
+ * deleted; main refuses to rename or copy one, which would only spread it, so
+ * those are greyed rather than left out, which says the save is the reason.
+ * Copying to another revision is one item for each other revision a listed
+ * line runs, and none where there is no other.
+ */
+export function characterMenu(character: Pick<CharacterInfo, 'summary'>, otherRevisions: readonly number[]): CharacterMenuItem[] {
+    const usable = character.summary !== null;
+    const item = (label: string, action: CharacterAction, enabled = true): CharacterMenuItem => ({ kind: 'item', label, action, enabled });
+    return [
+        item('Rename…', { kind: 'rename' }, usable),
+        item('Copy as…', { kind: 'duplicate' }, usable),
+        ...otherRevisions.map(revision => item(`Copy to rev ${revision}`, { kind: 'copy-to', revision }, usable)),
+        item('Export…', { kind: 'export' }),
+        { kind: 'separator' },
+        item('Delete', { kind: 'delete' })
+    ];
+}
+
+export type YourWorldSection = 'world' | 'characters' | 'commands' | 'builds' | 'friends';
+
+/** The Your world tool's sections, in the order its tabs and its narrow menu list them. */
+export const YOUR_WORLD_SECTIONS: readonly { id: YourWorldSection; label: string }[] = [
+    { id: 'world', label: 'World' },
+    { id: 'characters', label: 'Characters' },
+    { id: 'commands', label: 'Commands' },
+    { id: 'builds', label: 'Builds' },
+    { id: 'friends', label: 'Friends' }
+];
+
+/** The sections a window's tool offers: Friends only where main sends a share. */
+export function sectionsOffered(shared: boolean): { id: YourWorldSection; label: string }[] {
+    return YOUR_WORLD_SECTIONS.filter(section => section.id !== 'friends' || shared);
+}
+
+export function isSection(value: unknown): value is YourWorldSection {
+    return YOUR_WORLD_SECTIONS.some(section => section.id === value);
+}
+
+/**
+ * A build line as the tool's header names it: its name, with its revision
+ * after it where the name does not already say it — "Lost City 274" rather
+ * than "Lost City 274 · rev 274".
+ */
+export function lineTitle(line: Pick<BuildLine, 'name' | 'revision'>): string {
+    return new RegExp(`(^|\\D)${line.revision}(\\D|$)`).test(line.name) ? line.name : `${line.name} · rev ${line.revision}`;
+}
+
 /** Play time as the list shows it. The engine counts it in ticks of 600 ms. */
 export function formatPlaytime(ticks: number): string {
     const minutes = Math.floor((ticks * 600) / 60_000);
