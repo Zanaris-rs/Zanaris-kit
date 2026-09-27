@@ -127,7 +127,7 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
 function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
     switch (pane.content.kind) {
         case 'empty':
-            return <Launcher paneId={pane.paneId} links={state.server.bookmarks} contents={pane.contents ?? []} />;
+            return <Launcher paneId={pane.paneId} links={state.server.bookmarks} contents={pane.contents ?? []} width={pane.rect.width} />;
         case 'game':
         case 'page':
             return null;
