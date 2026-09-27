@@ -126,7 +126,8 @@ button {
     cursor: default;
 }
 
-input {
+input,
+textarea {
     user-select: text;
     cursor: text;
     outline: none;

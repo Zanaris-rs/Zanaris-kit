@@ -23,6 +23,18 @@ const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
 /* The pane header's own control size, so the row's icons match the ones above them. */
 const ICON_SIZE: CSSProperties = { width: 24, height: 22 };
 
+/*
+ * Narrow, the digits have a line of their own and are fitted to it: never
+ * above their 26px, and never wider than the line. `24:00:00`, the longest a
+ * countdown reads, is four of its own em wide in bold Arial, so 24% of the
+ * line (`cqi`) holds it with a little to spare — at `PANE_MIN_WIDTH`, with the
+ * list's scrollbar showing, that is 18px. The line is the query container the
+ * `cqi` is a share of. Only a timer left counting past 99 hours can be wider,
+ * and then it runs past the line's end rather than under anything.
+ */
+const FITTED_LINE: CSSProperties = { containerType: 'inline-size' };
+const FITTED_DIGITS: CSSProperties = { fontSize: 'min(26px, 24cqi)', lineHeight: 1.15 };
+
 const FIELD = 'sunk min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
 
 /** Each digit tone `clockTone` decides, as the class that draws it. */
@@ -49,10 +61,14 @@ function useNow(active: boolean): number {
     return now;
 }
 
-/** A secondary action: stone, a dim 13px label that lights on hover, and spent when it cannot be used. */
+/**
+ * A secondary action: stone, a dim 13px label that lights on hover, and spent
+ * when it cannot be used. A label of more than one word wraps inside it in a
+ * narrow pane, as the gold button's does, rather than running out of the pane.
+ */
 function QuietButton({ onClick, disabled = false, title, size = BUTTON_SIZE, children }: { onClick: () => void; disabled?: boolean; title?: string; size?: CSSProperties; children: ReactNode }): ReactNode {
     return (
-        <button type="button" disabled={disabled} title={title} onClick={onClick} style={size} className="btn group shrink-0">
+        <button type="button" disabled={disabled} title={title} onClick={onClick} style={size} className="btn group">
             <span className={disabled ? 'text-faint' : 'text-dim group-hover:text-cream'}>{children}</span>
         </button>
     );
@@ -87,11 +103,35 @@ function Badge({ title, children }: { title: string; children: ReactNode }): Rea
 /** Which form is open. One at a time: two open forms is two half-edited clocks. */
 type Open = { kind: 'clock'; id: string } | { kind: 'new' } | null;
 
+/**
+ * The pane width below which a clock's controls go under its digits rather
+ * than beside them.
+ *
+ * Beside them, the digits and the three controls share a line: `24:00:00` at
+ * 26px is 104px and the controls 84px with their gaps, which a row has room
+ * for from 241px with the list's scrollbar showing. Below that the digits ran
+ * under the controls. Under them, each has the row's whole width, the digits
+ * fitted to it (`FITTED_DIGITS`), and a row a little narrower at the sides, so
+ * that the three controls still fit on their line at `PANE_MIN_WIDTH`. A pane
+ * knows its own width, so the shape is read from it, as Worlds' is.
+ */
+const WIDE_ENOUGH = 250;
+
+/*
+ * A narrow row gives its sides 4px rather than 8, and its controls 2px apart
+ * rather than 4: at `PANE_MIN_WIDTH` with the scrollbar showing, that leaves
+ * the row 76px, which is the three 24px controls and their two gaps exactly.
+ */
+const ROW_WIDE = 'px-2 py-1.5';
+const ROW_NARROW = 'px-1 py-1.5';
+
 /** The Timers tool: every clock this window has, each with its controls and its form, and a way to add one. */
-export default function Timers({ view }: { view: TimersView }): ReactNode {
+export default function Timers({ view, width }: { view: TimersView; width: number }): ReactNode {
+    const wide = width >= WIDE_ENOUGH;
     const now = useNow(view.clocks.some(clock => clock.phase === 'running'));
     const [open, setOpen] = useState<Open>(null);
     const close = (): void => setOpen(null);
+    const row = wide ? ROW_WIDE : ROW_NARROW;
 
     return (
         <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -99,16 +139,16 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
                 {view.clocks.map(clock => {
                     const editing = open?.kind === 'clock' && open.id === clock.def.id;
                     return (
-                        <li key={clock.def.id} className="border-b border-edge-dark px-2 py-1.5 last:border-b-0">
-                            <ClockRow clock={clock} now={now} editing={editing} onEdit={() => setOpen(editing ? null : { kind: 'clock', id: clock.def.id })} />
-                            {editing && <ClockForm clock={clock} onDone={close} />}
+                        <li key={clock.def.id} className={`border-b border-edge-dark ${row} last:border-b-0`}>
+                            <ClockRow clock={clock} now={now} wide={wide} editing={editing} onEdit={() => setOpen(editing ? null : { kind: 'clock', id: clock.def.id })} />
+                            {editing && <ClockForm clock={clock} wide={wide} onDone={close} />}
                         </li>
                     );
                 })}
                 {open?.kind === 'new' && (
-                    <li className="px-2 py-1.5">
+                    <li className={row}>
                         <span className="text-[12px] text-dim">New countdown or timer</span>
-                        <ClockForm clock={null} onDone={close} />
+                        <ClockForm clock={null} wide={wide} onDone={close} />
                     </li>
                 )}
             </ul>
@@ -134,32 +174,46 @@ export default function Timers({ view }: { view: TimersView }): ReactNode {
 /**
  * One clock. The time is what a player looks for, so it is the largest thing in
  * the row; the name sits small above it with the clock's kind and AFK mode, and
- * the controls are small glyphs on the time's own line.
+ * the controls are small glyphs on the time's own line — or, narrow, on a line
+ * of their own under it (`WIDE_ENOUGH`), where the name's badges also go under
+ * the name when the two do not fit side by side.
+ *
+ * The digits never shrink below their own width, so nothing is drawn over
+ * them. Were a wide row ever too short for them — a timer counting past 99
+ * hours — the controls would go under them there too, rather than over them.
  */
-function ClockRow({ clock, now, editing, onEdit }: { clock: ClockView; now: number; editing: boolean; onEdit: () => void }): ReactNode {
+function ClockRow({ clock, now, wide, editing, onEdit }: { clock: ClockView; now: number; wide: boolean; editing: boolean; onEdit: () => void }): ReactNode {
     const { id, name, kind, afk } = clock.def;
     const running = clock.phase === 'running';
     return (
         <>
-            <div className="flex min-w-0 items-center gap-1">
-                <span className="min-w-0 truncate text-[12px] text-dim">{name}</span>
+            <div className={`flex min-w-0 items-center gap-1${wide ? '' : ' flex-wrap gap-y-0.5'}`}>
+                {/* The title is the whole name, however much of it the row has room for. */}
+                <span title={name} className="min-w-0 truncate text-[12px] text-dim">
+                    {name}
+                </span>
                 <Badge title={kind === 'countdown' ? 'Counts down to 0:00' : 'Counts up from 0:00'}>{kind === 'countdown' ? 'Countdown' : 'Timer'}</Badge>
                 {afk && <Badge title="Restarts on any click or key in the game">AFK</Badge>}
             </div>
-            <div className="flex items-center gap-1">
+            <div className={`flex flex-wrap items-center ${wide ? 'gap-1' : 'gap-y-1'}`} style={wide ? undefined : FITTED_LINE}>
                 {/* Arial, not the pixel face: in Pixelify Sans a 5 reads as an S and a 7 as a 1. */}
-                <span className={`min-w-0 flex-1 font-sans text-[26px] leading-[30px] font-bold tabular-nums ${TONE_CLASS[clockTone(clock)]}`}>
+                <span
+                    style={wide ? undefined : FITTED_DIGITS}
+                    className={`${wide ? 'flex-1 text-[26px] leading-[30px]' : 'w-full'} font-sans font-bold whitespace-nowrap tabular-nums ${TONE_CLASS[clockTone(clock)]}`}
+                >
                     {formatClock(clockValueAt(clock, now), kind)}
                 </span>
-                <IconButton label={running ? `Pause ${name}` : `Start ${name}`} onClick={() => void (running ? window.zanaris.timers.pause(id) : window.zanaris.timers.start(id))}>
-                    {running ? <Pause /> : <Play />}
-                </IconButton>
-                <IconButton label={`Reset ${name}`} onClick={() => void window.zanaris.timers.reset(id)}>
-                    <Reload />
-                </IconButton>
-                <IconButton label={`Edit ${name}`} expanded={editing} onClick={onEdit}>
-                    <Pencil />
-                </IconButton>
+                <span className={`flex ${wide ? 'gap-1' : 'gap-0.5'}`}>
+                    <IconButton label={running ? `Pause ${name}` : `Start ${name}`} onClick={() => void (running ? window.zanaris.timers.pause(id) : window.zanaris.timers.start(id))}>
+                        {running ? <Pause /> : <Play />}
+                    </IconButton>
+                    <IconButton label={`Reset ${name}`} onClick={() => void window.zanaris.timers.reset(id)}>
+                        <Reload />
+                    </IconButton>
+                    <IconButton label={`Edit ${name}`} expanded={editing} onClick={onEdit}>
+                        <Pencil />
+                    </IconButton>
+                </span>
             </div>
         </>
     );
@@ -171,7 +225,7 @@ function ClockRow({ clock, now, editing, onEdit }: { clock: ClockView; now: numb
  * the form is wrong and the reason sits under the field; main checks again
  * and its refusal is shown rather than swallowed.
  */
-function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => void }): ReactNode {
+function ClockForm({ clock, wide, onDone }: { clock: ClockView | null; wide: boolean; onDone: () => void }): ReactNode {
     const id = useId();
     const [draft, setDraft] = useState<TimerDraft>(() => (clock ? draftOf(clock.def) : blankDraft()));
     const [refusal, setRefusal] = useState<string | null>(null);
@@ -220,11 +274,18 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
              * would not be one. The two kinds are one small switch cut into the
              * stone, the chosen half raised, rather than two buttons competing
              * with Save for the gold.
+             *
+             * Its labels are the row's own 13px Arial: the base `button` rule's
+             * `font: inherit` is unlayered, so a face or size utility on the
+             * button would be a silent no-op. Narrow, the halves are stacked
+             * and the frame and the halves give up their inner padding, since
+             * at `PANE_MIN_WIDTH` "Countdown" is 66px of the 68 a half has.
              */}
             {!builtIn && (
-                <div role="radiogroup" aria-label="Kind" className="sunk flex self-start p-[2px]">
+                <div role="radiogroup" aria-label="Kind" className={`sunk flex ${wide ? 'self-start p-[2px]' : 'flex-col'}`}>
                     {(['countdown', 'timer'] as const).map(kind => {
                         const chosen = draft.kind === kind;
+                        const padding = wide ? '0 8px' : 0;
                         return (
                             <button
                                 key={kind}
@@ -232,8 +293,8 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
                                 role="radio"
                                 aria-checked={chosen}
                                 onClick={() => change({ kind })}
-                                style={chosen ? { padding: '0 8px' } : { padding: '0 8px', border: '2px solid transparent' }}
-                                className={`group font-pixel text-[13px] leading-[18px]${chosen ? ' tile' : ''}`}
+                                style={chosen ? { padding } : { padding, border: '2px solid transparent' }}
+                                className={`group${chosen ? ' tile' : ''}`}
                             >
                                 <span className={chosen ? 'text-cream' : 'text-dim group-hover:text-cream'}>{kind === 'countdown' ? 'Countdown' : 'Timer'}</span>
                             </button>
@@ -265,7 +326,7 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
                 <label htmlFor={`${id}-threshold`} className="text-[12px] text-dim">
                     {draft.kind === 'countdown' ? 'Alert when this much is left' : 'Alert when this much has passed'}
                 </label>
-                <input id={`${id}-threshold`} value={draft.threshold} onChange={e => change({ threshold: e.target.value })} placeholder="0:30" className={`${FIELD} w-[84px]`} />
+                <input id={`${id}-threshold`} value={draft.threshold} onChange={e => change({ threshold: e.target.value })} placeholder="0:30" className={`${FIELD} w-[84px] max-w-full`} />
                 {note('thresholdMs')}
             </div>
 
@@ -273,8 +334,9 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
                 <label htmlFor={`${id}-volume`} className="text-[12px] text-dim">
                     Volume
                 </label>
-                <div className="flex items-center gap-2">
-                    <input id={`${id}-volume`} type="range" min={0} max={100} step={5} value={percent} onChange={e => change({ volume: Number(e.target.value) / 100 })} style={ACCENT} className="min-w-0 flex-1" />
+                {/* Narrow, the slider has a line of its own: beside the figure and Test it was left no width at all. */}
+                <div className={`flex items-center gap-2${wide ? '' : ' flex-wrap gap-y-1'}`}>
+                    <input id={`${id}-volume`} type="range" min={0} max={100} step={5} value={percent} onChange={e => change({ volume: Number(e.target.value) / 100 })} style={ACCENT} className={wide ? 'min-w-0 flex-1' : 'w-full'} />
                     <span className="w-[38px] shrink-0 text-right text-[12px] text-cream tabular-nums">{percent}%</span>
                     <QuietButton disabled={percent === 0} onClick={() => void playAlert(draft.volume)}>
                         Test
@@ -283,7 +345,8 @@ function ClockForm({ clock, onDone }: { clock: ClockView | null; onDone: () => v
                 {note('volume')}
             </div>
 
-            <label className="flex items-center gap-2 text-cream">
+            {/* Narrow, the label runs to several lines, and the box stays level with the first. */}
+            <label className={`flex gap-2 text-cream ${wide ? 'items-center' : 'items-start'}`}>
                 <input type="checkbox" checked={draft.afk} onChange={e => change({ afk: e.target.checked })} style={ACCENT} />
                 <span>
                     AFK mode <span className="text-[12px] text-dim">restarts on any click or key in the game</span>

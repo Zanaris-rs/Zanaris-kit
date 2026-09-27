@@ -1,4 +1,4 @@
-import { useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { useId, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import type { ChatView } from '../../shared/chat';
 import { NICK_MAX, PASSWORD_MAX, formatAutoJoin, isConnectionWanted, passwordProblem, readIgnore, readSettingsDraft, sameNames, sameSettings, type SettingsSave } from '../../shared/chatSettings';
 
@@ -15,7 +15,31 @@ import { NICK_MAX, PASSWORD_MAX, formatAutoJoin, isConnectionWanted, passwordPro
 const BUTTON_SIZE: CSSProperties = { fontSize: 13, padding: '1px 8px' };
 const SPENT: CSSProperties = { ...BUTTON_SIZE, color: 'var(--color-faint)' };
 
-const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
+const FIELD = 'sunk w-full min-w-0 py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
+
+/*
+ * A field's sides. Narrow they are 4px rather than 7: at `PANE_MIN_WIDTH`,
+ * with the page's scrollbar showing, that leaves a field 76px of text, which
+ * holds "Pick a name" and "#2004scape," whole.
+ */
+const FIELD_SIDES = 'px-[7px]';
+const FIELD_SIDES_NARROW = 'px-[4px]';
+
+/*
+ * The two lists are boxes that wrap, not one-line fields: a list longer than
+ * its field was cut at the field's edge, and in a narrow pane that was even
+ * the first of the three channels the kit starts with. Each grows to hold what
+ * is in it (`field-sizing`), so one that fits reads as a one-line field.
+ * Enter saves, as it does in the one-line fields: a list is written with
+ * commas or spaces, and a line break pasted into one reads as a space.
+ */
+const LIST: CSSProperties = { fieldSizing: 'content', resize: 'none' };
+
+function submitOnEnter(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+}
 
 /** The checkbox in the kit's gold, as the other forms draw theirs. */
 const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
@@ -35,7 +59,7 @@ const ACCENT: CSSProperties = { accentColor: 'var(--color-gold)' };
  * The password is never shown back, because the shell is never given it: the
  * field is empty, and says whether one is saved.
  */
-export default function ChatSettings({ view, wide, onConnected }: { view: ChatView; wide: boolean; onConnected: () => void }): ReactNode {
+export default function ChatSettings({ view, wide, narrow, onConnected }: { view: ChatView; wide: boolean; narrow: boolean; onConnected: () => void }): ReactNode {
     const id = useId();
     const saved = view.settings;
     /* Null while untouched, so the field follows what is saved. */
@@ -121,10 +145,16 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
         ) : null;
 
     const passwordPlaceholder = forget ? 'Forgotten when you save' : saved.hasPassword ? 'Saved — type to replace' : 'Optional';
+    const field = `${FIELD} ${narrow ? FIELD_SIDES_NARROW : FIELD_SIDES}`;
 
     return (
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-2">
-            <div className="sunk min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5 leading-[1.45]">
+            {/*
+             * Narrow, the page goes without its well and scrolls on the stone:
+             * the well's border and padding were 24px of every line, a quarter
+             * of the pane at `PANE_MIN_WIDTH`, and every field was cut short.
+             */}
+            <div className={`min-h-0 flex-1 overflow-y-auto leading-[1.45]${narrow ? '' : ' sunk px-2.5 py-2.5'}`}>
                 {view.needsNick && (
                     <p className="mb-2.5">
                         Everyone playing shares these channels. Pick a name for chat — the other players will see it.{' '}
@@ -147,7 +177,7 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
                             aria-invalid={shows('nick')}
                             aria-describedby={shows('nick') ? `${id}-nick-note` : undefined}
                             onChange={e => edit(() => setNickDraft(e.target.value))}
-                            className={FIELD}
+                            className={field}
                         />
                         {note('nick') ??
                             (calledElse !== null && (
@@ -175,7 +205,7 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
                                     setForget(false);
                                 })
                             }
-                            className={FIELD}
+                            className={field}
                         />
                         <span id={`${id}-password-note`} className={`text-[12px] ${passwordNote !== null ? 'text-warn' : 'text-dim'}`}>
                             {passwordNote ?? (saved.canSavePassword ? 'Sent to NickServ each time you connect. Kept encrypted by your system.' : 'This computer has no secure store for it, so it is kept only until you quit.')}
@@ -192,16 +222,19 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
                         <label htmlFor={`${id}-channels`} className="text-[12px] text-dim">
                             Auto-join channels
                         </label>
-                        <input
+                        <textarea
                             id={`${id}-channels`}
                             value={channels}
+                            rows={1}
                             autoComplete="off"
                             spellCheck={false}
                             placeholder="#LostHQ, #2004scape"
                             aria-invalid={shows('channels')}
                             aria-describedby={`${id}-channels-note`}
                             onChange={e => edit(() => setChannelsDraft(e.target.value))}
-                            className={FIELD}
+                            onKeyDown={submitOnEnter}
+                            style={LIST}
+                            className={field}
                         />
                         {note('channels') ?? (
                             <span id={`${id}-channels-note`} className="text-[12px] text-dim">
@@ -214,25 +247,34 @@ export default function ChatSettings({ view, wide, onConnected }: { view: ChatVi
                         <label htmlFor={`${id}-ignore`} className="text-[12px] text-dim">
                             Ignored nicks
                         </label>
-                        <input
+                        <textarea
                             id={`${id}-ignore`}
                             value={ignoreText}
+                            rows={1}
                             autoComplete="off"
                             spellCheck={false}
                             placeholder="Nobody"
                             aria-invalid={!ignoreReading.ok}
                             aria-describedby={`${id}-ignore-note`}
                             onChange={e => edit(() => setIgnoreDraft(e.target.value))}
-                            className={FIELD}
+                            onKeyDown={submitOnEnter}
+                            style={LIST}
+                            className={field}
                         />
                         <span id={`${id}-ignore-note`} className={`text-[12px] ${ignoreReading.ok ? 'text-dim' : 'text-warn'}`}>
                             {ignoreReading.ok ? 'Their messages, notices and invites are hidden. /ignore and /unignore change this list too.' : ignoreReading.message}
                         </span>
                     </div>
 
-                    <label className={`flex items-start gap-2 text-cream ${wide ? 'col-span-2' : ''}`}>
-                        <input type="checkbox" checked={notify} onChange={e => edit(() => setNotifyDraft(e.target.checked))} style={ACCENT} className="mt-[3px]" />
-                        <span>
+                    {/*
+                     * The words are let go narrower than their longest, which
+                     * breaks it rather than pushing the page sideways. Narrow,
+                     * the box drops the margins the system gives it at its
+                     * sides, so "background" still fits beside it whole.
+                     */}
+                    <label className={`flex items-start text-cream ${narrow ? 'gap-1.5' : 'gap-2'} ${wide ? 'col-span-2' : ''}`}>
+                        <input type="checkbox" checked={notify} onChange={e => edit(() => setNotifyDraft(e.target.checked))} style={ACCENT} className={narrow ? 'mx-0 mt-[3px]' : 'mt-[3px]'} />
+                        <span className="min-w-0 break-words">
                             Notify me of mentions and private messages <span className="text-[12px] text-dim">while the kit is in the background</span>
                         </span>
                     </label>

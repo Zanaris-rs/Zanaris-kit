@@ -25,6 +25,11 @@ import { gameSprite, linkSprite, toolSprite } from './sprites';
  * One row, whatever it opens. Every row carries a sprite, so the tools above
  * the rule and the links below it start their names on the same line; a row
  * with no escape hatch keeps the hatch's width empty for the same reason.
+ *
+ * Narrow (`WIDE_ENOUGH`), the sprite goes above the name rather than beside
+ * it, with the hatch at the right of the sprite's line, so the name has the
+ * row's whole width and wraps rather than truncating. Beside a sprite and a
+ * hatch, a narrow pane left the names no width at all.
  */
 
 /*
@@ -36,12 +41,50 @@ import { gameSprite, linkSprite, toolSprite } from './sprites';
  * none` beats a background utility the same way, so the open/hover highlight
  * moved to the `<li>`, which carries no such reset — and now covers the
  * escape hatch beside the button too, which reads as one row.
+ *
+ * Narrow, the row's sides are 4px and the list has no padding at its sides:
+ * at `PANE_MIN_WIDTH`, with the list's scrollbar showing, that leaves a name
+ * 76px, and the widest word the kit's own names have, "Coordinates", is 70.
  */
 const ROW_PADDING: CSSProperties = { padding: '6px 8px' };
+const ROW_PADDING_NARROW: CSSProperties = { padding: '5px 4px' };
 
-function Row({ sprite, label, open, onOpen, link }: { sprite: ReactNode; label: string; open: boolean; onOpen: () => void; link?: Bookmark }): ReactNode {
+function Row({ sprite, label, open, onOpen, link, wide }: { sprite: ReactNode; label: string; open: boolean; onOpen: () => void; link?: Bookmark; wide: boolean }): ReactNode {
+    /*
+     * The same escape hatch LostKit's own nav offers: some of these are
+     * more use on a second monitor than in a 720px column, and a link
+     * the pane cannot show at all is one the browser still can.
+     */
+    const hatch = link && (
+        <button
+            type="button"
+            title={`Open ${link.name} in your browser`}
+            aria-label={`Open ${link.name} in your browser`}
+            onClick={() => void window.zanaris.panes.openExternal(link.url)}
+            className={`flex w-[30px] shrink-0 items-center justify-center text-faint hover:text-cream${wide ? '' : ' absolute top-0 right-0 h-[28px]'}`}
+        >
+            <OpenExternal />
+        </button>
+    );
+    const marker = open && <span className="shrink-0 text-[12px] text-faint">open</span>;
+    const highlight = open ? 'bg-stone-lit' : 'hover:bg-stone-lit/40';
+
+    if (!wide) {
+        return (
+            <li className={`relative ${highlight}`}>
+                <button type="button" aria-current={open ? 'true' : undefined} onClick={onOpen} style={ROW_PADDING_NARROW} className="block w-full text-left">
+                    <span className="flex items-center gap-2">
+                        <span className="shrink-0">{sprite}</span>
+                        {marker}
+                    </span>
+                    <span className="block break-words">{label}</span>
+                </button>
+                {hatch}
+            </li>
+        );
+    }
     return (
-        <li className={`flex items-stretch ${open ? 'bg-stone-lit' : 'hover:bg-stone-lit/40'}`}>
+        <li className={`flex items-stretch ${highlight}`}>
             <button
                 type="button"
                 aria-current={open ? 'true' : undefined}
@@ -50,27 +93,13 @@ function Row({ sprite, label, open, onOpen, link }: { sprite: ReactNode; label: 
                 className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
             >
                 <span className="shrink-0">{sprite}</span>
-                <span className="min-w-0 flex-1 truncate">{label}</span>
-                {open && <span className="shrink-0 text-[12px] text-faint">open</span>}
+                {/* The title is the whole name, however much of it the row has room for. */}
+                <span title={label} className="min-w-0 flex-1 truncate">
+                    {label}
+                </span>
+                {marker}
             </button>
-            {/*
-             * The same escape hatch LostKit's own nav offers: some of these are
-             * more use on a second monitor than in a 720px column, and a link
-             * the pane cannot show at all is one the browser still can.
-             */}
-            {link ? (
-                <button
-                    type="button"
-                    title={`Open ${link.name} in your browser`}
-                    aria-label={`Open ${link.name} in your browser`}
-                    onClick={() => void window.zanaris.panes.openExternal(link.url)}
-                    className="flex w-[30px] shrink-0 items-center justify-center text-faint hover:text-cream"
-                >
-                    <OpenExternal />
-                </button>
-            ) : (
-                <span aria-hidden="true" className="w-[30px] shrink-0" />
-            )}
+            {hatch ?? <span aria-hidden="true" className="w-[30px] shrink-0" />}
         </li>
     );
 }
@@ -90,22 +119,35 @@ function keyOf(item: PaneContentItem): string {
     return content.kind;
 }
 
+/**
+ * The pane width below which a row puts its sprite above its name.
+ *
+ * Beside a sprite and the hatch's column, a name has the pane less 118px, with
+ * the list's scrollbar showing — room for the longest name the kit offers,
+ * "Move game here" at 98px, from 216. A pane knows its own width, so the
+ * shape is read from it, as Worlds' is.
+ */
+const WIDE_ENOUGH = 220;
+
 export default function Launcher({
     paneId,
     links,
-    contents
+    contents,
+    width
 }: {
     paneId: string;
     /** The catalog's own entries, for the icons a bare menu item has no room to carry. */
     links: Bookmark[];
     /** Everything this pane could become, already named and ordered by main. */
     contents: PaneContentItem[];
+    width: number;
 }): ReactNode {
+    const wide = width >= WIDE_ENOUGH;
     const fill = (item: PaneContentItem): void => void window.zanaris.panes.setContent(paneId, item.content);
     const bookmarks = new Map(links.map(link => [link.url, link]));
     return (
         <div className="flex min-h-0 flex-1 flex-col gap-2">
-            <ul className="sunk min-h-0 flex-1 overflow-y-auto p-1">
+            <ul className={`sunk min-h-0 flex-1 overflow-y-auto ${wide ? 'p-1' : 'py-1'}`}>
                 {contents.map((item, i) => {
                     const link = item.content.kind === 'page' ? bookmarks.get(item.content.bookmark) : undefined;
                     // The one line the stone draws rather than main: this
@@ -116,7 +158,7 @@ export default function Launcher({
                     return (
                         <Fragment key={keyOf(item)}>
                             {rule && <li aria-hidden="true" className="sep" />}
-                            <Row sprite={spriteOf(item, link)} label={link?.name ?? item.label} open={item.current} onOpen={() => fill(item)} link={link} />
+                            <Row sprite={spriteOf(item, link)} label={link?.name ?? item.label} open={item.current} onOpen={() => fill(item)} link={link} wide={wide} />
                         </Fragment>
                     );
                 })}

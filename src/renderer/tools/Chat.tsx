@@ -246,16 +246,18 @@ function Line({ line, self, mention }: { line: ChatLine; self: string | null; me
 
 /**
  * The channel's topic, on one line above the log, with who set it and when in
- * its tooltip. In a narrow pane it also carries the button that swaps the log
- * for the user list, which has no room to sit beside it.
+ * its tooltip. Below `WIDE_ENOUGH` it also carries the button that swaps the
+ * log for the user list, which has no room to sit beside it — and below
+ * `NARROW_BELOW` the button goes under the topic, which beside it was cut to
+ * nothing.
  */
-function TopicBar({ channel, wide, usersOpen, toggleUsers }: { channel: ViewChannel; wide: boolean; usersOpen: boolean; toggleUsers: () => void }): ReactNode {
+function TopicBar({ channel, wide, narrow, usersOpen, toggleUsers }: { channel: ViewChannel; wide: boolean; narrow: boolean; usersOpen: boolean; toggleUsers: () => void }): ReactNode {
     const topic = channel.topic;
     const setBy = topic?.setBy ? `Set by ${topic.setBy}${topic.setAt !== null ? ` on ${new Date(topic.setAt).toLocaleString()}` : ''}` : null;
     const count = channel.users.length;
     return (
-        <div className="flex min-w-0 items-center gap-1.5 text-[12px]">
-            <p title={topic === null ? undefined : [topic.text, setBy].filter(Boolean).join('\n')} className="min-w-0 flex-1 truncate">
+        <div className={`flex min-w-0 text-[12px] ${narrow ? 'flex-col items-start gap-1' : 'items-center gap-1.5'}`}>
+            <p title={topic === null ? undefined : [topic.text, setBy].filter(Boolean).join('\n')} className={`${narrow ? 'w-full' : 'min-w-0 flex-1'} truncate`}>
                 {topic === null ? (
                     <span className="text-faint">No topic set</span>
                 ) : (
@@ -288,9 +290,10 @@ let sentLines: string[] = [];
  *
  * The log and the composer are the same object at 320px wide and at 735px, so
  * they are written once; a second log would be a second set of scroll rules to
- * keep in step. What changes with the width is only where the user list goes.
+ * keep in step. What changes with the width is only where things go: the user
+ * list, and in a narrow pane Send and the list's button (`NARROW_BELOW`).
  */
-function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactNode {
+function Conversation({ view, wide, narrow }: { view: ChatView; wide: boolean; narrow: boolean }): ReactNode {
     const [draft, setDraft] = useState('');
     const [behind, setBehind] = useState(false);
     const [usersOpen, setUsersOpen] = useState(false);
@@ -401,7 +404,7 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
 
     return (
         <div className="flex min-h-0 flex-1 flex-col gap-2">
-            {channel !== null && <TopicBar channel={channel} wide={wide} usersOpen={usersOpen} toggleUsers={() => setUsersOpen(!usersOpen)} />}
+            {channel !== null && <TopicBar channel={channel} wide={wide} narrow={narrow} usersOpen={usersOpen} toggleUsers={() => setUsersOpen(!usersOpen)} />}
 
             <div className="flex min-h-0 flex-1 gap-[5px]">
                 {listInstead && channel !== null ? (
@@ -447,9 +450,11 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
              * client's own interfaces. The box stops at 400 characters, but
              * what the server carries is bytes: main measures the line again
              * as the others will receive it, and refuses one too long with a
-             * note saying so.
+             * note saying so. Narrow, Send is under the box and as wide as
+             * it, as Worlds' Refresh is: beside it at `PANE_MIN_WIDTH`, the
+             * box had 32px.
              */}
-            <form onSubmit={send} className="flex items-center gap-1.5">
+            <form onSubmit={send} className={narrow ? 'flex flex-col gap-1.5' : 'flex items-center gap-1.5'}>
                 <input
                     ref={box}
                     value={draft}
@@ -464,7 +469,7 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
                     maxLength={400}
                     autoComplete="off"
                     spellCheck={false}
-                    className="sunk min-w-0 flex-1 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint"
+                    className={`sunk ${narrow ? '' : 'min-w-0 flex-1 '}px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint`}
                 />
                 <button type="submit" disabled={offline} className="btn btn-red shrink-0 disabled:opacity-60">
                     Send
@@ -486,6 +491,20 @@ function Conversation({ view, wide }: { view: ChatView; wide: boolean }): ReactN
 const WIDE_ENOUGH = 560;
 
 /**
+ * The width below which a pane is too narrow for what Chat sets side by side
+ * at every other width, and stacks it instead: Send goes under the message
+ * box, the user list's button under the topic, and the Settings page goes
+ * without its well.
+ *
+ * Beside Send, the box has the pane less 88px: 112 here, a dozen or so
+ * characters of the line being typed, and 32 at `PANE_MIN_WIDTH`. Around a
+ * field, the well was 24px of every line of Settings, and its fields were cut
+ * short below about 150. A pane knows its own width, so the shape is read from
+ * it, as Worlds' is.
+ */
+const NARROW_BELOW = 200;
+
+/**
  * The Chat tool: one connection, shared by every window this kit has open.
  *
  * Which page a pane shows — Settings or a channel — is the pane's own, so two
@@ -495,6 +514,7 @@ const WIDE_ENOUGH = 560;
  */
 export default function Chat({ view, width }: { view: ChatView; width: number }): ReactNode {
     const wide = width >= WIDE_ENOUGH;
+    const narrow = width < NARROW_BELOW;
     const [page, setPage] = useState<'settings' | 'chat'>(() => (view.needsNick || !isConnectionWanted(view.status) ? 'settings' : 'chat'));
     const onSettings = page === 'settings' || view.needsNick || view.channels.length === 0;
 
@@ -511,9 +531,9 @@ export default function Chat({ view, width }: { view: ChatView; width: number })
             />
             <Status view={view} onSettings={onSettings} />
             {onSettings ? (
-                <ChatSettings view={view} wide={wide} onConnected={() => setPage('chat')} />
+                <ChatSettings view={view} wide={wide} narrow={narrow} onConnected={() => setPage('chat')} />
             ) : (
-                <Conversation view={view} wide={wide} />
+                <Conversation view={view} wide={wide} narrow={narrow} />
             )}
         </div>
     );
