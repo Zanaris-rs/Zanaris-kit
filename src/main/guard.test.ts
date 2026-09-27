@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allowPermission, decideNavigation, decidePageNavigation, decideShellNavigation } from './guard.ts';
+import { PRESS_MS, REDIRECT_PRESS_MS, allowPermission, decideNavigation, decidePageNavigation, decideShellNavigation, isPress, mayOpenBrowser } from './guard.ts';
 
 const GAME = 'https://w5-2004.lostcity.rs/rs2.cgi?plugin=0&world=5&lowmem=1';
 const OFFLINE = 'file:///app/static/offline.html?url=' + encodeURIComponent(GAME);
@@ -109,4 +109,24 @@ test('a reference page gets no permission at all', () => {
     for (const permission of ['clipboard-sanitized-write', 'openExternal', 'clipboard-read', 'notifications', 'fullscreen']) {
         assert.equal(allowPermission(permission, 'page'), false, permission);
     }
+});
+
+test('a link reaches the browser only as the answer to a press', () => {
+    for (const via of ['window-open', 'navigate'] as const) {
+        assert.equal(mayOpenBrowser({ via, mainFrame: true, sincePress: 150 }), true, `${via} just after a click`);
+        assert.equal(mayOpenBrowser({ via, mainFrame: true, sincePress: PRESS_MS + 1 }), false, `${via} long after one`);
+        assert.equal(mayOpenBrowser({ via, mainFrame: true, sincePress: Infinity }), false, `${via} with no press at all`);
+    }
+    assert.equal(mayOpenBrowser({ via: 'window-open', mainFrame: false, sincePress: 150 }), true, 'a frame the player clicked in may open one');
+});
+
+test("a redirect has longer to arrive, and a frame's never opens the browser", () => {
+    assert.equal(mayOpenBrowser({ via: 'redirect', mainFrame: true, sincePress: 4_000 }), true);
+    assert.equal(mayOpenBrowser({ via: 'redirect', mainFrame: true, sincePress: REDIRECT_PRESS_MS + 1 }), false);
+    assert.equal(mayOpenBrowser({ via: 'redirect', mainFrame: false, sincePress: 10 }), false, "an ad's frame redirecting, however soon after a click");
+});
+
+test('presses are clicks, keys and taps, never movement or scrolling', () => {
+    for (const type of ['mouseDown', 'mouseUp', 'rawKeyDown', 'keyDown', 'char', 'gestureTap', 'touchEnd']) assert.equal(isPress(type), true, type);
+    for (const type of ['mouseMove', 'mouseEnter', 'mouseLeave', 'mouseWheel', 'keyUp', 'gestureScrollUpdate', 'touchMove']) assert.equal(isPress(type), false, type);
 });

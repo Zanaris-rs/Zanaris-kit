@@ -202,9 +202,12 @@ lookup, a map panned to where you are standing and a drop table scrolled to
 the right row are all still there when you come back to them. A page pane's
 header carries back, forward and reload and no address box: it browses freely
 within the hosts that server allows, and a link off them opens in your system
-browser instead. Every seam drags, on both axes, and the pane before a seam —
-the one to its left, or above it — is the one that grows as you push the seam
-away from it.
+browser instead — when you clicked it, one link per click. A page can no more
+open your browser on its own than it can leave its hosts: a `window.open`
+nobody pressed for goes nowhere, and an ad's frame redirecting stays in its
+frame rather than opening a tab. Every seam drags, on both axes, and the
+pane before a seam — the one to its left, or above it — is the one that grows
+as you push the seam away from it.
 
 **Your world** needs no server at all: File > New Window For > Your world
 starts a world on this computer. The kit does not carry the server itself. The
@@ -972,7 +975,10 @@ right-click menu's splits.
 `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`,
 `webSecurity: true` on every view. The game view accepts no page-initiated
 navigation at all: links, `location` changes, form submits and mouse back or
-forward gestures are blocked, and web links open in the system browser. The
+forward gestures are blocked, and web links open in the system browser — only
+as the answer to a press in the view, within five seconds of it, one link per
+press (`guard.mayOpenBrowser`), so no page opens the browser by itself or
+opens a tab for every loop of a script. The
 one exception is our own offline page returning to the page main asked for.
 The only way the game view changes page is main calling `loadURL`, which is
 how a world switch happens, and the history is cleared after every load so

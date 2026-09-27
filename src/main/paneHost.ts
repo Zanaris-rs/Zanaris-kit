@@ -1,5 +1,5 @@
 import { WebContentsView, shell, type BrowserWindow } from 'electron';
-import { decidePageNavigation } from './guard.ts';
+import { decidePageNavigation, isPress, mayOpenBrowser } from './guard.ts';
 import {
     appendColumn,
     arrangedAt,
@@ -323,25 +323,52 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.contextMenu(paneId, view.x + params.x, view.y + params.y);
         });
 
-        const policy = (event: { preventDefault: () => void }, target: string): void => {
+        /** When the player last pressed anything in this page, which is what lets it open the browser. */
+        let lastPress = -Infinity;
+        // `input-event` sees only the page's own frame; the other two are
+        // asked of the whole page first, so a press in an embedded frame — a
+        // video, a Discord widget — counts too, as far as Electron reports one.
+        const pressed = (type: string): void => {
+            if (isPress(type)) lastPress = Date.now();
+        };
+        wc.on('input-event', (_event, input) => pressed(input.type));
+        wc.on('before-mouse-event', (_event, mouse) => pressed(mouse.type));
+        wc.on('before-input-event', (_event, input) => pressed(input.type));
+        /**
+         * The page's own navigation: through when it stays on the allowlist,
+         * to the system browser when it leaves it on a press of the player's
+         * (`guard.mayOpenBrowser`), and dropped when nothing asked for it.
+         */
+        const policy = (event: { preventDefault: () => void }, target: string, via: 'navigate' | 'redirect'): void => {
             const decision = decidePageNavigation({ target, hosts: deps.hosts() });
             if (decision === 'allow') return;
             event.preventDefault();
-            if (decision === 'open-external') {
+            if (decision === 'open-external' && mayOpenBrowser({ via, mainFrame: true, sincePress: Date.now() - lastPress })) {
+                lastPress = -Infinity;
                 deps.log(`sent ${target} to the system browser`);
                 void shell.openExternal(target);
             } else {
-                deps.log(`blocked ${target}`);
+                deps.log(`blocked ${target}${decision === 'open-external' ? ', which no press asked for' : ''}`);
             }
         };
-        wc.on('will-navigate', policy);
+        wc.on('will-navigate', (event, target) => policy(event, target, 'navigate'));
         // Not optional: `tools.losthq.rs/map` answers a 301 and LostHQ's
         // bestiary a 302, so a redirect is the ordinary case rather than the
         // exotic one, and a policy that only saw `will-navigate` would let a
-        // redirect carry a page anywhere.
-        wc.on('will-redirect', policy);
+        // redirect carry a page anywhere. The main frame's only: a frame's
+        // redirect stays in its frame, as a frame's navigation always did —
+        // `will-navigate` is the main frame's alone — and an ad's frame
+        // redirecting used to open the player's browser by itself.
+        wc.on('will-redirect', details => {
+            if (details.isMainFrame) policy(details, details.url, 'redirect');
+        });
         wc.setWindowOpenHandler(({ url: target }) => {
-            if (/^https?:\/\//.test(target)) void shell.openExternal(target);
+            if (/^https?:\/\//.test(target) && mayOpenBrowser({ via: 'window-open', mainFrame: true, sincePress: Date.now() - lastPress })) {
+                lastPress = -Infinity;
+                void shell.openExternal(target);
+            } else {
+                deps.log(`refused a new window for ${target}`);
+            }
             return { action: 'deny' };
         });
 

@@ -14,7 +14,7 @@ import type { PaneTrouble } from '../shared/paneNotice';
 import type { ListedTimer } from './timers/defs';
 import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
-import { allowPermission, decideNavigation } from './guard';
+import { allowPermission, decideNavigation, isPress, mayOpenBrowser } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
@@ -1400,6 +1400,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      */
     function wireGameView(view: WebContentsView): void {
         const wc = view.webContents;
+        /** When the player last pressed anything in this view, which is what lets it open the browser. */
+        let lastPress = -Infinity;
         // Crashes and hangs, which hide the view under its pane's notice
         // until the player chooses what to do (`paneNotice`). Only this view's,
         // and only while it is still the window's game.
@@ -1457,15 +1459,23 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 );
                 return;
             }
-            if (decision === 'open-external') {
+            if (decision === 'open-external' && mayOpenBrowser({ via: 'navigate', mainFrame: true, sincePress: Date.now() - lastPress })) {
+                lastPress = -Infinity;
                 deps.log(`${tag} sent ${url} to the system browser`);
                 void shell.openExternal(url);
             } else {
-                deps.log(`${tag} blocked navigation to ${url}`);
+                deps.log(`${tag} blocked navigation to ${url}${decision === 'open-external' ? ', which no press asked for' : ''}`);
             }
         });
+        // A new window is a web link for the system browser, and only when the
+        // player has just pressed something (`guard.mayOpenBrowser`).
         wc.setWindowOpenHandler(({ url }) => {
-            if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+            if (/^https?:\/\//.test(url) && mayOpenBrowser({ via: 'window-open', mainFrame: true, sincePress: Date.now() - lastPress })) {
+                lastPress = -Infinity;
+                void shell.openExternal(url);
+            } else {
+                deps.log(`${tag} refused a new window for ${url}`);
+            }
             return { action: 'deny' };
         });
         // The game's own menu is refused — nothing Chromium offers on a canvas
@@ -1493,7 +1503,17 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // click beside the canvas restarts these while the client's timer runs
         // on, and they can warn late.
         wc.on('input-event', (_event, input) => {
+            if (isPress(input.type)) lastPress = Date.now();
             if (isGameInput(input.type, wc.getURL())) clocks.input();
+        });
+        // `input-event` sees only the page's own frame. These two are asked
+        // of the whole page before it is handed anything, so a press in one
+        // of its frames counts too, as far as Electron reports one.
+        wc.on('before-mouse-event', (_event, mouse) => {
+            if (isPress(mouse.type)) lastPress = Date.now();
+        });
+        wc.on('before-input-event', (_event, input) => {
+            if (isPress(input.type)) lastPress = Date.now();
         });
         // A page that actually loads in the game view — a world switch, a
         // detail switch, a retry, the kit's offline or starting page — ends

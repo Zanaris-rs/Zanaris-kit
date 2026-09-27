@@ -117,3 +117,48 @@ export function decideShellNavigation(nav: { current: string; target: string }):
 export function allowPermission(permission: string, view: 'game' | 'page'): boolean {
     return view === 'game' && (permission === 'fullscreen' || permission === 'clipboard-sanitized-write');
 }
+
+/**
+ * How recently the player must have pressed something in a view for a link
+ * it opens to be theirs. Chromium's own: a press lends a page five seconds of
+ * "the user did this", long enough for a click that fetches something first.
+ * One press lends it once (`mayOpenBrowser`'s caller spends it), so the five
+ * seconds are not a window for a page to open as many tabs as it likes.
+ */
+export const PRESS_MS = 5_000;
+
+/**
+ * The same, for a redirect: a link pressed to a page on the allowlist that
+ * the server then sends somewhere else arrives as a redirect after the
+ * request's round trip, not straight after the press.
+ */
+export const REDIRECT_PRESS_MS = 10_000;
+
+/** Whether an `input-event` is the player pressing something, which is what lets a view open the browser. Movement and scrolling are not. */
+export function isPress(type: string): boolean {
+    return type === 'mouseDown' || type === 'mouseUp' || type === 'rawKeyDown' || type === 'keyDown' || type === 'char' || type === 'gestureTap' || type === 'touchEnd';
+}
+
+/**
+ * Whether a game or a page may send a web link to the system browser now,
+ * given how long ago the player last pressed anything in it.
+ *
+ * Only as the answer to a press. The browser is where the player is logged
+ * in to everything, and a page that could open it at will — a `window.open`
+ * on a timer, an ad's frame redirecting — could put anything in front of
+ * them there, as often as it liked, with nothing on screen to say it came
+ * from the kit. Chromium's own popup blocker is a browser's, not Electron's,
+ * so this stands in for it.
+ *
+ * A redirect gets the longer window, and only in the main frame. A frame's
+ * redirect never opens the browser at all: it stays in its frame, as a
+ * frame's navigation always has.
+ *
+ * A press answers one link. Whoever asks this spends it when the answer is
+ * yes, as a popup blocker does: a page whose one click tried to open ten
+ * tabs gets the first.
+ */
+export function mayOpenBrowser(opts: { via: 'window-open' | 'navigate' | 'redirect'; mainFrame: boolean; sincePress: number }): boolean {
+    if (opts.via === 'redirect' && !opts.mainFrame) return false;
+    return opts.sincePress >= 0 && opts.sincePress <= (opts.via === 'redirect' ? REDIRECT_PRESS_MS : PRESS_MS);
+}

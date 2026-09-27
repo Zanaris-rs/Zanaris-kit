@@ -769,7 +769,7 @@ const actions: MenuActions = {
     // Only https reaches the system browser from here: this opens whatever the
     // menu carries, and the update item's url came off the network. (A game or
     // a page asking for a new window is let through on http too, in
-    // serverWindow and paneHost.)
+    // serverWindow and paneHost, but only straight after a press in it.)
     openExternal: url => {
         if (!/^https:\/\//.test(url)) {
             log(`[main] refused to open ${url}: not https`);
@@ -2331,6 +2331,17 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] ${id} focused back on ${firstPage.paneId}: "${shown?.title ?? 'nothing'}" (${shown?.url ?? '—'}), ${shown?.loading ? 'still loading' : 'loaded'}`);
                 await shoot(`${id}-pages-back`, reader);
                 await save(`${id}-page-back`, shotOfThePage(reader));
+
+                // A page opening a window with nobody pressing anything, as
+                // one could on a timer: refused, never the player's browser
+                // (`guard.mayOpenBrowser`). The refusal is the pane's own log
+                // line, "refused a new window for", just after this one.
+                const view = webContents.getAllWebContents().find(wc => shown?.url && wc.getURL() === shown.url);
+                if (view) {
+                    log(`[capture] ${id}: the page asks for a window with no press — expect it refused`);
+                    await view.executeJavaScript(`window.open('https://example.com/zanaris-capture-unpressed'); true`);
+                    await wait(500);
+                }
             }
         } else {
             log('[capture] pages skipped: no loaded window offers any links');
