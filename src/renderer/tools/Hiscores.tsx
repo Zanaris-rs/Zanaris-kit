@@ -24,7 +24,8 @@ const NAME_MAX = 30;
  * for the widest value each can hold at 13px Arial — a seven-figure rank, a
  * total level of four digits and a comma, an Overall xp of nine digits and
  * two — and the skill name is the one that truncates when the panel narrows or
- * a scrollbar takes its 12px. Sized in border-box terms because `table-fixed`
+ * a scrollbar takes its 12px, as far as `WIDE_ENOUGH`, below which the table
+ * gives way to a list. Sized in border-box terms because `table-fixed`
  * reads a <col> width that way, so the cell padding below comes out of these
  * numbers rather than adding to them. A column too narrow for its number does
  * not clip it and cannot wrap it either — a comma-separated figure offers no
@@ -52,10 +53,12 @@ const HEAD = `${CELL} text-[12px] font-normal text-dim`;
 
 /** One skill's line. Overall is picked out in gold, as the client picks out a total. */
 function Row({ skill }: { skill: PlayerSkill }): ReactNode {
+    const name = hiscoresSkillName(skill.type);
     return (
         <tr className={skill.type === 0 ? 'text-gold' : undefined}>
-            <th scope="row" className={`${CELL} ${FIRST} truncate text-left font-normal`}>
-                {hiscoresSkillName(skill.type)}
+            {/* The title is the whole name, however much of it the column has room for. */}
+            <th scope="row" title={name} className={`${CELL} ${FIRST} truncate text-left font-normal`}>
+                {name}
             </th>
             <td className={`${CELL} text-right tabular-nums`}>{skill.rank.toLocaleString()}</td>
             <td className={`${CELL} text-right tabular-nums`}>{skill.level.toLocaleString()}</td>
@@ -63,6 +66,73 @@ function Row({ skill }: { skill: PlayerSkill }): ReactNode {
         </tr>
     );
 }
+
+/*
+ * Narrow, a skill is two lines in the table's order: its name and level, then
+ * its rank and xp, smaller, under them. The header above says so once, in
+ * the same two lines, so a row need not label its numbers — labelled, an
+ * eight-digit xp and its label no longer fit a line at `PANE_MIN_WIDTH`. Each
+ * pair keeps to one line while it fits and puts its second figure on a line
+ * of its own, still at the right, when it does not, as most ranks and xps do
+ * not at `PANE_MIN_WIDTH` with the list's scrollbar showing.
+ */
+const PAIR = 'flex flex-wrap justify-between gap-x-2';
+const NARROW_ROW = 'border-b border-edge-dark px-1 py-[3px] last:border-b-0';
+
+/** The narrow header: which figure is which, in the lines the rows put them on. */
+function NarrowHead(): ReactNode {
+    return (
+        <div aria-hidden="true" className={`${HEAD_GROUP} border-b border-edge-dark px-1 py-[3px] text-[12px] text-dim`}>
+            <div className={PAIR}>
+                <span>Skill</span>
+                <span className="ml-auto">Lvl</span>
+            </div>
+            <div className={PAIR}>
+                <span>Rank</span>
+                <span className="ml-auto">XP</span>
+            </div>
+        </div>
+    );
+}
+
+/** One skill, narrow. The header is hidden from a screen reader, so the figures are named here for one instead. */
+function NarrowRow({ skill }: { skill: PlayerSkill }): ReactNode {
+    return (
+        <li className={NARROW_ROW}>
+            <div className={`${PAIR}${skill.type === 0 ? ' text-gold' : ''}`}>
+                <span>{hiscoresSkillName(skill.type)}</span>
+                <span className="ml-auto tabular-nums">
+                    <span className="sr-only">level </span>
+                    {skill.level.toLocaleString()}
+                </span>
+            </div>
+            <div className={`${PAIR} text-[12px] text-dim tabular-nums`}>
+                <span>
+                    <span className="sr-only">rank </span>
+                    {skill.rank.toLocaleString()}
+                </span>
+                <span className="ml-auto">
+                    {skill.xp.toLocaleString()}
+                    <span className="sr-only"> xp</span>
+                </span>
+            </div>
+        </li>
+    );
+}
+
+/**
+ * The pane width below which the lookup's button goes under the name box and
+ * the table becomes the two-line list above.
+ *
+ * The table's three figures take 202px whatever the width, and the skill's
+ * name has what is left: from here, with the list's scrollbar showing, 50px.
+ * That holds most names whole and cuts the six longest, Woodcutting the
+ * furthest, to "Wood…", which is still no other skill; the title has the
+ * rest. Narrower, most names are cut to two or three letters, and below 238px
+ * the figures no longer fit at all and the table scrolls sideways. A pane
+ * knows its own width, so the shape is read from it, as Worlds' is.
+ */
+const WIDE_ENOUGH = 300;
 
 /**
  * The Hiscores tool: a name, a table, and the server's own page.
@@ -72,7 +142,8 @@ function Row({ skill }: { skill: PlayerSkill }): ReactNode {
  * would spend that budget before the player finished the name — so Enter or
  * the button is the only thing that asks the server anything.
  */
-export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
+export default function Hiscores({ view, width }: { view: HiscoresView; width: number }): ReactNode {
+    const wide = width >= WIDE_ENOUGH;
     /*
      * Seeded from the view once, then the box is the user's. `view.name` moves
      * only when some window on this server looks a name up, and following it
@@ -117,7 +188,8 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
 
     return (
         <div className="flex min-h-0 flex-1 flex-col gap-2">
-            <form onSubmit={submit} className="flex items-center gap-1.5">
+            {/* Narrow, the button is as wide as the pane under the box, as Worlds' Refresh is: beside it, the box was cut to a few letters. */}
+            <form onSubmit={submit} className={wide ? 'flex items-center gap-1.5' : 'flex flex-col gap-1.5'}>
                 <input
                     value={draft}
                     onChange={event => setDraft(event.target.value)}
@@ -134,41 +206,54 @@ export default function Hiscores({ view }: { view: HiscoresView }): ReactNode {
             </form>
 
             {shown !== null && (
-                <p className="text-[12px] text-dim">
+                <p className="text-[12px] break-words text-dim">
                     Showing <span className="text-cream">{shown}</span>
                 </p>
             )}
 
             <div className="sunk min-h-0 flex-1 overflow-y-auto">
-                <table className="w-full table-fixed">
-                    <colgroup>
-                        <col />
-                        <col className={COL_RANK} />
-                        <col className={COL_LEVEL} />
-                        <col className={COL_XP} />
-                    </colgroup>
-                    <thead className={HEAD_GROUP}>
-                        <tr>
-                            <th scope="col" className={`${HEAD} ${FIRST} truncate text-left`}>
-                                Skill
-                            </th>
-                            <th scope="col" className={`${HEAD} text-right`}>
-                                Rank
-                            </th>
-                            <th scope="col" className={`${HEAD} text-right`}>
-                                Lvl
-                            </th>
-                            <th scope="col" className={`${HEAD} ${LAST} text-right`}>
-                                XP
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows.map(skill => (
-                            <Row key={skill.type} skill={skill} />
-                        ))}
-                    </tbody>
-                </table>
+                {wide ? (
+                    <table className="w-full table-fixed">
+                        <colgroup>
+                            <col />
+                            <col className={COL_RANK} />
+                            <col className={COL_LEVEL} />
+                            <col className={COL_XP} />
+                        </colgroup>
+                        <thead className={HEAD_GROUP}>
+                            <tr>
+                                <th scope="col" className={`${HEAD} ${FIRST} truncate text-left`}>
+                                    Skill
+                                </th>
+                                <th scope="col" className={`${HEAD} text-right`}>
+                                    Rank
+                                </th>
+                                <th scope="col" className={`${HEAD} text-right`}>
+                                    Lvl
+                                </th>
+                                <th scope="col" className={`${HEAD} ${LAST} text-right`}>
+                                    XP
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map(skill => (
+                                <Row key={skill.type} skill={skill} />
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    rows.length > 0 && (
+                        <>
+                            <NarrowHead />
+                            <ul aria-label="Skills">
+                                {rows.map(skill => (
+                                    <NarrowRow key={skill.type} skill={skill} />
+                                ))}
+                            </ul>
+                        </>
+                    )
+                )}
                 {/*
                  * Only the untouched panel explains itself here. Every other
                  * empty table has a reason the foot is already giving in the
