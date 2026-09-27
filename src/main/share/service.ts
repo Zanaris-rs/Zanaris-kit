@@ -279,11 +279,11 @@ export function shareDialogs(opts: { asset: CloudflaredAsset; installed: boolean
     }
     dialogs.push({
         kind: 'share',
-        message: 'Share your world with a link?',
+        message: 'Share your home server with a link?',
         detail: [
-            'Anyone who has the link can join your world and log in as any character, yours included: a world on this computer checks no passwords. Only give it to people you trust.',
+            'Anyone who has the link can join your home server and log in as any character, yours included: a world on this computer checks no passwords. Only give it to people you trust.',
             ...(opts.cheats ? ['Cheats are on, so everyone who joins can use them too.'] : []),
-            'The link changes every time you share. It closes when you stop sharing, close the last window for your world, or quit.'
+            'The link changes every time you share. It closes when you stop sharing, close the last window for your home server, or quit.'
         ].join('\n\n'),
         confirm: 'Share'
     });

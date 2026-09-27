@@ -51,7 +51,7 @@ test('each restart question names the change, the restart and the logout, with R
     const patches: Partial<YourWorldSettings>[] = [{ cheats: true }, { cheats: false }, { xpRate: 5 }, { members: true }, { members: false }];
     for (const patch of patches) {
         const question = restartConfirmation(patch);
-        assert.match(question.message, /restarts your world and logs you out\.$/);
+        assert.match(question.message, /restarts your home server and logs you out\.$/);
         assert.equal(question.button, 'Restart');
         assert.equal(question.destructive, false);
         assert.notEqual(question.detail, '');
@@ -80,7 +80,7 @@ const LINE: BuildLine = {
 
 test('switching builds asks as a restart, and says where the characters are', () => {
     const across = switchConfirmation(LINE, 274);
-    assert.equal(across.message, 'Switching to Lost City 289 restarts your world and logs you out.');
+    assert.equal(across.message, 'Switching to Lost City 289 restarts your home server and logs you out.');
     assert.match(across.detail, /Your rev 274 characters stay where they are, and rev 289 has its own/);
     assert.equal(across.button, 'Switch');
     assert.equal(across.destructive, false);
@@ -88,7 +88,7 @@ test('switching builds asks as a restart, and says where the characters are', ()
 });
 
 test('switching to a build not downloaded yet says it downloads first, and the world runs until then', () => {
-    assert.match(switchConfirmation({ ...LINE, state: 'absent' }, 274).detail, /^It downloads first \(54 MB\), and your world keeps running until then\./);
+    assert.match(switchConfirmation({ ...LINE, state: 'absent' }, 274).detail, /^It downloads first \(54 MB\), and your home server keeps running until then\./);
     assert.doesNotMatch(switchConfirmation(LINE, 274).detail, /downloads first/);
 });
 

@@ -111,7 +111,7 @@ export default function YourWorld({ view, share, width }: { view: YourWorldView;
              * rest scrolls as one page (yourworld/fill.ts), so what is running
              * and the way to another section stay in view.
              */}
-            <div role="group" aria-label="Your world" className={wide ? 'flex flex-wrap items-center gap-[5px]' : 'flex'}>
+            <div role="group" aria-label="Home server" className={wide ? 'flex flex-wrap items-center gap-[5px]' : 'flex'}>
                 {wide ? (
                     sectionsOffered(share !== null).map(offered => (
                         <Tab key={offered.id} role="button" label={offered.label} open={open === offered.id} onSelect={() => setOpen(offered.id)} />

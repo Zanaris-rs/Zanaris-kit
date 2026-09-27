@@ -63,7 +63,7 @@ export default function World({ view, wide }: { view: YourWorldView; wide: boole
         <div className={sectionClass(wide)}>
             <div className={`flex flex-col gap-2.5 ${scrollClass(wide)}`}>
                 <Switch label="Cheats" red on={settings.cheats} busy={busy} wide={wide} onChange={on => change('cheats', on)} note="Developer commands such as ::tele and ::give. Off, they are refused." />
-                <Switch label="Members" on={settings.members} busy={busy} wide={wide} onChange={on => change('members', on)} note="Off, your world is a free one, as the free-to-play game was." />
+                <Switch label="Members" on={settings.members} busy={busy} wide={wide} onChange={on => change('members', on)} note="Off, your home server is a free one, as the free-to-play game was." />
                 <div>
                     {/* Narrow, the label has a line of its own and the rates wrap under it, rather than one rate on the label's line and the rest below. */}
                     <div role="group" aria-labelledby={`${id}-rate`} className="flex flex-wrap items-center gap-1.5">

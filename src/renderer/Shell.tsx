@@ -78,7 +78,7 @@ function TabMarks({ tab }: { tab: TabView }): ReactNode {
 
 /** A tab's tooltip: its full name, and why it carries a mark. */
 function tabTitle(tab: TabView): string {
-    const why = [tab.marks.includes('game') && 'the game is still running here', tab.marks.includes('sharing') && 'Your world is shared with a link'].filter(Boolean);
+    const why = [tab.marks.includes('game') && 'the game is still running here', tab.marks.includes('sharing') && 'Your home server is shared with a link'].filter(Boolean);
     return why.length === 0 ? tab.label : `${tab.label} (${why.join('; ')})`;
 }
 
@@ -468,7 +468,7 @@ export default function Shell(): ReactNode {
                 {state.sharingWithoutPane && (
                     <button
                         type="button"
-                        title="Your world is shared with a link, and no pane shows it. Open Your world"
+                        title="Your home server is shared with a link, and no pane shows it. Open Home server"
                         onClick={() => void window.zanaris.panes.showYourWorld()}
                         style={SHARING_BOX}
                         className="btn shrink-0"

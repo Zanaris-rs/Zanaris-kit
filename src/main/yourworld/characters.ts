@@ -55,7 +55,7 @@ const done = (name: string): CharacterOutcome => ({ kind: 'done', name });
 const refused = (message: string): CharacterOutcome => ({ kind: 'refused', message });
 const GONE = 'That character is not in the saves folder any more.';
 const NOT_WAITING = 'That file is no longer waiting to be imported. Choose it again.';
-const PLAYING = 'Your world is running.';
+const PLAYING = 'Your home server is running.';
 const replaced = (who: string): string => `The ${who} you have now goes to the trash.`;
 
 /** A typed name as a character's name, or why it cannot be one. */

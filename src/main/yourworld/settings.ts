@@ -48,7 +48,7 @@ export function changesSettings(current: YourWorldSettings, patch: Partial<YourW
 
 /** The restart a change costs, asked on the window while the world is running. The shell sends one setting at a time. */
 export function restartConfirmation(patch: Partial<YourWorldSettings>): Confirmation {
-    const ask = (message: string, detail: string): Confirmation => ({ message: `${message} restarts your world and logs you out.`, detail, button: 'Restart', destructive: false });
+    const ask = (message: string, detail: string): Confirmation => ({ message: `${message} restarts your home server and logs you out.`, detail, button: 'Restart', destructive: false });
     if (patch.cheats !== undefined) {
         return patch.cheats
             ? ask('Turning cheats on', 'Developer commands such as ::tele and ::give will work. The Commands tab lists them.')
@@ -58,8 +58,8 @@ export function restartConfirmation(patch: Partial<YourWorldSettings>): Confirma
         return ask(`Changing the XP rate to ${patch.xpRate}` + String.fromCharCode(0xD7), `Experience your characters earn from then on is multiplied by ${patch.xpRate}. What they already have stays as it is.`);
     }
     return patch.members
-        ? ask('Turning members on', 'Your world becomes a members world again.')
-        : ask('Turning members off', 'Your world becomes a free one, as the free-to-play game was.');
+        ? ask('Turning members on', 'Your home server becomes a members world again.')
+        : ask('Turning members off', 'Your home server becomes a free one, as the free-to-play game was.');
 }
 
 /** A download's size as a player reads it: whole megabytes. */
@@ -74,10 +74,10 @@ function megabytes(bytes: number): string {
  * whether they come along.
  */
 export function switchConfirmation(to: BuildLine, fromRevision: number): Confirmation {
-    const download = to.state !== 'installed' && to.size !== null ? `It downloads first (${megabytes(to.size)}), and your world keeps running until then.` : null;
+    const download = to.state !== 'installed' && to.size !== null ? `It downloads first (${megabytes(to.size)}), and your home server keeps running until then.` : null;
     const characters = to.revision === fromRevision ? 'Your characters come with you.' : `Your rev ${fromRevision} characters stay where they are, and rev ${to.revision} has its own. Characters can copy one across.`;
     return {
-        message: `Switching to ${to.name} restarts your world and logs you out.`,
+        message: `Switching to ${to.name} restarts your home server and logs you out.`,
         detail: download === null ? characters : `${download} ${characters}`,
         button: 'Switch',
         destructive: false

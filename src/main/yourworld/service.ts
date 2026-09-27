@@ -201,7 +201,7 @@ export class YourWorldService {
 
     /** Deletes a line's build. Null when it went, or why not: the world may not lose the build it is running. */
     removeBuild(id: string): string | null {
-        if (id === this.selected && worldRunning(this.status)) return 'Your world is running on that build. Switch to another first.';
+        if (id === this.selected && worldRunning(this.status)) return 'Your home server is running on that build. Switch to another first.';
         try {
             this.deps.builds.remove(id);
         } catch (err) {

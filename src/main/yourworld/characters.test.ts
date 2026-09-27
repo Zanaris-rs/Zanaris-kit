@@ -231,7 +231,7 @@ test('while the world runs, even a free name asks, and says why', async () => {
     const ctx = answering(true, true);
     await d.characters.importAs(pickOk(d.characters, '/downloads/x.sav'), 'Zezima', ctx);
     assert.equal(ctx.asked[0]!.message, 'Import this save as Zezima?');
-    assert.match(ctx.asked[0]!.detail, /world is running\. If anyone is logged in as .*logging out will write over the import/);
+    assert.match(ctx.asked[0]!.detail, /home server is running\. If anyone is logged in as .*logging out will write over the import/);
     assert.equal(ctx.asked[0]!.destructive, false);
 });
 

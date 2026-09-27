@@ -638,7 +638,7 @@ test('a change while the world runs asks with the reason, and a no changes nothi
         return false;
     });
     assert.deepEqual(outcome, { kind: 'cancelled' });
-    assert.match(asked[0]!.detail, /world is running\. If anyone is logged in/);
+    assert.match(asked[0]!.detail, /home server is running\. If anyone is logged in/);
     assert.ok(h.saves.has(`${SAVES}/zezima.sav`));
     assert.deepEqual(h.trashed, []);
 });
