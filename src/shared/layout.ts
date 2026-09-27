@@ -1,7 +1,15 @@
 /** Geometry shared by main, which positions views, and the shell, which draws the chrome around them. */
 
-/** The bar of workspace tabs across the top, and the Add pane control at its right. */
-export const TAB_BAR_HEIGHT = 36;
+/**
+ * The bar of workspace tabs across the top, and the Add pane control at its right.
+ *
+ * Everything in it is 26px tall, in a strip that is the bar less its 2px rule
+ * and its 2px bevelled underside. 40 leaves that strip 36, so 5px above and
+ * below every control: the same 5 as between them and at the bar's ends. At 36
+ * there were 3 above and below against 6 at the ends, and the buttons read as
+ * jammed against the window's top edge.
+ */
+export const TAB_BAR_HEIGHT = 40;
 
 /**
  * The draggable gap between two panes.
