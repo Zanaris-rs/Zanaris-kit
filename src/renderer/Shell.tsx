@@ -136,7 +136,7 @@ function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState })
                 case 'chat':
                     return <Chat view={state.chat} width={pane.rect.width} />;
                 case 'worlds':
-                    return state.worlds ? <Worlds view={state.worlds} /> : null;
+                    return state.worlds ? <Worlds view={state.worlds} width={pane.rect.width} /> : null;
                 case 'hiscores':
                     return state.hiscores ? <Hiscores view={state.hiscores} /> : null;
                 case 'singleplayer':
