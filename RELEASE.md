@@ -77,8 +77,8 @@ button in its tab bar within six hours, or at its next launch.
 On each system with the previous release installed, open it, or use Check
 for Updates…: it shows **Update <new version>** in the tab bar. Download,
 then Restart to Update. The kit that comes back should be the new version —
-the About panel says so — and `<userData>/updates/` should be gone. On a
-Mac the old app must be nowhere but the Bin. An update is the only way the
+the About panel says so — and `<userData>/updates/` should be gone, which
+on a Mac takes the old app with it. An update is the only way the
 Windows and Linux hand-offs are ever exercised: nothing in CI can run them.
 
 ## If a build fails
