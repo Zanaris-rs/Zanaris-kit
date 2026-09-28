@@ -113,6 +113,28 @@ export function Gear(): ReactNode {
     );
 }
 
+/** What a channel is: its topic, modes and age. A ring with an i in it, the sign for "about this". */
+export function Info(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <circle cx="9" cy="9" r="6.6" />
+            <path d="M9 8.2v4.6" strokeLinecap="round" />
+            <circle cx="9" cy="5.6" r="1.05" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}
+
+/** Who is in a channel. A head and shoulders, with a second behind them, so it reads as people rather than an account. */
+export function People(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="7" cy="6.2" r="2.6" />
+            <path d="M2.4 15.2c0-2.8 2-4.6 4.6-4.6s4.6 1.8 4.6 4.6" />
+            <path d="M11.4 3.9a2.5 2.5 0 0 1 0 4.6M13.4 11c1.3.6 2.2 2 2.2 4.2" />
+        </svg>
+    );
+}
+
 /*
  * ── the Timers tool's controls ─────────────────────────────────────────────
  *

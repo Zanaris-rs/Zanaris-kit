@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { backoffDelay, IrcClient, MAX_CONVERSATIONS, type ClientOpts } from './client.ts';
 import { SERVER_LOG, type ChatChannel } from '../../shared/chat.ts';
+import { COMMAND_HELP } from '../../shared/chatInput.ts';
 
 const CTCP = '\u0001'; // the CTCP delimiter, written as an escape so it survives a copy-paste
 
@@ -282,6 +283,103 @@ test('joins and parts do not badge the rail', () => {
     f.client.receive(':alice!a@h JOIN #swiftkit');
     f.client.receive(':alice!a@h PART #swiftkit');
     assert.equal(f.channel('#swiftkit').unread, 0);
+});
+
+test('a mention seen while its tab was open does not colour the tab once it is left', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
+    f.client.select('#other');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :plain');
+    assert.equal(f.channel('#04scape').unread, 1);
+    assert.equal(f.channel('#04scape').highlights, 0);
+});
+
+// ── churn and the New divider ─────────────────────────────────────────────
+
+test('churn in a channel is marked as presence, and a kick or a private quit is not', () => {
+    const f = online();
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage bob carl');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
+    f.client.receive(':alice!a@h JOIN #04scape');
+    f.client.receive(':alice!a@h NICK alicia');
+    f.client.receive(':alicia!a@h PART #04scape :bye');
+    f.client.receive(':bob!b@h QUIT :Ping timeout');
+    f.client.receive(':zed!z@h KICK #04scape carl :spam');
+    assert.deepEqual(
+        f.lines().map(l => l.presence),
+        ['join', 'nick', 'part', 'quit', undefined]
+    );
+    assert.ok(!('presence' in f.lines().at(-1)!), 'absent, not undefined');
+
+    f.client.receive(':dave!d@h PRIVMSG mage :hi');
+    f.client.select('dave');
+    f.client.receive(':dave!d@h QUIT :gone');
+    assert.equal(f.lines().at(-1)?.text, 'dave quit (gone)');
+    assert.ok(!('presence' in f.lines().at(-1)!), 'the one person you are talking to leaving is news');
+});
+
+test('coming back to a tab marks where what arrived while it was left begins', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #04scape :before');
+    f.client.select('#other');
+    assert.equal(f.client.snapshot().newFrom, null, 'nothing unread in #other');
+    f.client.receive(':bob!b@h JOIN #04scape');
+    f.client.select('#04scape');
+    assert.equal(f.client.snapshot().newFrom, null, 'churn alone draws no divider');
+
+    f.client.select('#other');
+    f.client.receive(':carl!c@h JOIN #04scape');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :while you were away');
+    f.client.select('#04scape');
+    const joined = f.lines().at(-2)!;
+    assert.equal(joined.text, 'carl joined');
+    assert.equal(f.client.snapshot().newFrom, joined.id, 'above the first line of any kind since the tab was left');
+
+    f.client.receive(':bob!b@h PRIVMSG #04scape :and now');
+    f.client.select('#04scape');
+    assert.equal(f.client.snapshot().newFrom, joined.id, 'it stays while you stay, reselecting included');
+
+    f.client.select('#other');
+    f.client.select('#04scape');
+    assert.equal(f.client.snapshot().newFrom, null, 'leaving clears it, and nothing arrived since');
+});
+
+test('our own rename is news, not churn', () => {
+    const f = online();
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage bob');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
+    f.client.receive(':mage!m@h NICK Guest123');
+    assert.equal(f.lines().at(-1)?.text, 'mage is now known as Guest123');
+    assert.ok(!('presence' in f.lines().at(-1)!), 'a services rename to a guest nick must not fold away');
+});
+
+test('closing the open tab opens Status as selecting it would, so its count is read', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.select(SERVER_LOG);
+    f.client.select('#04scape');
+    f.client.receive(':irc.libera.chat NOTICE mage :maintenance at noon');
+    assert.equal(f.channel(SERVER_LOG).unread, 1);
+
+    f.client.close('#04scape');
+    assert.equal(f.client.snapshot().active, SERVER_LOG);
+    assert.equal(f.channel(SERVER_LOG).unread, 0, 'read by being open');
+    const notice = f.lines().find(l => l.text.includes('maintenance at noon'));
+    assert.equal(f.client.snapshot().newFrom, notice?.id, 'what arrived while it was left is marked');
+
+    f.client.select('#other');
+    f.client.receive(':mage!m@h MODE mage :+i');
+    f.client.select(SERVER_LOG);
+    assert.equal(f.client.snapshot().newFrom, null, 'no stale count to draw a divider over a line that never counted');
+});
+
+test('a tab closed while open hands over to Status with no divider', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #other :hi');
+    f.client.select('#other');
+    assert.notEqual(f.client.snapshot().newFrom, null);
+    f.client.close('#other');
+    assert.equal(f.client.snapshot().active, SERVER_LOG);
+    assert.equal(f.client.snapshot().newFrom, null);
 });
 
 // ── nick collisions ───────────────────────────────────────────────────────
@@ -1103,7 +1201,8 @@ test('/clear empties the tab here only, and /help lists the commands', () => {
     f.client.input('/clear');
     assert.deepEqual(f.lines(), []);
     f.client.input('/help');
-    assert.ok(f.lines().some(l => l.text.startsWith('/join')));
+    const help = f.lines().map(l => l.text);
+    for (const command of COMMAND_HELP) assert.ok(help.some(t => t.startsWith(`/${command.name} `)), `/help names /${command.name}`);
     assert.deepEqual(f.sent, []);
 });
 

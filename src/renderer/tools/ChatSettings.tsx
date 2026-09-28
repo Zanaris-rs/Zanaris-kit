@@ -155,13 +155,6 @@ export default function ChatSettings({ view, wide, narrow, onConnected }: { view
              * of the pane at `PANE_MIN_WIDTH`, and every field was cut short.
              */}
             <div className={`min-h-0 flex-1 overflow-y-auto leading-[1.45]${narrow ? '' : ' sunk px-2.5 py-2.5'}`}>
-                {view.needsNick && (
-                    <p className="mb-2.5">
-                        Everyone playing shares these channels. Pick a name for chat — the other players will see it.{' '}
-                        <span className="text-dim">It does not have to be your character's name.</span>
-                    </p>
-                )}
-
                 <div className={`grid gap-x-3 gap-y-2.5 ${wide ? 'grid-cols-2' : 'grid-cols-1'}`}>
                     <div className="flex min-w-0 flex-col gap-0.5">
                         <label htmlFor={`${id}-nick`} className="text-[12px] text-dim">

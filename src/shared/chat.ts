@@ -11,6 +11,9 @@ export type ChatStatus = 'offline' | 'connecting' | 'registering' | 'online' | '
 /** Where server notices and errors go, since they belong to no channel. The pane calls it Status. */
 export const SERVER_LOG = '*';
 
+/** Someone else joining, leaving, quitting or changing name in a channel. */
+export type Presence = 'join' | 'part' | 'quit' | 'nick';
+
 export interface ChatLine {
     /** Monotonic within a run; the shell keys on it and never derives meaning from it. */
     id: number;
@@ -24,6 +27,12 @@ export interface ChatLine {
     at: number;
     /** The line names you, which the chat pane picks out with a gold edge. */
     highlight: boolean;
+    /**
+     * The line is churn — someone else coming, going or renamed in a channel —
+     * which the log folds into one line when it comes in a run. Absent on
+     * every other line, a kick and anything in a private conversation included.
+     */
+    presence?: Presence;
 }
 
 /** Someone in a channel. */
@@ -48,6 +57,7 @@ export interface ChatChannel {
     /** Highest rank first, then by name, as the server last reported them. */
     users: ChatUser[];
     unread: number;
+    /** Lines for you — naming you, or said to you alone — since this tab was last opened or left. While there are any, its unread count is drawn in gold. */
     highlights: number;
     topic: ChatTopic | null;
     /** The channel's flags as "+nt", letters only — a key is not for showing. Null until the server has said. */
@@ -87,6 +97,12 @@ export interface ChatView {
     channels: ViewChannel[];
     active: string;
     lines: ChatLine[];
+    /**
+     * The id of the first line that arrived in the open tab since it was last
+     * left, when anything counted as unread did: the log draws a New divider
+     * above it. Null otherwise. It stays while the tab stays open.
+     */
+    newFrom: number | null;
     /**
      * Why the connection failed, or why the server turned it away, in words
      * for a player; what the socket itself said is in Status. The panel shows

@@ -288,8 +288,10 @@ conversation. It connects to SwiftIRC over TLS, the network LostHQ's community
 actually uses, and joins the channels on its auto-join list:
 `#2004scape, #LostHQ, #Zanaris` until you change it.
 
-Its tabs are **Settings**, **Status**, then one per channel or private
-conversation in the order they were opened:
+Its tabs are **Settings**, drawn as a gear, **Status**, then one per channel
+or private conversation in the order they were opened. A tab's unread count is
+gold when a line in it is for you, naming you or said to you alone, and cream
+when none is:
 
 - **Settings** can't be closed. It has the nickname, an optional NickServ
   password, the auto-join list, the ignore list, whether mentions raise a
@@ -325,11 +327,20 @@ conversation in the order they were opened:
     until you quit, and Settings says so.
 
 Inside a channel, each line carries the time it arrived, with the full date in
-its tooltip. The topic sits above the log, with who set it and when in its
-tooltip. The user list is ranked first and named second: owners, admins and
-ops in gold, half-ops in orange, voices in green. Each nick has the same colour
-as in the log. Above the list are the user count, the channel's modes and the
-date it was created.
+its tooltip. The log has the pane to itself: nothing sits between it and the
+tabs. Two buttons at the end of the tab row change what fills its space.
+**People**, with the count on it, shows or hides the user list. **ⓘ** swaps
+the log for the channel's info: the topic in full with its links, who set it
+and when, how many are in, the modes, and when the channel was made. The user
+list is ranked first and named second: owners, admins and ops in gold,
+half-ops in orange, voices in green. Each nick has the same colour as in the
+log. Another channel, or a line you send, brings the log back.
+
+People coming and going is folded: a run of joins, parts, quits and renames is
+one faint line, "3 joined, 2 left", which opens to the lines on a click. Coming
+back to a tab where something arrived while you were away draws a gold **New**
+rule above the first line you missed, until you leave it again. What you have
+half-typed stays with the tab you typed it in.
 
 Click a name, in the list or the log, for a menu: message them, mention them,
 look them up, or ignore them. Ignoring hides someone's messages, notices and
@@ -337,7 +348,11 @@ invites, and lasts across launches; `/ignore` and `/unignore` do the same from
 the message box. Links in a line open in your browser, http and https only,
 and a channel name joins it, which is how an invite is accepted. Tab finishes
 a nick, a channel or a command, and pressing it again moves to the next match.
-Up and Down bring back what you sent. While the kit is in the background, a
+Up and Down bring back what you sent. A slash at the start of the box lists
+the commands, with what each takes and does, narrowing as you type: Up and
+Down move through them, Tab takes one, and so does Enter, unless you have typed
+a whole command that needs nothing more, which Enter sends. Once the command
+is taken, a line above the box says how it is used. While the kit is in the background, a
 line that names you or a private message raises a system notification, unless
 Settings turns them off — at most one every five seconds, and one a minute
 from any one person.
@@ -353,8 +368,8 @@ rather than remembering a preference. A conversation is a column of short
 lines, and at 320px almost every one of them wraps. Past about 560px the same
 log runs wide and short instead, so six rows hold roughly what eleven hold in a
 narrow column. Wide, the tabs keep to one row and the user list sits beside the
-log. Narrow, the tabs wrap, and a "12 users" button on the topic bar swaps the
-log for the list. Dragging the seam is what "move chat to the bottom" used to
+log, and People hides it to give the log the width. Narrow, the tabs wrap, and
+People swaps the log for the list. Dragging the seam is what "move chat to the bottom" used to
 mean.
 
 The first time you open chat it opens on Settings, because there is nothing
@@ -363,9 +378,9 @@ than assigned. Nothing connects until you pick one, which is also why an
 unattended capture run never opens a socket. Some commands are the kit's own,
 because they change what it draws or take the channel you are looking at:
 `/me`, `/msg`, `/query`, `/notice`, `/nick`, `/join`, `/part`, `/close`,
-`/topic`, `/away`, `/whois`, `/kick`, `/invite`, `/op`, `/deop`, `/voice`,
+`/topic`, `/away`, `/back`, `/whois`, `/kick`, `/invite`, `/op`, `/deop`, `/voice`,
 `/devoice`, `/ignore`, `/unignore`, `/clear`, `/help` and `/quit`. `/help`
-lists them. `/quit [reason]` is the Disconnect button, remembered the same
+lists them, from the same table the slash menu reads. `/quit [reason]` is the Disconnect button, remembered the same
 way, rather than a dropped connection the kit would reconnect behind. A whois
 answer is written out as sentences in the tab you asked from. Every other
 slash command goes to the server as typed — `/mode`, `/who`, `/list` — in
@@ -1097,9 +1112,9 @@ src/renderer/dropIndicator.tsx where a dragged pane will land
 src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
 src/renderer/topBar.tsx     the strip across a window's top, its title bar on macOS
 src/renderer/tools/Worlds.tsx
-src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
+src/renderer/tools/Chat.tsx the chat tabs, the log with its times and folds, a channel's info, the command menu
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
-src/renderer/tools/ChatUsers.tsx     a channel's users by rank, and its modes and age
+src/renderer/tools/ChatUsers.tsx     a channel's users by rank
 src/renderer/tools/homeserver/Builds.tsx   the build lines: use, download, remove
 src/renderer/tools/homeserver/Friends.tsx  Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume

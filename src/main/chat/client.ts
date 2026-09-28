@@ -1,5 +1,6 @@
+import { COMMAND_HELP } from '../../shared/chatInput.ts';
 import { isNick } from '../../shared/chatSettings.ts';
-import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatStatus, type ChatTopic, type ChatUser, type ChatView } from '../../shared/chat.ts';
+import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatStatus, type ChatTopic, type ChatUser, type ChatView, type Presence } from '../../shared/chat.ts';
 import {
     banReason,
     DEFAULT_ISUPPORT,
@@ -104,6 +105,10 @@ interface Chan {
     kicked: boolean;
     createdAt: number | null;
     lines: ChatLine[];
+    /** The latest line id when this tab was last left, so coming back knows which lines arrived while it was. */
+    seen: number;
+    /** Where the New divider goes while this tab is open: see `ChatView.newFrom`. */
+    newFrom: number | null;
 }
 
 /** A nick refusal: in use, not a nick the server will take (too long, or reserved), or held for a while by services or a nick delay. */
@@ -131,25 +136,8 @@ const JOIN_REFUSED: Record<string, string> = {
 /** How many nicks one MODE line gives a rank to. Servers allow at least three, and say how many more in 005 — not read here. */
 const MODES_PER_LINE = 3;
 
-/** /help's answer, one command a line. */
-const HELP = [
-    '/join #channel — join a channel',
-    '/part or /close — leave this channel, or end this conversation',
-    '/query nick [text] — talk to someone privately',
-    '/msg nick text — send someone a private message',
-    '/me text — say what you are doing',
-    '/nick name — change your name for this session',
-    '/topic [text] — show or set this channel\'s topic',
-    '/away [reason] — mark yourself away; with no reason, back',
-    '/whois nick — look someone up',
-    '/notice nick text — send a notice',
-    '/kick nick [reason], /invite nick — for channel operators',
-    '/op, /deop, /voice, /devoice nick — for channel operators',
-    '/ignore [nick], /unignore nick — hide someone\'s messages; with no nick, list',
-    '/clear — empty this tab',
-    '/quit [reason] — disconnect',
-    'Anything else goes to the server as you typed it.'
-];
+/** /help's answer: the table the message box's menu reads, one command a line. */
+const HELP = [...COMMAND_HELP.map(c => `/${c.name}${c.args === '' ? '' : ` ${c.args}`} — ${c.about}`), 'Anything else goes to the server as you typed it.'];
 
 /**
  * Numerics that are read for their data and would only be noise as text: the
@@ -732,7 +720,7 @@ export class IrcClient {
         const chan = this.chans.get(key(channel));
         if (chan === undefined) return;
         chan.users = this.sorted([...chan.users.filter(u => !same(u.nick, who)), { nick: who, prefixes: '' }]);
-        this.push(chan.name, 'system', null, `${who} joined`);
+        this.push(chan.name, 'system', null, `${who} joined`, false, 'join');
     }
 
     private parted(who: string | null, channel: string, reason: string): void {
@@ -744,7 +732,7 @@ export class IrcClient {
         const chan = this.chans.get(key(channel));
         if (chan === undefined) return;
         chan.users = chan.users.filter(u => !same(u.nick, who));
-        this.push(chan.name, 'system', null, `${who} left${because(reason)}`);
+        this.push(chan.name, 'system', null, `${who} left${because(reason)}`, false, 'part');
     }
 
     /**
@@ -776,18 +764,20 @@ export class IrcClient {
             }
             if (!chan.users.some(u => same(u.nick, who))) continue;
             chan.users = chan.users.filter(u => !same(u.nick, who));
-            this.push(chan.name, 'system', null, `${who} quit${because(reason)}`);
+            this.push(chan.name, 'system', null, `${who} quit${because(reason)}`, false, 'quit');
         }
     }
 
     private renamed(from: string | null, to: string): void {
         if (from === null || to === '') return;
-        if (this.isMe(from)) this.nickName = to;
+        const mine = this.isMe(from);
+        if (mine) this.nickName = to;
         for (const chan of this.chans.values()) {
             const user = chan.users.find(u => same(u.nick, from));
             if (user === undefined) continue;
             chan.users = this.sorted([...chan.users.filter(u => u !== user), { nick: to, prefixes: user.prefixes }]);
-            this.push(chan.name, 'system', null, `${from} is now known as ${to}`);
+            // Our own rename is news, not churn: a services rename to a guest nick must not fold away.
+            this.push(chan.name, 'system', null, `${from} is now known as ${to}`, false, mine ? undefined : 'nick');
         }
         this.renameQuery(from, to);
     }
@@ -1138,8 +1128,24 @@ export class IrcClient {
         else if (name !== SERVER_LOG) this.forget(name);
     }
 
+    /**
+     * Opens a tab. The one being left remembers where it was left and forgets
+     * what it had counted, a mention read while it was open included. The one
+     * being opened, if anything worth reading arrived while it was left, marks
+     * the first line since then for the New divider. Opening the tab already
+     * open changes neither.
+     */
     select(channel: string): void {
         const chan = this.chan(channel);
+        const left = this.chans.get(key(this.activeName));
+        if (left !== chan) {
+            if (left !== undefined) {
+                left.seen = this.lastId;
+                left.newFrom = null;
+                left.highlights = 0;
+            }
+            chan.newFrom = chan.unread > 0 ? (chan.lines.find(l => l.id > chan.seen)?.id ?? null) : null;
+        }
         this.activeName = chan.name;
         chan.unread = 0;
         chan.highlights = 0;
@@ -1167,6 +1173,7 @@ export class IrcClient {
             channels,
             active: this.activeName,
             lines: (active?.lines ?? []).map(l => ({ ...l })),
+            newFrom: active?.newFrom ?? null,
             error: this.error
         };
     }
@@ -1176,7 +1183,7 @@ export class IrcClient {
     private chan(name: string): Chan {
         const existing = this.chans.get(key(name));
         if (existing !== undefined) return existing;
-        const chan: Chan = { name, users: [], unread: 0, highlights: 0, pending: null, topic: null, flags: [], flagsKnown: false, kicked: false, createdAt: null, lines: [] };
+        const chan: Chan = { name, users: [], unread: 0, highlights: 0, pending: null, topic: null, flags: [], flagsKnown: false, kicked: false, createdAt: null, lines: [], seen: 0, newFrom: null };
         this.chans.set(key(name), chan);
         return chan;
     }
@@ -1190,7 +1197,8 @@ export class IrcClient {
 
     private forget(channel: string): void {
         this.chans.delete(key(channel));
-        if (same(this.activeName, channel)) this.activeName = SERVER_LOG;
+        // Status is opened as a select would open it, so what it counted is read and what arrived while it was left is marked.
+        if (same(this.activeName, channel)) this.select(SERVER_LOG);
         // A conversation closed is a slot free: the next time they run out is news again.
         if (isQuery(channel)) this.crowded = false;
     }
@@ -1199,9 +1207,9 @@ export class IrcClient {
         return this.nickName !== null && same(nick, this.nickName);
     }
 
-    private push(channel: string, kind: ChatLine['kind'], nick: string | null, text: string, highlight = false): Chan {
+    private push(channel: string, kind: ChatLine['kind'], nick: string | null, text: string, highlight = false, presence?: Presence): Chan {
         const chan = this.chan(channel);
-        chan.lines.push({ id: ++this.lastId, channel: chan.name, kind, nick, text, at: this.opts.now(), highlight });
+        chan.lines.push({ id: ++this.lastId, channel: chan.name, kind, nick, text, at: this.opts.now(), highlight, ...(presence === undefined ? {} : { presence }) });
         if (chan.lines.length > MAX_LINES) chan.lines.splice(0, chan.lines.length - MAX_LINES);
         return chan;
     }

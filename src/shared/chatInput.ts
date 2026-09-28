@@ -1,40 +1,164 @@
 import { foldName, sameName } from './ircNames.ts';
 
 /**
- * The message box's keys: Tab to finish a name, and the arrows to bring back
- * what was sent. Pure, so the rules are tested here and the shell only calls
- * them with what is in the box.
+ * The message box's rules: the commands and the menu that offers them, Tab to
+ * finish a name, and the arrows to bring back what was sent. Pure, so the
+ * rules are tested here and the shell only calls them with what is in the box.
  */
 
+// ── the commands ──────────────────────────────────────────────────────────
+
+/** A command the kit reads itself, as the message box's menu and /help describe it. */
+export interface CommandHelp {
+    name: string;
+    /** What follows the name, written for a person: "#channel", "nick [reason]". Empty when nothing does. */
+    args: string;
+    /** What it does, in a few words. */
+    about: string;
+    /** Whether it does something typed alone. A test in main's protocol.test.ts holds this to `parseInput`. */
+    bare: boolean;
+    /** Shorter names `parseInput` reads exactly as this one, arguments and all. */
+    aliases: readonly string[];
+}
+
 /**
- * Every command the kit reads itself, offered when one is being typed. Anything
- * else still reaches the server as typed. Kept in step with `parseInput`, in
- * main's chat/protocol.ts, by a test there.
+ * Every command the kit reads itself. Anything else still reaches the server
+ * as typed. The one table: /help prints it and the menu offers it, so neither
+ * can know a command the other does not. Kept in step with `parseInput`, in
+ * main's chat/protocol.ts, by tests there.
  */
-export const COMMANDS = [
-    'away',
-    'clear',
-    'close',
-    'deop',
-    'devoice',
-    'help',
-    'ignore',
-    'invite',
-    'join',
-    'kick',
-    'me',
-    'msg',
-    'nick',
-    'notice',
-    'op',
-    'part',
-    'query',
-    'quit',
-    'topic',
-    'unignore',
-    'voice',
-    'whois'
-] as const;
+export const COMMAND_HELP: readonly CommandHelp[] = [
+    { name: 'away', args: '[reason]', about: 'mark yourself away; with no reason, back', bare: true, aliases: [] },
+    /* Its own entry rather than away's alias: it takes no reason, and away's usage line would promise one. */
+    { name: 'back', args: '', about: 'mark yourself back', bare: true, aliases: [] },
+    { name: 'clear', args: '', about: 'empty this tab', bare: true, aliases: [] },
+    { name: 'close', args: '', about: 'leave this channel, or end this conversation', bare: true, aliases: [] },
+    { name: 'deop', args: 'nick', about: "take away someone's operator rank", bare: false, aliases: [] },
+    { name: 'devoice', args: 'nick', about: "take away someone's voice", bare: false, aliases: [] },
+    { name: 'help', args: '', about: 'list these commands', bare: true, aliases: [] },
+    { name: 'ignore', args: '[nick]', about: "hide someone's messages; with no nick, list who is hidden", bare: true, aliases: [] },
+    { name: 'invite', args: 'nick [#channel]', about: 'invite someone to this channel', bare: false, aliases: [] },
+    { name: 'join', args: '#channel', about: 'join a channel', bare: false, aliases: ['j'] },
+    { name: 'kick', args: 'nick [reason]', about: 'remove someone from this channel', bare: false, aliases: [] },
+    { name: 'me', args: 'text', about: 'say what you are doing', bare: false, aliases: [] },
+    { name: 'msg', args: 'nick text', about: 'send someone a private message', bare: false, aliases: [] },
+    { name: 'nick', args: 'name', about: 'change your name for this session', bare: false, aliases: [] },
+    { name: 'notice', args: 'nick text', about: 'send a notice', bare: false, aliases: [] },
+    { name: 'op', args: 'nick', about: 'make someone a channel operator', bare: false, aliases: [] },
+    { name: 'part', args: '[#channel]', about: 'leave this channel', bare: true, aliases: [] },
+    { name: 'query', args: 'nick [text]', about: 'talk to someone privately', bare: false, aliases: ['q'] },
+    { name: 'quit', args: '[reason]', about: 'disconnect', bare: true, aliases: [] },
+    { name: 'topic', args: '[text]', about: "show or set this channel's topic", bare: true, aliases: [] },
+    { name: 'unignore', args: 'nick', about: "stop hiding someone's messages", bare: false, aliases: [] },
+    { name: 'voice', args: 'nick', about: 'give someone a voice', bare: false, aliases: [] },
+    { name: 'whois', args: 'nick', about: 'look someone up', bare: false, aliases: ['wi'] }
+];
+
+/** The table's names, which Tab finishes a command from. */
+export const COMMANDS: readonly string[] = COMMAND_HELP.map(c => c.name);
+
+// ── the command menu ──────────────────────────────────────────────────────
+
+/** The command being typed, without its slash, and every command it could be. */
+export interface CommandMenu {
+    typed: string;
+    matches: readonly CommandHelp[];
+}
+
+/** A command word opening the box: a slash and letters, up to a space or the end. A second slash is the escape for a message, so it is not one. */
+const COMMAND_WORD = /^\/([A-Za-z]*)(?=\s|$)/;
+
+/**
+ * What the menu offers while a command is being typed: the box opens with a
+ * slash and letters, and the caret sits at their end. Every command whose name
+ * or an alias starts with the letters, in the table's order. Null when no
+ * command is being typed or none could be meant, which is the menu closed.
+ */
+export function commandMenu(text: string, caret: number): CommandMenu | null {
+    const word = COMMAND_WORD.exec(text);
+    if (word === null || caret !== word[0].length) return null;
+    const typed = word[1]!.toLowerCase();
+    const matches = COMMAND_HELP.filter(c => c.name.startsWith(typed) || c.aliases.some(a => a.startsWith(typed)));
+    return matches.length === 0 ? null : { typed, matches };
+}
+
+/** The command a whole word names, by its name or an alias. */
+function commandNamed(word: string): CommandHelp | null {
+    const name = word.toLowerCase();
+    return COMMAND_HELP.find(c => c.name === name || c.aliases.includes(name)) ?? null;
+}
+
+/** The command the box opens with, once a space follows it: what the line under the menu says how to use. Null for anything else, the server's own commands included. */
+export function commandHint(text: string): CommandHelp | null {
+    const word = /^\/([A-Za-z]+)\s/.exec(text);
+    return word === null ? null : commandNamed(word[1]!);
+}
+
+/**
+ * Commands the server answers itself, which the kit sends as typed. Enter
+ * sends one typed whole even while the menu offers something longer: "/who"
+ * is the start of "/whois", and "/ms", services' MemoServ, of "/msg". IRC's
+ * own commands and the services' names, less the kit's own.
+ */
+const SERVER_COMMANDS: ReadonlySet<string> = new Set([
+    'admin',
+    'info',
+    'ison',
+    'kill',
+    'knock',
+    'links',
+    'list',
+    'lusers',
+    'map',
+    'mode',
+    'motd',
+    'names',
+    'oper',
+    'ping',
+    'privmsg',
+    'rules',
+    'silence',
+    'stats',
+    'time',
+    'userhost',
+    'userip',
+    'users',
+    'version',
+    'wallops',
+    'watch',
+    'who',
+    'whowas',
+    'ns',
+    'cs',
+    'ms',
+    'hs',
+    'os',
+    'bs',
+    'nickserv',
+    'chanserv',
+    'memoserv',
+    'hostserv',
+    'operserv',
+    'botserv'
+]);
+
+/**
+ * What Enter does while the menu is open. A whole command of the kit's that
+ * does something alone is sent, as Enter always did, and so is one of the
+ * server's. Anything else takes the highlighted command, since sending "/jo"
+ * or a bare "/join" would only be refused.
+ */
+export function menuEnter(menu: CommandMenu): 'send' | 'take' {
+    const named = commandNamed(menu.typed);
+    if (named !== null) return named.bare ? 'send' : 'take';
+    return SERVER_COMMANDS.has(menu.typed) ? 'send' : 'take';
+}
+
+/** The box with its command word replaced by `command`'s name and a space, the caret after the space, and the rest of the line kept. */
+export function takeCommand(text: string, command: CommandHelp): { text: string; caret: number } {
+    const head = `/${command.name} `;
+    return { text: `${head}${text.replace(/^\/[A-Za-z]*\s*/, '')}`, caret: head.length };
+}
 
 // ── Tab ───────────────────────────────────────────────────────────────────
 

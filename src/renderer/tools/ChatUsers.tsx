@@ -10,14 +10,11 @@ const TONE_CLASS = { gold: 'text-gold', warn: 'text-warn', link: 'text-link', pl
 /** What a rank symbol means, for the tooltip. A symbol a network invents is shown without a name rather than a guessed one. */
 const RANK_NAME: Record<string, string> = { '~': 'owner', '&': 'admin', '@': 'operator', '%': 'half-operator', '+': 'voiced' };
 
-/** When a channel was made, as a date without the time, which nobody reading a user list needs. */
-function createdOn(at: number): string {
-    return new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 /**
- * Who is in a channel, and the channel's own facts above them: how many, its
- * modes, and how old it is.
+ * Who is in a channel, and nothing else: every line of the list is a name.
+ * How many there are is on the People button that shows the list, and the
+ * channel's modes and age are in its info view, since a header of them left a
+ * short pane a name and a half.
  *
  * Ranked first and named second, as the client sorts them, so the people who
  * run the room are at the top. Each row is the highest rank symbol in its own
@@ -27,17 +24,8 @@ function createdOn(at: number): string {
  */
 export default function ChatUsers({ channel, self, mention, className = '' }: { channel: ViewChannel; self: string | null; mention: (nick: string) => void; className?: string }): ReactNode {
     const count = channel.users.length;
-    /* "+" alone is a channel the server said has no flags, which is not worth a mention. */
-    const modes = channel.modes !== null && channel.modes !== '+' ? channel.modes : null;
     return (
-        <section aria-label={`People in ${channel.name}`} className={`sunk flex min-h-0 flex-col ${className}`}>
-            <header className="shrink-0 border-b border-edge-dark px-2 py-1 text-[12px] leading-[1.35] text-dim">
-                <p>
-                    {count === 1 ? '1 user' : `${count} users`}
-                    {modes !== null && <span title="Channel modes"> · {modes}</span>}
-                </p>
-                {channel.createdAt !== null && <p title={new Date(channel.createdAt).toLocaleString()}>Created {createdOn(channel.createdAt)}</p>}
-            </header>
+        <section aria-label={`${count === 1 ? '1 person' : `${count} people`} in ${channel.name}`} className={`sunk flex min-h-0 flex-col ${className}`}>
             {count === 0 ? (
                 <p className="px-2 py-1.5 text-[12px] text-faint">Nobody listed yet.</p>
             ) : (
