@@ -2,9 +2,10 @@ import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { Caret, CloseRoom } from './icons';
 
 /**
- * The text-bearing interface tab, worn by the window strip, by the chat
- * pane's row of Settings, Status and channels, and by the Home server
- * tool's rows of sections and command lists.
+ * The interface tab that carries a label, worn by the window strip, by the
+ * chat pane's row of Settings, Status and channels, and by the Home server
+ * tool's rows of sections and command lists. Chat's Settings draws a gear in
+ * place of its label, which it still carries as its name.
  *
  * It lives here rather than in either of them because they are the same
  * object: one box, one open-versus-resting split, one place to change it. Two

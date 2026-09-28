@@ -4,7 +4,7 @@ import { COMMANDS, commandHint, commandMenu, complete, menuEnter, recall, rememb
 import { foldLog, type LogItem } from '../../shared/chatLog';
 import { clockTime, isConnectionWanted } from '../../shared/chatSettings';
 import { segments } from '../../shared/chatText';
-import { foldName, isChannel } from '../../shared/ircNames';
+import { foldName, isChannel, sameName } from '../../shared/ircNames';
 import { Caret, Gear, Info, People } from '../icons';
 import Tab from '../tab';
 import ChatSettings from './ChatSettings';
@@ -57,11 +57,15 @@ function channelTitle(name: string): string {
     return isChannel(name) ? name : `Private conversation with ${name}`;
 }
 
-/** A tab's tooltip: what it is, and what its count is counting. */
+/**
+ * A tab's tooltip: what it is, and what its count is counting. Only a channel
+ * says how many name you: everything said in a conversation with one person
+ * is said to you, which is also why its count is always gold.
+ */
 function tabTitle(channel: ViewChannel): string {
     const title = channelTitle(channel.name);
     if (channel.unread === 0) return title;
-    const named = channel.highlights > 0 ? `, ${channel.highlights} ${channel.highlights === 1 ? 'names' : 'name'} you` : '';
+    const named = channel.highlights > 0 && isChannel(channel.name) ? `, ${channel.highlights} ${channel.highlights === 1 ? 'names' : 'name'} you` : '';
     return `${title} — ${channel.unread} unread${named}`;
 }
 
@@ -121,8 +125,9 @@ function useCloseFocus(channels: ViewChannel[]): {
  * inside a tab that stays put, and a row that reshuffles as people talk is a
  * row you cannot aim at.
  *
- * A count is gold when a line it counts names you and cream when none does,
- * so a tab that wants you reads differently from one that is only busy.
+ * A count is gold when a line it counts is for you — it names you, or was said
+ * to you alone — and cream when none is, so a tab that wants you reads
+ * differently from one that is only busy.
  *
  * Every channel carries its own close, inside the tab, as the window strip's
  * tabs do: any channel may be closed, so there is no rule about which to
@@ -416,7 +421,9 @@ let sentLines: string[] = [];
  * What is half-typed in each tab, by its folded name, so a line started in one
  * room stays there rather than following you into the next one and being sent
  * to it. For every chat pane in the window, and until the window closes, as
- * `sentLines` is, so a visit to Settings keeps it.
+ * `sentLines` is, so a visit to Settings keeps it. Two chat panes typing in
+ * the same room share its one entry, so the one typed in last is what the
+ * room keeps; one sending clears it for both.
  */
 const drafts = new Map<string, string>();
 
@@ -439,7 +446,12 @@ function Conversation({ view, wide, narrow, shown, sidebar, onSent }: { view: Ch
     const [behind, setBehind] = useState(false);
     /* Which folds are open, by key. A different room is a different log, so they start closed there. */
     const [openFolds, setOpenFolds] = useState<ReadonlySet<number>>(() => new Set());
-    /* The box's text when Escape closed the menu: it stays closed until the text changes. */
+    /*
+     * The box's text when the menu was closed without anything taken — by
+     * Escape, or by the arrows bringing back a line sent, which would
+     * otherwise open it on "/clear" and keep the arrows from going further
+     * back. It stays closed until the text changes.
+     */
     const [dismissed, setDismissed] = useState<string | null>(null);
     const [pick, setPick] = useState(0);
     const log = useRef<HTMLDivElement | null>(null);
@@ -454,15 +466,31 @@ function Conversation({ view, wide, narrow, shown, sidebar, onSent }: { view: Ch
      */
     const stuck = useRef(true);
 
-    /* A different tab brings its own draft, with the caret at its end, and its folds closed. Set while rendering, so the other tab's line is never drawn in this one's box. */
+    /*
+     * A different tab brings its own draft, with the caret at its end, and its
+     * folds closed. Set while rendering, so the other tab's line is never drawn
+     * in this one's box.
+     *
+     * Except when the tab left is gone and the one arriving is not Status.
+     * Closing the open tab always lands on Status, so that is the same
+     * conversation under the new name its person took: its draft moves with
+     * it and nothing else changes. A tab that closed takes its draft with it.
+     */
     const [draftFor, setDraftFor] = useState(view.active);
     if (draftFor !== view.active) {
-        const next = drafts.get(foldName(view.active)) ?? '';
+        const gone = !view.channels.some(c => sameName(c.name, draftFor));
+        const kept = drafts.get(foldName(draftFor));
         setDraftFor(view.active);
-        setDraft(next);
-        setCaret(next.length);
-        setOpenFolds(new Set());
-        setDismissed(null);
+        if (gone) drafts.delete(foldName(draftFor));
+        if (gone && view.active !== SERVER_LOG) {
+            if (kept !== undefined) drafts.set(foldName(view.active), kept);
+        } else {
+            const next = drafts.get(foldName(view.active)) ?? '';
+            setDraft(next);
+            setCaret(next.length);
+            setOpenFolds(new Set());
+            setDismissed(null);
+        }
     }
 
     const typedMenu = commandMenu(draft, caret);
@@ -509,6 +537,21 @@ function Conversation({ view, wide, narrow, shown, sidebar, onSent }: { view: Ch
         else setBehind(true);
     }, [last, view.lines.length]);
 
+    /*
+     * And keep them at the end when the log's own box changes: the usage line
+     * appearing under it, or the list shown beside it, takes room from the
+     * bottom, and the latest line would sit hidden under the well's edge.
+     */
+    useLayoutEffect(() => {
+        const el = log.current;
+        if (!el) return;
+        const watch = new ResizeObserver(() => {
+            if (stuck.current) el.scrollTop = el.scrollHeight;
+        });
+        watch.observe(el);
+        return () => watch.disconnect();
+    }, [instead]);
+
     const onScroll = (): void => {
         const el = log.current;
         if (!el) return;
@@ -516,9 +559,10 @@ function Conversation({ view, wide, narrow, shown, sidebar, onSent }: { view: Ch
         if (stuck.current) setBehind(false);
     };
 
-    /** Puts `next` in the box and keeps it as this tab's draft. */
+    /** Puts `next` in the box and keeps it as this tab's draft. New text lifts a closed menu's closing. */
     const write = (next: string): void => {
         setDraft(next);
+        if (next !== dismissed) setDismissed(null);
         const key = foldName(view.active);
         if (next === '') drafts.delete(key);
         else drafts.set(key, next);
@@ -613,6 +657,7 @@ function Conversation({ view, wide, narrow, shown, sidebar, onSent }: { view: Ch
             recalled.current = step.at;
             completion.current = null;
             write(step.text);
+            setDismissed(step.text);
             place(step.text.length);
         }
     };
