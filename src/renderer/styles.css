@@ -330,18 +330,6 @@ input[type='color'] {
     background: var(--color-gold);
 }
 
-/*
- * A divider scored into the stone: the cut, then a hairline of light under it.
- * It runs the width of the list it divides, inset as far as the rows' own
- * sprites are, so it reads as the list splitting in two rather than a stray dash.
- */
-.sep {
-    height: 2px;
-    background: var(--color-edge-dark);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-    margin: 6px 8px;
-}
-
 /* Links look like links here, as they did then. */
 .link {
     color: var(--color-link);

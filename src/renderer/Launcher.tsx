@@ -1,4 +1,4 @@
-import { Fragment, type CSSProperties, type ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { Bookmark } from '../shared/worlds';
 import type { PaneContentItem } from '../shared/panes';
 import { OpenExternal } from './icons';
@@ -22,9 +22,10 @@ import { gameSprite, linkSprite, toolSprite } from './sprites';
  */
 
 /**
- * One row, whatever it opens. Every row carries a sprite, so the tools above
- * the rule and the links below it start their names on the same line; a row
- * with no escape hatch keeps the hatch's width empty for the same reason.
+ * One row, whatever it opens. Every row carries a sprite, so the window's own
+ * list and the links' list under it start their names on the same line; a row
+ * with no escape hatch keeps the hatch's width empty, so a name has the same
+ * room in either list.
  *
  * Narrow (`WIDE_ENOUGH`), the sprite goes above the name rather than beside
  * it, with the hatch at the right of the sprite's line, so the name has the
@@ -43,8 +44,8 @@ import { gameSprite, linkSprite, toolSprite } from './sprites';
  * escape hatch beside the button too, which reads as one row.
  *
  * Narrow, the row's sides are 4px and the list has no padding at its sides:
- * at `PANE_MIN_WIDTH`, with the list's scrollbar showing, that leaves a name
- * 76px, and the widest word the kit's own names have, "Coordinates", is 70.
+ * at `PANE_MIN_WIDTH`, with the launcher's scrollbar showing, that leaves a
+ * name 76px, and the widest word the kit's own names have, "Coordinates", is 70.
  */
 const ROW_PADDING: CSSProperties = { padding: '6px 8px' };
 const ROW_PADDING_NARROW: CSSProperties = { padding: '5px 4px' };
@@ -84,7 +85,7 @@ function Row({ sprite, label, open, onOpen, link, wide }: { sprite: ReactNode; l
         );
     }
     return (
-        <li className={`flex items-stretch ${highlight}`}>
+        <li className={`flex min-w-0 items-stretch ${highlight}`}>
             <button
                 type="button"
                 aria-current={open ? 'true' : undefined}
@@ -123,11 +124,21 @@ function keyOf(item: PaneContentItem): string {
  * The pane width below which a row puts its sprite above its name.
  *
  * Beside a sprite and the hatch's column, a name has the pane less 118px, with
- * the list's scrollbar showing — room for the longest name the kit offers,
+ * the launcher's scrollbar showing — room for the longest name the kit offers,
  * "Move game here" at 98px, from 216. A pane knows its own width, so the
  * shape is read from it, as Worlds' is.
  */
 const WIDE_ENOUGH = 220;
+
+/**
+ * A wide pane lays each list out in as many columns as fit, of at least
+ * 200px: the longest name the kit offers, "Move game here" at 98px, beside
+ * its sprite and the hatch's column is 172 of row. One column the width of
+ * the pane put every hatch at its far edge, in a wide pane hundreds of pixels
+ * from the name it belongs to. Both lists take the same tracks at the same
+ * width, so their columns line up.
+ */
+const COLUMNS = 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-1 p-1';
 
 export default function Launcher({
     paneId,
@@ -145,28 +156,27 @@ export default function Launcher({
     const wide = width >= WIDE_ENOUGH;
     const fill = (item: PaneContentItem): void => void window.zanaris.panes.setContent(paneId, item.content);
     const bookmarks = new Map(links.map(link => [link.url, link]));
+    /*
+     * Two lists, each in a well of its own that is as tall as its rows: this
+     * server's links are a different kind of destination from the window's
+     * own things, and the group each item arrives in says which list it is
+     * in. They used to share one well with a rule between them, and the well
+     * ran to the pane's foot whatever it held. The launcher scrolls as one,
+     * so a short pane scrolls both lists rather than squeezing either.
+     */
+    const lists = [contents.filter(item => item.group !== 'link'), contents.filter(item => item.group === 'link')].filter(list => list.length > 0);
     return (
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
-            <ul className={`sunk min-h-0 flex-1 overflow-y-auto ${wide ? 'p-1' : 'py-1'}`}>
-                {contents.map((item, i) => {
-                    const link = item.content.kind === 'page' ? bookmarks.get(item.content.bookmark) : undefined;
-                    // The one line the stone draws rather than main: this
-                    // server's links are a different kind of destination from
-                    // the window's own things, and the group each item arrives
-                    // in is what says where that line falls.
-                    const rule = i > 0 && item.group === 'link' && contents[i - 1]!.group !== 'link';
-                    return (
-                        <Fragment key={keyOf(item)}>
-                            {rule && <li aria-hidden="true" className="sep" />}
-                            <Row sprite={spriteOf(item, link)} label={link?.name ?? item.label} open={item.current} onOpen={() => fill(item)} link={link} wide={wide} />
-                        </Fragment>
-                    );
-                })}
-            </ul>
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+            {lists.map(list => (
+                <ul key={list[0]!.group} className={`sunk shrink-0 ${wide ? COLUMNS : 'py-1'}`}>
+                    {list.map(item => {
+                        const link = item.content.kind === 'page' ? bookmarks.get(item.content.bookmark) : undefined;
+                        return <Row key={keyOf(item)} sprite={spriteOf(item, link)} label={link?.name ?? item.label} open={item.current} onOpen={() => fill(item)} link={link} wide={wide} />;
+                    })}
+                </ul>
+            ))}
 
-            <p className="text-[12px] text-dim">
-                Add pane, at the top right, opens more beside this. Links off these sites open in your browser.
-            </p>
+            <p className="shrink-0 text-[12px] text-dim">Add pane, at the top right, opens more beside this. Links off these sites open in your browser.</p>
         </div>
     );
 }
