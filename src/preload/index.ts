@@ -88,6 +88,9 @@ const api: ZanarisApi = {
         copyLink: () => ipcRenderer.invoke(IPC.shareCopy),
         openLink: () => ipcRenderer.invoke(IPC.shareOpen)
     },
+    update: {
+        press: () => ipcRenderer.invoke(IPC.updatePress)
+    },
     timers: {
         start: id => ipcRenderer.invoke(IPC.timersStart, id),
         pause: id => ipcRenderer.invoke(IPC.timersPause, id),

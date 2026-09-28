@@ -99,7 +99,8 @@ export const IPC = {
     appearancePresetPicture: 'zanaris:appearance-preset-picture',
     appearanceImportTheme: 'zanaris:appearance-import-theme',
     appearanceExportTheme: 'zanaris:appearance-export-theme',
-    appearanceEditing: 'zanaris:appearance-editing'
+    appearanceEditing: 'zanaris:appearance-editing',
+    updatePress: 'zanaris:update-press'
 } as const;
 
 /**
@@ -136,6 +137,12 @@ export interface WindowFrame {
     ownTitleBar: boolean;
     /** How far in from the window's left edge the row's first control must start, to clear the window buttons macOS draws over it. Zero where there are none to clear: off macOS, and in full screen. */
     buttonsInset: number;
+}
+
+/** The tab bar's update button, the same in every window: main words it (`update.updateButton`), and a press asks about it. */
+export interface UpdateButton {
+    label: string;
+    title: string;
 }
 
 export interface ShellState {
@@ -186,6 +193,8 @@ export interface ShellState {
      * `tabs.sharingWithoutPane`.
      */
     sharingWithoutPane: boolean;
+    /** The kit's own update, while there is one to act on and Not Now has not hidden it. */
+    update: UpdateButton | null;
     /** This window's clocks. Every window has them: the built-ins are on every server and the player's own are app-wide. */
     timers: TimersView;
     /**
@@ -420,6 +429,10 @@ export interface ZanarisApi {
         copyLink(): Promise<void>;
         /** Opens the link in the system browser, to see what friends see. */
         openLink(): Promise<void>;
+    };
+    update: {
+        /** The tab bar's update button: main asks, in a dialog on this window, what it should do. */
+        press(): Promise<void>;
     };
     timers: {
         start(id: string): Promise<void>;

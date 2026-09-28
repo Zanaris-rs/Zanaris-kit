@@ -107,8 +107,8 @@ test('a Mac download is unpacked, checked and put where the quit can find it', a
     const seen: string[] = [];
     service.subscribe(() => seen.push(service.button()?.label ?? '-'));
     await service.download();
-    assert.equal(f.downloads[0].asset.name, ZIP);
-    assert.equal(f.downloads[0].to, `${DIR}/.incoming/${ZIP}`);
+    assert.equal(f.downloads[0]!.asset.name, ZIP);
+    assert.equal(f.downloads[0]!.to, `${DIR}/.incoming/${ZIP}`);
     assert.deepEqual(seen, ['Updating 0%', 'Updating 50%', 'Restart to Update'], 'one push per whole percent');
     assert.equal(f.files.get(`${DIR}/0.9.1/Zanaris Kit.app/Contents`), 'app');
     assert.deepEqual(JSON.parse(f.files.get(`${DIR}/ready.json`)!), { version: '0.9.1', file: 'Zanaris Kit.app' });
@@ -121,7 +121,7 @@ test('an app that fails its check is refused, and nothing is left ready', async 
     const service = new UpdateService(f.io);
     await service.check();
     await service.download();
-    assert.deepEqual(service.view(), { kind: 'failed', version: '0.9.1', reason: "The download isn't Zanaris Kit.", release: { version: '0.9.1', tag: 'v0.9.1', asset: f.downloads[0].asset } });
+    assert.deepEqual(service.view(), { kind: 'failed', version: '0.9.1', reason: "The download isn't Zanaris Kit.", release: { version: '0.9.1', tag: 'v0.9.1', asset: f.downloads[0]!.asset } });
     assert.equal(f.files.has(`${DIR}/ready.json`), false);
     assert.equal(service.installAtQuit(false), false);
 });

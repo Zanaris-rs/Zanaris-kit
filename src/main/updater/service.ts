@@ -158,8 +158,8 @@ export class UpdateService {
     async download(): Promise<void> {
         const s = this.state;
         if (s.kind !== 'available' || s.how.kind !== 'self' || !s.release.asset) return;
+        const asset = s.release.asset;
         const { release, how } = s;
-        const asset = release.asset;
         const target = how.target;
         const { fs, join, dir } = this.io;
         const controller = new AbortController();

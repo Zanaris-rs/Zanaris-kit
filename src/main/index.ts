@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type MenuItemConstructorOptions, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type MenuItemConstructorOptions, type MessageBoxOptions, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -48,7 +48,9 @@ import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
 import { ShotLedger } from './shotLedger';
-import { checkLatest, RELEASES_LATEST, type LatestRelease } from './update';
+import { updateQuestion, type UpdateAction } from './update';
+import { UpdateService } from './updater/service';
+import { updateIo } from './updater/electron';
 import { HomeServerService } from './homeserver/service';
 import { BuildStore } from './homeserver/buildStore';
 import { buildStoreDeps, electronDeps, readCommands, homeServerDir } from './homeserver/electron';
@@ -233,8 +235,12 @@ const hiscoresServices = new Map<string, HiscoresService>();
 /** One chat connection for the whole app, built at ready because its nick comes out of the profile. */
 let chat: ChatService | null = null;
 
-/** The newer release the update check found, if any; the menu shows it. */
-let update: LatestRelease | null = null;
+/** The kit's own update. What the last run left is read at ready (`start`), and GitHub is asked after it. */
+const updates = new UpdateService(updateIo(log));
+/** Restart to Update: the quit it starts opens the new version afterwards. */
+let restartForUpdate = false;
+/** How often a running kit asks again: a player may leave it open for days. */
+const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
 
 /** The one world this computer runs; built at ready, when the paths and the catalog exist. */
 let homeServer: HomeServerService | null = null;
@@ -275,7 +281,7 @@ let menuWindow: MenuWindowState = { alwaysOnTop: false, canPin: false, serverThe
 function installAppMenu(): void {
     menuWindow = menuWindowState();
     const appearance = appState.appearance();
-    installMenu(catalog.list(), actions, appState.warnOnSwitch(), update, menuWindow, { app: themeFor(appearance, null), custom: appearance.custom });
+    installMenu(catalog.list(), actions, appState.warnOnSwitch(), menuWindow, { app: themeFor(appearance, null), custom: appearance.custom });
 }
 
 /**
@@ -293,28 +299,71 @@ function syncMenuWindowItems(): void {
 }
 
 /**
- * One request per launch for the newest release. Every failure is swallowed:
- * offline, rate limited, malformed. Nothing is downloaded; the Help menu
- * gets an item that opens the release page.
+ * The automatic checks: once as the app starts and every six hours after.
+ * Every failure is logged and otherwise ignored. Not in a capture, and not
+ * with ZANARIS_NO_UPDATE_CHECK, which leaves Check for Updates… working.
  */
-async function checkForUpdate(): Promise<void> {
+function startUpdateChecks(): void {
     if (CAPTURE_DIR || process.env.ZANARIS_NO_UPDATE_CHECK) return;
-    try {
-        const res = await net.fetch(RELEASES_LATEST, {
-            signal: AbortSignal.timeout(5000),
-            headers: { Accept: 'application/vnd.github+json', 'User-Agent': `zanaris-kit/${app.getVersion()}` }
-        });
-        if (!res.ok) return;
-        const found = checkLatest(await res.json(), app.getVersion());
-        if (!found?.newer) return;
-        update = found;
-        installAppMenu();
-        log(`[main] update available: ${found.latest} (this is ${app.getVersion()})`);
-    } catch (err) {
-        // String(err), not .message: a rejection need not be an Error, and a
-        // check that swallows everything must not throw out of its own catch.
-        log(`[main] update check failed: ${String(err)}`);
+    void updates.check();
+    setInterval(() => void updates.check(), UPDATE_CHECK_MS);
+}
+
+/** The update's dialog, on `win` as a sheet when there is one, and what its answer does. */
+async function askAboutUpdate(win: BrowserWindow | null): Promise<void> {
+    const question = updateQuestion(updates.view(), homeServer ? worldRunning(homeServer.view().status) : false);
+    if (!question) return;
+    const options: MessageBoxOptions = {
+        type: 'question',
+        buttons: question.buttons.map(b => b.label),
+        defaultId: 0,
+        cancelId: question.buttons.length - 1,
+        message: question.message,
+        detail: question.detail
+    };
+    const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+    const action: UpdateAction | undefined = question.buttons[response]?.action;
+    switch (action) {
+        case 'download':
+            void updates.download();
+            return;
+        case 'page':
+            actions.openExternal(question.page);
+            return;
+        case 'not-now':
+            updates.dismiss();
+            return;
+        case 'cancel-download':
+            updates.cancel();
+            return;
+        case 'restart':
+            restartForUpdate = true;
+            app.quit();
+            return;
+        case 'retry': {
+            const outcome = await updates.retry();
+            if (outcome?.kind === 'error') await showUpdateCheckFailed(win, outcome.reason);
+            return;
+        }
+        default:
+            // Keep Going and Later: the dialog was the answer.
+            return;
     }
+}
+
+async function showUpdateCheckFailed(win: BrowserWindow | null, reason: string): Promise<void> {
+    const options: MessageBoxOptions = { type: 'warning', message: "Couldn't check for updates.", detail: reason };
+    await (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+}
+
+/** Check for Updates…: asks now, and says what it found, on the window in front. */
+async function checkForUpdatesNow(): Promise<void> {
+    const outcome = await updates.check(true);
+    const win = focusedServerWindow()?.window ?? null;
+    if (outcome.kind === 'newer') return askAboutUpdate(win);
+    if (outcome.kind === 'error') return showUpdateCheckFailed(win, outcome.reason);
+    const options: MessageBoxOptions = { type: 'info', message: `Zanaris Kit ${app.getVersion()} is the newest version.` };
+    await (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
 }
 
 /** The conversation as it stands. Nothing opens a window before the service exists, but state() always needs a view. */
@@ -493,7 +542,8 @@ const windows = new ServerWindows(
                     const state = appState.timers();
                     return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
                 },
-                theme: () => lookFor(appState.appearance(), spec.server.id, editing)
+                theme: () => lookFor(appState.appearance(), spec.server.id, editing),
+                update: () => updates.button()
             }
         );
         serverWindows.set(spec.id, sw);
@@ -667,7 +717,7 @@ async function continueWithNewerFiles(): Promise<boolean> {
         defaultId: 0,
         cancelId: 1,
         message: `Your ${what} from a newer version of Zanaris Kit.`,
-        detail: `This version uses what it can read and leaves ${settingsNewer && listNewer ? 'both files' : 'the file'} as ${settingsNewer && listNewer ? 'they are' : 'it is'}, so ${lost} until you update won't be kept. The newer version is on the releases page, and Help > Update Available opens it once the kit has found it.`
+        detail: `This version uses what it can read and leaves ${settingsNewer && listNewer ? 'both files' : 'the file'} as ${settingsNewer && listNewer ? 'they are' : 'it is'}, so ${lost} until you update won't be kept. The newer version is on the releases page, and the kit offers it in the tab bar once it has found it.`
     });
     return response === 0;
 }
@@ -807,7 +857,8 @@ const actions: MenuActions = {
         if (sw && tab) sw.selectTab(tab.id);
     },
     // Only https reaches the system browser from here: this opens whatever the
-    // menu carries, and the update item's url came off the network. (A game or
+    // menu and the update's dialog carry, which the kit builds itself, but a
+    // guard here does not have to take that on trust. (A game or
     // a page asking for a new window is let through on http too, in
     // serverWindow and paneHost, but only straight after a press in it.)
     openExternal: url => {
@@ -820,7 +871,8 @@ const actions: MenuActions = {
     reportProblem: () =>
         actions.openExternal(
             reportUrl({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch, osVersion: process.getSystemVersion() })
-        )
+        ),
+    checkForUpdates: () => void checkForUpdatesNow()
 };
 
 // ── ipc ───────────────────────────────────────────────────────────────────
@@ -1280,6 +1332,10 @@ ipcMain.handle(IPC.tabSetupsMenu, (event, x: unknown, y: unknown) => {
 });
 
 ipcMain.handle(IPC.tabShowHomeServer, event => windowFor(event.sender)?.showHomeServer());
+ipcMain.handle(IPC.updatePress, async event => {
+    const sw = windowFor(event.sender);
+    if (sw) await askAboutUpdate(sw.window);
+});
 
 ipcMain.handle(IPC.tabClose, async (event, tabId: unknown) => {
     if (typeof tabId !== 'string') return;
@@ -2838,6 +2894,11 @@ async function captureAndExit(dir: string): Promise<void> {
 // ── app ───────────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+    // Before any window: a ready update shows in the first one's tab bar.
+    updates.start();
+    updates.subscribe(() => {
+        for (const sw of serverWindows.values()) sw.pushState();
+    });
     // Before loadCatalog: it builds the menu, which draws the switch-warning preference.
     appState.load();
     // The catalog says so when it resets; state.json used to reset in silence,
@@ -2970,7 +3031,7 @@ app.whenReady().then(async () => {
     share.subscribe(() => {
         for (const sw of serverWindows.values()) if (sw.state().server.kind === 'singleplayer') sw.pushState();
     });
-    void checkForUpdate();
+    startUpdateChecks();
 
     log('');
     log('  Zanaris Kit');
@@ -3053,6 +3114,17 @@ app.on('before-quit', event => {
             app.quit();
         });
     }
+});
+
+/*
+ * The update installs here, not in before-quit: this runs after the world and
+ * the share have stopped and every window has closed, just before the process
+ * ends — which the Windows installer needs, since it closes a kit still running
+ * after about a second. Quitting never asks, and a ready update is installed
+ * on every quit, Restart to Update's or not.
+ */
+app.on('quit', () => {
+    updates.installAtQuit(restartForUpdate);
 });
 
 // macOS keeps running with no windows; the menu and the dock open the next one.
