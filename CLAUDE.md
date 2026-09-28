@@ -268,9 +268,13 @@ offline until Connect. Connect, Disconnect and a typed `/quit` report through
 `ChatService.stop()`, for the app quitting, must not call it.
 
 **Typed commands:** `parseInput` reads the kit's own — the list is
-`COMMANDS` in `shared/chatInput.ts`, which a test keeps in step with it, plus
-the aliases `/j /q /wi /back`. Everything else goes to the server as typed
-(`Input` kind `raw`), and the reply lands in Status.
+`COMMAND_HELP` in `shared/chatInput.ts`, with its aliases `/j /q /wi /back`.
+It is the one description of them: `/help` prints it and the slash menu offers
+it, and tests in `protocol.test.ts` hold every entry, its `bare` flag and its
+aliases to what `parseInput` does. Nothing checks the other way, so a command
+`parseInput` learns goes into the table by hand, or neither lists it.
+Everything else goes to the server as typed (`Input` kind `raw`), and the
+reply lands in Status.
 
 **A conversation with one person is a tab named by their nick.** A PRIVMSG to
 us opens one, up to `MAX_CONVERSATIONS`, past which it lands in Status; a notice never does, and neither does `/msg`, so NickServ's
