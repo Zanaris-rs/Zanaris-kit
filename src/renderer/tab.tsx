@@ -34,6 +34,8 @@ const PADDED: CSSProperties = { ...BOX, paddingLeft: 10, paddingRight: 10 };
  * and "Characters" is 66 of them.
  */
 const MENU_PADDED: CSSProperties = { ...BOX, paddingLeft: 10, paddingRight: 6 };
+/* A tab drawn as a glyph: the glyph's own 18px is most of its width, so its sides are narrower than a word's. */
+const ICON_PADDED: CSSProperties = { ...BOX, paddingLeft: 6, paddingRight: 6 };
 
 export default function Tab({
     label,
@@ -45,8 +47,10 @@ export default function Tab({
     onClose,
     closeLabel,
     onContextMenu,
-    menu = false
+    menu = false,
+    icon
 }: {
+    /** What the tab says, or, for a tab drawn as a glyph, its tooltip and its name to a screen reader. */
     label: string;
     /** The full name, for a label that had to be shortened to fit. */
     title?: string;
@@ -83,6 +87,12 @@ export default function Tab({
      * kit's other menus do. Only for a tab with `onSelect` and no close.
      */
     menu?: boolean;
+    /**
+     * Draws the tab as this glyph instead of its label: chat's Settings, a
+     * gear, which leaves its channels the room a word took. Only for a tab
+     * with `onSelect` and no close.
+     */
+    icon?: ReactNode;
 }): ReactNode {
     /*
      * One pair of faces for both states, `.tab`'s own: resting is a tab cut
@@ -104,7 +114,7 @@ export default function Tab({
         role === 'tab' ? { role: 'tab', 'aria-selected': open } : menu ? { 'aria-haspopup': 'menu' } : { 'aria-current': open || undefined };
     const body = (
         <>
-            <span className="truncate">{label}</span>
+            {icon ?? <span className="truncate">{label}</span>}
             {after}
             {menu && <Caret compact />}
         </>
@@ -141,7 +151,16 @@ export default function Tab({
     }
 
     return onSelect ? (
-        <button type="button" {...announce} title={title} onClick={onSelect} onContextMenu={onContextMenu} style={menu ? MENU_PADDED : PADDED} className={skin}>
+        <button
+            type="button"
+            {...announce}
+            aria-label={icon === undefined ? undefined : label}
+            title={title ?? (icon === undefined ? undefined : label)}
+            onClick={onSelect}
+            onContextMenu={onContextMenu}
+            style={icon !== undefined ? ICON_PADDED : menu ? MENU_PADDED : PADDED}
+            className={skin}
+        >
             {body}
         </button>
     ) : (
