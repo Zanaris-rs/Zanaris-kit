@@ -44,11 +44,12 @@ const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 /** The tabs' height, with `.btn`'s padding traded for room on the caret's side. Inline for the same reason as the box above. */
 const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
 /**
- * The tabs' height and a square face for one glyph, and a wider gap before it
- * than the bar's own 5px, which is what parts the app's control from the tab's.
- * Inline for the same reason as the boxes above.
+ * The tabs' height and a square face for one glyph, after the bar's own 5px
+ * like the menus before it, and a wider gap after it than the bar's 5px end:
+ * on macOS the bar is the title bar, and its right end is the window's rounded
+ * corner. Inline for the same reason as the boxes above.
  */
-const GEAR_BOX: CSSProperties = { height: 26, width: 28, padding: 0, marginLeft: 7 };
+const GEAR_BOX: CSSProperties = { height: 26, width: 28, padding: 0, marginRight: 7 };
 /** The tabs' height, in the warn colour Home server's own sharing notice uses. Inline because `.btn` sets its gold in unlayered CSS. */
 const SHARING_BOX: CSSProperties = { height: 26, color: 'var(--color-warn)' };
 
@@ -530,9 +531,9 @@ export default function Shell(): ReactNode {
                  * Settings: a window of its own rather than a pane, since
                  * everything in it is the app's rather than this tab's or this
                  * window's. So it sits last, in the corner where a window's
-                 * settings are looked for, and set a little apart from the two
-                 * menus before it, which only ever change the tab in front.
-                 * Between them and the tabs, where it used to be, it split the
+                 * settings are looked for, and set in a little from that
+                 * corner, which on macOS is the window's rounded one. Between
+                 * the menus and the tabs, where it used to be, it split the
                  * tab's own controls from the tabs they act on. A gear and no
                  * word, beside buttons that already have words; its name is on
                  * the tooltip and the label.
