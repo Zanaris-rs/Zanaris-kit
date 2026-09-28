@@ -10,9 +10,9 @@ import DropIndicator from './dropIndicator';
 import Grip from './grip';
 import Launcher from './Launcher';
 import PaneNotice, { PaneBoundary } from './paneNotice';
-import PaneHeader, { type Grab } from './paneHeader';
+import PaneHeader, { HEADER_BUTTON_WIDTH, type Grab } from './paneHeader';
 import Tab from './tab';
-import TopBar from './topBar';
+import TopBar, { BAR_END } from './topBar';
 import { gameSprite } from './sprites';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
@@ -44,12 +44,13 @@ const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 /** The tabs' height, with `.btn`'s padding traded for room on the caret's side. Inline for the same reason as the box above. */
 const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
 /**
- * The tabs' height and a square face for one glyph, after the bar's own 5px
- * like the menus before it, and a wider gap after it than the bar's 5px end:
- * on macOS the bar is the title bar, and its right end is the window's rounded
- * corner. Inline for the same reason as the boxes above.
+ * The tabs' height, and a pane header's button's width, since the close of
+ * the pane under the gear sits directly below it (`BAR_END`). After the bar's
+ * own 5px like the menus before it, and a wider gap after it than the bar's
+ * 5px end: on macOS the bar is the title bar, and its right end is the
+ * window's rounded corner. Inline for the same reason as the boxes above.
  */
-const GEAR_BOX: CSSProperties = { height: 26, width: 28, padding: 0, marginRight: 7 };
+const GEAR_BOX: CSSProperties = { height: 26, width: HEADER_BUTTON_WIDTH, padding: 0, marginRight: BAR_END - 5 };
 /** The tabs' height, in the warn colour Home server's own sharing notice uses. Inline because `.btn` sets its gold in unlayered CSS. */
 const SHARING_BOX: CSSProperties = { height: 26, color: 'var(--color-warn)' };
 
