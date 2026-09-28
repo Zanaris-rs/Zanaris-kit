@@ -95,36 +95,41 @@ export class UpdateService {
      * Reads what the last run left, once, at launch. An attempt that worked
      * clears `updates/`, the Mac's old app with it; one that failed shows why
      * and clears it too, so nothing is installed again unasked. Otherwise a
-     * finished download of a newer version is ready, and anything else there
-     * is stale.
+     * finished download of a newer version is ready, when this copy can
+     * install it — Restart to Update on one that cannot would quit and install
+     * nothing — and anything else there is stale. It never throws: it runs
+     * before the first window, and a folder it cannot clear (an installer still
+     * running from it) must not cost the launch.
      */
     start(): void {
         const { fs, join, dir, current } = this.io;
-        fs.rm(join(dir, INCOMING));
+        this.clear(join(dir, INCOMING));
         const after = afterAttempt(this.read(ATTEMPT), this.read(RESULT), current);
         if (after.kind === 'updated') {
             this.io.log(`[update] now ${current}; ${after.version} was installed`);
-            fs.rm(dir);
+            this.clear(dir);
             return;
         }
         if (after.kind === 'failed') {
             this.io.log(`[update] installing ${after.version} failed: ${after.reason}`);
-            fs.rm(dir);
             this.set({ kind: 'failed', version: after.version, reason: after.reason, release: null });
+            this.clear(dir);
             return;
         }
         const ready = readReady(this.read(READY), current);
-        if (ready && fs.exists(join(dir, ready.version, ready.file))) {
+        if (ready && this.io.mode.kind === 'self' && fs.exists(join(dir, ready.version, ready.file))) {
             this.set({ kind: 'ready', version: ready.version });
             return;
         }
-        fs.rm(dir);
+        this.clear(dir);
     }
 
     /**
-     * Asks for the latest release. A scheduled check only ever turns nothing
-     * into an offer, or an offer into a newer one; one the player asked for
-     * also brings back a button Not Now hid, and replaces a failure.
+     * Asks for the latest release. A scheduled check changes only what is on
+     * offer — a newer release is offered, and one that is no longer newer is
+     * withdrawn — and leaves a download, a finished one and a failure alone.
+     * One the player asked for also brings back a button Not Now hid, and
+     * replaces a failure.
      */
     async check(manual = false): Promise<CheckOutcome> {
         if (manual) this.dismissed = false;
@@ -166,11 +171,17 @@ export class UpdateService {
         this.flight = controller;
         this.set({ kind: 'downloading', release, percent: 0 });
         const incoming = join(dir, INCOMING);
+        // Cancel Download is heard between every step, not only while bytes arrive: after
+        // the last one the digest, the unpacking and the app's check still take a while.
+        const heard = (): void => {
+            if (controller.signal.aborted) throw new Error('cancelled');
+        };
         try {
             fs.rm(incoming);
             fs.mkdir(incoming);
             const file = join(incoming, asset.name);
             await this.io.download(asset, file, fraction => this.progress(release, fraction), controller.signal);
+            heard();
             const staged = join(dir, release.version);
             fs.rm(staged);
             fs.mkdir(staged);
@@ -178,8 +189,10 @@ export class UpdateService {
             if (target.kind === 'mac') {
                 const unpacked = join(incoming, 'unpacked');
                 await this.io.unpack(file, unpacked);
+                heard();
                 const app = join(unpacked, MAC_BUNDLE);
                 const wrong = await this.io.checkApp(app, release.version);
+                heard();
                 if (wrong) throw new Error(wrong);
                 name = MAC_BUNDLE;
                 fs.rename(app, join(staged, name));
@@ -195,11 +208,11 @@ export class UpdateService {
                 this.set({ kind: 'available', release, how });
             } else {
                 this.io.log(`[update] download of ${release.version} failed: ${sentence(err)}`);
-                fs.rm(join(dir, release.version));
+                this.clear(join(dir, release.version));
                 this.set({ kind: 'failed', version: release.version, reason: sentence(err), release });
             }
         } finally {
-            fs.rm(incoming);
+            this.clear(incoming);
             this.flight = null;
         }
     }
@@ -260,6 +273,15 @@ export class UpdateService {
     private checkable(manual: boolean): boolean {
         const kind = this.state.kind;
         return kind === 'idle' || kind === 'available' || (manual && kind === 'failed');
+    }
+
+    /** Removes what is no longer wanted, logging rather than throwing when it cannot. */
+    private clear(path: string): void {
+        try {
+            this.io.fs.rm(path);
+        } catch (err) {
+            this.io.log(`[update] could not remove ${path}: ${sentence(err)}`);
+        }
     }
 
     private read(name: string): string | null {

@@ -101,3 +101,20 @@ test('a download is cancelled by its signal, and a checked one leaves no file', 
     await assert.rejects(going, /Downloading kit\.zip was cancelled/);
     assert.equal(existsSync(to), false);
 });
+
+test('a file that cannot be written fails the download with its error, rather than throwing it at nobody and hanging', async t => {
+    const dir = mkdtempSync(join(tmpdir(), 'download-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    // A folder that is not there fails the write as a full disk would: after the answer, while the body is still coming.
+    const to = join(dir, 'missing', 'kit.zip');
+    const slow = async (_url: string, init: { signal: AbortSignal }): Promise<Response> =>
+        new Response(
+            new ReadableStream({
+                start(stream) {
+                    stream.enqueue(new Uint8Array(10));
+                    init.signal.addEventListener('abort', () => stream.error(new Error('aborted')));
+                }
+            })
+        );
+    await assert.rejects(downloadFile({ url: 'http://example.invalid/kit.zip', file: 'kit.zip', size: 100, to, fetch: slow, idleMs: 2_000 }), /ENOENT/);
+});

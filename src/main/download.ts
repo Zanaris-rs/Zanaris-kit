@@ -62,11 +62,22 @@ export async function downloadFile(opts: DownloadOptions): Promise<void> {
      * uncaught ENOENT: it failed CI from a test that had already passed.
      */
     let out: WriteStream | null = null;
+    /*
+     * A write that fails — a full disk, a folder gone — is the stream's own
+     * 'error', raised while the loop waits on the network rather than on it.
+     * Unheard, it was uncaught in main, and the loop then waited for a drain
+     * the dead stream would never send. It ends the download instead.
+     */
+    let writeError = null as Error | null;
     try {
         const response = await opts.fetch(opts.url, { signal: controller.signal });
         if (!response.ok || !response.body) throw new Error(`Downloading ${opts.file} failed: HTTP ${response.status}`);
         const stream = createWriteStream(opts.to);
         out = stream;
+        stream.on('error', err => {
+            writeError = err;
+            controller.abort();
+        });
         const reader = response.body.getReader();
         let received = 0;
         opts.onProgress?.(0);
@@ -77,13 +88,14 @@ export async function downloadFile(opts: DownloadOptions): Promise<void> {
             timer = setTimeout(stall, idleMs);
             received += value.byteLength;
             if (received > opts.size) break;
-            if (!stream.write(value)) await once(stream, 'drain');
+            if (!stream.write(value)) await once(stream, 'drain', { signal: controller.signal });
             opts.onProgress?.(received / opts.size);
         }
         stream.end();
         await once(stream, 'close');
         if (received !== opts.size) throw new Error(`${opts.file} arrived at the wrong size (${received} bytes, expected ${opts.size})`);
     } catch (err) {
+        if (writeError) throw writeError;
         if (stalled) throw new Error(`Downloading ${opts.file} stalled: nothing arrived for ${Math.round(idleMs / 1000)} s`);
         if (opts.signal?.aborted) throw new Error(`Downloading ${opts.file} was cancelled`);
         throw err;

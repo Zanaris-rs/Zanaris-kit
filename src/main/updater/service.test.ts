@@ -234,3 +234,35 @@ test('Not Now hides the button until a check is asked for', async () => {
     await service.check(true);
     assert.equal(service.button()?.label, 'Update 0.9.1');
 });
+
+test('a cancel while the download is checked or unpacked is still a cancel', async () => {
+    let service: UpdateService;
+    const f = fake({ unpack: async () => service.cancel() });
+    service = new UpdateService(f.io);
+    await service.check();
+    await service.download();
+    assert.equal(service.view().kind, 'available');
+    assert.equal(f.files.has(`${DIR}/ready.json`), false);
+    assert.equal(service.installAtQuit(false), false);
+});
+
+test('a launch goes on whatever updates/ holds, even when it cannot be cleared', () => {
+    const f = fake({ current: '0.9.1' });
+    f.files.set(`${DIR}/attempt.json`, '{"version":"0.9.1"}');
+    f.io.fs.rm = () => {
+        throw new Error('EPERM: the installer is still running from it');
+    };
+    const service = new UpdateService(f.io);
+    assert.doesNotThrow(() => service.start());
+    assert.equal(service.view().kind, 'idle');
+});
+
+test('a finished download is not ready on a copy that cannot install it', () => {
+    const f = fake({ mode: { kind: 'manual', reason: 'not-moved' } });
+    f.files.set(`${DIR}/ready.json`, '{"version":"0.9.1","file":"Zanaris Kit.app"}');
+    f.files.set(`${DIR}/0.9.1/Zanaris Kit.app/Contents`, 'app');
+    const service = new UpdateService(f.io);
+    service.start();
+    assert.equal(service.view().kind, 'idle', 'Restart to Update would quit and install nothing');
+    assert.equal(f.files.size, 0);
+});

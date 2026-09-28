@@ -317,7 +317,7 @@ async function askAboutUpdate(win: BrowserWindow | null): Promise<void> {
         type: 'question',
         buttons: question.buttons.map(b => b.label),
         defaultId: 0,
-        cancelId: question.buttons.length - 1,
+        cancelId: Math.max(0, question.buttons.findIndex(b => b.action === question.escape)),
         message: question.message,
         detail: question.detail
     };
@@ -3124,7 +3124,9 @@ app.on('before-quit', event => {
  * on every quit, Restart to Update's or not.
  */
 app.on('quit', () => {
-    updates.installAtQuit(restartForUpdate);
+    // Restart promised the kit back: when nothing could be handed off to open
+    // it again, Electron does, as the version it already is.
+    if (!updates.installAtQuit(restartForUpdate) && restartForUpdate) app.relaunch();
 });
 
 // macOS keeps running with no windows; the menu and the dock open the next one.

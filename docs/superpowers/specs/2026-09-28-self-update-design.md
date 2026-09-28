@@ -53,7 +53,7 @@ puts a button at the right of every window's tab bar, before Setups:
 |---|---|---|
 | available | **Update 0.9.1** | "Zanaris Kit 0.9.1 is out." with the size, and **Download**, **Release Notes**, **Not Now** |
 | downloading | **Updating 42%** | **Keep Going**, **Cancel Download** |
-| ready | **Restart to Update** | Asks first — every game is logged out and the world stops — then **Restart** or **Later** |
+| ready | **Restart to Update** | Asks first — the kit closes and opens again by itself, the first start of a new version can take a little while, every game is logged out and the world stops — then **Restart** or **Later** |
 | failed | **Update failed** | The reason, with **Try Again**, **Open Release Page**, **Not Now** |
 
 A copy that cannot update itself is still told: the button reads **Update
@@ -108,8 +108,9 @@ process exits. It writes `updates/attempt.json` (the version) first, then:
   bundle's path, the unpacked bundle's path, an aside path in `updates/`,
   a result file and whether to reopen, as **arguments** — no path is ever
   pasted into the script. It waits up to 60 s for the pid to go, renames
-  the old bundle aside, renames the new one in (renaming the old one back
-  if that fails), writes `ok` or the reason to the result file, and reopens
+  the old bundle aside, renames the new one in (if that fails, it clears
+  whatever part of the new one a copy across volumes left and puts the old
+  one back), writes `ok` or the reason to the result file, and reopens
   the app on Restart whichever way it went, so a failed restart still
   brings the player back to a kit that says so.
 - **Windows.** The downloaded installer, detached, with `/S --updated`, and
@@ -134,7 +135,7 @@ exe; on Linux, `$APPIMAGE` naming a file whose folder is writable.
 At launch the kit reads `attempt.json`. If it is now that version or newer,
 the attempt worked: `updates/` is emptied, the old Mac bundle with it. If
 not, the state is **failed**, with the helper's reason when it left one or
-"The installer didn't finish" when it did not, and nothing installs at quit
+"The update didn't finish installing." when it did not, and nothing installs at quit
 until the player presses Try Again. That is what keeps a failure from
 looping.
 
@@ -175,6 +176,13 @@ origin; anything else in it is ignored. With it, a packaged 0.9.0 in
 is tagged. Then 0.9.0 is published, and later 0.9.1: the Mac path is proven
 by then, and Windows and Linux are proven by a friend, or a VM, going from
 one to the other.
+
+The rehearsal ran on 2026-09-28 and worked. From Restart to the new window
+took about 14 s: 2.1 s for the old kit's quit, 0.2 s for the swap, 4.8 s
+before macOS let the never-seen executable start, and 6.7 s for the kit's
+first start — 0.9.0's own first launch, with no update involved, was no
+faster. So the Restart question says the first start can take a while; a
+silent gap that long reads as a crash.
 
 ### Release and docs
 

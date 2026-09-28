@@ -46,7 +46,7 @@ Help elsewhere) looks straight away. A newer one puts a button in the tab
 bar, which downloads it when you say so; it installs the next time you quit,
 or at once from Restart to Update. It never restarts on its own. A copy that
 can't replace itself — run from the disk image, or from a folder it can't
-write to — says so and opens the release page instead. Set
+write to — says so and offers the release page instead. Set
 `ZANARIS_NO_UPDATE_CHECK=1` to turn the automatic checks off.
 
 ### Reporting a problem

@@ -210,8 +210,9 @@ export interface PlanInput {
 /**
  * What each system runs as the kit exits. The Mac's helper takes everything as
  * arguments (`MAC_HELPER`). Windows runs electron-builder's one-click installer
- * silently; `--updated` makes it wait for the kit to exit rather than ask, and
- * `--force-run` opens the kit afterwards. Linux copies the new AppImage beside
+ * silently; `--updated` makes it give a kit still running about a second to
+ * exit and then close it, rather than ask, and `--force-run` opens the kit
+ * afterwards. Linux copies the new AppImage beside
  * the old as a dot-file and renames it over — under the new version's name
  * when the old name carried the old version.
  */
@@ -240,7 +241,9 @@ export function installPlan(p: PlanInput): HandOff {
  * path arrives as an argument and is only ever quoted, never pasted into the
  * script. It waits a minute at most for the kit to exit, and opens the kit
  * again on Restart whether or not the swap worked, so a failed update still
- * brings the player back to a kit that says so.
+ * brings the player back to a kit that says so. Across volumes `mv` copies,
+ * and a copy that fails partway leaves part of the new app where the old one
+ * goes back, so that is removed first: the old app is aside by then.
  */
 export const MAC_HELPER = `pid=$1 app=$2 fresh=$3 aside=$4 result=$5 reopen=$6
 n=0
@@ -252,8 +255,12 @@ done
 if ! /bin/mv "$app" "$aside"; then
   echo "The old version couldn't be moved aside." > "$result"
 elif ! /bin/mv "$fresh" "$app"; then
-  /bin/mv "$aside" "$app"
-  echo "The new version couldn't be moved into place, so the old one was put back." > "$result"
+  /bin/rm -rf "$app"
+  if /bin/mv "$aside" "$app"; then
+    echo "The new version couldn't be moved into place, so the old one was put back." > "$result"
+  else
+    echo "The new version couldn't be moved into place, and the old one couldn't be put back: it is at $aside." > "$result"
+  fi
 else
   echo ok > "$result"
 fi
@@ -335,11 +342,13 @@ export function updateButton(state: UpdateState): UpdateButton | null {
 
 export type UpdateAction = 'download' | 'page' | 'not-now' | 'keep-going' | 'cancel-download' | 'restart' | 'later' | 'retry';
 
-/** A dialog main shows: the first button is the default, the last is Escape's. */
+/** A dialog main shows: the first button is the default, and `escape` is what Escape or closing it answers. */
 export interface UpdateQuestion {
     message: string;
     detail: string;
     buttons: { label: string; action: UpdateAction }[];
+    /** Never a button that throws anything away: Escape on the download's dialog must not cancel it. */
+    escape: UpdateAction;
     /** What Release Notes and Open Release Page open. */
     page: string;
 }
@@ -374,7 +383,7 @@ export function updateQuestion(state: UpdateState, worldRunning: boolean): Updat
             const page = releasePage(release.version);
             if (how.kind === 'manual' || !release.asset) {
                 const why = how.kind === 'manual' ? whyByHand(how) : whyByHand({ kind: 'manual', reason: 'no-download' });
-                return { message, detail: `${why} Download it from the release page instead.`, buttons: [{ label: 'Open Release Page', action: 'page' }, { label: 'Not Now', action: 'not-now' }], page };
+                return { message, detail: `${why} Download it from the release page instead.`, buttons: [{ label: 'Open Release Page', action: 'page' }, { label: 'Not Now', action: 'not-now' }], escape: 'not-now', page };
             }
             return {
                 message,
@@ -384,6 +393,7 @@ export function updateQuestion(state: UpdateState, worldRunning: boolean): Updat
                     { label: 'Release Notes', action: 'page' },
                     { label: 'Not Now', action: 'not-now' }
                 ],
+                escape: 'not-now',
                 page
             };
         }
@@ -395,16 +405,18 @@ export function updateQuestion(state: UpdateState, worldRunning: boolean): Updat
                     { label: 'Keep Going', action: 'keep-going' },
                     { label: 'Cancel Download', action: 'cancel-download' }
                 ],
+                escape: 'keep-going',
                 page: releasePage(state.release.version)
             };
         case 'ready':
             return {
                 message: `Restart to update to Zanaris Kit ${state.version}?`,
-                detail: `Every game is logged out${worldRunning ? ', and your home server stops, saving as it does' : ''}. Otherwise it installs by itself the next time you quit.`,
+                detail: `Zanaris Kit closes and opens again by itself, and the first start of a new version can take a little while. Every game is logged out${worldRunning ? ', and your home server stops, saving as it does' : ''}. Choose Later and it installs by itself the next time you quit.`,
                 buttons: [
                     { label: 'Restart', action: 'restart' },
                     { label: 'Later', action: 'later' }
                 ],
+                escape: 'later',
                 page: releasePage(state.version)
             };
         case 'failed':
@@ -416,6 +428,7 @@ export function updateQuestion(state: UpdateState, worldRunning: boolean): Updat
                     { label: 'Open Release Page', action: 'page' },
                     { label: 'Not Now', action: 'not-now' }
                 ],
+                escape: 'not-now',
                 page: releasePage(state.version)
             };
     }

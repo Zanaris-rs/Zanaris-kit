@@ -196,12 +196,22 @@ test('each dialog offers what can be done from where the update is', () => {
     assert.match(updateQuestion({ kind: 'available', release, how: { kind: 'manual', reason: 'unwritable', folder: '/opt' } }, false)!.detail, /\/opt/);
     assert.deepEqual(actions(updateQuestion({ kind: 'downloading', release, percent: 3 }, false)), ['keep-going', 'cancel-download']);
     assert.deepEqual(actions(updateQuestion({ kind: 'ready', version: '0.9.1' }, false)), ['restart', 'later']);
+    assert.match(updateQuestion({ kind: 'ready', version: '0.9.1' }, false)!.detail, /closes and opens again by itself/);
     assert.match(updateQuestion({ kind: 'ready', version: '0.9.1' }, true)!.detail, /home server/);
     assert.doesNotMatch(updateQuestion({ kind: 'ready', version: '0.9.1' }, false)!.detail, /home server/);
     const failed = updateQuestion({ kind: 'failed', version: '0.9.1', reason: 'The download stalled.', release: null }, false);
     assert.deepEqual(actions(failed), ['retry', 'page', 'not-now']);
     assert.equal(failed!.detail, 'The download stalled.');
     assert.equal(updateQuestion({ kind: 'idle' }, false), null);
+});
+
+test('Escape on any update dialog throws nothing away', () => {
+    const escapes = (state: Parameters<typeof updateQuestion>[0]): string | undefined => updateQuestion(state, false)?.escape;
+    assert.equal(escapes({ kind: 'available', release, how: { kind: 'self', target: { kind: 'windows' } } }), 'not-now');
+    assert.equal(escapes({ kind: 'available', release, how: { kind: 'manual', reason: 'not-moved' } }), 'not-now');
+    assert.equal(escapes({ kind: 'downloading', release, percent: 40 }), 'keep-going', 'not Cancel Download, the last button');
+    assert.equal(escapes({ kind: 'ready', version: '0.9.1' }), 'later');
+    assert.equal(escapes({ kind: 'failed', version: '0.9.1', reason: 'x', release: null }), 'not-now');
 });
 
 // The Mac helper itself, run by the shell it runs under. Not on Windows, which has no /bin/sh.

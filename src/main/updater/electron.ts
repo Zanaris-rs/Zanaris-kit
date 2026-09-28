@@ -25,13 +25,17 @@ function writable(path: string): boolean {
  * done before this returns. An AppImage that cannot be replaced says so in the
  * result file, which the next launch reads, as the Mac's helper does.
  */
-function handOff(plan: HandOff): void {
+function handOff(plan: HandOff, log: (msg: string) => void): void {
+    // A spawn that fails — an installer an antivirus took away — says so as an
+    // 'error' event, after this has returned: heard, it is logged rather than
+    // thrown at a kit on its way out, and the next launch finds the attempt failed.
+    const refused = (what: string) => (err: Error) => log(`[update] could not start ${what}: ${err.message}`);
     switch (plan.kind) {
         case 'mac':
-            spawn('/bin/sh', ['-c', MAC_HELPER, 'zanaris-update', ...plan.args], { detached: true, stdio: 'ignore' }).unref();
+            spawn('/bin/sh', ['-c', MAC_HELPER, 'zanaris-update', ...plan.args], { detached: true, stdio: 'ignore' }).on('error', refused('the helper')).unref();
             return;
         case 'windows':
-            spawn(plan.installer, plan.args, { detached: true, stdio: 'ignore' }).unref();
+            spawn(plan.installer, plan.args, { detached: true, stdio: 'ignore' }).on('error', refused('the installer')).unref();
             return;
         case 'appimage':
             try {
@@ -51,7 +55,7 @@ function handOff(plan: HandOff): void {
                 }
                 return;
             }
-            if (plan.relaunch) spawn(plan.to, [], { detached: true, stdio: 'ignore' }).unref();
+            if (plan.relaunch) spawn(plan.to, [], { detached: true, stdio: 'ignore' }).on('error', refused('the new AppImage')).unref();
     }
 }
 
@@ -113,7 +117,7 @@ export function updateIo(log: (msg: string) => void): UpdateIo {
             rm: path => rmSync(path, { recursive: true, force: true }),
             rename: renameSync
         },
-        handOff,
+        handOff: plan => handOff(plan, log),
         log
     };
 }
