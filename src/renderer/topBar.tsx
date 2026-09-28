@@ -5,6 +5,15 @@ import type { WindowFrame } from '../shared/ipc';
 const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
 
 /**
+ * How far in from the window's right edge the bar's last control ends: the
+ * bar's own 5px end and 7 more after the gear, since on macOS that end is the
+ * window's rounded corner. Every pane header ends its controls as far in from
+ * its own right edge, so a pane at the window's edge has its close under the
+ * gear rather than 6px to the right of it.
+ */
+export const BAR_END = 12;
+
+/**
  * The strip across a window's top: a game window's tabs, and Settings'
  * sections. One component for both because on macOS each is the window's
  * title bar, and two copies of that would be two title bars that drift: a

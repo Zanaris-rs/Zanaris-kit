@@ -2,6 +2,7 @@ import type { CSSProperties, MouseEvent, PointerEvent, ReactNode } from 'react';
 import type { PaneView } from '../shared/panes';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { Caret, CloseRoom, NavArrow, Reload } from './icons';
+import { BAR_END } from './topBar';
 
 /**
  * The strip at the top of every pane: what the pane is, what that one thing can
@@ -43,8 +44,10 @@ import { Caret, CloseRoom, NavArrow, Reload } from './icons';
  *   already empty — which is main's call (`pane.closable`), not this strip's.
  */
 
+/** Every button's width here, and the tab bar's gear's, which the close of the pane under it sits directly below. */
+export const HEADER_BUTTON_WIDTH = 24;
 /* .tile carries the stone; a control that has to sit at 24x22 says so inline rather than fighting it with a utility of equal specificity. */
-const BUTTON: CSSProperties = { height: 22, width: 24 };
+const BUTTON: CSSProperties = { height: 22, width: HEADER_BUTTON_WIDTH };
 /**
  * The focused pane's mark. A disc rather than a pixel square, because at 6px a
  * square reads as a stray glyph beside pixel type, and it carries the same hard
@@ -52,8 +55,13 @@ const BUTTON: CSSProperties = { height: 22, width: 24 };
  * way the name beside it does.
  */
 const DOT: CSSProperties = { width: 6, height: 6, boxShadow: '1px 1px 0 rgba(0, 0, 0, 0.78)' };
-/** The header spans the pane, and a pane has no sides of its own: the seam beside it is its edge. */
-const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', borderRight: 'none' };
+/**
+ * The header spans the pane, and a pane has no sides of its own: the seam
+ * beside it is its edge. Its controls end as far in from its right edge as the
+ * tab bar's do from the window's (`BAR_END`), so the close of a pane at the
+ * window's edge sits under the gear. The name's end keeps the 6px it had.
+ */
+const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', borderRight: 'none', paddingRight: BAR_END };
 /**
  * A floor under the name, so a squeeze takes the end of it rather than all of
  * it. Everything else in the strip is an icon that cannot truncate, so without
@@ -62,11 +70,13 @@ const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', b
  *
  * 2em rather than more because the floor has to fit the narrowest pane there
  * is: a tool pane at the 120px minimum has all 120 across its header, and the
- * padding, the dot, the dropdown, the close and the gaps between them take 86
- * of it, leaving 34 for the 30px this is at 15px. A floor past that pushes the
- * close off the pane's edge on the focused pane — it was 2.5em until the dot
- * arrived and took 11px — and the title attribute already carries the full
- * name for a pane that narrow.
+ * padding, the dot, the dropdown, the close and the gaps between them take 92
+ * of it, leaving 28 for the 30px this is at 15px. The 2 it is short come out
+ * of the 12 the strip keeps after the close to line it up under the gear, so
+ * on the focused pane at that width the close ends 10px in rather than 12. A
+ * floor past that pushes the close on toward the pane's edge — it was 2.5em
+ * until the dot arrived and took 11px — and the title attribute already
+ * carries the full name for a pane that narrow.
  */
 const NAME: CSSProperties = { minWidth: '2em' };
 /**
@@ -77,10 +87,10 @@ const NAME: CSSProperties = { minWidth: '2em' };
 const ROOM_FOR_LOADING = 320;
 /**
  * Below this a page pane's header cannot hold the name, the three navigation
- * buttons, the dropdown and the close together — 12px of padding, room for a
+ * buttons, the dropdown and the close together — 18px of padding, room for a
  * few letters of the name at 15px, five 24px buttons and the 5px gaps between
  * the seven items, or eight with the focused pane's dot, which leaves the name
- * 42px rather than 53 and still above its floor. The navigation is what goes. None of these can truncate, so
+ * 36px rather than 47 and still above its floor. The navigation is what goes. None of these can truncate, so
  * something has to, and the other two are the pane's way out: a dropdown or a
  * close pushed past the pane's edge is a pane that can no longer be changed
  * or shut, while a page too narrow to hold its buttons is too narrow to browse.
@@ -150,7 +160,7 @@ export default function PaneHeader({
          * ignore a press that began on a button, so the nav arrows and the
          * caret still click rather than starting a drag nobody asked for.
          */
-        <div style={{ ...STRIP, cursor: grab ? (grabbing ? 'grabbing' : 'grab') : undefined }} {...grab} className="tile flex shrink-0 items-center gap-[5px] px-1.5">
+        <div style={{ ...STRIP, cursor: grab ? (grabbing ? 'grabbing' : 'grab') : undefined }} {...grab} className="tile flex shrink-0 items-center gap-[5px] pl-1.5">
             {active && (
                 <span style={DOT} className="shrink-0 rounded-full bg-gold">
                     <span className="sr-only">Active pane:</span>
