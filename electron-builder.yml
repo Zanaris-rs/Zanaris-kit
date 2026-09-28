@@ -1,5 +1,5 @@
 # Packaging for Zanaris Kit. electron-vite builds into out/; this packs it.
-# The kit carries no engine: single player downloads the build the player
+# The kit carries no engine: your home server downloads the build the player
 # picks into its own data folder, checked against the digest in engines/.
 # Specs: docs/superpowers/specs/2026-09-06-packaging-and-single-player-design.md, Part 1,
 # and docs/superpowers/specs/2026-09-19-single-player-builds-design.md.
@@ -22,6 +22,10 @@ afterSign: scripts/after-sign.cjs
 mac:
   target:
     - target: dmg
+      arch:
+        - universal
+    # What an installed kit updates itself from (src/main/update.ts, assetName).
+    - target: zip
       arch:
         - universal
   category: public.app-category.games
