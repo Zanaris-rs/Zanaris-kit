@@ -48,11 +48,12 @@ the spent Connect button and the field notes are what a first run reads.
 the kit reads itself: its name, the arguments it takes as they are written
 for a person (`#channel`, `nick [reason]`), one line saying what it does,
 whether it runs with nothing after it (`bare`), and its aliases (`/j`, `/q`,
-`/wi`, `/back`). `COMMANDS` is its names, in the same order as now. `/help`
+`/wi`). `/back` is an entry of its own rather than `/away`'s alias: it takes
+no reason, and `/away`'s usage line would promise one. `COMMANDS` is its names, in the same order as now. `/help`
 in `client.ts` prints one line per entry from it, replacing the hand-written
 `HELP`, so the menu and `/help` cannot disagree. A test in `protocol.test.ts`
 holds `bare` to `parseInput` (`parseInput('/name') !== null` exactly when an
-entry is bare) and each alias to the kind its name parses to.
+entry is bare) and each alias to exactly what its name parses to.
 
 **When it shows.** While the text before the caret is a slash and letters,
 at the start of the box, and the caret is at the end of that word. `//` is
@@ -63,8 +64,9 @@ the space after the command.
 **Keys while it shows.** Up and Down move the highlight, wrapping, instead of
 bringing back what was sent. Tab takes the highlighted command. Enter takes
 it too, unless what is typed is already a whole command that runs bare
-(`/clear`, `/part`), which Enter sends as it does now. Escape closes it until
-the word changes. Taking a command writes `/name ` and puts the caret after
+(`/clear`, `/part`) or one of the server's own (`/who`, `/ms`), which Enter
+sends as it does now. Escape closes it until the text changes, and so does a
+line the arrows bring back, or a recalled `/clear` would hold the arrows. Taking a command writes `/name ` and puts the caret after
 the space. A press on a row takes that row without taking focus from the box.
 
 **The usage line.** Once the command is followed by a space, one line above
@@ -130,14 +132,20 @@ view.
 
 A module-level map, beside `sentLines`, holds the draft of every channel,
 keyed by `foldName`. The box writes to it on every change, and loads from it
-when the open channel changes. Sending a line deletes its entry. It lasts
+when the open channel changes. Sending a line deletes its entry. When the tab
+left is gone and the one arriving is not Status, the other person in a
+private conversation changed nick: the draft moves to the new name. Two panes
+on one room share its one entry. It lasts
 until the window closes, as the sent lines do, so a visit to the gear keeps
 it.
 
 ### Unread cues
 
-**The badge.** A resting tab's count is gold when `highlights > 0` and cream
-otherwise. The tab's tooltip adds what the count is: "3 unread, 1 names you".
+**The badge.** A resting tab's count is gold when `highlights > 0` — a line
+naming you, or said to you alone — and cream otherwise. The tab's tooltip adds
+what the count is: "3 unread, 1 names you" in a channel, where it is news.
+`highlights` kept counting while a tab was open, so leaving a tab clears it
+too, or a mention already read would colour the tab later.
 
 **The divider.** `ChatView.newFrom` is the id of the first line that arrived
 in the open tab since you last left it, or null. `IrcClient` keeps, per tab,
@@ -151,8 +159,9 @@ does the work:
 
 Unread counts only what `incoming` counts, so churn alone never draws a
 divider, but the divider sits above the first line of any kind after `seen`.
-A tab closed while open hands over to Status without a `select`. Status's
-`newFrom` was cleared when you last left it, so it shows none.
+A tab closed while open hands over to Status through `select`, so Status's
+count is read and what arrived while it was left is marked, as if you had
+opened it yourself.
 
 The log draws a gold rule labelled **New** above the item holding that line.
 It is not drawn above the first item in the log, where it says nothing. It
@@ -165,7 +174,8 @@ channel left open while the kit sat in the background draws none.
 
 `ChatLine` gains an optional `presence: 'join' | 'part' | 'quit' | 'nick'`.
 `client.ts` sets it on the lines for someone else joining, leaving, quitting
-or changing name in a channel. Kicks stay unmarked, since a kick is news. A
+or changing name in a channel. Our own rename is left unmarked: a services
+rename to a guest nick is news. Kicks stay unmarked, since a kick is news. A
 quit or rename in a private conversation stays unmarked too: it is the one
 person you are talking to. The key is absent rather than `undefined` on every
 other line, so no existing test's `deepEqual` changes.

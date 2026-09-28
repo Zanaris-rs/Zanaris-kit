@@ -268,7 +268,7 @@ offline until Connect. Connect, Disconnect and a typed `/quit` report through
 `ChatService.stop()`, for the app quitting, must not call it.
 
 **Typed commands:** `parseInput` reads the kit's own — the list is
-`COMMAND_HELP` in `shared/chatInput.ts`, with its aliases `/j /q /wi /back`.
+`COMMAND_HELP` in `shared/chatInput.ts`, with its aliases `/j /q /wi`.
 It is the one description of them: `/help` prints it and the slash menu offers
 it, and tests in `protocol.test.ts` hold every entry, its `bare` flag and its
 aliases to what `parseInput` does. Nothing checks the other way: a command

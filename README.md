@@ -290,7 +290,8 @@ actually uses, and joins the channels on its auto-join list:
 
 Its tabs are **Settings**, drawn as a gear, **Status**, then one per channel
 or private conversation in the order they were opened. A tab's unread count is
-gold when a line in it names you, and cream when none does:
+gold when a line in it is for you, naming you or said to you alone, and cream
+when none is:
 
 - **Settings** can't be closed. It has the nickname, an optional NickServ
   password, the auto-join list, the ignore list, whether mentions raise a
@@ -377,7 +378,7 @@ than assigned. Nothing connects until you pick one, which is also why an
 unattended capture run never opens a socket. Some commands are the kit's own,
 because they change what it draws or take the channel you are looking at:
 `/me`, `/msg`, `/query`, `/notice`, `/nick`, `/join`, `/part`, `/close`,
-`/topic`, `/away`, `/whois`, `/kick`, `/invite`, `/op`, `/deop`, `/voice`,
+`/topic`, `/away`, `/back`, `/whois`, `/kick`, `/invite`, `/op`, `/deop`, `/voice`,
 `/devoice`, `/ignore`, `/unignore`, `/clear`, `/help` and `/quit`. `/help`
 lists them, from the same table the slash menu reads. `/quit [reason]` is the Disconnect button, remembered the same
 way, rather than a dropped connection the kit would reconnect behind. A whois
@@ -1111,9 +1112,9 @@ src/renderer/dropIndicator.tsx where a dragged pane will land
 src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
 src/renderer/topBar.tsx     the strip across a window's top, its title bar on macOS
 src/renderer/tools/Worlds.tsx
-src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
+src/renderer/tools/Chat.tsx the chat tabs, the log with its times and folds, a channel's info, the command menu
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
-src/renderer/tools/ChatUsers.tsx     a channel's users by rank, and its modes and age
+src/renderer/tools/ChatUsers.tsx     a channel's users by rank
 src/renderer/tools/homeserver/Builds.tsx   the build lines: use, download, remove
 src/renderer/tools/homeserver/Friends.tsx  Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
