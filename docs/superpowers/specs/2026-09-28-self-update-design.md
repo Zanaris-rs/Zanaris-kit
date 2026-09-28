@@ -1,7 +1,7 @@
 # The kit updates itself
 
 **Date:** 2026-09-28
-**Status:** approved in chat, building on `claude/v1-release-readiness-952122`
+**Status:** built on `claude/v1-release-readiness-952122`
 
 ## Why
 

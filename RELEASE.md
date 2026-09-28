@@ -18,7 +18,8 @@ Release; publishing the draft is the last step and is done by hand. The order:
 
 Actions > Release > Run workflow, on the branch you are about to tag. It
 typechecks, tests and packages on all three runners without publishing.
-Download the three artifacts from the run.
+Download the three artifacts from the run. The macOS one holds a zip beside
+the DMG: it is what installed Macs update from, so it must be there.
 
 ## 2. Try each artifact on a clean profile
 
@@ -29,6 +30,8 @@ against the pins the artifact was built with.
 - macOS, on this Mac: mount the DMG, drag the app to Applications. It has no
   Developer ID: the first launch is refused, then System Settings > Privacy &
   Security > Open Anyway opens it. Open a server window; it should load.
+  Zanaris Kit > Check for Updates… should answer that this is the newest
+  version.
   Then File > New Window For > Home server: the window says the world is not
   downloaded; press Download, watch it count up, and wait for the login
   screen. Log in as a new name, log out, and confirm the `.sav` appeared under
@@ -53,18 +56,30 @@ against the pins the artifact was built with.
 ## 3. Tag
 
 ```sh
-git tag v0.2.0
-git push origin main v0.2.0
+git tag v0.9.0
+git push origin main v0.9.0
 ```
 
 Wait for the Release workflow. It drafts a GitHub Release named after the tag
-with the DMG, the installer and the AppImage attached.
+with the DMG, the Mac zip, the installer and the AppImage attached. It also
+attaches electron-builder's `latest*.yml` and `.blockmap` files, which the
+kit does not read; they do no harm.
 
 ## 4. Publish
 
-Open the draft, write the notes, publish. The kit's update check reads
-`releases/latest`, so from that moment every older build shows Help >
-Update Available.
+Open the draft, write the notes, and publish it as a full release, not a
+prerelease: the kit's update check reads `releases/latest`, which skips
+prereleases. From that moment every older installed kit shows an update
+button in its tab bar within six hours, or at its next launch.
+
+## 5. Update from the previous release
+
+On each system with the previous release installed, open it, or use Check
+for Updates…: it shows **Update <new version>** in the tab bar. Download,
+then Restart to Update. The kit that comes back should be the new version —
+the About panel says so — and `<userData>/updates/` should be gone. On a
+Mac the old app must be nowhere but the Bin. An update is the only way the
+Windows and Linux hand-offs are ever exercised: nothing in CI can run them.
 
 ## If a build fails
 
