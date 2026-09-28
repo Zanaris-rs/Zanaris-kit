@@ -17,7 +17,7 @@ export interface CommandHelp {
     about: string;
     /** Whether it does something typed alone. A test in main's protocol.test.ts holds this to `parseInput`. */
     bare: boolean;
-    /** Shorter names `parseInput` reads as this one. */
+    /** Shorter names `parseInput` reads exactly as this one, arguments and all. */
     aliases: readonly string[];
 }
 
@@ -28,7 +28,9 @@ export interface CommandHelp {
  * main's chat/protocol.ts, by tests there.
  */
 export const COMMAND_HELP: readonly CommandHelp[] = [
-    { name: 'away', args: '[reason]', about: 'mark yourself away; with no reason, back', bare: true, aliases: ['back'] },
+    { name: 'away', args: '[reason]', about: 'mark yourself away; with no reason, back', bare: true, aliases: [] },
+    /* Its own entry rather than away's alias: it takes no reason, and away's usage line would promise one. */
+    { name: 'back', args: '', about: 'mark yourself back', bare: true, aliases: [] },
     { name: 'clear', args: '', about: 'empty this tab', bare: true, aliases: [] },
     { name: 'close', args: '', about: 'leave this channel, or end this conversation', bare: true, aliases: [] },
     { name: 'deop', args: 'nick', about: "take away someone's operator rank", bare: false, aliases: [] },
@@ -93,12 +95,63 @@ export function commandHint(text: string): CommandHelp | null {
 }
 
 /**
- * What Enter does while the menu is open. A whole command that does something
- * alone is sent, as Enter always did; anything else takes the highlighted
- * command, since sending "/jo" or a bare "/join" would only be refused.
+ * Commands the server answers itself, which the kit sends as typed. Enter
+ * sends one typed whole even while the menu offers something longer: "/who"
+ * is the start of "/whois", and "/ms", services' MemoServ, of "/msg". IRC's
+ * own commands and the services' names, less the kit's own.
+ */
+const SERVER_COMMANDS: ReadonlySet<string> = new Set([
+    'admin',
+    'info',
+    'ison',
+    'kill',
+    'knock',
+    'links',
+    'list',
+    'lusers',
+    'map',
+    'mode',
+    'motd',
+    'names',
+    'oper',
+    'ping',
+    'privmsg',
+    'rules',
+    'silence',
+    'stats',
+    'time',
+    'userhost',
+    'userip',
+    'users',
+    'version',
+    'wallops',
+    'watch',
+    'who',
+    'whowas',
+    'ns',
+    'cs',
+    'ms',
+    'hs',
+    'os',
+    'bs',
+    'nickserv',
+    'chanserv',
+    'memoserv',
+    'hostserv',
+    'operserv',
+    'botserv'
+]);
+
+/**
+ * What Enter does while the menu is open. A whole command of the kit's that
+ * does something alone is sent, as Enter always did, and so is one of the
+ * server's. Anything else takes the highlighted command, since sending "/jo"
+ * or a bare "/join" would only be refused.
  */
 export function menuEnter(menu: CommandMenu): 'send' | 'take' {
-    return commandNamed(menu.typed)?.bare === true ? 'send' : 'take';
+    const named = commandNamed(menu.typed);
+    if (named !== null) return named.bare ? 'send' : 'take';
+    return SERVER_COMMANDS.has(menu.typed) ? 'send' : 'take';
 }
 
 /** The box with its command word replaced by `command`'s name and a space, the caret after the space, and the rest of the line kept. */

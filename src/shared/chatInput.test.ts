@@ -63,7 +63,7 @@ test('a slash alone offers every command, and letters narrow it by name or alias
     assert.equal(commandMenu('/', 1)?.matches.length, COMMAND_HELP.length);
     assert.deepEqual(names('/jo'), ['join']);
     assert.deepEqual(names('/wi'), ['whois'], 'by alias');
-    assert.deepEqual(names('/b'), ['away'], '/back is away with no reason');
+    assert.deepEqual(names('/b'), ['back']);
     assert.deepEqual(names('/DE'), ['deop', 'devoice'], 'in the table order, whatever the case');
 });
 
@@ -91,6 +91,12 @@ test('Enter sends a whole command that runs alone, and takes the highlighted one
     assert.equal(menuEnter(commandMenu('/back', 5)!), 'send', 'an alias counts');
     assert.equal(menuEnter(commandMenu('/cl', 3)!), 'take');
     assert.equal(menuEnter(commandMenu('/join', 5)!), 'take', 'it needs a channel');
+});
+
+test("Enter sends the server's own commands as typed, even where they begin one of the kit's", () => {
+    assert.equal(menuEnter(commandMenu('/who', 4)!), 'send', '/who is not /whois');
+    assert.equal(menuEnter(commandMenu('/ms', 3)!), 'send', "/ms is services' MemoServ, not /msg");
+    assert.equal(menuEnter(commandMenu('/wh', 3)!), 'take');
 });
 
 test('taking a command writes its name and a space, and keeps the rest of the line', () => {

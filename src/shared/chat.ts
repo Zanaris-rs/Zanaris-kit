@@ -57,7 +57,7 @@ export interface ChatChannel {
     /** Highest rank first, then by name, as the server last reported them. */
     users: ChatUser[];
     unread: number;
-    /** Lines naming you since this tab was last opened or left. While there are any, its unread count is drawn in gold. */
+    /** Lines for you — naming you, or said to you alone — since this tab was last opened or left. While there are any, its unread count is drawn in gold. */
     highlights: number;
     topic: ChatTopic | null;
     /** The channel's flags as "+nt", letters only — a key is not for showing. Null until the server has said. */

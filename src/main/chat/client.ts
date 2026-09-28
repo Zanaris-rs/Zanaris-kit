@@ -770,12 +770,14 @@ export class IrcClient {
 
     private renamed(from: string | null, to: string): void {
         if (from === null || to === '') return;
-        if (this.isMe(from)) this.nickName = to;
+        const mine = this.isMe(from);
+        if (mine) this.nickName = to;
         for (const chan of this.chans.values()) {
             const user = chan.users.find(u => same(u.nick, from));
             if (user === undefined) continue;
             chan.users = this.sorted([...chan.users.filter(u => u !== user), { nick: to, prefixes: user.prefixes }]);
-            this.push(chan.name, 'system', null, `${from} is now known as ${to}`, false, 'nick');
+            // Our own rename is news, not churn: a services rename to a guest nick must not fold away.
+            this.push(chan.name, 'system', null, `${from} is now known as ${to}`, false, mine ? undefined : 'nick');
         }
         this.renameQuery(from, to);
     }
@@ -1195,7 +1197,8 @@ export class IrcClient {
 
     private forget(channel: string): void {
         this.chans.delete(key(channel));
-        if (same(this.activeName, channel)) this.activeName = SERVER_LOG;
+        // Status is opened as a select would open it, so what it counted is read and what arrived while it was left is marked.
+        if (same(this.activeName, channel)) this.select(SERVER_LOG);
         // A conversation closed is a slot free: the next time they run out is news again.
         if (isQuery(channel)) this.crowded = false;
     }

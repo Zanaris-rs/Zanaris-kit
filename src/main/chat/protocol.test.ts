@@ -306,7 +306,7 @@ test('a command runs typed alone exactly when the table says so, and an alias re
     for (const command of COMMAND_HELP) {
         assert.equal(parseInput(`/${command.name}`) !== null, command.bare, `/${command.name} alone`);
         const named = parseInput(`/${command.name} bob #LostHQ some words`);
-        for (const alias of command.aliases) assert.equal(parseInput(`/${alias} bob #LostHQ some words`)?.kind, named?.kind, `/${alias}`);
+        for (const alias of command.aliases) assert.deepEqual(parseInput(`/${alias} bob #LostHQ some words`), named, `/${alias} reads exactly as /${command.name}`);
     }
 });
 

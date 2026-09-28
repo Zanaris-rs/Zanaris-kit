@@ -344,6 +344,34 @@ test('coming back to a tab marks where what arrived while it was left begins', (
     assert.equal(f.client.snapshot().newFrom, null, 'leaving clears it, and nothing arrived since');
 });
 
+test('our own rename is news, not churn', () => {
+    const f = online();
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage bob');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
+    f.client.receive(':mage!m@h NICK Guest123');
+    assert.equal(f.lines().at(-1)?.text, 'mage is now known as Guest123');
+    assert.ok(!('presence' in f.lines().at(-1)!), 'a services rename to a guest nick must not fold away');
+});
+
+test('closing the open tab opens Status as selecting it would, so its count is read', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.select(SERVER_LOG);
+    f.client.select('#04scape');
+    f.client.receive(':irc.libera.chat NOTICE mage :maintenance at noon');
+    assert.equal(f.channel(SERVER_LOG).unread, 1);
+
+    f.client.close('#04scape');
+    assert.equal(f.client.snapshot().active, SERVER_LOG);
+    assert.equal(f.channel(SERVER_LOG).unread, 0, 'read by being open');
+    const notice = f.lines().find(l => l.text.includes('maintenance at noon'));
+    assert.equal(f.client.snapshot().newFrom, notice?.id, 'what arrived while it was left is marked');
+
+    f.client.select('#other');
+    f.client.receive(':mage!m@h MODE mage :+i');
+    f.client.select(SERVER_LOG);
+    assert.equal(f.client.snapshot().newFrom, null, 'no stale count to draw a divider over a line that never counted');
+});
+
 test('a tab closed while open hands over to Status with no divider', () => {
     const f = online({ channels: ['#04scape', '#other'] });
     f.client.receive(':bob!b@h PRIVMSG #other :hi');
