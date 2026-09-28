@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMMANDS } from '../../shared/chatInput.ts';
+import { COMMAND_HELP, COMMANDS } from '../../shared/chatInput.ts';
 import { banReason, DEFAULT_ISUPPORT, fitsRelayed, formatCommand, isChannel, LINE_MAX, mentions, modeChanges, parseInput, parseLine, readIsupport, stripFormatting } from './protocol.ts';
 
 // ── parseLine ─────────────────────────────────────────────────────────────
@@ -299,6 +299,14 @@ test('every command offered as it is typed is one the kit reads itself', () => {
     for (const command of COMMANDS) {
         const typed = parseInput(`/${command} bob #LostHQ some words`);
         assert.ok(typed !== null && typed.kind !== 'raw' && typed.kind !== 'unknown', `/${command} is offered but goes to the server as typed`);
+    }
+});
+
+test('a command runs typed alone exactly when the table says so, and an alias reads as its command', () => {
+    for (const command of COMMAND_HELP) {
+        assert.equal(parseInput(`/${command.name}`) !== null, command.bare, `/${command.name} alone`);
+        const named = parseInput(`/${command.name} bob #LostHQ some words`);
+        for (const alias of command.aliases) assert.equal(parseInput(`/${alias} bob #LostHQ some words`)?.kind, named?.kind, `/${alias}`);
     }
 });
 

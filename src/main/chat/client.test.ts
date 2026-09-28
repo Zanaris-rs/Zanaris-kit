@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { backoffDelay, IrcClient, MAX_CONVERSATIONS, type ClientOpts } from './client.ts';
 import { SERVER_LOG, type ChatChannel } from '../../shared/chat.ts';
+import { COMMAND_HELP } from '../../shared/chatInput.ts';
 
 const CTCP = '\u0001'; // the CTCP delimiter, written as an escape so it survives a copy-paste
 
@@ -1103,7 +1104,8 @@ test('/clear empties the tab here only, and /help lists the commands', () => {
     f.client.input('/clear');
     assert.deepEqual(f.lines(), []);
     f.client.input('/help');
-    assert.ok(f.lines().some(l => l.text.startsWith('/join')));
+    const help = f.lines().map(l => l.text);
+    for (const command of COMMAND_HELP) assert.ok(help.some(t => t.startsWith(`/${command.name} `)), `/help names /${command.name}`);
     assert.deepEqual(f.sent, []);
 });
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { complete, HISTORY_MAX, recall, remember, userActions, type CompletionSources } from './chatInput.ts';
+import { COMMAND_HELP, commandHint, commandMenu, complete, HISTORY_MAX, menuEnter, recall, remember, takeCommand, userActions, type CompletionSources } from './chatInput.ts';
 
 const SOURCES: CompletionSources = { nicks: ['Bob', 'bobby', 'alice', 'mage'], channels: ['#LostHQ', '#2004scape'], commands: ['join', 'me', 'msg', 'query'] };
 
@@ -53,6 +53,50 @@ test('nothing to finish, or nothing matching, leaves the key alone', () => {
 test('a nick listed twice in different case is offered once', () => {
     const done = complete('ma', 2, { ...SOURCES, nicks: ['mage', 'Mage'] }, null)!;
     assert.deepEqual(done.matches, ['mage']);
+});
+
+// ── the command menu ──────────────────────────────────────────────────────
+
+const names = (text: string, caret = text.length): string[] | undefined => commandMenu(text, caret)?.matches.map(c => c.name);
+
+test('a slash alone offers every command, and letters narrow it by name or alias', () => {
+    assert.equal(commandMenu('/', 1)?.matches.length, COMMAND_HELP.length);
+    assert.deepEqual(names('/jo'), ['join']);
+    assert.deepEqual(names('/wi'), ['whois'], 'by alias');
+    assert.deepEqual(names('/b'), ['away'], '/back is away with no reason');
+    assert.deepEqual(names('/DE'), ['deop', 'devoice'], 'in the table order, whatever the case');
+});
+
+test('the menu is closed wherever a command is not being typed', () => {
+    assert.equal(commandMenu('', 0), null);
+    assert.equal(commandMenu('hello', 5), null);
+    assert.equal(commandMenu('//me', 4), null, 'a doubled slash is a message');
+    assert.equal(commandMenu('/join ', 6), null, 'the space ends the word');
+    assert.equal(commandMenu('/join #x', 8), null);
+    assert.equal(commandMenu('/joi', 2), null, 'the caret inside the word');
+    assert.equal(commandMenu('/zz', 3), null, 'nothing it could be');
+    assert.equal(commandMenu('/12', 3), null);
+});
+
+test('the usage line follows a command the kit reads, once its space is typed', () => {
+    assert.equal(commandHint('/join'), null);
+    assert.equal(commandHint('/join ')?.name, 'join');
+    assert.equal(commandHint('/j #LostHQ')?.name, 'join');
+    assert.equal(commandHint('/mode #x +m'), null, "the server's own commands have none");
+    assert.equal(commandHint('hi /join '), null);
+});
+
+test('Enter sends a whole command that runs alone, and takes the highlighted one otherwise', () => {
+    assert.equal(menuEnter(commandMenu('/clear', 6)!), 'send');
+    assert.equal(menuEnter(commandMenu('/back', 5)!), 'send', 'an alias counts');
+    assert.equal(menuEnter(commandMenu('/cl', 3)!), 'take');
+    assert.equal(menuEnter(commandMenu('/join', 5)!), 'take', 'it needs a channel');
+});
+
+test('taking a command writes its name and a space, and keeps the rest of the line', () => {
+    const join = COMMAND_HELP.find(c => c.name === 'join')!;
+    assert.deepEqual(takeCommand('/jo', join), { text: '/join ', caret: 6 });
+    assert.deepEqual(takeCommand('/j #LostHQ', join), { text: '/join #LostHQ', caret: 6 });
 });
 
 // ── the arrows ────────────────────────────────────────────────────────────

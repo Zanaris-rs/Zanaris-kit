@@ -1,3 +1,4 @@
+import { COMMAND_HELP } from '../../shared/chatInput.ts';
 import { isNick } from '../../shared/chatSettings.ts';
 import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatStatus, type ChatTopic, type ChatUser, type ChatView } from '../../shared/chat.ts';
 import {
@@ -131,25 +132,8 @@ const JOIN_REFUSED: Record<string, string> = {
 /** How many nicks one MODE line gives a rank to. Servers allow at least three, and say how many more in 005 — not read here. */
 const MODES_PER_LINE = 3;
 
-/** /help's answer, one command a line. */
-const HELP = [
-    '/join #channel — join a channel',
-    '/part or /close — leave this channel, or end this conversation',
-    '/query nick [text] — talk to someone privately',
-    '/msg nick text — send someone a private message',
-    '/me text — say what you are doing',
-    '/nick name — change your name for this session',
-    '/topic [text] — show or set this channel\'s topic',
-    '/away [reason] — mark yourself away; with no reason, back',
-    '/whois nick — look someone up',
-    '/notice nick text — send a notice',
-    '/kick nick [reason], /invite nick — for channel operators',
-    '/op, /deop, /voice, /devoice nick — for channel operators',
-    '/ignore [nick], /unignore nick — hide someone\'s messages; with no nick, list',
-    '/clear — empty this tab',
-    '/quit [reason] — disconnect',
-    'Anything else goes to the server as you typed it.'
-];
+/** /help's answer: the table the message box's menu reads, one command a line. */
+const HELP = [...COMMAND_HELP.map(c => `/${c.name}${c.args === '' ? '' : ` ${c.args}`} — ${c.about}`), 'Anything else goes to the server as you typed it.'];
 
 /**
  * Numerics that are read for their data and would only be noise as text: the
