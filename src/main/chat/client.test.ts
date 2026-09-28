@@ -285,6 +285,75 @@ test('joins and parts do not badge the rail', () => {
     assert.equal(f.channel('#swiftkit').unread, 0);
 });
 
+test('a mention seen while its tab was open does not colour the tab once it is left', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
+    f.client.select('#other');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :plain');
+    assert.equal(f.channel('#04scape').unread, 1);
+    assert.equal(f.channel('#04scape').highlights, 0);
+});
+
+// ── churn and the New divider ─────────────────────────────────────────────
+
+test('churn in a channel is marked as presence, and a kick or a private quit is not', () => {
+    const f = online();
+    f.client.receive(':irc.libera.chat 353 mage = #04scape :mage bob carl');
+    f.client.receive(':irc.libera.chat 366 mage #04scape :End of /NAMES list');
+    f.client.receive(':alice!a@h JOIN #04scape');
+    f.client.receive(':alice!a@h NICK alicia');
+    f.client.receive(':alicia!a@h PART #04scape :bye');
+    f.client.receive(':bob!b@h QUIT :Ping timeout');
+    f.client.receive(':zed!z@h KICK #04scape carl :spam');
+    assert.deepEqual(
+        f.lines().map(l => l.presence),
+        ['join', 'nick', 'part', 'quit', undefined]
+    );
+    assert.ok(!('presence' in f.lines().at(-1)!), 'absent, not undefined');
+
+    f.client.receive(':dave!d@h PRIVMSG mage :hi');
+    f.client.select('dave');
+    f.client.receive(':dave!d@h QUIT :gone');
+    assert.equal(f.lines().at(-1)?.text, 'dave quit (gone)');
+    assert.ok(!('presence' in f.lines().at(-1)!), 'the one person you are talking to leaving is news');
+});
+
+test('coming back to a tab marks where what arrived while it was left begins', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #04scape :before');
+    f.client.select('#other');
+    assert.equal(f.client.snapshot().newFrom, null, 'nothing unread in #other');
+    f.client.receive(':bob!b@h JOIN #04scape');
+    f.client.select('#04scape');
+    assert.equal(f.client.snapshot().newFrom, null, 'churn alone draws no divider');
+
+    f.client.select('#other');
+    f.client.receive(':carl!c@h JOIN #04scape');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :while you were away');
+    f.client.select('#04scape');
+    const joined = f.lines().at(-2)!;
+    assert.equal(joined.text, 'carl joined');
+    assert.equal(f.client.snapshot().newFrom, joined.id, 'above the first line of any kind since the tab was left');
+
+    f.client.receive(':bob!b@h PRIVMSG #04scape :and now');
+    f.client.select('#04scape');
+    assert.equal(f.client.snapshot().newFrom, joined.id, 'it stays while you stay, reselecting included');
+
+    f.client.select('#other');
+    f.client.select('#04scape');
+    assert.equal(f.client.snapshot().newFrom, null, 'leaving clears it, and nothing arrived since');
+});
+
+test('a tab closed while open hands over to Status with no divider', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #other :hi');
+    f.client.select('#other');
+    assert.notEqual(f.client.snapshot().newFrom, null);
+    f.client.close('#other');
+    assert.equal(f.client.snapshot().active, SERVER_LOG);
+    assert.equal(f.client.snapshot().newFrom, null);
+});
+
 // ── nick collisions ───────────────────────────────────────────────────────
 
 test('433 tries again with an underscore, and gives up rather than looping', () => {
