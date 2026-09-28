@@ -271,8 +271,9 @@ offline until Connect. Connect, Disconnect and a typed `/quit` report through
 `COMMAND_HELP` in `shared/chatInput.ts`, with its aliases `/j /q /wi /back`.
 It is the one description of them: `/help` prints it and the slash menu offers
 it, and tests in `protocol.test.ts` hold every entry, its `bare` flag and its
-aliases to what `parseInput` does. Nothing checks the other way, so a command
-`parseInput` learns goes into the table by hand, or neither lists it.
+aliases to what `parseInput` does. Nothing checks the other way: a command
+`parseInput` learns has to be added to the table by hand, or neither the menu
+nor `/help` mentions it.
 Everything else goes to the server as typed (`Input` kind `raw`), and the
 reply lands in Status.
 
