@@ -7,7 +7,7 @@ import type { Bookmark } from '../shared/worlds.ts';
 import { DEFAULT_BUILD } from '../shared/engines.ts';
 import { isWorldsDef } from './worlds/sources.ts';
 import { newServerTimers } from './timers/defs.ts';
-import { recipeRevision } from './yourworld/recipes.ts';
+import { recipeRevision } from './homeserver/recipes.ts';
 import { writeWhole } from './wholeFile.ts';
 
 /** LostHQ has no discoverable search endpoint (its index.php?search= returns the homepage). */
@@ -142,7 +142,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
     {
         id: 'singleplayer',
         kind: 'singleplayer',
-        name: 'Your world',
+        name: 'Home server',
         // The port is applied at runtime: the world is started on a free one.
         url: 'http://127.0.0.1/rs2.cgi?lowmem=1',
         // The default line's; a stored entry follows whichever line the world runs.
@@ -156,7 +156,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         // on and nowhere else. A development world is not one of them, and a
         // window with no bookmarks lists no links in its menus or launcher.
         bookmarks: [],
-        // A one-player world has nobody to rank, so your world offers no lookup.
+        // A one-player world has nobody to rank, so your home server offers no lookup.
         hiscores: null,
         timers: [
             { id: 'afk', name: 'AFK', kind: 'countdown', durationMs: 90_000, thresholdMs: 15_000, volume: 0.8, afk: true },
@@ -344,7 +344,7 @@ function isBuiltInLocal(entry: unknown): boolean {
  * keeps any custom entries with the new fields empty, timers excepted: those
  * start with the pair every new server gets. A missing version is 1. An older
  * file's entries are remote unless they say otherwise, and gain the built-in
- * entry for your world. A version 3 file's `hiscores` template becomes the
+ * entry for your home server. A version 3 file's `hiscores` template becomes the
  * block the Hiscores tool reads. A version 4 file's entries gain timers: a
  * built-in's own, or the pair every new server gets.
  */
@@ -362,7 +362,7 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
         return upgraded.every(isServerDef) && uniqueIds(upgraded) ? upgraded.map(copy) : null;
     }
 
-    // Your world superseded the built-in local server, so version 4 has no
+    // Home server superseded the built-in local server, so version 4 has no
     // entry for it. Every older version shipped one, which is why the drop sits
     // above their three steps rather than inside one of them — but strictly
     // below the version 4 branch: version 4 never held the built-in, so an entry
@@ -380,7 +380,7 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
         // the version 3 step already knows how to read, so it finishes there.
         const withKind = servers.map(entry => (typeof entry === 'object' && entry !== null ? { kind: 'remote', ...(entry as object) } : entry));
         const upgraded = fromV3(withKind);
-        return upgraded ? withYourWorld(upgraded) : null;
+        return upgraded ? withHomeServer(upgraded) : null;
     }
     if (version !== 1) return null;
 
@@ -401,7 +401,7 @@ export function migrateCatalog(parsed: unknown): ServerDef[] | null {
     // Version 1 predates `hiscores` entirely, so its entries go to the built-ins
     // for theirs and to null for everyone else's, with no template to rewrite.
     const upgraded = [...DEFAULT_SERVERS.filter(s => builtIn.has(s.id)).map(copy), ...custom];
-    return uniqueIds(upgraded) ? withYourWorld(upgraded) : null;
+    return uniqueIds(upgraded) ? withHomeServer(upgraded) : null;
 }
 
 /**
@@ -429,8 +429,8 @@ function upgradeTimers(entry: Record<string, unknown>): TimerDef[] {
     return builtIn ? structuredClone(builtIn.timers) : newServerTimers();
 }
 
-/** Adds the built-in entry for your world to a list that lacks it, after the last built-in, where the menu has always shown it. */
-function withYourWorld(servers: ServerDef[]): ServerDef[] {
+/** Adds the built-in entry for your home server to a list that lacks it, after the last built-in, where the menu has always shown it. */
+function withHomeServer(servers: ServerDef[]): ServerDef[] {
     if (servers.some(s => s.id === 'singleplayer')) return servers;
     const entry = copy(DEFAULT_SERVERS.find(s => s.id === 'singleplayer')!);
     const builtInIds = new Set(DEFAULT_SERVERS.map(s => s.id));
@@ -452,8 +452,8 @@ export const CATALOG_VERSION = 5;
  * and never written, with `newer` set.
  */
 export interface CatalogOptions {
-    /** The revision of the build line your world runs. Without it, the default line's. */
-    yourWorldRevision?: () => number;
+    /** The revision of the build line your home server runs. Without it, the default line's. */
+    homeServerRevision?: () => number;
 }
 
 export class Catalog {
@@ -494,10 +494,10 @@ export class Catalog {
                 this.servers = readable.length > 0 && uniqueIds(readable) ? readable.map(copy) : DEFAULT_SERVERS.map(copy);
                 this.newer = version;
                 // The kit's own knowledge of its built-ins, re-adopted as on
-                // every launch — your world's url, above all, which must be
+                // every launch — your home server's url, above all, which must be
                 // this kit's loopback page and not whatever a newer kit wrote.
                 // In memory only: nothing is saved while `newer` is set.
-                this.refreshYourWorld();
+                this.refreshHomeServer();
                 this.refreshHiscores();
                 this.refreshBookmarks();
                 this.refreshTimers();
@@ -506,7 +506,7 @@ export class Catalog {
             const migrated = migrateCatalog(parsed);
             if (!migrated) throw new Error('not a catalog');
             this.servers = migrated;
-            const refreshed = this.refreshYourWorld();
+            const refreshed = this.refreshHomeServer();
             const adopted = this.refreshHiscores();
             const relinked = this.refreshBookmarks();
             const retimed = this.refreshTimers();
@@ -524,7 +524,7 @@ export class Catalog {
      * Where a built-in server's hiscores live is the kit's own knowledge, not a
      * choice the user made — the add form has never offered the field — so a
      * stored entry must not freeze it, for the same reason the entry for
-     * your world must not freeze its revision. Version 3 knew only Lost City's
+     * your home server must not freeze its revision. Version 3 knew only Lost City's
      * lookup, and left Zanaris and Labs with the null they were written with;
      * without this, every install that already exists would keep that null
      * forever, since a file already at version 4 or later never passes through
@@ -640,7 +640,7 @@ export class Catalog {
     }
 
     /**
-     * Your world runs whichever build line the player picked, so the stored
+     * Home server runs whichever build line the player picked, so the stored
      * entry must not freeze the revision the file was written under: the File
      * menu would keep naming the old one while the window and the panel name
      * the new. The revision comes from the line the world runs, and the url
@@ -648,11 +648,11 @@ export class Catalog {
      * bookmarks included, is left as they left it. Answers whether anything
      * changed, so the file is only rewritten when it did.
      */
-    private refreshYourWorld(): boolean {
+    private refreshHomeServer(): boolean {
         const builtIn = DEFAULT_SERVERS.find(s => s.id === 'singleplayer');
         const stored = this.servers.find(s => s.id === 'singleplayer' && s.kind === 'singleplayer');
         if (!builtIn || !stored) return false;
-        const revision = this.options.yourWorldRevision?.() ?? builtIn.revision;
+        const revision = this.options.homeServerRevision?.() ?? builtIn.revision;
         let changed = false;
         if (stored.revision !== revision) {
             stored.revision = revision;
@@ -666,8 +666,8 @@ export class Catalog {
     }
 
     /** After a switch of build line: takes the new revision, and writes the file when it changed. */
-    followYourWorld(): boolean {
-        const changed = this.refreshYourWorld();
+    followHomeServer(): boolean {
+        const changed = this.refreshHomeServer();
         if (changed) this.save();
         return changed;
     }

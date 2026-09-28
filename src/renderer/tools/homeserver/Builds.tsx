@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { worldRunning, type BuildLine, type YourWorldView } from '../../../shared/yourworld';
+import { worldRunning, type BuildLine, type HomeServerView } from '../../../shared/homeserver';
 import { scrollClass, sectionClass } from './fill';
 
 /*
@@ -39,7 +39,7 @@ function stateLabel(line: BuildLine, inUse: boolean): string {
 
 /** One build line: what it is, where it stands here, and what can be done with it. */
 function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: boolean; running: boolean; busy: boolean; act: (change: () => Promise<string | null | void>) => void }): ReactNode {
-    const api = window.zanaris.yourWorld;
+    const api = window.zanaris.homeServer;
     const onDisk = line.state === 'installed' || line.state === 'outdated';
     const fetchable = line.state === 'absent' || line.state === 'outdated';
     const warn = line.state === 'outdated' || line.error !== null;
@@ -87,7 +87,7 @@ function Row({ line, inUse, running, busy, act }: { line: BuildLine; inUse: bool
  * this computer, and the one the world runs. The lines and their states are
  * main's; this only asks for a switch, a download or a removal.
  */
-export default function Builds({ view, wide }: { view: YourWorldView; wide: boolean }): ReactNode {
+export default function Builds({ view, wide }: { view: HomeServerView; wide: boolean }): ReactNode {
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const running = worldRunning(view.status);

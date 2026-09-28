@@ -54,7 +54,7 @@ export interface PaneContentItem {
     current: boolean;
 }
 
-const TOOL_NAMES: Record<ToolId, string> = { chat: 'Chat', worlds: 'Worlds', hiscores: 'Hiscores', singleplayer: 'Your world', timers: 'Timers' };
+const TOOL_NAMES: Record<ToolId, string> = { chat: 'Chat', worlds: 'Worlds', hiscores: 'Hiscores', singleplayer: 'Home server', timers: 'Timers' };
 
 /**
  * What a pane's header calls it.

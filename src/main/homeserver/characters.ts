@@ -1,5 +1,5 @@
 import { NAME_INPUT_MAX, nameProblem, toDisplayName, toSafeName } from '../../shared/names.ts';
-import { PROBLEM_TEXT, type CharacterInfo, type CharacterOutcome, type FileProblem, type ImportPick, type SaveSummary } from '../../shared/yourworld.ts';
+import { PROBLEM_TEXT, type CharacterInfo, type CharacterOutcome, type FileProblem, type ImportPick, type SaveSummary } from '../../shared/homeserver.ts';
 import type { Confirm, Confirmation } from './confirm.ts';
 import { readSave, SaveError } from './save.ts';
 
@@ -55,7 +55,7 @@ const done = (name: string): CharacterOutcome => ({ kind: 'done', name });
 const refused = (message: string): CharacterOutcome => ({ kind: 'refused', message });
 const GONE = 'That character is not in the saves folder any more.';
 const NOT_WAITING = 'That file is no longer waiting to be imported. Choose it again.';
-const PLAYING = 'Your world is running.';
+const PLAYING = 'Your home server is running.';
 const replaced = (who: string): string => `The ${who} you have now goes to the trash.`;
 
 /** A typed name as a character's name, or why it cannot be one. */
@@ -151,7 +151,7 @@ export function deleteQuestion(name: string, running: boolean): Confirmation {
 }
 
 /**
- * The characters in your world: one file each in the saves folder, named for
+ * The characters in your home server: one file each in the saves folder, named for
  * the character. Every path this builds for a character goes through `path`,
  * which takes only a name `toSafeName` leaves as it is, so no typed name can
  * reach a file outside the folder, or one the engine would never look for. A

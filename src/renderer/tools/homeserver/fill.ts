@@ -1,6 +1,6 @@
 /*
- * How a section fills the Your world tool, by the tool's shape
- * (`WIDE_ENOUGH`, in YourWorld.tsx).
+ * How a section fills the Home server tool, by the tool's shape
+ * (`WIDE_ENOUGH`, in HomeServer.tsx).
  *
  * Wide, the tool is as tall as its pane and a section's list scrolls inside
  * it, with what sits above and below the list always in view. Narrow, there

@@ -21,13 +21,14 @@ const APP = 'zanaris-kit';
 /**
  * What a reset keeps, moved back into the empty profile afterwards.
  *
- * `yourworld` holds the downloaded builds, 50 MB a line, and the characters of
- * every revision; `singleplayer` is the older tree those characters started in,
- * which CLAUDE.md leaves where it is rather than migrating. Neither is a reason
- * the next launch would not be fresh — only `state.json` decides that — and
- * losing either to a test would cost a download or somebody's save.
+ * `homeserver` holds the downloaded builds, 50 MB a line, and the characters of
+ * every revision; `yourworld` and `singleplayer` are the older trees those
+ * characters were in before, which CLAUDE.md leaves where they are rather than
+ * migrating. None of them is a reason the next launch would not be fresh —
+ * only `state.json` decides that — and losing any to a test would cost a
+ * download or somebody's save.
  */
-export const KEPT = ['yourworld', 'singleplayer'];
+export const KEPT = ['homeserver', 'yourworld', 'singleplayer'];
 
 /**
  * Where the kit's profile is, as Electron works it out from the package name.

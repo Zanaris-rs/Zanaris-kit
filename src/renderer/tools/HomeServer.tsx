@@ -1,14 +1,14 @@
 import { useState, type ReactNode } from 'react';
-import { lineTitle, sectionsOffered, YOUR_WORLD_SECTIONS, type YourWorldSection, type YourWorldView } from '../../shared/yourworld';
+import { lineTitle, sectionsOffered, HOME_SERVER_SECTIONS, type HomeServerSection, type HomeServerView } from '../../shared/homeserver';
 import type { ShareView } from '../../shared/share';
 import Tab from '../tab';
-import Builds from './yourworld/Builds';
-import Characters from './yourworld/Characters';
-import Commands from './yourworld/Commands';
-import Friends from './yourworld/Friends';
-import World from './yourworld/World';
+import Builds from './homeserver/Builds';
+import Characters from './homeserver/Characters';
+import Commands from './homeserver/Commands';
+import Friends from './homeserver/Friends';
+import World from './homeserver/World';
 
-const STATUS: Record<YourWorldView['status'], string> = {
+const STATUS: Record<HomeServerView['status'], string> = {
     stopped: 'Stopped',
     missing: 'Not downloaded yet',
     downloading: 'Downloading',
@@ -26,7 +26,7 @@ const STATUS: Record<YourWorldView['status'], string> = {
  * its Cancel under what it cancels. The lists in Characters, Commands and
  * Builds also give their rows 4px sides rather than 8. The row of sections
  * becomes one tab that opens a menu of them, and under it the section scrolls
- * as one page rather than each list scrolling inside it (yourworld/fill.ts).
+ * as one page rather than each list scrolling inside it (homeserver/fill.ts).
  *
  * Friends is the first to run out. Beside Share with friends, 165px, its note
  * has the pane less 193px: three lines here, four at 280, and nine at 240.
@@ -38,13 +38,13 @@ const STATUS: Record<YourWorldView['status'], string> = {
 const WIDE_ENOUGH = 300;
 
 /**
- * The Your world tool. What the world is doing sits above the sections, since it is true of all of them,
+ * The Home server tool. What the world is doing sits above the sections, since it is true of all of them,
  * and so does a live share's warning: Friends says it too, and nothing else would while another section is open.
  * Which section is open belongs to this pane and is not kept. Friends is offered only when main sends a share.
  */
-export default function YourWorld({ view, share, width }: { view: YourWorldView; share: ShareView | null; width: number }): ReactNode {
+export default function HomeServer({ view, share, width }: { view: HomeServerView; share: ShareView | null; width: number }): ReactNode {
     const wide = width >= WIDE_ENOUGH;
-    const [open, setOpen] = useState<YourWorldSection>('world');
+    const [open, setOpen] = useState<HomeServerSection>('world');
     const status = view.status === 'ready' && view.port !== null ? `Running on port ${view.port}` : STATUS[view.status];
     const line = view.builds.find(l => l.id === view.selected);
 
@@ -63,7 +63,7 @@ export default function YourWorld({ view, share, width }: { view: YourWorldView;
                 </pre>
             )}
             <div>
-                <button type="button" onClick={() => void window.zanaris.yourWorld.retry()} className="btn btn-red">
+                <button type="button" onClick={() => void window.zanaris.homeServer.retry()} className="btn btn-red">
                     Try again
                 </button>
             </div>
@@ -108,10 +108,10 @@ export default function YourWorld({ view, share, width }: { view: YourWorldView;
              * Narrow, the row is one tab naming the open section, which opens
              * main's menu of them: the row was a tab to a line at
              * `PANE_MIN_WIDTH`, five lines before any section. Under it the
-             * rest scrolls as one page (yourworld/fill.ts), so what is running
+             * rest scrolls as one page (homeserver/fill.ts), so what is running
              * and the way to another section stay in view.
              */}
-            <div role="group" aria-label="Your world" className={wide ? 'flex flex-wrap items-center gap-[5px]' : 'flex'}>
+            <div role="group" aria-label="Home server" className={wide ? 'flex flex-wrap items-center gap-[5px]' : 'flex'}>
                 {wide ? (
                     sectionsOffered(share !== null).map(offered => (
                         <Tab key={offered.id} role="button" label={offered.label} open={open === offered.id} onSelect={() => setOpen(offered.id)} />
@@ -121,10 +121,10 @@ export default function YourWorld({ view, share, width }: { view: YourWorldView;
                         role="button"
                         menu
                         open
-                        label={YOUR_WORLD_SECTIONS.find(offered => offered.id === open)?.label ?? ''}
+                        label={HOME_SERVER_SECTIONS.find(offered => offered.id === open)?.label ?? ''}
                         onSelect={event => {
                             const box = event.currentTarget.getBoundingClientRect();
-                            void window.zanaris.yourWorld.sectionMenu(open, box.left, box.bottom).then(chosen => {
+                            void window.zanaris.homeServer.sectionMenu(open, box.left, box.bottom).then(chosen => {
                                 if (chosen !== null) setOpen(chosen);
                             });
                         }}

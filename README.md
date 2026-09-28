@@ -5,7 +5,7 @@ server, where every window knows which server it is running and can hop
 between that server's worlds.
 
 **Status: split panes — any pane, any axis, dragged and closed like iTerm —
-on top of the reference pane and your world.** The window is a tree of
+on top of the reference pane and your home server.** The window is a tree of
 panes now rather than four fixed regions: the game, a reference page and any
 tool can sit anywhere in it, split left/right or up/down, and every seam
 drags. A fresh pane shows a launcher of this server's links and this window's
@@ -124,7 +124,7 @@ none is. What is remembered is simply the last thing you asked for: windows
 opened after it, and the next launch, start pinned or unpinned to match.
 
 **Hiscores** is the other server tool, offered for the three remote
-servers only — a one-player world has nobody to rank, so your world never
+servers only — a one-player world has nobody to rank, so your home server never
 gets it. A name box and a Look up button sit above a Skill · Rank · Lvl · XP
 table; the lookup fires on submit, never on a keystroke, since Lost City
 rate-limits after a handful of requests inside a minute and typing a name would
@@ -180,7 +180,7 @@ pane shows. It lists this server's links, in order — for Lost City: Forums,
 Coordinates, Clue Help, Puzzle Solver, World Map, Markets, Quest Guides, Skill
 Guides, Skills Calculator, Bestiary and Item Database; for Zanaris the nine of
 those that are not Lost City's own forums and prices; for Lost City Labs and
-your world nothing — alongside the tools this window offers and the game.
+your home server nothing — alongside the tools this window offers and the game.
 Clicking one fills the pane you are looking at. Split first and you fill the new
 half instead, which is how two pages end up side by side.
 
@@ -211,16 +211,16 @@ frame rather than opening a tab. Every seam drags, on both axes, and the
 pane before a seam — the one to its left, or above it — is the one that grows
 as you push the seam away from it.
 
-**Your world** needs no server at all: File > New Window For > Your world
+**Home server** needs no one else's server: File > New Window For > Home server
 starts a world on this computer. The kit does not carry the server itself. The
 first time, the window offers to download it — a build of Lost City, about
 50 MB, from the kit's own releases on GitHub, checked against a digest this
 version of the kit carries before anything runs. There is no account and
 nothing to sign up for — any name typed at the login screen becomes a
 character, and its saves live in the app's own data folder, one world per game
-revision: `Application Support/zanaris-kit/yourworld/worlds/274/data/players/main`
-on macOS, `%APPDATA%\zanaris-kit\yourworld\worlds\274\...` on Windows,
-`~/.config/zanaris-kit/yourworld/worlds/274/...` on Linux. The Your world
+revision: `Application Support/zanaris-kit/homeserver/worlds/274/data/players/main`
+on macOS, `%APPDATA%\zanaris-kit\homeserver\worlds\274\...` on Windows,
+`~/.config/zanaris-kit/homeserver/worlds/274/...` on Linux. The Home server
 tool says what the world is doing, and has five sections. **World** holds what the kit
 writes into the world's configuration: Cheats, which turns the engine's
 developer commands on for the whole world; an XP rate of 1×, 2×, 5× or 10×; and
@@ -241,7 +241,7 @@ after saying the other game may read it differently, since a save holds items
 and progress from the game that wrote it. **Friends** shares the world with a
 link; see Playing with friends below.
 
-Your world is not a live one, and it does not pretend to be: the RuneScape
+Your home server is not a live one, and it does not pretend to be: the RuneScape
 Guide will offer to skip the tutorial, whether cheats are on or off and however
 many characters you start. That is deliberate. Nobody should have to redo the
 tutorial on their own machine to get to the game, and a world that only you, and
@@ -250,7 +250,7 @@ the Cheats switch controls is the staff level the world gives you and everyone
 you share it with: it turns the developer commands on, and with them the few
 things the game does differently for staff — random events, for one, stop.
 
-**Playing with friends.** The Your world tool's Friends section lets friends
+**Playing with friends.** The Home server tool's Friends section lets friends
 join that world from a browser. Share with friends downloads Cloudflare's tunnel
 program the first time — 19 to 55 MB depending on the system, from Cloudflare's
 own GitHub release, checked against a digest pinned in the kit — then opens a
@@ -262,7 +262,7 @@ then the kit asks only Cloudflare's own nameservers about the link: an ordinary
 resolver that asks too early can go on saying it does not exist for half an
 hour. The kit asks before
 the download and before every share. The link lasts until you stop sharing,
-close the last window for your world, or quit. Restarting the world, which any
+close the last window for your home server, or quit. Restarting the world, which any
 change in World does, keeps it: friends reload once the world is back. Each new
 share gets a new link.
 
@@ -524,9 +524,9 @@ seeded on first run, one entry per server, now at file version 5:
 | `lostcitylabs` | unknown, "May 2005 per Lost City Labs" | a static list, worlds 1 to 4 | no parameter found | none |
 | `singleplayer` | the build line it runs, 274 until another is picked | none | | losthq |
 
-The last id is the one the tool was called before it was Your world. It is a
-key in files people already have — a stored `servers.json`, a saved setup —
-so it stays as it is; nothing shows it.
+The last id is the tool's first name, from before it was Your world and then
+Home server. It is a key in files people already have — a stored
+`servers.json`, a saved setup — so it stays as it is; nothing shows it.
 
 Each entry carries a `worlds` block (the source, a URL template with `{world}`,
 `{url}` and `{lowmem}`, whether detail is switchable, the default world),
@@ -540,8 +540,8 @@ block: a `source` — a `kind` naming which of the three lookup APIs it is, plus
 the URL for it — and a `site` the panel's "Full hiscores" link opens. Version 3
 kept only Lost City's as a bare URL template; version 4 is what turned it into
 this shape, and what gave Zanaris and Labs one of their own for the first time.
-Your world carries no `hiscores`, since a one-player world has nobody to
-rank. Every entry also carries `timers`, the server's built-in clocks,
+The entry for your home server carries no `hiscores`, since a one-player
+world has nobody to rank. Every entry also carries `timers`, the server's built-in clocks,
 re-adopted on every launch the same way `hiscores` is; version 5 is what added
 it.
 
@@ -773,7 +773,7 @@ shape, one click away. Whatever you pick replaces the panes of the tab in front:
 - **Game**, **Game and Chat** and **Game, Chat and Tools** are the kit's own.
   Game is the game alone; Game and Chat is the game over chat, as a new window
   opens; Game, Chat and Tools adds a 320px column down the right holding every
-  other tool the window offers — Worlds, Hiscores, Timers, and Your world in
+  other tool the window offers — Worlds, Hiscores, Timers, and Home server in
   its own window — sharing the column's height evenly. A built-in leaves out a
   tool the window does not offer rather than showing an empty pane.
 - **Your saved setups** follow, by file name: the `.json` files in that server's
@@ -861,11 +861,11 @@ npm run pin:engine -- <id>    # write a published build's size and digest into i
 npm run dist         # package this platform into release/
 ```
 
-Your world's builds are recipes, one file per line under `engines/`: the
+Home server's builds are recipes, one file per line under `engines/`: the
 engine and content commits of Lost City upstream (`LostCityRS/Engine-TS` and
 `LostCityRS/Content`) at one of its revisions, the patches the stage script lays
-over the engine, and the published archive's size and sha-256. Your world is
-that game, not a fork of it. The one exception is `patches/engine/`: three
+over the engine, and the published archive's size and sha-256. Your home server
+runs that game, not a fork of it. The one exception is `patches/engine/`: three
 backwards-compatible changes a world running on a player's own machine needs,
 on their way upstream. `patches/engine/README.md` says what they are and why.
 Any server shaped like Lost City 274 — its layout, `world.json`, Node — can be a
@@ -893,7 +893,7 @@ child views. It opens the panel on a loaded window, opens the Worlds tool,
 waits for the list, switches to another world and captures that, opens the
 Hiscores tool on each server that has one and looks a single name up there —
 one request per server and no retry, since Lost City rate-limits after a
-handful inside a minute — opens the Your world tool, then opens a second
+handful inside a minute — opens the Home server tool, then opens a second
 instance of that server. Its own profile has downloaded nothing, so it reads
 the builds from the real one; a line the real profile has not downloaded is
 skipped rather than left waiting. It keeps its
@@ -922,7 +922,7 @@ One capture run with every catalog server open at once:
 | Lost City Labs, Hiscores open | untouched | "Showing knight", Overall in gold at rank 1, level 1,176, 18,174,678 xp; 22 rows in all, Labs' later revision sending the Slayer and Farming lines 274 never does |
 | Zanaris, two pages stacked | untouched | both page panes headed with their catalog names — "Coord…", "Clue H…" — before their back, forward and reload, the name truncating rather than vanishing at 189px |
 | Lost City, seam dragged | 190px wide | asked for 190px of 761 and got 190; the game pane's header keeps its name and drops "rev 274", which is the half worth losing |
-| Lost City, split right then swapped | untouched | "Empty" beside "Game" over "Chat", the dot on the game's header only — the split shot itself came back a stale frame of the window before it (the capture hazard; so did the Your world tool's), and the swapped shot straight after it shows the three panes |
+| Lost City, split right then swapped | untouched | "Empty" beside "Game" over "Chat", the dot on the game's header only — the split shot itself came back a stale frame of the window before it (the capture hazard; so did the Home server tool's), and the swapped shot straight after it shows the three panes |
 | Lost City, swapped then moved (a later run, 2026-09-15) | followed its pane both times: 760x742 on the right after the swap, then 378x1554 as a full-height column after the move | swapped: "Empty" beside "Game" over "Chat", the dot on the game that was dragged, and the tab renamed "Empty" for its new first pane; moved: chat dropped on the game's right edge and became a third full-height column — "Empty", "Game", "Chat" — with the dot on chat. The split, swapped and moved shots all hash differently, so none is a stale frame |
 | Lost City (2) | login screen, its own partition | slot 2, `persist:server:lostcity:2`, opening on the game over chat like every new window rather than on the first window's arrangement, which nothing saves any more |
 | Lost City (2), a setup saved and opened into a new tab (as a layout before 2026-09-26; as a setup, a run of 2026-09-26) | not reloaded — one load of the window in the log | tabs "Empty" and "Game": the file saved "game over chat", the new tab opened it at 765x809, the size it was saved at, so the window did not resize, and the game moved into it, leaving the first tab's game pane empty. `state.json` holds no setups. That run's shell shot of this step was not written: the window did not paint |
@@ -1014,7 +1014,7 @@ and none of its `TUNNEL_*` environment, so nothing else on the machine can
 point the tunnel somewhere else or swap the checked binary. The link itself
 is the only access control; see Playing with friends.
 
-**Your world's builds** are the one thing the kit downloads and then runs
+**Home server's builds** are the one thing the kit downloads and then runs
 as a program. It downloads only the archive a recipe it shipped with pins, from
 this repository's releases, and refuses one whose size or sha-256 differs. The
 archive is unpacked beside the builds, not among them, and moved into place only
@@ -1070,8 +1070,8 @@ src/main/chat/service.ts    the app's one connection: socket, backoff, settings 
 src/main/chat/secret.ts     sealing the NickServ password with the OS store         (tested)
 src/main/migrate.ts         pure: what a pre-rename profile carries across          (tested)
 src/main/download.ts        a pinned download: size, sha-256, the system tar        (tested)
-src/main/yourworld/buildStore.ts  your world's builds: install, check, remove       (tested)
-src/main/yourworld/recipes.ts     the recipes the kit carries                       (tested)
+src/main/homeserver/buildStore.ts  the home server's builds: install, check, remove  (tested)
+src/main/homeserver/recipes.ts     the recipes the kit carries                       (tested)
 src/main/share/cloudflared.ts  the pinned cloudflared: which build, where, checked   (tested)
 src/main/share/quickTunnel.ts  a quick tunnel: its arguments, its log, the retry     (tested)
 src/main/share/relay.ts     loopback relay: GET, HEAD and the websocket to the world (tested)
@@ -1100,12 +1100,12 @@ src/renderer/tools/Worlds.tsx
 src/renderer/tools/Chat.tsx the chat tabs, the log with its times, the topic
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
 src/renderer/tools/ChatUsers.tsx     a channel's users by rank, and its modes and age
-src/renderer/tools/yourworld/Builds.tsx   the build lines: use, download, remove
-src/renderer/tools/yourworld/Friends.tsx  Play with friends: share, the link, stop
+src/renderer/tools/homeserver/Builds.tsx   the build lines: use, download, remove
+src/renderer/tools/homeserver/Friends.tsx  Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
 static/offline.html         shown when a server can't be reached
-static/starting.html        your world starting, failed, or not downloaded yet
-engines/*.json              your world's build lines, pinned by digest
+static/starting.html        your home server starting, failed, or not downloaded yet
+engines/*.json              your home server's build lines, pinned by digest
 static/sounds/alert.wav     every timer's alert: Kenney's confirmation_002 (CC0), louder
 ```
 

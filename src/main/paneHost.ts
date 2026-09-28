@@ -70,7 +70,7 @@ export interface PaneHostDeps {
     /** The tools this window offers, in its own order — the first half of what a pane's header offers to become. */
     tools: () => readonly ToolId[];
     hosts: () => readonly string[];
-    /** Whether a link to Your world is live, which marks a background tab holding its pane. */
+    /** Whether a link to your home server is live, which marks a background tab holding its pane. */
     sharing: () => boolean;
     log: (line: string) => void;
     /**

@@ -242,7 +242,7 @@ test('the game leaves only one pane, however many tabs are open', () => {
     assert.deepEqual(games, ['pane-3'], 'one game leaf in the whole window, which is all there is a view for');
 });
 
-/** Two tabs: the game and Your world side by side in `a`, and an empty `b` in front. */
+/** Two tabs: the game and Home server side by side in `a`, and an empty `b` in front. */
 function playingBehind(): ReturnType<typeof openTabs> {
     const a = split('split-1', 'x', [leaf('p1', { kind: 'game' }), leaf('p2', { kind: 'tool', tool: 'singleplayer' })], [0.5, 0.5]);
     return newTab({ tabs: [{ id: 'a', tree: a, focusedPaneId: 'p1' }], activeId: 'a' }, 'b', 'p3');
@@ -259,11 +259,11 @@ test('the tab in front carries no mark, since what it holds is on screen', () =>
     assert.deepEqual(marksOfTab(set, 'a', true), []);
 });
 
-test('a live link marks the background tab holding Your world, after the game', () => {
+test('a live link marks the background tab holding Home server, after the game', () => {
     assert.deepEqual(marksOfTab(playingBehind(), 'a', true), ['game', 'sharing']);
 });
 
-test('Your world is marked only while it is shared, since the world itself is the window', () => {
+test('Home server is marked only while it is shared, since the world itself is the window', () => {
     assert.deepEqual(marksOfTab(playingBehind(), 'a', false), ['game']);
 });
 
@@ -276,20 +276,20 @@ test('a link already shown in the tab in front marks no other tab', () => {
         ],
         activeId: 'b'
     };
-    assert.deepEqual(marksOfTab(set, 'a', true), [], 'Your world is on screen in b, so a second copy behind it is not out of sight');
+    assert.deepEqual(marksOfTab(set, 'a', true), [], 'Home server is on screen in b, so a second copy behind it is not out of sight');
 });
 
 test('a tab that is not there has no marks', () => {
     assert.deepEqual(marksOfTab(playingBehind(), 'nope', true), []);
 });
 
-test('a live link with Your world in no tab at all is for the bar to say', () => {
+test('a live link with Home server in no tab at all is for the bar to say', () => {
     const trees = newTab(openTabs('a', 'p1', { kind: 'game' }), 'b', 'p2').tabs.map(tab => tab.tree);
     assert.equal(sharingWithoutPane(trees, true), true);
     assert.equal(sharingWithoutPane(trees, false), false, 'with no link there is nothing to say');
 });
 
-test('a Your world pane in any tab, in front or behind, leaves the bar with nothing to say', () => {
+test('a Home server pane in any tab, in front or behind, leaves the bar with nothing to say', () => {
     const set = playingBehind();
     assert.equal(sharingWithoutPane(set.tabs.map(tab => tab.tree), true), false, 'behind: the tab carries the mark');
     assert.equal(sharingWithoutPane(selectTab(set, 'a').tabs.map(tab => tab.tree), true), false, 'in front: the pane itself says so');

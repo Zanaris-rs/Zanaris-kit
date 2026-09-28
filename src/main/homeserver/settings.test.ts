@@ -1,29 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_YOUR_WORLD_SETTINGS, type BuildLine, type YourWorldSettings } from '../../shared/yourworld.ts';
-import { changesSettings, readSettingChange, readYourWorldSettings, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './settings.ts';
+import { DEFAULT_HOME_SERVER_SETTINGS, type BuildLine, type HomeServerSettings } from '../../shared/homeserver.ts';
+import { changesSettings, readSettingChange, readHomeServerSettings, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './settings.ts';
 
-const DEFAULTS: YourWorldSettings = { cheats: false, xpRate: 1, members: true };
+const DEFAULTS: HomeServerSettings = { cheats: false, xpRate: 1, members: true };
 
 test('the defaults are cheats off, xp as the game gives it, and members on', () => {
-    assert.deepEqual(DEFAULT_YOUR_WORLD_SETTINGS, DEFAULTS);
-    assert.deepEqual(readYourWorldSettings(undefined), DEFAULTS);
+    assert.deepEqual(DEFAULT_HOME_SERVER_SETTINGS, DEFAULTS);
+    assert.deepEqual(readHomeServerSettings(undefined), DEFAULTS);
 });
 
-test('readYourWorldSettings keeps each good field and defaults each bad one', () => {
-    assert.deepEqual(readYourWorldSettings({ cheats: true, xpRate: 10, members: false }), { cheats: true, xpRate: 10, members: false });
-    assert.deepEqual(readYourWorldSettings({ cheats: 'yes', xpRate: 3, members: false }), { cheats: false, xpRate: 1, members: false });
-    assert.deepEqual(readYourWorldSettings({ xpRate: '5' }), DEFAULTS);
-    assert.deepEqual(readYourWorldSettings({ cheats: true }), { ...DEFAULTS, cheats: true }, 'the block as the kit wrote it before xp rate and members');
-    assert.deepEqual(readYourWorldSettings('junk'), DEFAULTS);
-    assert.deepEqual(readYourWorldSettings(null), DEFAULTS);
+test('readHomeServerSettings keeps each good field and defaults each bad one', () => {
+    assert.deepEqual(readHomeServerSettings({ cheats: true, xpRate: 10, members: false }), { cheats: true, xpRate: 10, members: false });
+    assert.deepEqual(readHomeServerSettings({ cheats: 'yes', xpRate: 3, members: false }), { cheats: false, xpRate: 1, members: false });
+    assert.deepEqual(readHomeServerSettings({ xpRate: '5' }), DEFAULTS);
+    assert.deepEqual(readHomeServerSettings({ cheats: true }), { ...DEFAULTS, cheats: true }, 'the block as the kit wrote it before xp rate and members');
+    assert.deepEqual(readHomeServerSettings('junk'), DEFAULTS);
+    assert.deepEqual(readHomeServerSettings(null), DEFAULTS);
 });
 
-test('readYourWorldSettings hands back a fresh object each time', () => {
-    const first = readYourWorldSettings(undefined);
+test('readHomeServerSettings hands back a fresh object each time', () => {
+    const first = readHomeServerSettings(undefined);
     first.cheats = true;
-    assert.equal(readYourWorldSettings(undefined).cheats, false);
-    assert.equal(DEFAULT_YOUR_WORLD_SETTINGS.cheats, false);
+    assert.equal(readHomeServerSettings(undefined).cheats, false);
+    assert.equal(DEFAULT_HOME_SERVER_SETTINGS.cheats, false);
 });
 
 test('readSettingChange takes one known setting with a value it can have, and nothing else', () => {
@@ -48,10 +48,10 @@ test('changesSettings says whether a change would leave anything different', () 
 });
 
 test('each restart question names the change, the restart and the logout, with Restart as the default', () => {
-    const patches: Partial<YourWorldSettings>[] = [{ cheats: true }, { cheats: false }, { xpRate: 5 }, { members: true }, { members: false }];
+    const patches: Partial<HomeServerSettings>[] = [{ cheats: true }, { cheats: false }, { xpRate: 5 }, { members: true }, { members: false }];
     for (const patch of patches) {
         const question = restartConfirmation(patch);
-        assert.match(question.message, /restarts your world and logs you out\.$/);
+        assert.match(question.message, /restarts your home server and logs you out\.$/);
         assert.equal(question.button, 'Restart');
         assert.equal(question.destructive, false);
         assert.notEqual(question.detail, '');
@@ -80,7 +80,7 @@ const LINE: BuildLine = {
 
 test('switching builds asks as a restart, and says where the characters are', () => {
     const across = switchConfirmation(LINE, 274);
-    assert.equal(across.message, 'Switching to Lost City 289 restarts your world and logs you out.');
+    assert.equal(across.message, 'Switching to Lost City 289 restarts your home server and logs you out.');
     assert.match(across.detail, /Your rev 274 characters stay where they are, and rev 289 has its own/);
     assert.equal(across.button, 'Switch');
     assert.equal(across.destructive, false);
@@ -88,7 +88,7 @@ test('switching builds asks as a restart, and says where the characters are', ()
 });
 
 test('switching to a build not downloaded yet says it downloads first, and the world runs until then', () => {
-    assert.match(switchConfirmation({ ...LINE, state: 'absent' }, 274).detail, /^It downloads first \(54 MB\), and your world keeps running until then\./);
+    assert.match(switchConfirmation({ ...LINE, state: 'absent' }, 274).detail, /^It downloads first \(54 MB\), and your home server keeps running until then\./);
     assert.doesNotMatch(switchConfirmation(LINE, 274).detail, /downloads first/);
 });
 

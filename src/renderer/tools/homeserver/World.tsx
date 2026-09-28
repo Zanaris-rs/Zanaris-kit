@@ -1,5 +1,5 @@
 import { useId, type CSSProperties, type ReactNode } from 'react';
-import { worldRunning, XP_RATES, type YourWorldSettings, type YourWorldView } from '../../../shared/yourworld';
+import { worldRunning, XP_RATES, type HomeServerSettings, type HomeServerView } from '../../../shared/homeserver';
 import { scrollClass, sectionClass } from './fill';
 
 /*
@@ -20,8 +20,8 @@ const QUIET: CSSProperties = { fontSize: 13, padding: '1px 8px' };
  */
 const TIGHT: CSSProperties = { paddingLeft: 4, paddingRight: 4 };
 
-function change<K extends keyof YourWorldSettings>(key: K, value: YourWorldSettings[K]): void {
-    void window.zanaris.yourWorld.setSetting(key, value);
+function change<K extends keyof HomeServerSettings>(key: K, value: HomeServerSettings[K]): void {
+    void window.zanaris.homeServer.setSetting(key, value);
 }
 
 /**
@@ -55,7 +55,7 @@ function Switch({ label, on, busy, red = false, note, wide, onChange }: { label:
 }
 
 /** The World section: what the kit writes into world.json for the player, and the world's own files. */
-export default function World({ view, wide }: { view: YourWorldView; wide: boolean }): ReactNode {
+export default function World({ view, wide }: { view: HomeServerView; wide: boolean }): ReactNode {
     const id = useId();
     const busy = view.status === 'preparing' || view.status === 'starting' || view.status === 'stopping';
     const { settings } = view;
@@ -63,7 +63,7 @@ export default function World({ view, wide }: { view: YourWorldView; wide: boole
         <div className={sectionClass(wide)}>
             <div className={`flex flex-col gap-2.5 ${scrollClass(wide)}`}>
                 <Switch label="Cheats" red on={settings.cheats} busy={busy} wide={wide} onChange={on => change('cheats', on)} note="Developer commands such as ::tele and ::give. Off, they are refused." />
-                <Switch label="Members" on={settings.members} busy={busy} wide={wide} onChange={on => change('members', on)} note="Off, your world is a free one, as the free-to-play game was." />
+                <Switch label="Members" on={settings.members} busy={busy} wide={wide} onChange={on => change('members', on)} note="Off, your home server is a free one, as the free-to-play game was." />
                 <div>
                     {/* Narrow, the label has a line of its own and the rates wrap under it, rather than one rate on the label's line and the rest below. */}
                     <div role="group" aria-labelledby={`${id}-rate`} className="flex flex-wrap items-center gap-1.5">
@@ -93,7 +93,7 @@ export default function World({ view, wide }: { view: YourWorldView; wide: boole
                 {/*
                  * Not a caveat about the cheats switch, which is why it does not hang off it:
                  * the world is yours whatever the switch says, and content asks map_live -
-                 * node.production, which your world never turns on. The guide is where a
+                 * node.production, which your home server never turns on. The guide is where a
                  * player meets that first, and on a second character it is the point.
                  */}
                 <p className="text-[12px] text-dim">Your own world, not a live one. The guide will offer to skip the tutorial, however many characters you start.</p>
@@ -101,7 +101,7 @@ export default function World({ view, wide }: { view: YourWorldView; wide: boole
 
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. */}
             <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => void window.zanaris.yourWorld.showLog()} style={QUIET} className="btn group">
+                <button type="button" onClick={() => void window.zanaris.homeServer.showLog()} style={QUIET} className="btn group">
                     <span className="text-dim group-hover:text-cream">Show log</span>
                 </button>
             </div>

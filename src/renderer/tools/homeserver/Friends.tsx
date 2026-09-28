@@ -98,7 +98,7 @@ export default function Friends({ view, worldReady, wide }: { view: ShareView; w
                         </button>
                     </div>
                     <p className="mt-1.5 text-[12px] text-warn">Anyone with this link can log in as any character, yours included.</p>
-                    {!worldReady && <p className="text-[12px] text-dim" aria-live="polite">Your world is restarting. The link stays the same: friends reload once it is back.</p>}
+                    {!worldReady && <p className="text-[12px] text-dim" aria-live="polite">Your home server is restarting. The link stays the same: friends reload once it is back.</p>}
                 </>
             )}
             {view.status === 'failed' && (

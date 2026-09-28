@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { characterMenu, formatPlaytime, isSection, isXpRate, lineTitle, PROBLEM_LABEL, PROBLEM_TEXT, sectionsOffered, worldRunning, XP_RATES, type CharacterMenuItem } from './yourworld.ts';
+import { characterMenu, formatPlaytime, isSection, isXpRate, lineTitle, PROBLEM_LABEL, PROBLEM_TEXT, sectionsOffered, worldRunning, XP_RATES, type CharacterMenuItem } from './homeserver.ts';
 
 test('worldRunning is every status but stopped and failed', () => {
     assert.equal(worldRunning('stopped'), false);

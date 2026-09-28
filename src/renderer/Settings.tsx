@@ -65,7 +65,7 @@ function useReportEditing(editing: ThemeEditing | null): void {
 /**
  * The Settings window's page. One window for the whole app, so everything on
  * it is app-wide. Two sections, Servers and Appearance, chosen from a strip of
- * tabs across the top, drawn as chat's and Your world's are; it opens on
+ * tabs across the top, drawn as chat's and Home server's are; it opens on
  * Servers.
  *
  * Below the strip, framed as a tool pane's body is, a `tile`: the kit's
@@ -111,7 +111,7 @@ export default function Settings(): ReactNode {
             {/*
              * The sections are a strip across the top, as a game window's tabs
              * are, because on macOS both are their window's title bar. Buttons with
-             * aria-current, as chat's and Your world's rows are, since there is
+             * aria-current, as chat's and Home server's rows are, since there is
              * no tabpanel here that a tablist could point at.
              */}
             <TopBar frame={state.frame} style={BAR}>

@@ -1,9 +1,9 @@
 <!doctype html>
 <meta charset="utf-8" />
-<title>Zanaris Kit — your world</title>
+<title>Zanaris Kit — your home server</title>
 <link rel="stylesheet" href="./page.css" />
 <div class="slab">
-    <h1 id="title">Starting your world<span class="dots"></span></h1>
+    <h1 id="title">Starting your home server<span class="dots"></span></h1>
     <p id="text"></p>
     <p id="why" class="reason" hidden></p>
     <pre id="log" hidden></pre>
@@ -26,18 +26,18 @@
 
     const copy = {
         missing: available
-            ? ["Your world isn't downloaded yet", `${build} · ${size} MB. The kit downloads it once, from its own releases on GitHub, and checks it before it runs.`]
-            : ["This build isn't in this version of the kit", `${build} has nothing to download here. Pick another build in the Your world tool's Builds section.`],
-        downloading: ['Downloading your world', `${build} · ${q.get('progress') || 0}%`],
+            ? ["Your home server isn't downloaded yet", `${build} · ${size} MB. The kit downloads it once, from its own releases on GitHub, and checks it before it runs.`]
+            : ["This build isn't in this version of the kit", `${build} has nothing to download here. Pick another build in the Home server tool's Builds section.`],
+        downloading: ['Downloading your home server', `${build} · ${q.get('progress') || 0}%`],
         preparing: ['Getting the world ready', 'The first start copies the game files. This takes a moment.'],
-        starting: ['Starting your world', 'Loading the map and everyone in it.'],
+        starting: ['Starting your home server', 'Loading the map and everyone in it.'],
         stopping: ['Stopping the world', 'Saving and shutting down.'],
         // A window's world is stopped only on its way back up: a change in
         // World, a switch of build. Nothing in the kit stops it and leaves it
         // stopped while a window wants it — the last window closing stops it
         // with this page gone — so this says what is about to happen rather
         // than asking the player to do anything.
-        stopped: ['Restarting your world', 'Saved and stopped. It starts again by itself.'],
+        stopped: ['Restarting your home server', 'Saved and stopped. It starts again by itself.'],
         failed: ["The world couldn't start", q.get('reason') || 'No reason was given.'],
         pagefailed: ["The game didn't load", q.get('reason') || 'The world is running, but its page did not load.']
     };

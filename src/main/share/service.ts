@@ -31,8 +31,8 @@ export interface ShareDeps {
 }
 
 /**
- * Sharing your world: a relay in front of it and a quick tunnel
- * in front of that. One share for every window running your world, counted like
+ * Sharing your home server: a relay in front of it and a quick tunnel
+ * in front of that. One share for every window running your home server, counted like
  * the world is — each window acquires it, and the last release stops it.
  * The link is shown only once it works: a tunnel registers some time before
  * its link reaches it, and a link opened early can stay broken for the
@@ -83,7 +83,7 @@ export class ShareService {
         this.windows++;
     }
 
-    /** The last window running your world is gone: nobody is left to see the link, or to stop it. */
+    /** The last window running your home server is gone: nobody is left to see the link, or to stop it. */
     release(): void {
         this.windows = Math.max(0, this.windows - 1);
         if (this.windows === 0) void this.stop();
@@ -279,11 +279,11 @@ export function shareDialogs(opts: { asset: CloudflaredAsset; installed: boolean
     }
     dialogs.push({
         kind: 'share',
-        message: 'Share your world with a link?',
+        message: 'Share your home server with a link?',
         detail: [
-            'Anyone who has the link can join your world and log in as any character, yours included: a world on this computer checks no passwords. Only give it to people you trust.',
+            'Anyone who has the link can join your home server and log in as any character, yours included: a world on this computer checks no passwords. Only give it to people you trust.',
             ...(opts.cheats ? ['Cheats are on, so everyone who joins can use them too.'] : []),
-            'The link changes every time you share. It closes when you stop sharing, close the last window for your world, or quit.'
+            'The link changes every time you share. It closes when you stop sharing, close the last window for your home server, or quit.'
         ].join('\n\n'),
         confirm: 'Share'
     });
