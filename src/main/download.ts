@@ -4,9 +4,11 @@ import { once } from 'node:events';
 import { createReadStream, createWriteStream, existsSync, mkdirSync, rmSync, type WriteStream } from 'node:fs';
 
 /**
- * Downloads the kit makes of pinned files: cloudflared for sharing, and single
- * player's builds. Each is refused unless it arrives at exactly its pinned
- * size, and, where the caller asks, with its pinned sha-256.
+ * Downloads the kit makes of files whose size and sha-256 it knows before it
+ * starts: cloudflared for sharing and your home server's builds, pinned in
+ * the kit, and the kit's own updates, at what GitHub lists for them. Each is
+ * refused unless it arrives at exactly that size, and, where the caller asks,
+ * with that sha-256.
  */
 
 export type FetchLike = (url: string, init: { signal: AbortSignal }) => Promise<Response>;
@@ -23,6 +25,8 @@ export interface DownloadOptions {
     idleMs?: number;
     /** 0 to 1, only ever growing. */
     onProgress?: (fraction: number) => void;
+    /** Cancels the download: Cancel Download on an update. */
+    signal?: AbortSignal;
 }
 
 /** How long a download may go without a byte before it is given up on. */
@@ -45,6 +49,9 @@ export async function downloadFile(opts: DownloadOptions): Promise<void> {
     };
     // Armed before the request, so a server that never answers is caught too.
     let timer = setTimeout(stall, idleMs);
+    const cancel = (): void => controller.abort();
+    opts.signal?.addEventListener('abort', cancel, { once: true });
+    if (opts.signal?.aborted) controller.abort();
     /*
      * Opened only once there is a body to write, and never before the answer.
      * `createWriteStream` queues its own open rather than opening where it is
@@ -55,11 +62,22 @@ export async function downloadFile(opts: DownloadOptions): Promise<void> {
      * uncaught ENOENT: it failed CI from a test that had already passed.
      */
     let out: WriteStream | null = null;
+    /*
+     * A write that fails — a full disk, a folder gone — is the stream's own
+     * 'error', raised while the loop waits on the network rather than on it.
+     * Unheard, it was uncaught in main, and the loop then waited for a drain
+     * the dead stream would never send. It ends the download instead.
+     */
+    let writeError = null as Error | null;
     try {
         const response = await opts.fetch(opts.url, { signal: controller.signal });
         if (!response.ok || !response.body) throw new Error(`Downloading ${opts.file} failed: HTTP ${response.status}`);
         const stream = createWriteStream(opts.to);
         out = stream;
+        stream.on('error', err => {
+            writeError = err;
+            controller.abort();
+        });
         const reader = response.body.getReader();
         let received = 0;
         opts.onProgress?.(0);
@@ -70,19 +88,37 @@ export async function downloadFile(opts: DownloadOptions): Promise<void> {
             timer = setTimeout(stall, idleMs);
             received += value.byteLength;
             if (received > opts.size) break;
-            if (!stream.write(value)) await once(stream, 'drain');
+            if (!stream.write(value)) await once(stream, 'drain', { signal: controller.signal });
             opts.onProgress?.(received / opts.size);
         }
         stream.end();
         await once(stream, 'close');
         if (received !== opts.size) throw new Error(`${opts.file} arrived at the wrong size (${received} bytes, expected ${opts.size})`);
     } catch (err) {
+        if (writeError) throw writeError;
         if (stalled) throw new Error(`Downloading ${opts.file} stalled: nothing arrived for ${Math.round(idleMs / 1000)} s`);
+        if (opts.signal?.aborted) throw new Error(`Downloading ${opts.file} was cancelled`);
         throw err;
     } finally {
         clearTimeout(timer);
-        out?.destroy();
+        opts.signal?.removeEventListener('abort', cancel);
+        if (out && !out.closed) await destroyed(out);
     }
+}
+
+/**
+ * Destroys a write stream and waits for it to close. Its open is queued, and
+ * a stream destroyed before the open lands still opens its file and then
+ * closes it — so returning straight after `destroy` let a download cancelled
+ * at its first chunk reach its caller first, the caller clean up the folder,
+ * and the open land on nothing, as an uncaught ENOENT. An error the stream
+ * raises on its way down is dropped: the download has already failed.
+ */
+function destroyed(stream: WriteStream): Promise<void> {
+    const done = new Promise<void>(resolve => stream.once('close', () => resolve()));
+    stream.on('error', () => {});
+    stream.destroy();
+    return done;
 }
 
 /** `downloadFile`, then the digest. Nothing is left at `to` unless both passed. */

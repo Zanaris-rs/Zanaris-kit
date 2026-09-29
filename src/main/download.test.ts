@@ -81,3 +81,40 @@ test('a refused download opens no file at all, not even one that turns up after 
     await sleep(50);
     assert.deepEqual(readdirSync(dir), [], 'the partial file turned up after the refusal');
 });
+
+test('a download is cancelled by its signal, and a checked one leaves no file', async t => {
+    const dir = mkdtempSync(join(tmpdir(), 'download-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const to = join(dir, 'kit.zip');
+    const controller = new AbortController();
+    // A body that sends one chunk and then waits, until the fetch's own signal ends it.
+    const slow = async (_url: string, init: { signal: AbortSignal }): Promise<Response> =>
+        new Response(
+            new ReadableStream({
+                start(stream) {
+                    stream.enqueue(new Uint8Array(10));
+                    init.signal.addEventListener('abort', () => stream.error(new Error('aborted')));
+                }
+            })
+        );
+    const going = downloadChecked({ url: 'http://example.invalid/kit.zip', file: 'kit.zip', size: 100, sha256: 'f'.repeat(64), to, fetch: slow, signal: controller.signal, onProgress: f => f > 0 && controller.abort() });
+    await assert.rejects(going, /Downloading kit\.zip was cancelled/);
+    assert.equal(existsSync(to), false);
+});
+
+test('a file that cannot be written fails the download with its error, rather than throwing it at nobody and hanging', async t => {
+    const dir = mkdtempSync(join(tmpdir(), 'download-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    // A folder that is not there fails the write as a full disk would: after the answer, while the body is still coming.
+    const to = join(dir, 'missing', 'kit.zip');
+    const slow = async (_url: string, init: { signal: AbortSignal }): Promise<Response> =>
+        new Response(
+            new ReadableStream({
+                start(stream) {
+                    stream.enqueue(new Uint8Array(10));
+                    init.signal.addEventListener('abort', () => stream.error(new Error('aborted')));
+                }
+            })
+        );
+    await assert.rejects(downloadFile({ url: 'http://example.invalid/kit.zip', file: 'kit.zip', size: 100, to, fetch: slow, idleMs: 2_000 }), /ENOENT/);
+});

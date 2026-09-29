@@ -1,7 +1,7 @@
 import { BrowserWindow, Menu, WebContentsView, dialog, screen, shell, type MenuItemConstructorOptions, type NativeImage, type WebContents } from 'electron';
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { IPC, type ShellState, type ToolId } from '../shared/ipc';
+import { IPC, type ShellState, type ToolId, type UpdateButton } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ChatView } from '../shared/chat';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
@@ -209,6 +209,8 @@ export interface ServerWindowDeps {
      * reads it.
      */
     theme: () => ThemeLook;
+    /** The tab bar's update button: `UpdateService.button()`. A getter, since main pushes every window when it changes. */
+    update: () => UpdateButton | null;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -587,6 +589,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             homeServer: single?.view() ?? null,
             share: shared?.view() ?? null,
             sharingWithoutPane: sharingWithoutPane(host.trees(), linkLive()),
+            update: deps.update(),
             timers: { clocks: clocks.view(), customsFull },
             theme: { colors: deps.theme().colors, background: deps.theme().background }
         };

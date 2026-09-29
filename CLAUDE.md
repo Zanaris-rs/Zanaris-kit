@@ -426,6 +426,34 @@ The engine's own login server was ruled out for passwords: upstream binds it,
 and the friend and logger servers, to `0.0.0.0` in code. Turning it on would put
 an unauthenticated service that reads and writes saves on the host's network.
 
+## Updates
+
+The kit updates itself from this repository's latest release; the design is
+`docs/superpowers/specs/2026-09-28-self-update-design.md`. Keep these true:
+
+- **It never restarts on its own.** A download waits for the player's
+  Download, and an install happens only in main's `quit` event — after the
+  share and the world have stopped and every window has closed. Restart to
+  Update is a quit that opens the kit again.
+- **One file, at GitHub's size and digest, from a URL the kit builds.**
+  `readRelease` takes this system's asset by its exact name and builds
+  `<downloads>/<tag>/<name>`; the release body chooses neither host nor path.
+  `ZANARIS_UPDATE_FEED` is honoured only on 127.0.0.1, for a rehearsal.
+- **The Mac helper takes every path as an argument** (`MAC_HELPER`) and has
+  none pasted into its script. Its test runs it under `/bin/sh` with a quote
+  and a space in every path.
+- **A failed attempt is never retried unasked.** The next launch reads
+  `attempt.json`, shows the failure, and clears `updates/`; nothing installs
+  until Try Again downloads it again. A throwaway app that retried on every
+  launch reopened itself three times over.
+- **A copy that cannot replace itself says so** rather than trying: a Mac
+  copy run from a disk image or translocated (which a copy dragged out with
+  Finder is not), a folder it cannot write, a Windows copy with no
+  uninstaller beside it, a Linux run that is not the AppImage.
+
+The Mac zip beside the DMG exists for this; removing it, or renaming any
+system's artifact, strands every installed copy on its version.
+
 ## No migrations needed — for now
 
 **Nobody has installed this client yet.** `state.json` and `servers.json` have no

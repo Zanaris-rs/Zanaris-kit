@@ -1,7 +1,6 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
-import type { LatestRelease } from './update';
 import { THEMES, type Theme } from '../shared/themes';
 import { REPO_URL } from './branding';
 
@@ -31,6 +30,8 @@ export interface MenuActions {
     openExternal(url: string): void;
     /** Help > Report a Problem…: a new issue on GitHub, with the kit's version and the system filled in (`report.reportUrl`). */
     reportProblem(): void;
+    /** Check for Updates…: asks GitHub now, and says what it found. */
+    checkForUpdates(): void;
 }
 
 /**
@@ -40,8 +41,7 @@ export interface MenuActions {
  * draws is sentence case. Rebuilt whenever the catalog changes so the server
  * submenu stays current, whenever the switch warning is turned on or off so
  * its checkbox agrees, when any of the window-scoped items below would
- * change, whenever a theme changes so Server Theme's radio agrees, and once
- * more when a newer release is found.
+ * change, and whenever a theme changes so Server Theme's radio agrees.
  *
  * `window` holds the inputs that belong to a window rather than to the app:
  * there is one menu for every window, so it tracks whichever has focus. With
@@ -76,7 +76,6 @@ export function installMenu(
     servers: readonly ServerDef[],
     actions: MenuActions,
     warnOnSwitch: boolean,
-    update: LatestRelease | null,
     window: MenuWindowState,
     /** The app's theme, which Same as App names, and the player's own themes, listed after the built-ins. */
     themes: { app: Theme; custom: readonly Theme[] }
@@ -102,6 +101,7 @@ export function installMenu(
         label: app.name,
         submenu: [
             { role: 'about' },
+            { label: 'Check for Updates…', click: () => actions.checkForUpdates() },
             { type: 'separator' },
             settingsItem,
             { type: 'separator' },
@@ -213,7 +213,8 @@ export function installMenu(
         {
             role: 'help',
             submenu: [
-                ...(update?.newer ? [{ label: `Update Available: ${update.latest}`, click: () => actions.openExternal(update.url) }] : []),
+                // In the app menu on macOS, beside About, where a Mac app keeps it.
+                ...(isMac ? [] : [{ label: 'Check for Updates…', click: () => actions.checkForUpdates() }, { type: 'separator' as const }]),
                 { label: 'Report a Problem…', click: () => actions.reportProblem() },
                 { label: 'Zanaris Kit on GitHub', click: () => actions.openExternal(REPO_URL) },
                 // macOS has About in the app menu already. Elsewhere this is

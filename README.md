@@ -40,9 +40,14 @@ once before running something it cannot attribute:
   `--no-sandbox`, or allow them with
   `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
 
-The kit checks the releases page once each time it starts and, when there is
-a newer version, adds Help > Update Available, which opens that page. Set
-`ZANARIS_NO_UPDATE_CHECK=1` to turn the check off.
+The kit updates itself. It looks for a newer release as it starts and every
+six hours after, and Check for Updates… (in the Zanaris Kit menu on macOS,
+Help elsewhere) looks straight away. A newer one puts a button in the tab
+bar, which downloads it when you say so; it installs the next time you quit,
+or at once from Restart to Update. It never restarts on its own. A copy that
+can't replace itself — run from the disk image, or from a folder it can't
+write to — says so and offers the release page instead. Set
+`ZANARIS_NO_UPDATE_CHECK=1` to turn the automatic checks off.
 
 ### Reporting a problem
 
@@ -1029,8 +1034,8 @@ and none of its `TUNNEL_*` environment, so nothing else on the machine can
 point the tunnel somewhere else or swap the checked binary. The link itself
 is the only access control; see Playing with friends.
 
-**Home server's builds** are the one thing the kit downloads and then runs
-as a program. It downloads only the archive a recipe it shipped with pins, from
+**Home server's builds** are one of the two things the kit downloads and then
+runs as a program; the kit's own update, below, is the other. It downloads only the archive a recipe it shipped with pins, from
 this repository's releases, and refuses one whose size or sha-256 differs. The
 archive is unpacked beside the builds, not among them, and moved into place only
 once the VERSION.json it unpacked to names the pinned line, commits and tag;
@@ -1039,6 +1044,16 @@ build was staged with `patches/engine/` applied and passed the stage script's
 boot check — loopback-only binds, `POST /shutdown`, a populated map — so the
 sharing guarantees above hold for each of them, not only for one. There is no
 build the kit runs unpinned: `engine-dist/` is staging output, never a line.
+
+**An update** is one file: the latest release's download for your system, at
+the size and sha-256 GitHub lists for it, from a URL the kit builds itself
+rather than one the release names. That catches a broken or cut-off
+download, not somebody who controls the repository — no weaker than
+downloading it by hand, and with no signing identity nothing stronger is
+available. On a Mac the download must also be a validly signed app with the
+kit's bundle id and the version expected before it replaces the one in
+Applications. It is installed only as the kit quits, after your home server
+has stopped and saved.
 
 ## Layout of the source
 

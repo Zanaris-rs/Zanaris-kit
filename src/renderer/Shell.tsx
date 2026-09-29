@@ -53,6 +53,8 @@ const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
 const GEAR_BOX: CSSProperties = { height: 26, width: HEADER_BUTTON_WIDTH, padding: 0, marginRight: BAR_END - 5 };
 /** The tabs' height, in the warn colour Home server's own sharing notice uses. Inline because `.btn` sets its gold in unlayered CSS. */
 const SHARING_BOX: CSSProperties = { height: 26, color: 'var(--color-warn)' };
+/** The tabs' height. Inline for the same reason as the boxes above. */
+const UPDATE_BOX: CSSProperties = { height: 26 };
 
 /**
  * What a tab in the background still has running, after its label: the game's
@@ -405,7 +407,8 @@ export default function Shell(): ReactNode {
             <TopBar frame={state.frame} style={at(rects.tabBar)}>
                 {/*
                  * Tabs and the control that makes one, then Sharing while a
-                 * live link has no pane to mark, then the two menus that act
+                 * live link has no pane to mark, then the kit's own update
+                 * while there is one, then the two menus that act
                  * on the tab in front, Setups and Add pane, side by side, and
                  * Settings alone in the corner, and nothing else. The game's
                  * read-out used to sit at this bar's left on the grounds that
@@ -476,6 +479,16 @@ export default function Shell(): ReactNode {
                         className="btn shrink-0"
                     >
                         Sharing
+                    </button>
+                )}
+                {/*
+                 * The kit's own update: Update 0.9.1, Updating 42%, Restart to
+                 * Update or Update failed, as main words it. A press asks, in
+                 * a dialog of main's, what to do about it.
+                 */}
+                {state.update && (
+                    <button type="button" title={state.update.title} onClick={() => void window.zanaris.update.press()} style={UPDATE_BOX} className="btn shrink-0">
+                        {state.update.label}
                     </button>
                 )}
                 {/*
