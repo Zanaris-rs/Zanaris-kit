@@ -28,13 +28,35 @@ jobs:
       # its own checks should fail here, not after them.
       - run: npm run typecheck
       - run: npm test
+      - name: Tag matches package.json
+        if: github.event_name == 'push'
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+      # The one draft every leg uploads to, made before any leg runs.
+      # electron-builder makes a draft when it finds none for the tag, but the
+      # Mac leg uploads the DMG and the zip at once and both found none, so
+      # v0.9.0 came out as two drafts with the Mac's files split between them.
+      # A draft it finds for the tag it always uses, so there is only this one.
+      - name: Draft the release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          found=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq "[.[] | select(.tag_name == \"$GITHUB_REF_NAME\")] | length")
+          if [ "$found" = 0 ]; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "${GITHUB_REF_NAME#v}" --notes ""
+          fi
 
   build:
     name: Build (${{ matrix.os }})
     needs: check
     strategy:
       fail-fast: false
-      # One draft release, which electron-builder creates when it finds none: the legs must not race.
+      # One leg at a time, each uploading into the draft the check job made.
       max-parallel: 1
       matrix:
         os: [macos-14, windows-latest, ubuntu-latest]
@@ -46,15 +68,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Tag matches package.json
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          version=$(node -p "require('./package.json').version")
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "tag $GITHUB_REF_NAME does not match package.json version $version"
-            exit 1
-          fi
       - run: npm run build
       - name: Package and draft the release
         if: github.event_name == 'push'
