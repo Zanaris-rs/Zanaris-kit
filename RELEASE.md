@@ -55,13 +55,18 @@ against the pins the artifact was built with.
 
 ## 3. Tag
 
+Tag what `main` is on GitHub now, not what this checkout last heard it was:
+
 ```sh
-git tag v0.9.0
-git push origin main v0.9.0
+git fetch origin
+git tag v0.9.1 origin/main
+git push origin v0.9.1
 ```
 
-Wait for the Release workflow. It drafts a GitHub Release named after the tag
-with the DMG, the Mac zip, the installer and the AppImage attached. It also
+Wait for the Release workflow. Once the checks pass it makes one draft
+release named after the version, and each system's build uploads into it:
+the DMG, the Mac zip, the installer and the AppImage. Check that the draft
+holds all four, and that there is only the one draft for the tag. It also
 attaches electron-builder's `latest*.yml` and `.blockmap` files, which the
 kit does not read; they do no harm.
 
@@ -83,9 +88,10 @@ Windows and Linux hand-offs are ever exercised: nothing in CI can run them.
 
 ## If a build fails
 
-Fix on a branch, dry-run again, then delete and re-push the tag only if the
-draft was never published. A published release is never rebuilt: bump the
-version and release again.
+Fix on a branch, dry-run again, then delete the draft and delete and re-push
+the tag, only if the draft was never published. A published release is never
+rebuilt: bump the version and release again. 0.9.0 was published with its
+files split between two drafts and withdrawn, and the first release is 0.9.1.
 
 ## Moving a build
 

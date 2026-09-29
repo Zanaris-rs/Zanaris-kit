@@ -1,6 +1,6 @@
 {
   "name": "zanaris-kit",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "description": "Zanaris Kit for 04scape — Electron wrapper that opens several 04scape servers side by side",
   "license": "MIT",
