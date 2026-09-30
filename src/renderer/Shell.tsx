@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState } from '../shared/ipc';
+import { clockHint, clockTone, clockValueAt, formatClock, headerClocks, type TimersView } from '../shared/timers';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from '../shared/panes';
 import { draggedFar, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
@@ -14,6 +15,7 @@ import PaneHeader, { HEADER_BUTTON_WIDTH, type Grab } from './paneHeader';
 import Tab from './tab';
 import TopBar, { BAR_END } from './topBar';
 import { gameSprite } from './sprites';
+import { TONE_CLASS, useNow } from './clocks';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
 import HomeServer from './tools/HomeServer';
@@ -188,6 +190,51 @@ function GameReadout({ state, width }: { state: ShellState; width: number }): Re
         <span title={revision === null ? state.gameLabel : `${state.gameLabel} · ${revision}`} className="flex min-w-0 shrink items-center gap-[7px] truncate">
             <span className="truncate">{state.gameLabel}</span>
             {revision !== null && width >= ROOM_FOR_REVISION && <span className="shrink-0 text-[12px] text-faint">{revision}</span>}
+        </span>
+    );
+}
+
+/**
+ * No width of its own to ask for, so it never squeezes what the header already
+ * holds; it grows into what is left, all of it but the sliver the spacer after
+ * it keeps, since the spacer grows too. Sized from its content, the clocks
+ * shrank alongside the name and the world, and a 430px pane read "Ga…".
+ */
+const CLOCKS: CSSProperties = { flex: '1000 1 0px' };
+
+/**
+ * The clocks the game's header carries while no Timers pane is beside the game
+ * (`pane.clocks`, main's): those running, and countdowns holding at 0:00
+ * (`headerClocks`). Clocks alert with the Timers pane closed, and an alert
+ * used to sound with nothing on screen to say which clock it was; now that
+ * clock is beside the game it is about. Read-only: the Timers pane is where a
+ * clock is started, paused, reset or changed, and the hint under the pointer
+ * says when each alerts.
+ *
+ * They take only the room the header has to spare (`CLOCKS`), so the name,
+ * the world and the latency read exactly as they would with no clocks at all,
+ * and a narrow game pane shows fewer. Within that room they sit on one line
+ * that wraps into a second one the header clips, so whole clocks drop from
+ * the end rather than one being cut mid-digit, and the dropdown and the close
+ * stay where they are. A line always takes its first item however wide, so an
+ * empty one 22px tall leads: with it, a first clock wider than the room wraps
+ * away too, where it used to show its name and half its digits. Every clock is
+ * 22px tall as well, so the ones left do not move when one wraps away.
+ */
+function GameClocks({ view }: { view: TimersView }): ReactNode {
+    const shown = headerClocks(view.clocks);
+    const now = useNow(shown.some(clock => clock.phase === 'running'));
+    if (shown.length === 0) return null;
+    return (
+        <span style={CLOCKS} className="ml-[5px] flex h-[22px] min-w-0 flex-wrap overflow-hidden">
+            <span aria-hidden="true" className="h-[22px] w-0 shrink-0" />
+            {shown.map(clock => (
+                <span key={clock.def.id} title={clockHint(clock.def)} className="mr-[10px] flex shrink-0 items-baseline gap-[5px] leading-[22px] whitespace-nowrap">
+                    <span className="max-w-[9em] truncate text-[12px] text-dim">{clock.def.name}</span>
+                    {/* Arial, never the pixel face, where 5 reads as S: the pane's digits are the same. */}
+                    <span className={`font-sans font-bold tabular-nums ${TONE_CLASS[clockTone(clock)]}`}>{formatClock(clockValueAt(clock, now), clock.def.kind)}</span>
+                </span>
+            ))}
         </span>
     );
 }
@@ -645,7 +692,14 @@ export default function Shell(): ReactNode {
                         <PaneHeader
                             pane={pane}
                             active={pane.focused && state.panes.length > 1}
-                            readout={pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined}
+                            readout={
+                                pane.content.kind === 'game' ? (
+                                    <>
+                                        <GameReadout state={state} width={pane.rect.width} />
+                                        {pane.clocks && <GameClocks view={state.timers} />}
+                                    </>
+                                ) : undefined
+                            }
                             grab={grabFor(pane.paneId)}
                             grabbing={drag?.from === pane.paneId}
                         />

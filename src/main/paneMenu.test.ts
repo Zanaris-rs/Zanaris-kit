@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaf, split } from './paneTree.ts';
-import { addPaneItems, canClosePane, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, paneName } from './paneMenu.ts';
+import { addPaneItems, canClosePane, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, paneName, showsClocks } from './paneMenu.ts';
 
 const roomy = { width: 800, height: 600 };
 /** A tab the size of the one pane in it, and the size the game opens at. */
@@ -229,4 +229,22 @@ test('the pane holding something is found anywhere in the tab, and nowhere else'
     assert.equal(paneHolding(tree, { kind: 'tool', tool: 'chat' }), 'c');
     assert.equal(paneHolding(tree, { kind: 'game' }), 'b');
     assert.equal(paneHolding(tree, { kind: 'tool', tool: 'worlds' }), null);
+});
+
+test("the game's header shows the clocks while its tab has no Timers pane", () => {
+    assert.equal(showsClocks(leaf('g', { kind: 'game' }), 'g'), true, 'the game alone');
+    const beside = split('s1', 'y', [leaf('g', { kind: 'game' }), leaf('c', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
+    assert.equal(showsClocks(beside, 'g'), true, 'beside a pane that is not Timers');
+});
+
+test("the game's header leaves the clocks to a Timers pane anywhere in its tab", () => {
+    const tree = split('s1', 'x', [leaf('g', { kind: 'game' }), split('s2', 'y', [leaf('c', { kind: 'tool', tool: 'chat' }), leaf('t', { kind: 'tool', tool: 'timers' })], [0.5, 0.5])], [0.7, 0.3]);
+    assert.equal(showsClocks(tree, 'g'), false);
+});
+
+test('only the game pane shows the clocks', () => {
+    const tree = split('s1', 'x', [leaf('g', { kind: 'game' }), leaf('c', { kind: 'tool', tool: 'chat' }), leaf('e', { kind: 'empty' })], [0.5, 0.25, 0.25]);
+    assert.equal(showsClocks(tree, 'c'), false);
+    assert.equal(showsClocks(tree, 'e'), false);
+    assert.equal(showsClocks(tree, 'nope'), false, 'a pane the tree does not hold');
 });
