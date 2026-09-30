@@ -6,13 +6,13 @@
 
 **Architecture:** `src/main/windowFrame.ts` stays the one pure, tested rule for how a window is framed; it gains Windows (`titleBarStyle: 'hidden'` plus a transparent `titleBarOverlay` whose glyphs wear the theme's `cream`) and a `menuButton` flag. Main applies it when a window opens and again on every theme change. The shell's `TopBar` clears the overlay by reading its rect from `env(titlebar-area-*)`, and a ≡ asks main to pop `Menu.getApplicationMenu()`.
 
-**Tech Stack:** Electron 44.5.1, React, TypeScript, `node --test`.
+**Tech Stack:** Electron 44.5.0, React, TypeScript, `node --test`.
 
 **Spec:** `docs/superpowers/specs/2026-09-30-windows-title-bar-design.md`
 
 ## Global Constraints
 
-- Electron **44.4.0 or later** (electron/electron#53639 gives a `WebContentsView` the overlay's rect); install **44.5.1**.
+- Electron **44.4.0 or later** (electron/electron#53639 gives a `WebContentsView` the overlay's rect); install **44.5.0**.
 - macOS and Linux behave exactly as before. `frameOptions('darwin', …)` and `windowFrame('darwin', …)` keep today's values; Linux keeps the system frame.
 - The overlay: colour `#00000000`, symbol colour the look's `colors.cream`, height `TAB_BAR_HEIGHT - 2` (38).
 - No literal colour in `src/renderer` (`themes.test.ts` fails on hex, `rgb()`, `hsl()`); main may hold `#00000000`.
@@ -25,7 +25,7 @@
 
 ---
 
-### Task 1: Electron 44.5.1
+### Task 1: Electron 44.5.0
 
 **Files:**
 - Modify: `package.json` (the `electron` devDependency), `package-lock.json`
@@ -35,8 +35,8 @@
 
 - [ ] **Step 1: Install**
 
-Run: `npm install --save-dev electron@44.5.1`
-Expected: `package.json` reads `"electron": "^44.5.1"`; `node -p "require('./node_modules/electron/package.json').version"` prints `44.5.1`.
+Run: `npm install --save-dev electron@44.5.0`
+Expected: `package.json` reads `"electron": "^44.5.0"`; `node -p "require('./node_modules/electron/package.json').version"` prints `44.5.0`.
 
 - [ ] **Step 2: Check nothing else moved**
 
@@ -52,7 +52,7 @@ Expected: both pass.
 
 ```bash
 git add package.json package-lock.json
-git commit -m "build: Electron 44.5.1, which tells a WebContentsView where Windows' buttons are
+git commit -m "build: Electron 44.5.0, which tells a WebContentsView where Windows' buttons are
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
