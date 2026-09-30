@@ -1331,6 +1331,19 @@ ipcMain.handle(IPC.tabSetupsMenu, (event, x: unknown, y: unknown) => {
     windowFor(event.sender)?.showSetupsMenu(x, y);
 });
 
+/**
+ * The ≡ that starts the tab bar where the window has no menu bar
+ * (`windowFrame.ts`): the whole application menu, under the button. The same
+ * menu the shortcuts belong to, so the two cannot disagree.
+ */
+ipcMain.handle(IPC.tabAppMenu, (event, x: unknown, y: unknown) => {
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const sw = windowFor(event.sender);
+    if (!sw || sw.window.isDestroyed()) return;
+    Menu.getApplicationMenu()?.popup({ window: sw.window, x: Math.round(x), y: Math.round(y) });
+});
+
 ipcMain.handle(IPC.tabShowHomeServer, event => windowFor(event.sender)?.showHomeServer());
 ipcMain.handle(IPC.updatePress, async event => {
     const sw = windowFor(event.sender);

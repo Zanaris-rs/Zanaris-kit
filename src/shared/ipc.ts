@@ -36,6 +36,7 @@ export const IPC = {
     tabContextMenu: 'zanaris:tab-context-menu',
     tabAddPaneMenu: 'zanaris:tab-add-pane-menu',
     tabSetupsMenu: 'zanaris:tab-setups-menu',
+    tabAppMenu: 'zanaris:tab-app-menu',
     tabShowHomeServer: 'zanaris:tab-show-home-server',
     paneOpenExternal: 'zanaris:pane-open-external',
     paneNotice: 'zanaris:pane-notice',
@@ -369,6 +370,13 @@ export interface ZanarisApi {
          * like the pane menus. Coordinates are the window's.
          */
         setupsMenu(x: number, y: number): Promise<void>;
+        /**
+         * Raises the application menu — File, Edit, View, Window and Help —
+         * from the ≡ that starts the tab bar where the window has no menu bar
+         * of its own (`WindowFrame.menuButton`). The menu is the one the
+         * shortcuts belong to. Coordinates are the window's.
+         */
+        appMenu(x: number, y: number): Promise<void>;
         /**
          * The bar's Sharing button, shown while a link is live and no pane
          * shows Home server: opens its pane as a column down the active tab's

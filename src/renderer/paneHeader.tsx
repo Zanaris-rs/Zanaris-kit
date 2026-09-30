@@ -58,8 +58,10 @@ const DOT: CSSProperties = { width: 6, height: 6, boxShadow: '1px 1px 0 rgba(0, 
 /**
  * The header spans the pane, and a pane has no sides of its own: the seam
  * beside it is its edge. Its controls end as far in from its right edge as the
- * tab bar's do from the window's (`BAR_END`), so the close of a pane at the
- * window's edge sits under the gear. The name's end keeps the 6px it had.
+ * tab bar's do from the row's (`BAR_END`), so the close of a pane at the
+ * window's edge sits under the gear — on Windows, where the row ends at
+ * Windows' own buttons, under the window's close instead. The name's end
+ * keeps the 6px it had.
  */
 const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', borderRight: 'none', paddingRight: BAR_END };
 /**
@@ -72,8 +74,8 @@ const STRIP: CSSProperties = { height: PANE_HEADER_HEIGHT, borderLeft: 'none', b
  * is: a tool pane at the 120px minimum has all 120 across its header, and the
  * padding, the dot, the dropdown, the close and the gaps between them take 92
  * of it, leaving 28 for the 30px this is at 15px. The 2 it is short come out
- * of the 12 the strip keeps after the close to line it up under the gear, so
- * on the focused pane at that width the close ends 10px in rather than 12. A
+ * of the 12 the strip keeps after the close (`BAR_END`), so on the focused
+ * pane at that width the close ends 10px in rather than 12. A
  * floor past that pushes the close on toward the pane's edge — it was 2.5em
  * until the dot arrived and took 11px — and the title attribute already
  * carries the full name for a pane that narrow.

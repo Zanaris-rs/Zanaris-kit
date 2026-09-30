@@ -5,11 +5,23 @@ import type { WindowFrame } from '../shared/ipc';
 const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
 
 /**
- * How far in from the window's right edge the bar's last control ends: the
- * bar's own 5px end and 7 more after the gear, since on macOS that end is the
- * window's rounded corner. Every pane header ends its controls as far in from
- * its own right edge, so a pane at the window's edge has its close under the
- * gear rather than 6px to the right of it.
+ * The row's right padding: its own 5px end, past whatever Windows' window
+ * buttons cover of it. Their rect is the overlay's (`env(titlebar-area-*)`),
+ * which Electron hands the shell's view from 44.4; nothing here knows how
+ * wide they are, so it holds at any display scaling. Where none is drawn —
+ * macOS, Linux, full screen — the fallbacks make the cover nothing. Inline,
+ * as the left inset is, so no build step rewrites the `env()`.
+ */
+const END_PADDING = 'calc(5px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))';
+
+/**
+ * How far in from the row's right end the bar's last control ends: the bar's
+ * own 5px end and 7 more after the gear, since on macOS that end is the
+ * window's rounded corner. The row ends at the window's edge, or on Windows
+ * where its window buttons begin. Every pane header ends its controls as far
+ * in from its own right edge, so a pane at the window's edge has its close
+ * under the gear rather than 6px to the right of it — on Windows, under the
+ * window's own close instead.
  */
 export const BAR_END = 12;
 
@@ -20,9 +32,10 @@ export const BAR_END = 12;
  * row the window buttons overlap, or one the window cannot be moved by.
  *
  * Main says how the OS frames it (`windowFrame.ts`). Where the row is the
- * title bar it moves the window, and its first control starts past the
- * window buttons macOS draws over its left end. Everywhere else it is only a
- * row, as it always was.
+ * title bar it moves the window, and its controls keep clear of the window
+ * buttons the OS draws over it: its first starts past macOS's at its left
+ * end, and its last ends short of Windows' at its right. Everywhere else it
+ * is only a row, as it always was.
  */
 export default function TopBar({ frame, style, children }: { frame: WindowFrame; style: CSSProperties; children: ReactNode }): ReactNode {
     return (
@@ -32,7 +45,7 @@ export default function TopBar({ frame, style, children }: { frame: WindowFrame;
              * (`TAB_BAR_HEIGHT`). An inset of zero leaves that left padding.
              * Inline because a utility could not carry a number main sends.
              */}
-            <header style={{ ...STRIP_BAR, paddingLeft: frame.buttonsInset || undefined }} className="tile flex flex-1 items-center gap-[5px] px-[5px]">
+            <header style={{ ...STRIP_BAR, paddingLeft: frame.buttonsInset || undefined, paddingRight: END_PADDING }} className="tile flex flex-1 items-center gap-[5px] px-[5px]">
                 {children}
             </header>
             {/* The client parts its bars with a dark rule lit along the top, never a flat hairline. */}

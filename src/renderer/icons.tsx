@@ -113,6 +113,15 @@ export function Gear(): ReactNode {
     );
 }
 
+/** The application menu, where a window has no menu bar: three bars, stroked in the button's own colour like the gear beside them. */
+export function AppMenu(): ReactNode {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" shapeRendering="crispEdges">
+            <path d="M3 5h12M3 9h12M3 13h12" />
+        </svg>
+    );
+}
+
 /** What a channel is: its topic, modes and age. A ring with an i in it, the sign for "about this". */
 export function Info(): ReactNode {
     return (
