@@ -52,10 +52,11 @@ export interface TitleBarOverlay {
  *
  * No ground of their own: Electron fills a caption button's ground only when
  * its colour has some alpha, so with none the stone shows behind them, and a
- * theme's picture through it. Their hover is a tenth of the glyph colour, and
- * close's is Windows' red. The glyphs are the theme's text colour. They stand
- * in the strip and its bevelled underside, so the 2px rule under the bar runs
- * on beneath them.
+ * theme's picture through it. The glyphs are the theme's text colour. The
+ * hover is not the theme's to set: minimise and maximise take a tenth of
+ * Windows' own caption colour, white or black by how light the system's
+ * frame is, and close takes Windows' red. They stand in the strip and its
+ * bevelled underside, so the 2px rule under the bar runs on beneath them.
  */
 export function overlayFor(platform: NodeJS.Platform, look: ThemeLook): TitleBarOverlay | null {
     if (platform !== 'win32') return null;
@@ -72,9 +73,15 @@ export function frameOptions(
     return overlay ? { titleBarStyle: 'hidden', titleBarOverlay: overlay } : {};
 }
 
-/** How a window's top row is framed now. Full screen matters because macOS takes the window buttons away there. */
+/**
+ * How a window's top row is framed now. Full screen matters because macOS and
+ * Windows both take the window buttons away there. On Windows the row learns
+ * that from `buttonsAtEnd` rather than from the overlay's rect: Electron still
+ * reports the rect in full screen, at the buttons' full width, with buttons
+ * of no height.
+ */
 export function windowFrame(platform: NodeJS.Platform, fullScreen: boolean): WindowFrame {
-    if (platform === 'darwin') return { ownTitleBar: true, buttonsInset: fullScreen ? 0 : MAC_BUTTONS_CLEAR, menuButton: false };
-    if (platform === 'win32') return { ownTitleBar: true, buttonsInset: 0, menuButton: true };
-    return { ownTitleBar: false, buttonsInset: 0, menuButton: false };
+    if (platform === 'darwin') return { ownTitleBar: true, buttonsInset: fullScreen ? 0 : MAC_BUTTONS_CLEAR, buttonsAtEnd: false, menuButton: false };
+    if (platform === 'win32') return { ownTitleBar: true, buttonsInset: 0, buttonsAtEnd: !fullScreen, menuButton: true };
+    return { ownTitleBar: false, buttonsInset: 0, buttonsAtEnd: false, menuButton: false };
 }

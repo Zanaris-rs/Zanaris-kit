@@ -38,7 +38,8 @@ frame everywhere but macOS, on the grounds that the frame holds the menu bar.
   them. Their glyphs are the theme's text colour and follow the theme — the
   app's, a server's, and a draft being edited in Settings. Close still
   turns red under the pointer, and on Windows 11 hovering maximise still
-  offers the snap layouts.
+  offers the snap layouts. Minimise and maximise hover in a tenth of
+  Windows' own caption colour, which the kit cannot set.
 - **Setups, Add pane and the gear** move left to clear the buttons. The gear
   ends `BAR_END` (12px) short of them, as it ends 12px short of the window's
   edge wherever there are none. The mockup the owner approved had 5; the
@@ -83,13 +84,17 @@ Pure and tested, and still the one place that says how a window is framed.
 - `overlayFor(platform, look)` is that overlay alone, for a theme change, and
   null where there is none.
 - `windowFrame(platform, fullScreen)` answers, on `win32`, `ownTitleBar:
-  true`, `buttonsInset: 0` — the buttons are at the other end — and a new
-  `menuButton: true`. `menuButton` is false everywhere else.
+  true`, `buttonsInset: 0` — the buttons are at the other end — and two new
+  flags: `menuButton: true`, and `buttonsAtEnd`, true but in full screen,
+  where Windows takes the buttons away. Both are false everywhere else.
 
 A transparent overlay draws nothing of its own: Electron's caption button
 fills its ground only when the colour's alpha is above zero
-(`win_caption_button.cc`). Its hover is a tenth of the glyph colour, and
-close's is its fixed red.
+(`win_caption_button.cc`). Its hover is not the glyph colour: minimise and
+maximise take a tenth of `kColorCaptionButtonForegroundActive`, Windows' own
+caption colour, white or black by how light the system's frame is, and
+close takes its fixed red. With Windows in light mode that is a tenth of
+black over dark stone, which may barely show; the API cannot set it.
 
 ### The theme reaches the buttons
 
@@ -102,12 +107,19 @@ already runs through those two.
 
 ### The row's right end
 
-`TopBar` pads its right end by what the overlay covers:
-`calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))`
-on top of its 5px. Where no overlay is drawn — macOS, Linux, full screen —
-the fallbacks make that zero. Nothing measures or hard-codes the buttons'
+Where `frame.buttonsAtEnd`, `TopBar` pads its right end by what the overlay
+covers: `calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width,
+100vw))` on top of its 5px. Nothing measures or hard-codes the buttons'
 width, so it holds at any display scaling. Inline, beside the left inset,
 so no build step can touch `env()`.
+
+The flag, not the rect, says when: in full screen Electron still reports
+the overlay's rect at the buttons' full width, with buttons of no height
+(`WinFrameView::TitlebarHeight` answers 0 there, and
+`LayoutWindowControlsOverlay` reports the custom height and the container's
+width regardless). Read off the rect alone, the row would keep about 140px
+for buttons that are gone. Both windows push their frame again on entering
+and leaving full screen.
 
 ### The ≡
 
@@ -129,6 +141,11 @@ matters only on Linux), `BAR_END` and `TopBar`, the `.title-bar` rule in
 `styles.css`, the README's paragraph on it and its file list, and the note
 in `2026-09-25-themes-design.md`.
 
+Known and accepted: a game window's floor is `PANE_MIN_WIDTH`, 120px, and
+Windows' three buttons are about 138. Narrower than about 170px they cover
+the ≡, the only way to the menu by mouse; the shortcuts still work, and at
+that width the bar's own buttons have long since run off its end.
+
 Untouched: the pane tree and window sizing — layout reads the content
 bounds, and growing or shrinking a window works in deltas, so neither knows
 the frame's height — `menu.ts`, the tab bar's contents, the pane header.
@@ -142,7 +159,8 @@ the frame's height — `menu.ts`, the tab bar's contents, the pane header.
 - `overlayFor` follows the look: two looks, two glyph colours. It is null on
   `darwin` and `linux`.
 - `windowFrame('win32', …)` is its own title bar with a menu button, full
-  screen or not; `darwin` has no menu button; `linux` is as it was.
+  screen or not, and ends at its buttons only out of full screen; `darwin`
+  has no menu button and no buttons at the end; `linux` is as it was.
 - The existing macOS tests stand unchanged.
 
 **Static:** `npm run typecheck`, `npm test`.
@@ -159,7 +177,7 @@ profile; the 0.9.1 release puts it back. The owner checks:
 | | |
 |---|---|
 | Frame | No title bar or menu row; the tab bar meets the top edge |
-| Buttons | On the stone, no box; glyphs in the theme's text colour; close hovers red; maximise offers snap layouts |
+| Buttons | On the stone, no box; glyphs in the theme's text colour; close hovers red; maximise offers snap layouts; minimise and maximise hover visibly with Windows in light mode and in dark |
 | Theme | App theme, server theme and a draft in Settings each move the glyphs; a theme's picture shows behind them |
 | Clearance | Setups, Add pane and the gear clear of the buttons, at 100% and 150% scaling |
 | Moving | Empty bar drags the window; double-click maximises; top-edge snap; right-click gives the window menu; tabs and buttons still click; the top border still resizes |

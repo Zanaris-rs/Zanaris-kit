@@ -5,12 +5,13 @@ import type { WindowFrame } from '../shared/ipc';
 const STRIP_BAR: CSSProperties = { borderTop: 'none', borderLeft: 'none', borderRight: 'none' };
 
 /**
- * The row's right padding: its own 5px end, past whatever Windows' window
- * buttons cover of it. Their rect is the overlay's (`env(titlebar-area-*)`),
- * which Electron hands the shell's view from 44.4; nothing here knows how
- * wide they are, so it holds at any display scaling. Where none is drawn —
- * macOS, Linux, full screen — the fallbacks make the cover nothing. Inline,
- * as the left inset is, so no build step rewrites the `env()`.
+ * The row's right padding where Windows' window buttons sit over its end
+ * (`frame.buttonsAtEnd`): its own 5px end, past what they cover of it. Their
+ * rect is the overlay's (`env(titlebar-area-*)`), which Electron hands the
+ * shell's view from 44.4; nothing here knows how wide they are, so it holds
+ * at any display scaling. Only there, since Electron still reports the rect
+ * in full screen, where the buttons are gone. Inline, so no build step
+ * rewrites the `env()`.
  */
 const END_PADDING = 'calc(5px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))';
 
@@ -27,9 +28,10 @@ export const BAR_END = 12;
 
 /**
  * The strip across a window's top: a game window's tabs, and Settings'
- * sections. One component for both because on macOS each is the window's
- * title bar, and two copies of that would be two title bars that drift: a
- * row the window buttons overlap, or one the window cannot be moved by.
+ * sections. One component for both because on macOS and Windows each is the
+ * window's title bar, and two copies of that would be two title bars that
+ * drift: a row the window buttons overlap, or one the window cannot be moved
+ * by.
  *
  * Main says how the OS frames it (`windowFrame.ts`). Where the row is the
  * title bar it moves the window, and its controls keep clear of the window
@@ -42,10 +44,15 @@ export default function TopBar({ frame, style, children }: { frame: WindowFrame;
         <div style={style} className={frame.ownTitleBar ? 'title-bar flex flex-col' : 'flex flex-col'}>
             {/*
              * 5px at the ends, as between the controls and above and below them
-             * (`TAB_BAR_HEIGHT`). An inset of zero leaves that left padding.
-             * Inline because a utility could not carry a number main sends.
+             * (`TAB_BAR_HEIGHT`), past the window buttons at whichever end has
+             * them. An inset of zero leaves the left padding, and no buttons
+             * at the end leave the right. Inline because a utility could not
+             * carry a number main sends, nor keep an `env()` as written.
              */}
-            <header style={{ ...STRIP_BAR, paddingLeft: frame.buttonsInset || undefined, paddingRight: END_PADDING }} className="tile flex flex-1 items-center gap-[5px] px-[5px]">
+            <header
+                style={{ ...STRIP_BAR, paddingLeft: frame.buttonsInset || undefined, paddingRight: frame.buttonsAtEnd ? END_PADDING : undefined }}
+                className="tile flex flex-1 items-center gap-[5px] px-[5px]"
+            >
                 {children}
             </header>
             {/* The client parts its bars with a dark rule lit along the top, never a flat hairline. */}

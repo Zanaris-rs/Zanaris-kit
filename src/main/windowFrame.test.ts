@@ -23,6 +23,8 @@ test('Linux keeps the system frame, which holds its menu bar', () => {
 });
 
 test("Windows' buttons have no ground of their own, so the stone and a picture show behind them", () => {
+    // Electron reads an overlay's colours as CSS, #RRGGBBAA, so the last two
+    // digits are the alpha. Not as `setBackgroundColor` does, #AARRGGBB.
     assert.match(overlayFor('win32', LOOK)!.color, /^#[0-9a-f]{6}00$/i);
 });
 
@@ -41,22 +43,26 @@ test('only Windows has an overlay to restyle', () => {
 });
 
 test("on macOS the top row is the title bar, and starts clear of the window's buttons", () => {
-    assert.deepEqual(windowFrame('darwin', false), { ownTitleBar: true, buttonsInset: MAC_BUTTONS_CLEAR, menuButton: false });
+    assert.deepEqual(windowFrame('darwin', false), { ownTitleBar: true, buttonsInset: MAC_BUTTONS_CLEAR, buttonsAtEnd: false, menuButton: false });
 });
 
 test('in full screen macOS takes its buttons away, so the row starts at the edge again', () => {
-    assert.deepEqual(windowFrame('darwin', true), { ownTitleBar: true, buttonsInset: 0, menuButton: false });
+    assert.deepEqual(windowFrame('darwin', true), { ownTitleBar: true, buttonsInset: 0, buttonsAtEnd: false, menuButton: false });
 });
 
-test('on Windows the top row is the title bar, and carries the menu the title bar held, full screen or not', () => {
-    for (const fullScreen of [false, true]) {
-        assert.deepEqual(windowFrame('win32', fullScreen), { ownTitleBar: true, buttonsInset: 0, menuButton: true });
-    }
+test('on Windows the top row is the title bar, ends at its buttons, and carries the menu the title bar held', () => {
+    assert.deepEqual(windowFrame('win32', false), { ownTitleBar: true, buttonsInset: 0, buttonsAtEnd: true, menuButton: true });
+});
+
+test('in full screen Windows takes its buttons away, so the row runs to the edge again, and keeps the menu', () => {
+    // Electron still reports the overlay's rect there, with buttons of no
+    // height, so the row cannot learn this from env(titlebar-area-*).
+    assert.deepEqual(windowFrame('win32', true), { ownTitleBar: true, buttonsInset: 0, buttonsAtEnd: false, menuButton: true });
 });
 
 test('on Linux the top row is only a row, full screen or not', () => {
     for (const fullScreen of [false, true]) {
-        assert.deepEqual(windowFrame('linux', fullScreen), { ownTitleBar: false, buttonsInset: 0, menuButton: false });
+        assert.deepEqual(windowFrame('linux', fullScreen), { ownTitleBar: false, buttonsInset: 0, buttonsAtEnd: false, menuButton: false });
     }
 });
 

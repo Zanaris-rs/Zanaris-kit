@@ -136,8 +136,10 @@ export interface WindowFrame {
      * Windows; Linux keeps the system's bar, which holds its menu bar.
      */
     ownTitleBar: boolean;
-    /** How far in from the window's left edge the row's first control must start, to clear the window buttons macOS draws over it. Zero where there are none to clear: off macOS, and in full screen. Windows' are at the row's other end, which the row clears by their own rect (`topBar.tsx`). */
+    /** How far in from the window's left edge the row's first control must start, to clear the window buttons macOS draws over it. Zero where there are none to clear: off macOS, and in full screen. */
     buttonsInset: number;
+    /** Windows draws its window buttons over the row's right end, which the row then ends short of, by their own rect (`topBar.tsx`). On Windows, and not in full screen, where it takes them away. */
+    buttonsAtEnd: boolean;
     /**
      * The app menu has no bar of its own here, so a game window's row starts
      * with a button that opens it: on Windows, whose title bar held it.

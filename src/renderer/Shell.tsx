@@ -45,7 +45,9 @@ const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
 /**
  * The tabs' height, and a pane header's button's width, since the close of
- * the pane under the gear sits directly below it (`BAR_END`). After the bar's
+ * the pane under the gear sits directly below it (`BAR_END`) — on Windows,
+ * where Windows' own buttons hold the corner, that close sits under theirs
+ * instead. After the bar's
  * own 5px like the menus before it, and a wider gap after it than the bar's
  * 5px end: the row's right end is the window's rounded corner on macOS, and
  * Windows' window buttons on Windows. Inline for the same reason as the boxes
