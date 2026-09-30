@@ -11,6 +11,10 @@ const recipes = readdirSync('engines')
     .sort()
     .map(file => JSON.parse(readFileSync(join('engines', file), 'utf8')) as unknown);
 
+// The renderer's dev server's port, when a launcher hands one over in PORT;
+// Vite's own 5173, or the next free one, otherwise. Builds never read it.
+const devServer = process.env.PORT ? { port: Number(process.env.PORT), strictPort: true } : {};
+
 // Uses electron-vite's default entry conventions:
 //   src/main/index.ts, src/preload/index.ts, src/renderer/index.html
 export default defineConfig({
@@ -18,5 +22,5 @@ export default defineConfig({
     preload: { plugins: [externalizeDepsPlugin()] },
     // Every asset ships as a file: the shell's CSP refuses data: images, so a
     // small sprite inlined as one would draw nothing.
-    renderer: { plugins: [react(), tailwindcss()], build: { assetsInlineLimit: 0 } }
+    renderer: { plugins: [react(), tailwindcss()], build: { assetsInlineLimit: 0 }, server: devServer }
 });

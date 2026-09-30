@@ -1,9 +1,10 @@
 import { BrowserWindow, dialog, screen, type NativeImage } from 'electron';
 import { IPC, type Rect, type SettingsState } from '../shared/ipc';
+import type { ThemeLook } from '../shared/themes';
 import { loadShell, preloadPath } from './renderer';
 import { paintsFrames } from './serverWindow';
 import { settingsBounds, type SettingsHandle } from './settingsWindow';
-import { frameOptions } from './windowFrame';
+import { frameOptions, overlayFor } from './windowFrame';
 
 /** What Settings asks for: room for four servers and the add form without scrolling. */
 const SIZE = { width: 520, height: 640 };
@@ -12,8 +13,8 @@ export interface SettingsWindow extends SettingsHandle {
     readonly window: BrowserWindow;
     /** Sends Settings its state. A no-op once the page is gone. */
     push(state: SettingsState): void;
-    /** What Settings wears changed — the app theme, or the theme being edited: the window's own ground follows, as a game window's does in `themeChanged`. */
-    setBackground(colour: string): void;
+    /** What Settings wears changed — the app theme, or the theme being edited: the window's own ground follows, as a game window's does in `themeChanged`, and on Windows so do its window buttons' glyphs. */
+    setLook(look: ThemeLook): void;
     /** Resolves once the page has loaded, for capture. */
     readonly loaded: Promise<void>;
     /** Whether the page paints, as a server window's `settle` answers for its shell: a page that is not painting would hand capture its last frame. */
@@ -41,7 +42,8 @@ export function createSettingsWindow(opts: {
     onClosed: () => void;
     /** Full screen came or went, which on macOS takes the window buttons off the row of sections or puts them back (`windowFrame`). */
     onFrameChanged: () => void;
-    background: string;
+    /** What Settings wears when it opens: the app theme, or the theme being edited. */
+    look: ThemeLook;
     closeQuestion: () => { message: string; detail: string } | null;
     onDiscard: () => void;
     onPageReset: () => void;
@@ -52,24 +54,25 @@ export function createSettingsWindow(opts: {
         minWidth: 380,
         minHeight: 420,
         title: 'Settings',
-        // No title bar on macOS: the row of sections stands in for it, as a
-        // game window's tab bar does (`windowFrame.ts`).
-        ...frameOptions(process.platform),
+        // No title bar on macOS or Windows: the row of sections stands in
+        // for it, as a game window's tab bar does (`windowFrame.ts`).
+        ...frameOptions(process.platform, opts.look),
         // The ground of what Settings wears — the app theme, or the theme
         // being edited: what shows before the page draws, and at an edge a
-        // resize has not yet repainted. `setBackground` keeps it to the theme
+        // resize has not yet repainted. `setLook` keeps it to the theme
         // after a change.
-        backgroundColor: opts.background,
+        backgroundColor: opts.look.colors.window,
         show: false,
         // No initial pin: `openSettings` in index.ts sets it right after this
         // returns, to match whichever window asked (or the app's remembered
         // pin with none), and does so again on a re-open — a pin set here
         // once would not follow a second gear pressed on an already-open
         // Settings.
-        // Windows and Linux hang the app menu on every window; here, the
-        // pane and tab items — Split, Close Pane, Close Tab, Even Out,
-        // Select Tab — have nothing to act on. Everything else still does,
-        // and every shortcut still fires.
+        // Linux hangs the app menu on every window; here, the pane and tab
+        // items — Split, Close Pane, Close Tab, Even Out, Select Tab — have
+        // nothing to act on, so it waits for Alt. Everything else still
+        // does, and every shortcut still fires. Windows' menu bar went with
+        // its title bar (`windowFrame.ts`), so this is Linux's alone.
         autoHideMenuBar: true,
         webPreferences: {
             preload: preloadPath(),
@@ -148,8 +151,11 @@ export function createSettingsWindow(opts: {
             if (win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
             win.webContents.send(IPC.settingsState, state);
         },
-        setBackground: colour => {
-            if (!win.isDestroyed()) win.setBackgroundColor(colour);
+        setLook: look => {
+            if (win.isDestroyed()) return;
+            win.setBackgroundColor(look.colors.window);
+            const overlay = overlayFor(process.platform, look);
+            if (overlay) win.setTitleBarOverlay(overlay);
         }
     };
 }

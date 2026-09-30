@@ -19,7 +19,7 @@ import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
-import { frameOptions, windowFrame } from './windowFrame';
+import { frameOptions, overlayFor, windowFrame } from './windowFrame';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
 import { SETUP_PANES_MAX, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, type BuiltInSetupId } from './setups';
@@ -47,11 +47,11 @@ function defaultContent(serverId: string): { width: number; height: number; game
 }
 /**
  * Room left on the display for the window's own frame, which a content size
- * does not include: a caption and borders on Windows and Linux. macOS's is
- * nothing, since the tab bar stands in for its title bar (`windowFrame.ts`),
- * and the allowance there is only room to spare. Generous rather than
- * measured, since the frame cannot be asked for before the window exists and
- * an opening size a few pixels short costs nothing.
+ * does not include: a caption and borders on Linux. macOS and Windows draw no
+ * caption, since the tab bar stands in for their title bars
+ * (`windowFrame.ts`), and the allowance there is only room to spare. Generous
+ * rather than measured, since the frame cannot be asked for before the window
+ * exists and an opening size a few pixels short costs nothing.
  */
 const FRAME_ALLOWANCE = 40;
 /**
@@ -437,8 +437,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         useContentSize: true,
         ...(deps.position ?? {}),
         title: spec.title,
-        // No title bar on macOS: the tab bar stands in for it (`windowFrame.ts`).
-        ...frameOptions(process.platform),
+        // No title bar on macOS or Windows: the tab bar stands in for it (`windowFrame.ts`).
+        ...frameOptions(process.platform, deps.theme()),
         // The theme's ground, which shows only until the shell draws.
         backgroundColor: deps.theme().colors.window,
         show: false,
@@ -606,14 +606,18 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     /**
      * Repaints what main paints — the window, the shell view and every page
-     * view, in the theme's ground — and sends the shell its palette. The game
-     * view keeps its black: that is the game's own ground, never themed.
+     * view, in the theme's ground, and on Windows the window buttons' glyphs,
+     * in its text colour — and sends the shell its palette. The game view
+     * keeps its black: that is the game's own ground, never themed.
      */
     function themeChanged(): void {
         if (win.isDestroyed()) return;
-        const ground = deps.theme().colors.window;
+        const look = deps.theme();
+        const ground = look.colors.window;
         win.setBackgroundColor(ground);
         shellView.setBackgroundColor(ground);
+        const overlay = overlayFor(process.platform, look);
+        if (overlay) win.setTitleBarOverlay(overlay);
         host.repaintBackground();
         pushState();
     }

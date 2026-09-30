@@ -110,9 +110,9 @@ export default function Settings(): ReactNode {
         <div className="picture flex h-full flex-col bg-ink text-cream">
             {/*
              * The sections are a strip across the top, as a game window's tabs
-             * are, because on macOS both are their window's title bar. Buttons with
-             * aria-current, as chat's and Home server's rows are, since there is
-             * no tabpanel here that a tablist could point at.
+             * are, because on macOS and Windows both are their window's title
+             * bar. Buttons with aria-current, as chat's and Home server's rows
+             * are, since there is no tabpanel here that a tablist could point at.
              */}
             <TopBar frame={state.frame} style={BAR}>
                 <div role="group" aria-label="Settings" className="flex min-w-0 flex-1 items-center gap-[5px]">

@@ -584,7 +584,7 @@ const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
             endEditing();
         },
         onFrameChanged: pushSettings,
-        background: lookFor(appState.appearance(), null, editing).colors.window,
+        look: lookFor(appState.appearance(), null, editing),
         closeQuestion: () => closeQuestion(editing, quitting),
         onDiscard: endEditing,
         onPageReset: endEditing
@@ -608,13 +608,13 @@ function pushSettings(): void {
 
 /**
  * Every game window restyled to what it now wears, and Settings' own ground
- * with it; Settings' page follows when it is next pushed its state. All of
- * them, since working out which ones moved would only save repainting a few
- * in the colours they already wear.
+ * and window buttons with it; Settings' page follows when it is next pushed
+ * its state. All of them, since working out which ones moved would only save
+ * repainting a few in the colours they already wear.
  */
 function restyle(): void {
     for (const sw of serverWindows.values()) sw.themeChanged();
-    settings.current()?.setBackground(lookFor(appState.appearance(), null, editing).colors.window);
+    settings.current()?.setLook(lookFor(appState.appearance(), null, editing));
 }
 
 /**
@@ -1329,6 +1329,19 @@ ipcMain.handle(IPC.tabSetupsMenu, (event, x: unknown, y: unknown) => {
     if (typeof x !== 'number' || typeof y !== 'number') return;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     windowFor(event.sender)?.showSetupsMenu(x, y);
+});
+
+/**
+ * The ≡ that starts the tab bar where the window has no menu bar
+ * (`windowFrame.ts`): the whole application menu, under the button. The same
+ * menu the shortcuts belong to, so the two cannot disagree.
+ */
+ipcMain.handle(IPC.tabAppMenu, (event, x: unknown, y: unknown) => {
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const sw = windowFor(event.sender);
+    if (!sw || sw.window.isDestroyed()) return;
+    Menu.getApplicationMenu()?.popup({ window: sw.window, x: Math.round(x), y: Math.round(y) });
 });
 
 ipcMain.handle(IPC.tabShowHomeServer, event => windowFor(event.sender)?.showHomeServer());

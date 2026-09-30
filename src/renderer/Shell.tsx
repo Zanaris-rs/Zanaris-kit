@@ -3,7 +3,7 @@ import type { Rect, ShellState } from '../shared/ipc';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from '../shared/panes';
 import { draggedFar, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
-import { Caret, Gear, Plus } from './icons';
+import { AppMenu, Caret, Gear, Plus } from './icons';
 import { playAlert } from './alertSound';
 import { applyTheme } from './theme';
 import DropIndicator from './dropIndicator';
@@ -45,12 +45,17 @@ const NEW_TAB_BOX: CSSProperties = { height: 26, width: 28 };
 const ADD_PANE_BOX: CSSProperties = { height: 26, padding: '0 4px 0 10px' };
 /**
  * The tabs' height, and a pane header's button's width, since the close of
- * the pane under the gear sits directly below it (`BAR_END`). After the bar's
+ * the pane under the gear sits directly below it (`BAR_END`) — on Windows,
+ * where Windows' own buttons hold the corner, that close sits under theirs
+ * instead. After the bar's
  * own 5px like the menus before it, and a wider gap after it than the bar's
- * 5px end: on macOS the bar is the title bar, and its right end is the
- * window's rounded corner. Inline for the same reason as the boxes above.
+ * 5px end: the row's right end is the window's rounded corner on macOS, and
+ * Windows' window buttons on Windows. Inline for the same reason as the boxes
+ * above.
  */
 const GEAR_BOX: CSSProperties = { height: 26, width: HEADER_BUTTON_WIDTH, padding: 0, marginRight: BAR_END - 5 };
+/** The gear's box, without the gap after it: the ≡ starts the row, after the bar's own 5px. Inline for the same reason as the boxes above. */
+const MENU_BOX: CSSProperties = { height: 26, width: HEADER_BUTTON_WIDTH, padding: 0 };
 /** The tabs' height, in the warn colour Home server's own sharing notice uses. Inline because `.btn` sets its gold in unlayered CSS. */
 const SHARING_BOX: CSSProperties = { height: 26, color: 'var(--color-warn)' };
 /** The tabs' height. Inline for the same reason as the boxes above. */
@@ -406,17 +411,41 @@ export default function Shell(): ReactNode {
         <div className="picture relative h-full overflow-hidden bg-ink text-cream">
             <TopBar frame={state.frame} style={at(rects.tabBar)}>
                 {/*
-                 * Tabs and the control that makes one, then Sharing while a
-                 * live link has no pane to mark, then the kit's own update
-                 * while there is one, then the two menus that act
-                 * on the tab in front, Setups and Add pane, side by side, and
-                 * Settings alone in the corner, and nothing else. The game's
-                 * read-out used to sit at this bar's left on the grounds that
-                 * it was the window's rather than any tab's — true, but it
-                 * left the bar reading as two unrelated things, and a read-out
-                 * about the game is easiest to believe beside the game. It is
-                 * in the game pane's own header now.
+                 * The menu, where the window has no menu bar, then tabs and
+                 * the control that makes one, then Sharing while a live link
+                 * has no pane to mark, then the kit's own update while there
+                 * is one, then the two menus that act on the tab in front,
+                 * Setups and Add pane, side by side, and Settings alone in
+                 * the corner, and nothing else. The game's read-out used to
+                 * sit at this bar's left on the grounds that it was the
+                 * window's rather than any tab's — true, but it left the bar
+                 * reading as two unrelated things, and a read-out about the
+                 * game is easiest to believe beside the game. It is in the
+                 * game pane's own header now.
                  */}
+                {/*
+                 * The application menu, where the window has no menu bar to
+                 * hang it in: on Windows, whose title bar this row replaces
+                 * (`windowFrame.ts`). First in the row, where macOS keeps
+                 * room for its window buttons. Main's menu, the one the
+                 * shortcuts belong to, opened under the button.
+                 */}
+                {state.frame.menuButton && (
+                    <button
+                        type="button"
+                        title="Menu"
+                        aria-label="Menu"
+                        aria-haspopup="menu"
+                        onClick={event => {
+                            const box = event.currentTarget.getBoundingClientRect();
+                            void window.zanaris.panes.appMenu(box.left, box.bottom);
+                        }}
+                        style={MENU_BOX}
+                        className="btn shrink-0 justify-center"
+                    >
+                        <AppMenu />
+                    </button>
+                )}
                 {/*
                  * The tablist is its own box so Setups and Add pane, menu
                  * buttons rather than tabs, sit outside it. `min-w-0` is
@@ -546,7 +575,9 @@ export default function Shell(): ReactNode {
                  * everything in it is the app's rather than this tab's or this
                  * window's. So it sits last, in the corner where a window's
                  * settings are looked for, and set in a little from that
-                 * corner, which on macOS is the window's rounded one. Between
+                 * corner, which on macOS is the window's rounded one; on
+                 * Windows the window's own buttons hold the corner, and it
+                 * sits just short of them. Between
                  * the menus and the tabs, where it used to be, it split the
                  * tab's own controls from the tabs they act on. A gear and no
                  * word, beside buttons that already have words; its name is on

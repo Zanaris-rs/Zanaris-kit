@@ -465,12 +465,14 @@ restyles every window of its server. A change applies at once and reloads
 nothing. The game and the reference pages are the servers' own, and are never
 themed.
 
-On macOS a theme runs to the window's top edge. The system's title bar can't
-wear one, since its colour is the system's light or dark whatever the frame
-is, so the kit's windows don't draw it: the tab bar stands in for it, and in
-Settings the row of sections does. It moves the window as a title bar does,
-and the window buttons sit at its left end, level with the tabs. Windows and
-Linux keep the system's title bar, because their menu bar hangs in it.
+On macOS and Windows a theme runs to the window's top edge. The system's title
+bar can't wear one, since its colour is the system's whatever the frame is, so
+the kit's windows don't draw it: the tab bar stands in for it, and in Settings
+the row of sections does. It moves the window as a title bar does. macOS's
+window buttons sit at its left end, level with the tabs; Windows' sit at its
+right end on the stone, in the theme's text colour. Windows hung the menu in
+its title bar, so there the tab bar starts with a ≡ that opens it. Linux keeps
+the system's title bar, and its menu bar in it.
 
 Each place is sampled rather than invented, like the stone.
 `scripts/sample-floors.mjs` reads the 274 map and ranks the floors laid in a
@@ -1081,8 +1083,8 @@ src/main/servers.ts         pure: Settings' Servers section — rows, isRemovabl
                             startup picks, the add form                             (tested)
 src/main/settingsWindow.ts  pure: the Settings window's slot, and where it opens   (tested)
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
-src/main/windowFrame.ts     pure: the title bar macOS doesn't draw, and where its
-                            window buttons go                                       (tested)
+src/main/windowFrame.ts     pure: the title bar macOS and Windows don't draw, and
+                            where their window buttons go                           (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
 src/main/appState.ts        the state.json store                                    (tested)
@@ -1125,7 +1127,7 @@ src/renderer/Launcher.tsx   what an empty pane offers: links, tools, the game
 src/renderer/grip.tsx       one draggable seam, and its keyboard path
 src/renderer/dropIndicator.tsx where a dragged pane will land
 src/renderer/tab.tsx        the shared tab button, worn by the workspace tab bar
-src/renderer/topBar.tsx     the strip across a window's top, its title bar on macOS
+src/renderer/topBar.tsx     the strip across a window's top, its title bar on macOS and Windows
 src/renderer/tools/Worlds.tsx
 src/renderer/tools/Chat.tsx the chat tabs, the log with its times and folds, a channel's info, the command menu
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
