@@ -1,7 +1,11 @@
 #!/usr/bin/env node
-// npm run fresh: empties the kit's profile so the next launch is a first launch,
-// keeping the two things that are slow or painful to rebuild — the engine builds
-// and the characters.
+// npm run fresh: empties the development profile so the next `npm run dev` is a
+// first launch, keeping its characters, which are painful to make again.
+//
+// The development profile, never the live one: the installed kit's profile is
+// the player's, and a development run keeps its own (src/main/profile.ts). The
+// engine builds are the live profile's too, read by every run, so a reset here
+// never had them to lose.
 //
 // A launch is a first launch when there is no state.json (`AppState.fresh`), so
 // that file above all is what this clears. It clears the rest of the profile with
@@ -9,36 +13,32 @@
 // newcomer has.
 //
 // Nothing is deleted. The old profile is set aside whole — in the Bin on macOS —
-// and emptying the Bin is left to whoever ran this. Quit the kit first: it
-// rewrites its files as it goes.
+// and emptying the Bin is left to whoever ran this. Quit `npm run dev` first: it
+// rewrites its files as it goes. The installed kit can stay open.
 import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-
-/** The package name, which is what Electron derives `app.getPath('userData')` from. */
-const APP = 'zanaris-kit';
+import { DEV_PROFILE } from '../src/main/profile.ts';
 
 /**
  * What a reset keeps, moved back into the empty profile afterwards.
  *
- * `homeserver` holds the downloaded builds, 50 MB a line, and the characters of
- * every revision; `yourworld` and `singleplayer` are the older trees those
- * characters were in before, which CLAUDE.md leaves where they are rather than
- * migrating. None of them is a reason the next launch would not be fresh —
- * only `state.json` decides that — and losing any to a test would cost a
- * download or somebody's save.
+ * `homeserver`, which in the development profile holds the characters of every
+ * revision and nothing else. It is no reason the next launch would not be
+ * fresh — only `state.json` decides that — and losing it to a test would cost
+ * somebody's save.
  */
-export const KEPT = ['homeserver', 'yourworld', 'singleplayer'];
+export const KEPT = ['homeserver'];
 
 /**
- * Where the kit's profile is, as Electron works it out from the package name.
- * Takes its platform, environment and home so the answer can be tested on a
- * machine that is none of them.
+ * Where the development profile is: the system's app-data folder, as Electron
+ * finds it, and the folder `profile.ts` names. Takes its platform, environment
+ * and home so the answer can be tested on a machine that is none of them.
  */
 export function profileDir(platform, env, home) {
-    if (platform === 'darwin') return join(home, 'Library', 'Application Support', APP);
-    if (platform === 'win32') return join(env.APPDATA ?? join(home, 'AppData', 'Roaming'), APP);
-    return join(env.XDG_CONFIG_HOME ?? join(home, '.config'), APP);
+    if (platform === 'darwin') return join(home, 'Library', 'Application Support', DEV_PROFILE);
+    if (platform === 'win32') return join(env.APPDATA ?? join(home, 'AppData', 'Roaming'), DEV_PROFILE);
+    return join(env.XDG_CONFIG_HOME ?? join(home, '.config'), DEV_PROFILE);
 }
 
 /**
@@ -48,7 +48,7 @@ export function profileDir(platform, env, home) {
  * the desktop to do it.
  */
 export function setAsidePath(platform, home, profile, at) {
-    return platform === 'darwin' ? join(home, '.Trash', `${APP}-${at}`) : join(dirname(profile), `${APP}.old-${at}`);
+    return platform === 'darwin' ? join(home, '.Trash', `${DEV_PROFILE}-${at}`) : join(dirname(profile), `${DEV_PROFILE}.old-${at}`);
 }
 
 /**
@@ -77,7 +77,7 @@ if (import.meta.filename === process.argv[1]) {
     const profile = profileDir(process.platform, process.env, home);
 
     if (!existsSync(profile)) {
-        console.log(`[fresh] no profile at ${profile}`);
+        console.log(`[fresh] no development profile at ${profile}`);
         console.log('[fresh] the next launch is already a first launch');
         process.exit(0);
     }
@@ -97,7 +97,7 @@ if (import.meta.filename === process.argv[1]) {
     }
 
     console.log(`[fresh] profile set aside: ${aside}`);
-    console.log(`[fresh] kept: ${kept.length > 0 ? kept.join(', ') : 'nothing — the old profile had neither builds nor characters'}`);
+    console.log(`[fresh] kept: ${kept.length > 0 ? kept.join(', ') : 'nothing — the old profile had no characters'}`);
     console.log('[fresh] nothing was deleted. Empty the Bin yourself when you are sure.');
     console.log('[fresh] now run: npm run dev');
 }

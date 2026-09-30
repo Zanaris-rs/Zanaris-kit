@@ -14,8 +14,8 @@ import { downloadChecked, extractTgz } from '../download.ts';
 
 /**
  * Home server's folder: the builds, and one world folder per revision holding
- * its characters. In a profile of its own when one is named — see the builds
- * folder a capture asks for in index.ts.
+ * its characters. In the profile named, or this run's — see the builds folder
+ * every run takes from the live profile in index.ts.
  */
 export function homeServerDir(userData: string = app.getPath('userData')): string {
     return join(userData, 'homeserver');
@@ -31,8 +31,9 @@ export function readCommands(resources: string): CommandRef[] | null {
 }
 
 /**
- * `dir` is where the builds live. It is normally `homeServerDir()/builds`;
- * a capture passes the real profile's, since its own has downloaded nothing.
+ * `dir` is where the builds live: the live profile's `homeserver/builds` in
+ * every run, since a development run's and a capture's own profiles hold only
+ * their characters (index.ts).
  */
 export function buildStoreDeps(dir: string, log: (msg: string) => void): BuildStoreDeps {
     return {

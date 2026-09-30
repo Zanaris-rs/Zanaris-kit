@@ -331,9 +331,12 @@ tag, size and sha-256. The design is
   *outdated* and does not start: a newer kit may rely on something it lacks.
   There is no exception, packaged or not: `engine-dist/` is what `stage:engine`
   hands to CI and to the archive, never a build the kit offers. Playing a stage
-  means publishing it as a prerelease and pinning it. A capture reads the
-  builds from the real profile, since its own has downloaded nothing, and
-  those are pinned like any other.
+  means publishing it as a prerelease and pinning it. A development run and a
+  capture each keep a profile of their own (`src/main/profile.ts`), and read
+  the builds from the live one, the installed kit's; those are pinned like
+  any other. So a build a branch pins lands in the live profile, where the
+  installed kit, not pinning it, calls it outdated, and Remove in a
+  development run takes a build from the installed kit too.
 - **A recipe must take `patches/engine/` and pass the boot check**, or it
   cannot be a line: the sharing invariants below depend on both. That is what
   "any 04-like server" means here — shaped like Lost City 274 (its layout,
@@ -348,7 +351,8 @@ tag, size and sha-256. The design is
   from before characters lived per revision, the whole of
   `<userData>/singleplayer/` from before the tool was called Your world, and
   the whole of `<userData>/yourworld/` from before it was called Home server.
-  `npm run fresh` keeps all three.
+  They are the live profile's; `npm run fresh` resets the development
+  profile, which never had them.
 
 ## Home server's characters and commands
 
@@ -575,7 +579,7 @@ file — shown in the kit's own pages, or one of the kit's own. Keep these true:
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev` / `npm start` | run it |
 | `npm run capture` | screenshot every view — see the hazard below |
-| `npm run fresh` | set the profile aside so the next launch is a first launch, keeping the builds and the characters |
+| `npm run fresh` | set the development profile aside so the next `npm run dev` is a first launch, keeping its characters; the installed kit's is never touched |
 | `npm run stage:engine -- <id>` | stage a recipe into `engine-dist/` and `engine-<id>.tar.gz` |
 | `npm run pin:engine -- <id>` | write a published build's size and digest into its recipe |
 | `npm run make:pictures [-- <content-dir>]` | make the kit's own pictures into `static/pictures/` from the content checkout, under Electron for `nativeImage` |
