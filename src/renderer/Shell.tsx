@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState } from '../shared/ipc';
+import { clockHint, clockTone, clockValueAt, formatClock, headerClocks, type TimersView } from '../shared/timers';
 import type { DropTargets, DropZone, PaneView, SeamView, TabView } from '../shared/panes';
 import { draggedFar, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
@@ -14,6 +15,7 @@ import PaneHeader, { HEADER_BUTTON_WIDTH, type Grab } from './paneHeader';
 import Tab from './tab';
 import TopBar, { BAR_END } from './topBar';
 import { gameSprite } from './sprites';
+import { TONE_CLASS, useNow } from './clocks';
 import Chat from './tools/Chat';
 import Hiscores from './tools/Hiscores';
 import HomeServer from './tools/HomeServer';
@@ -188,6 +190,38 @@ function GameReadout({ state, width }: { state: ShellState; width: number }): Re
         <span title={revision === null ? state.gameLabel : `${state.gameLabel} · ${revision}`} className="flex min-w-0 shrink items-center gap-[7px] truncate">
             <span className="truncate">{state.gameLabel}</span>
             {revision !== null && width >= ROOM_FOR_REVISION && <span className="shrink-0 text-[12px] text-faint">{revision}</span>}
+        </span>
+    );
+}
+
+/**
+ * The clocks the game's header carries while no Timers pane is beside the game
+ * (`pane.clocks`, main's): those running, and countdowns holding at 0:00
+ * (`headerClocks`). Clocks alert with the Timers pane closed, and an alert
+ * used to sound with nothing on screen to say which clock it was; now that
+ * clock is beside the game it is about. Read-only: the Timers pane is where a
+ * clock is started, paused, reset or changed, and the hint under the pointer
+ * says when each alerts.
+ *
+ * One line that wraps into a second one the header clips, so a header too
+ * narrow for all of them drops whole clocks from the end rather than cutting
+ * one mid-digit, and never pushes the dropdown or the close out of the pane.
+ * Every clock is 22px tall, the line's height, so the ones left do not move
+ * when one wraps away.
+ */
+function GameClocks({ view }: { view: TimersView }): ReactNode {
+    const shown = headerClocks(view.clocks);
+    const now = useNow(shown.some(clock => clock.phase === 'running'));
+    if (shown.length === 0) return null;
+    return (
+        <span className="ml-[5px] flex h-[22px] min-w-0 shrink flex-wrap gap-x-[10px] overflow-hidden">
+            {shown.map(clock => (
+                <span key={clock.def.id} title={clockHint(clock.def)} className="flex shrink-0 items-baseline gap-[5px] leading-[22px] whitespace-nowrap">
+                    <span className="max-w-[9em] truncate text-[12px] text-dim">{clock.def.name}</span>
+                    {/* Arial, never the pixel face, where 5 reads as S: the pane's digits are the same. */}
+                    <span className={`font-sans font-bold tabular-nums ${TONE_CLASS[clockTone(clock)]}`}>{formatClock(clockValueAt(clock, now), clock.def.kind)}</span>
+                </span>
+            ))}
         </span>
     );
 }
@@ -645,7 +679,14 @@ export default function Shell(): ReactNode {
                         <PaneHeader
                             pane={pane}
                             active={pane.focused && state.panes.length > 1}
-                            readout={pane.content.kind === 'game' ? <GameReadout state={state} width={pane.rect.width} /> : undefined}
+                            readout={
+                                pane.content.kind === 'game' ? (
+                                    <>
+                                        <GameReadout state={state} width={pane.rect.width} />
+                                        {pane.clocks && <GameClocks view={state.timers} />}
+                                    </>
+                                ) : undefined
+                            }
                             grab={grabFor(pane.paneId)}
                             grabbing={drag?.from === pane.paneId}
                         />

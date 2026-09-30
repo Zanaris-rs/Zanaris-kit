@@ -146,12 +146,16 @@ export function parseDuration(text: string): number | null {
     return null;
 }
 
-/** What the banner says. Under a minute a threshold reads as seconds, the way people say it. */
+/** A countdown's threshold as the time left. Under a minute it reads as seconds, the way people say it. */
+function thresholdLeft(def: TimerDef): string {
+    return def.thresholdMs < 60_000 ? `${Math.ceil(def.thresholdMs / 1000)}s` : formatClock(def.thresholdMs, 'countdown');
+}
+
+/** What the banner says. */
 export function alertTitle(def: TimerDef, at: 'threshold' | 'zero'): string {
     if (def.kind === 'timer') return `${def.name}: ${formatClock(def.thresholdMs, 'timer')} elapsed`;
     if (at === 'zero') return `${def.name}: time's up`;
-    const left = def.thresholdMs < 60_000 ? `${Math.ceil(def.thresholdMs / 1000)}s` : formatClock(def.thresholdMs, 'countdown');
-    return `${def.name}: ${left} left`;
+    return `${def.name}: ${thresholdLeft(def)} left`;
 }
 
 /** What a clock reads at `now`, from a snapshot. Main's runner and the shell's digits both read clocks this way. */
@@ -165,6 +169,23 @@ export function clockValueAt(clock: Pick<ClockView, 'def' | 'phase' | 'valueMs' 
 export function clockTone(clock: Pick<ClockView, 'phase' | 'alerted'>): 'alarm' | 'gold' | 'dim' {
     if (clock.phase === 'expired' || (clock.phase === 'running' && clock.alerted)) return 'alarm';
     return clock.phase === 'running' ? 'gold' : 'dim';
+}
+
+/**
+ * The clocks the game's header shows while no Timers pane is beside it
+ * (`paneMenu.showsClocks`): those running, and countdowns holding at 0:00,
+ * in the pane's order. Idle and paused clocks cannot alert, and a header
+ * listing them would never be empty.
+ */
+export function headerClocks(clocks: readonly ClockView[]): ClockView[] {
+    return clocks.filter(clock => clock.phase === 'running' || clock.phase === 'expired');
+}
+
+/** What a clock in the game's header says under the pointer: when it alerts, which its digits alone cannot. */
+export function clockHint(def: TimerDef): string {
+    if (def.kind === 'timer') return `${def.name}: alerts at ${formatClock(def.thresholdMs, 'timer')} elapsed`;
+    if (def.thresholdMs === 0) return `${def.name}: alerts at 0:00`;
+    return `${def.name}: alerts with ${thresholdLeft(def)} left`;
 }
 
 /** The edit form as typed: the two spans are text until they are read. */
