@@ -386,7 +386,7 @@ game already shows them, and the header then shows none.
 | Which clocks? | Those `running`, and countdowns `expired` at 0:00, in the pane's order (`headerClocks`). Idle and paused clocks cannot alert, and a header listing them would never be empty. |
 | What does each show? | Its name, 12px dim and cut short past 9em (about 18 letters), then its digits in bold Arial, toned by `clockTone` as the pane's are. |
 | Can they be clicked? | No. Read-only: the Timers pane is where a clock is started, paused, reset or changed. A stray click restarting AFK would restart the countdown without the client's idle timer. The hint under the pointer says when each alerts (`clockHint`): `AFK: alerts with 15s left`, `Thieving: alerts at 0:00`, `Stopwatch: alerts at 0:20 elapsed`. |
-| What if they do not fit? | They sit on one line that wraps into a second the header clips, so whole clocks drop off the end rather than one being cut mid-digit, and the dropdown and the close are never pushed out of the pane. The world's label truncates as it did. |
+| What if they do not fit? | They take only the room the header has spare, so the pane's name, the world and the latency read exactly as they would with no clocks, and a narrow game pane shows fewer. Within that room they sit on one line that wraps into a second the header clips, led by an empty item so that even the first clock wraps away rather than showing half its digits: whole clocks drop off the end, and the dropdown and the close stay where they are. Sized from their content, they shrank alongside the name, and a 430px pane read "Ga…". |
 
 An expired countdown without AFK mode stays red in the header until it is reset in
 the Timers pane, as it stays red in the pane: nothing returns a clock to idle but

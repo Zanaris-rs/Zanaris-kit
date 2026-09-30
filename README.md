@@ -186,8 +186,9 @@ each one running, and each countdown holding at 0:00, with its name and its
 digits in the pane's colours. So an alert that sounds has something on screen
 to have come from. They are only shown there; the hint under the pointer says
 when each one alerts, and the Timers pane is where one is started, paused,
-reset or changed. A header too narrow for all of them drops whole clocks from
-its end.
+reset or changed. They take only the room the header has to spare, so the
+world and the latency read as they always did, and a header too narrow for all
+of them drops whole clocks from its end.
 
 **The launcher** is the way into the reference pages, and it is what an empty
 pane shows. It lists this server's links, in order — for Lost City: Forums,
