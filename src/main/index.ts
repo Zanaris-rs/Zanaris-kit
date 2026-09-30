@@ -47,6 +47,7 @@ import { canSeal, open as openSecret, seal } from './chat/secret';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
 import { migrationPlan } from './migrate';
+import { LIVE_PROFILE, profileFor } from './profile';
 import { ShotLedger } from './shotLedger';
 import { updateQuestion, type UpdateAction } from './update';
 import { UpdateService } from './updater/service';
@@ -75,7 +76,7 @@ const log = (msg: string): void => console.log(msg);
 
 // ── one instance ──────────────────────────────────────────────────────────
 //
-// Two instances would share one world. Both resolve the same
+// Two instances of one profile would share one world. Both resolve the same
 // <userData>/homeserver, both write data/config/world.json over each other,
 // both spawn an engine with that working directory, and both save the same
 // character into data/players/main — two worlds, one set of saves, last
@@ -89,10 +90,13 @@ const log = (msg: string): void => console.log(msg);
 // the world directory before it goes. exit(0) leaves immediately, which is
 // what an instance owning nothing should do.
 /*
- * A capture run gets a profile of its own, before either the lock below or the
- * userData move underneath it can read the default one.
+ * Each run keeps its profile where `profile.ts` says, set before either the
+ * lock below or the userData move underneath it can read the default one: the
+ * installed kit the live one, a development run and a capture one each of
+ * their own. The lock is the profile's, so the installed kit and a
+ * development run are open together, and a capture beside either.
  *
- * Two reasons, and the second is the one that made it necessary. A capture is
+ * A capture's came first, and shows why a run needs its own. A capture is
  * meant to photograph the app as a new user finds it, and running it against a
  * real profile shows whatever that user happens to have — their servers.json,
  * their remembered worlds, their nick. And an ordinary instance already holding
@@ -100,13 +104,16 @@ const log = (msg: string): void => console.log(msg);
  * writing no frames and — because electron-vite does not forward the child's
  * stdout — saying nothing about why. That is a silent no-op with a green exit
  * code, which is exactly the failure the capture hazard in README.md warns
- * about wearing a different face.
+ * about wearing a different face. A development run on the live profile could
+ * not start while the installed kit was open, for the same reason, and
+ * whatever it did to that profile it did to the player's.
  *
- * The real profile's path is kept first: builds are the one thing a capture
- * still reads from it. See REAL_USER_DATA below.
+ * The live profile's path is kept first: builds are the one thing every run
+ * reads from it. See LIVE_USER_DATA below.
  */
-const REAL_USER_DATA = app.getPath('userData');
-if (process.env.ZANARIS_CAPTURE) app.setPath('userData', join(app.getPath('appData'), 'zanaris-kit-capture'));
+const LIVE_USER_DATA = app.getPath('userData');
+const PROFILE = profileFor({ packaged: app.isPackaged, capture: Boolean(process.env.ZANARIS_CAPTURE) });
+if (PROFILE !== LIVE_PROFILE) app.setPath('userData', join(app.getPath('appData'), PROFILE));
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
@@ -147,10 +154,14 @@ protocol.registerSchemesAsPrivileged([{ scheme: PICTURE_SCHEME, privileges: { st
 // It still runs at module load, above the constants below, because those name
 // servers.json and state.json — the entries have to be in place before
 // anything reads them.
+//
+// Into the live profile only. The old name's profile was the installed kit's,
+// and a development run or a capture, in a profile of its own, must never
+// take the player's things into it.
 const userData = app.getPath('userData');
 const legacyUserData = join(dirname(userData), 'swiftkit');
 const migrated: string[] = [];
-for (const entry of migrationPlan(legacyUserData, userData, existsSync)) {
+for (const entry of userData === LIVE_USER_DATA ? migrationPlan(legacyUserData, userData, existsSync) : []) {
     try {
         // Normally Chromium has already made it; recursive, so a no-op when it has.
         mkdirSync(userData, { recursive: true });
@@ -2997,12 +3008,13 @@ app.whenReady().then(async () => {
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();
-    // A capture photographs your home server running, and the profile of its own it
-    // keeps its state in has downloaded nothing. So the builds — 50 MB each, and
-    // pinned and checked whichever profile they sit in — are read from the real
-    // one, rather than downloaded again on every run. The characters are not:
-    // they stay in the capture profile, where a fresh world is what is wanted.
-    builds = new BuildStore(buildStoreDeps(join(homeServerDir(CAPTURE_DIR ? REAL_USER_DATA : userData), 'builds'), log));
+    // The builds — 50 MB each, and pinned and checked whichever profile they
+    // sit in — are the live profile's in every run (`profile.ts`): a
+    // development run and a capture keep profiles of their own, which would
+    // otherwise download each again. The characters are not: they stay in the
+    // run's own profile, where a capture wants a fresh world and a
+    // development run must not touch the player's.
+    builds = new BuildStore(buildStoreDeps(join(homeServerDir(LIVE_USER_DATA), 'builds'), log));
     const world = new HomeServerService(
         electronDeps({
             baseUrl: catalog.get('singleplayer')?.url ?? 'http://127.0.0.1/rs2.cgi?lowmem=1',

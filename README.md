@@ -883,6 +883,14 @@ npm run pin:engine -- <id>    # write a published build's size and digest into i
 npm run dist         # package this platform into release/
 ```
 
+A run from the checkout — `npm run dev`, `npm start` — keeps a profile of its
+own, `zanaris-kit-dev`, beside the installed kit's `zanaris-kit`, so it starts
+while the installed kit is open and never touches what that one holds: the
+server list, logins, themes and characters are each its own. The one thing it
+shares is the home server's builds, which it reads from the installed kit's
+profile rather than downloading again. `npm run fresh` sets the development
+profile aside, keeping its characters, so the next run is a first launch.
+
 Home server's builds are recipes, one file per line under `engines/`: the
 engine and content commits of Lost City upstream (`LostCityRS/Engine-TS` and
 `LostCityRS/Content`) at one of its revisions, the patches the stage script lays
@@ -916,11 +924,11 @@ waits for the list, switches to another world and captures that, opens the
 Hiscores tool on each server that has one and looks a single name up there —
 one request per server and no retry, since Lost City rate-limits after a
 handful inside a minute — opens the Home server tool, then opens a second
-instance of that server. Its own profile has downloaded nothing, so it reads
-the builds from the real one; a line the real profile has not downloaded is
-skipped rather than left waiting. It keeps its
-own `state.json` beside the screenshots so a test switch never changes what
-the next real launch opens. A view that has no frame yet is retried, then
+instance of that server. It reads the builds from the installed kit's
+profile, as a development run does; a line that profile has not downloaded is
+skipped rather than left waiting. It keeps everything else in a profile of its
+own, `zanaris-kit-capture`, so a test switch never changes what the next real
+launch opens. A view that has no frame yet is retried, then
 skipped, and a file of that name left by an earlier run is removed. A shell is
 shot only once it has painted, its window fronted again until it does; one that
 has not painted within ten seconds is not written, and a shell shot
