@@ -85,10 +85,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MAC_BUTTON, MAC_BUTTONS_AT, MAC_BUTTONS_CLEAR, frameOptions, overlayFor, windowFrame } from './windowFrame.ts';
 import { TAB_BAR_HEIGHT } from '../shared/layout.ts';
-import { THEMES, type ThemeLook } from '../shared/themes.ts';
+import { themeById, type ThemeLook } from '../shared/themes.ts';
 
-const LOOK: ThemeLook = { colors: THEMES[0].colors, background: null };
-const OTHER: ThemeLook = { colors: { ...THEMES[0].colors, cream: '#e0ebe3' }, background: null };
+const LOOK: ThemeLook = { colors: themeById('stone').colors, background: null };
+const OTHER: ThemeLook = { colors: { ...LOOK.colors, cream: '#e0ebe3' }, background: null };
 
 test('macOS draws no title bar, and puts its window buttons where the kit says', () => {
     assert.deepEqual(frameOptions('darwin', LOOK), { titleBarStyle: 'hidden', trafficLightPosition: MAC_BUTTONS_AT });

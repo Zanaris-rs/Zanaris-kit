@@ -131,12 +131,19 @@ export interface Rect {
 export interface WindowFrame {
     /**
      * The row stands in for the OS's title bar, which is not drawn: it moves
-     * the window, and the theme runs to the window's top edge. On macOS only;
-     * Windows and Linux keep the system's bar, which holds their menu bar.
+     * the window, and the theme runs to the window's top edge. On macOS and
+     * Windows; Linux keeps the system's bar, which holds its menu bar.
      */
     ownTitleBar: boolean;
-    /** How far in from the window's left edge the row's first control must start, to clear the window buttons macOS draws over it. Zero where there are none to clear: off macOS, and in full screen. */
+    /** How far in from the window's left edge the row's first control must start, to clear the window buttons macOS draws over it. Zero where there are none to clear: off macOS, and in full screen. Windows' are at the row's other end, which the row clears by their own rect (`topBar.tsx`). */
     buttonsInset: number;
+    /**
+     * The app menu has no bar of its own here, so a game window's row starts
+     * with a button that opens it: on Windows, whose title bar held it.
+     * Settings' row draws none — its menu bar was hidden already, and nearly
+     * everything in the menu acts on a game window.
+     */
+    menuButton: boolean;
 }
 
 /** The tab bar's update button, the same in every window: main words it (`update.updateButton`), and a press asks about it. */
@@ -163,7 +170,7 @@ export interface ShellState {
         /** The region the active tab's panes are laid out in: everything below the bar. */
         tree: Rect;
     };
-    /** How the OS frames the tab bar, which is the window's title bar on macOS. */
+    /** How the OS frames the tab bar, which is the window's title bar on macOS and Windows. */
     frame: WindowFrame;
     /** This window's workspace tabs. Each is a whole arrangement of the same server's things, not a different server. */
     tabs: TabView[];
@@ -214,7 +221,7 @@ export interface SettingsState {
     servers: ServersView;
     /** The Appearance section: the app theme, every theme's palette, and each server's own. */
     appearance: AppearanceView;
-    /** How the OS frames the row of sections, which is the window's title bar on macOS. */
+    /** How the OS frames the row of sections, which is the window's title bar on macOS and Windows. */
     frame: WindowFrame;
 }
 
