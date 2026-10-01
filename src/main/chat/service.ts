@@ -358,7 +358,8 @@ export class ChatService {
 
     /**
      * A chat pane is on screen in some window: whatever pinged you has been
-     * seen. Says whether a ping was waiting, and tells no subscriber: main
+     * seen, and the room chat has open is read if chat was out of sight until
+     * now. Says whether a ping was waiting, and tells no subscriber: main
      * calls this while it is telling the windows, and a push from in here
      * would reach some of them with the view it is about to replace.
      */

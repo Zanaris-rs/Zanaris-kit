@@ -352,11 +352,17 @@ test('a ping after chat was on screen is the only one waiting', () => {
     assert.equal(ping?.more, 0, 'the first was seen, though the room open in chat still counts it until it is left');
 });
 
-test('opening the room a ping came in reads it', () => {
+test('opening the room a ping came in does not read it until chat is on screen', () => {
     const f = online({ channels: ['#04scape', '#swiftkit'] });
+    f.client.lookAway();
     f.client.receive(':carol!c@h PRIVMSG #swiftkit :mage: over here');
     f.client.select('#swiftkit');
+    assert.notEqual(f.client.snapshot().ping, null, 'a click opens chat on its room before chat is shown');
+    assert.equal(f.channel('#swiftkit').unread, 1);
+    assert.equal(f.channel('#swiftkit').highlights, 1);
+    f.client.seePings();
     assert.equal(f.client.snapshot().ping, null);
+    assert.equal(f.channel('#swiftkit').highlights, 0);
 });
 
 test('closing the room a ping came in takes the ping with it', () => {
@@ -417,7 +423,6 @@ test('a room opened while chat is out of sight is read only once chat is on scre
     f.client.receive(':bob!b@h PRIVMSG #other :still here');
     assert.equal(f.channel('#other').unread, 2);
     assert.equal(f.channel('#other').highlights, 1);
-    assert.notEqual(f.client.snapshot().ping, null, 'still waiting in the game header');
 
     f.client.seePings();
     assert.equal(f.channel('#other').unread, 0);
@@ -463,6 +468,20 @@ test('a mention read in the open room is not counted once chat is out of sight',
     f.client.select('#other');
     assert.equal(f.channel('#04scape').unread, 0);
     assert.equal(f.channel('#04scape').highlights, 0);
+});
+
+test('a conversation open while chat is out of sight keeps its count through a rename', () => {
+    const f = online();
+    f.client.receive(':bob!b@h PRIVMSG mage :hi');
+    f.client.select('bob');
+    f.client.lookAway();
+    f.client.receive(':bob!b@h PRIVMSG mage :still there?');
+    f.client.receive(':bob!b@h NICK robert');
+    assert.equal(f.client.snapshot().active, 'robert');
+    assert.equal(f.channel('robert').unread, 1);
+
+    f.client.seePings();
+    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'still there?')?.id);
 });
 
 test("the kit's own word in Status counts while chat is out of sight, though Status is open", () => {

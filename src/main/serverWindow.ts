@@ -169,7 +169,9 @@ export interface ServerWindowDeps {
     /**
      * Told as this window's state goes out with a chat pane in its front tab,
      * before `chat` is read: whatever pinged you has been seen, so no game
-     * header, here or in another window, should still show it.
+     * header, here or in another window, should still show it, and the room
+     * chat has open is being read. Told from the window's first layout on,
+     * which runs before main has the window in its map.
      */
     chatShown: () => void;
     /**
@@ -254,8 +256,6 @@ export interface ServerWindow extends ServerWindowHandle {
      * Nothing on a window that is not Home server's.
      */
     showHomeServer(): void;
-    /** Whether a chat pane is on screen here: the tab in front holds one. */
-    showsChat(): boolean;
     /** The game header's ping, clicked: chat's pane, added as `addPane` adds one, or in a new tab of its own when the active tab has no room for a column. */
     showChat(): void;
     /** Raises the tab bar's Add pane menu at a point in the window. */
@@ -1721,7 +1721,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         close: () => win.close(),
         addPane,
         showHomeServer,
-        showsChat: () => holdsTool(host.tree(), 'chat'),
         showChat: () => showTool('chat'),
         showAddPaneMenu,
         // Asked of the window rather than answered from a flag kept alongside

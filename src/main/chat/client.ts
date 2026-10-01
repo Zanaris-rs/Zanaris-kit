@@ -1145,8 +1145,8 @@ export class IrcClient {
      * With chat out of sight, neither is being read, so only which one is
      * open changes. The one left keeps what it counted, and the one opened is
      * read when a chat pane is next on screen (`seePings`). That is how a
-     * ping or a notification, which opens chat on its room before chat is
-     * shown, leaves the gold on the room that was open.
+     * click on a ping or on a notification, each of which selects its room,
+     * leaves the gold on the room that was open when chat is out of sight.
      */
     select(channel: string): void {
         const chan = this.chan(channel);

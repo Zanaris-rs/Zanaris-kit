@@ -393,18 +393,30 @@ function chatView(): ChatView {
     return chat?.view() ?? offlineChat(null);
 }
 
+/**
+ * The windows whose state last went out with a chat pane in their front tab.
+ * Kept from what each window says rather than asked of `serverWindows`: a
+ * window's first state goes out from inside `createServerWindow`, before it
+ * is in that map, and a new window opens with chat in front. Asked of the
+ * map, the windows pushed by that window's `chatShown` would find chat on
+ * screen nowhere, and look away from what it had just read.
+ */
+const chatInFront = new Set<number>();
+
 /** Whether a chat pane is on screen anywhere: in the front tab of any window, since one conversation serves them all. */
 function chatOnScreen(): boolean {
-    return [...serverWindows.values()].some(sw => sw.showsChat());
+    return chatInFront.size > 0;
 }
 
 /**
  * A window is sending its state with a chat pane in its front tab, so
- * whatever pinged you has been seen. When that clears a ping, every other
- * window is told, since their game headers still show it; the one showing
- * chat reads the view after this, and needs no push of its own.
+ * whatever pinged you has been seen, and the room chat has open is being
+ * read. When that clears a ping, every other window is told, since their
+ * game headers still show it; the one showing chat reads the view after
+ * this, and needs no push of its own.
  */
 function chatShown(from: number): void {
+    chatInFront.add(from);
     if (!chat?.seePings()) return;
     for (const [id, sw] of serverWindows) if (id !== from) sw.pushState();
 }
@@ -414,7 +426,8 @@ function chatShown(from: number): void {
  * closed. When no window shows one, chat is out of sight, and the room it
  * has open counts what arrives as any other room does.
  */
-function chatHidden(): void {
+function chatHidden(from: number): void {
+    chatInFront.delete(from);
     if (!chatOnScreen()) chat?.lookAway();
 }
 
@@ -562,10 +575,13 @@ const windows = new ServerWindows(
         const sw = createServerWindow(
             spec,
             () => {
+                // A window closing with chat in front may have held the last chat
+                // pane on screen. First, since it needs nothing of `sw`: a window
+                // that threw after its first layout said it had chat in front, and
+                // is closed with no `sw` for the lines below to read.
+                chatHidden(spec.id);
                 serverWindows.delete(spec.id);
                 byShell.delete(sw.shellContentsId);
-                // A window closing with chat in front may have held the last chat pane on screen.
-                chatHidden();
                 log(`[main] closed ${spec.title}`);
                 onClosed();
                 // Focus lands somewhere else, or nowhere, and the menu's Always on
@@ -581,7 +597,7 @@ const windows = new ServerWindows(
                 hiscores: hiscoresServiceFor(spec.server),
                 chat: chatView,
                 chatShown: () => chatShown(spec.id),
-                chatHidden,
+                chatHidden: () => chatHidden(spec.id),
                 alwaysOnTop: () => appState.alwaysOnTop(),
                 confirmCloseGame: via => confirmCloseGame(spec, via),
                 setupsDir: join(userData, 'setups', slugify(spec.server.id)),

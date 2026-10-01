@@ -302,9 +302,12 @@ without chat in front, or closing, tells main (`chatHidden`), and when no
 window shows chat the client is told so (`IrcClient.lookAway`), which leaves
 the open room as opening another would. `seePings` is the way back, and reads
 the open room as opening it would. A `select` while out of sight only changes
-which room is open, so a ping or a notification that opens chat on its room
-leaves the gold where it was. The client starts out of sight: nothing has
-been seen before a pane shows it.
+which room is open, so a click on a ping or a notification, which selects its
+room, leaves the gold where it was when chat is out of sight. The client
+starts out of sight: nothing has been seen before a pane shows it. Main keeps
+which windows last said they have chat in front (`chatInFront`) rather than
+asking its map of windows, because a new window says so from its first
+layout, before it is in the map.
 
 **Links in the log open only if `linkTarget` says http or https**, read again
 in main whatever the shell sent: a chat line is a stranger's writing.
