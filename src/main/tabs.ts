@@ -1,6 +1,7 @@
 import { clearGame, contentOf, leaf, paneIds, setContent, split, type PaneContent, type PaneNode } from './paneTree.ts';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 import { paneName, type PaneLink } from './paneMenu.ts';
+import type { ToolId } from '../shared/ipc.ts';
 
 /**
  * A window's workspace tabs.
@@ -126,12 +127,20 @@ export function closingTab(set: TabSet, tabId: string): TabClosing {
     return holdsGame(tab.tree) ? 'game' : 'tab';
 }
 
-/** Whether a tab's panes include Home server's. */
-function holdsHomeServer(tree: PaneNode): boolean {
+/**
+ * Whether a tab's panes include a tool's. In the tab in front, that tool is on
+ * screen: for chat, that is what keeps a ping out of the game's header.
+ */
+export function holdsTool(tree: PaneNode, tool: ToolId): boolean {
     return paneIds(tree).some(id => {
         const content = contentOf(tree, id);
-        return content?.kind === 'tool' && content.tool === 'singleplayer';
+        return content?.kind === 'tool' && content.tool === tool;
     });
+}
+
+/** Whether a tab's panes include Home server's. */
+function holdsHomeServer(tree: PaneNode): boolean {
+    return holdsTool(tree, 'singleplayer');
 }
 
 /**

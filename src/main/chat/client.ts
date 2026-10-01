@@ -1,6 +1,6 @@
 import { COMMAND_HELP } from '../../shared/chatInput.ts';
 import { isNick } from '../../shared/chatSettings.ts';
-import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatStatus, type ChatTopic, type ChatUser, type ChatView, type Presence } from '../../shared/chat.ts';
+import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatPing, type ChatStatus, type ChatTopic, type ChatUser, type ChatView, type Presence } from '../../shared/chat.ts';
 import {
     banReason,
     DEFAULT_ISUPPORT,
@@ -208,6 +208,8 @@ export class IrcClient {
      */
     private refusal: string | null = null;
     private lastId = 0;
+    /** The latest line id when a chat pane was last on screen. No line up to it is a ping. */
+    private pingsSeen = 0;
     private nickTries = 0;
     /** The nick a registration's underscores were added to, so giving up names the one that was asked for. */
     private triedFrom: string | null = null;
@@ -1151,6 +1153,19 @@ export class IrcClient {
         chan.highlights = 0;
     }
 
+    /**
+     * A chat pane is on screen: every line for you so far has been seen,
+     * whichever room it came in. No room's count is cleared, as opening one
+     * clears it: a pane shows one room, and the rail's gold is how it points
+     * at the rest. Says whether a ping was waiting, since only then has
+     * anything changed.
+     */
+    seePings(): boolean {
+        const waiting = this.pings().length > 0;
+        this.pingsSeen = this.lastId;
+        return waiting;
+    }
+
     /** The channels we mean to be in, which is what to join on the next 001. */
     wanted(): string[] {
         return [...this.want];
@@ -1174,8 +1189,33 @@ export class IrcClient {
             active: this.activeName,
             lines: (active?.lines ?? []).map(l => ({ ...l })),
             newFrom: active?.newFrom ?? null,
+            ping: this.ping(),
             error: this.error
         };
+    }
+
+    /**
+     * The lines a ping is made of, oldest first. In each room, the ones its
+     * count still holds — its last `highlights` highlighted lines, since the
+     * count goes up by one for each and back to nothing when the room is
+     * opened or left — that arrived since a chat pane was last on screen.
+     */
+    private pings(): ChatLine[] {
+        const found: ChatLine[] = [];
+        for (const chan of this.chans.values()) {
+            if (chan.highlights === 0) continue;
+            const counted = chan.lines.filter(l => l.highlight).slice(-chan.highlights);
+            found.push(...counted.filter(l => l.id > this.pingsSeen));
+        }
+        return found.sort((a, b) => a.id - b.id);
+    }
+
+    private ping(): ChatPing | null {
+        const pings = this.pings();
+        const line = pings.at(-1);
+        if (line === undefined) return null;
+        // A private message past the most conversations lands in Status, marked `private`.
+        return { line: { ...line }, private: isQuery(line.channel) || line.kind === 'private', more: pings.length - 1 };
     }
 
     // ── the log ──────────────────────────────────────────────────────────

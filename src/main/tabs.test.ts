@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, layoutTree, leaf, paneIds, split } from './paneTree.ts';
-import { closeTab, closingTab, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, openTabs, openWindowTabs, selectTab, sharingWithoutPane } from './tabs.ts';
+import { closeTab, closingTab, holdsTool, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, openTabs, openWindowTabs, selectTab, sharingWithoutPane } from './tabs.ts';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
 
 test('a one-pane set holds whatever it was given', () => {
@@ -281,6 +281,14 @@ test('a link already shown in the tab in front marks no other tab', () => {
 
 test('a tab that is not there has no marks', () => {
     assert.deepEqual(marksOfTab(playingBehind(), 'nope', true), []);
+});
+
+test('a tool anywhere in a tree is held by it, however deep, and another tool is not', () => {
+    const inner = split('split-2', 'y', [leaf('p2', { kind: 'tool', tool: 'chat' }), leaf('p3', { kind: 'empty' })], [0.5, 0.5]);
+    const tree = split('split-1', 'x', [leaf('p1', { kind: 'game' }), inner], [0.5, 0.5]);
+    assert.equal(holdsTool(tree, 'chat'), true);
+    assert.equal(holdsTool(tree, 'worlds'), false);
+    assert.equal(holdsTool(leaf('p1', { kind: 'game' }), 'chat'), false);
 });
 
 test('a live link with Home server in no tab at all is for the bar to say', () => {

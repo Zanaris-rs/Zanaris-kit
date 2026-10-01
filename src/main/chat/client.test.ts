@@ -294,6 +294,76 @@ test('a mention seen while its tab was open does not colour the tab once it is l
     assert.equal(f.channel('#04scape').highlights, 0);
 });
 
+// ── pings ─────────────────────────────────────────────────────────────────
+
+test('a ping is the newest line for you, with how many more are waiting', () => {
+    const f = online({ channels: ['#04scape', '#swiftkit'] });
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look at this');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :nothing to see');
+    f.client.receive(':carol!c@h PRIVMSG #swiftkit :mage, you there?');
+    const ping = f.client.snapshot().ping;
+    assert.equal(ping?.line.nick, 'carol');
+    assert.equal(ping?.line.text, 'mage, you there?');
+    assert.equal(ping?.more, 1, "bob's, and not the line that named nobody");
+});
+
+test('a plain line is never a ping', () => {
+    const f = online();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :nothing to see');
+    assert.equal(f.client.snapshot().ping, null);
+});
+
+test('a ping said to you alone is private, and one naming you in a channel is not', () => {
+    const f = online();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
+    assert.equal(f.client.snapshot().ping?.private, false);
+    f.client.receive(':bob!b@h PRIVMSG mage :psst');
+    assert.equal(f.client.snapshot().ping?.private, true);
+});
+
+test('a private message past the most conversations is still private, though it lands in Status', () => {
+    const f = online();
+    for (let i = 0; i < MAX_CONVERSATIONS; i++) f.client.receive(`:n${i}!u@h PRIVMSG mage :hi`);
+    f.client.receive(':late!l@h PRIVMSG mage :me too');
+    const ping = f.client.snapshot().ping;
+    assert.equal(ping?.line.channel, SERVER_LOG);
+    assert.equal(ping?.private, true);
+});
+
+test('seeing chat on screen reads every ping, in every room, and says whether there was one', () => {
+    const f = online({ channels: ['#04scape', '#swiftkit'] });
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
+    f.client.receive(':carol!c@h PRIVMSG #swiftkit :mage: and here');
+    assert.equal(f.client.seePings(), true);
+    assert.equal(f.client.snapshot().ping, null);
+    assert.equal(f.client.seePings(), false, 'nothing new since');
+    assert.equal(f.channel('#swiftkit').highlights, 1, "the room's own count is chat's, and is read when the room is opened");
+});
+
+test('a ping after chat was on screen is the only one waiting', () => {
+    const f = online();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
+    f.client.seePings();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: again');
+    const ping = f.client.snapshot().ping;
+    assert.equal(ping?.line.text, 'mage: again');
+    assert.equal(ping?.more, 0, 'the first was seen, though the room open in chat still counts it until it is left');
+});
+
+test('opening the room a ping came in reads it', () => {
+    const f = online({ channels: ['#04scape', '#swiftkit'] });
+    f.client.receive(':carol!c@h PRIVMSG #swiftkit :mage: over here');
+    f.client.select('#swiftkit');
+    assert.equal(f.client.snapshot().ping, null);
+});
+
+test('closing the room a ping came in takes the ping with it', () => {
+    const f = online();
+    f.client.receive(':bob!b@h PRIVMSG mage :psst');
+    f.client.close('bob');
+    assert.equal(f.client.snapshot().ping, null);
+});
+
 // ── churn and the New divider ─────────────────────────────────────────────
 
 test('churn in a channel is marked as presence, and a kick or a private quit is not', () => {

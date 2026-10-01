@@ -863,6 +863,27 @@ test('a mention is passed on while notifications are on, and not once they are o
     assert.equal(service.view().settings.notify, false);
 });
 
+test('a ping waits in the view until chat is seen, and seeing it tells the caller rather than the subscribers', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+    f.register();
+    f.line(':bob!b@h PRIVMSG mage :psst');
+    assert.equal(service.view().ping?.line.text, 'psst');
+
+    let pushes = 0;
+    service.subscribe(() => pushes++);
+    assert.equal(service.seePings(), true);
+    assert.equal(service.view().ping, null);
+    assert.equal(pushes, 0, 'main tells every window itself, in the order it needs');
+    assert.equal(service.seePings(), false, 'nothing waiting');
+});
+
+test('with no connection ever made there is no ping to see', () => {
+    const service = new ChatService({ ...SETTINGS, nick: null }, fake().io);
+    assert.equal(service.view().ping, null);
+    assert.equal(service.seePings(), false);
+});
+
 test('a conversation can be closed like a channel, and is never parted', () => {
     const f = fake();
     const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);

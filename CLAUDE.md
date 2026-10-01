@@ -284,6 +284,17 @@ reopened on reconnect, and follows its person through a NICK. Anything said
 to NickServ, in a conversation or by `/msg`, is echoed with its secret words
 hidden (`hideSecret`).
 
+**A ping shows in the game's header while chat is out of sight.** A line
+that names you or is said to you alone, arriving while no window's front
+tab holds a chat pane, stays after the game's read-out until a chat pane is
+on screen anywhere (`IrcClient.seePings`) or its room is opened. Main counts
+pings seen before any window reads chat's view — when a window sends its
+state with chat in front (`chatShown`), and when chat changes
+(`chatOnScreen`) — so no header ever shows one chat is already showing. A
+click opens chat on the ping's room through `showTool`, as the Sharing
+button opens Home server. The system notification is separate, and is still
+only for a kit in the background.
+
 **Links in the log open only if `linkTarget` says http or https**, read again
 in main whatever the shell sent: a chat line is a stranger's writing.
 

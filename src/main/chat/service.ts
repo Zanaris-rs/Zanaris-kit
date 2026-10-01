@@ -117,7 +117,7 @@ const NO_SETTINGS: ChatSettingsView = { nick: null, autoJoin: [...DEFAULT_AUTO_J
 
 /** What the panel shows when there is no connection to describe yet. */
 export function offlineChat(nick: string | null, settings: ChatSettingsView = NO_SETTINGS): ChatView {
-    return { status: 'offline', nick, channels: [], active: SERVER_LOG, lines: [], newFrom: null, error: null, needsNick: nick === null, settings };
+    return { status: 'offline', nick, channels: [], active: SERVER_LOG, lines: [], newFrom: null, ping: null, error: null, needsNick: nick === null, settings };
 }
 
 /** What the service starts from: the saved settings, and the password `index.ts` opened for it. */
@@ -354,6 +354,16 @@ export class ChatService {
         if (!known) return;
         this.client.select(channel);
         this.emit();
+    }
+
+    /**
+     * A chat pane is on screen in some window: whatever pinged you has been
+     * seen. Says whether a ping was waiting, and tells no subscriber: main
+     * calls this while it is telling the windows, and a push from in here
+     * would reach some of them with the view it is about to replace.
+     */
+    seePings(): boolean {
+        return this.client?.seePings() ?? false;
     }
 
     /**

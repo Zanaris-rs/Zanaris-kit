@@ -55,6 +55,7 @@ export const IPC = {
     chatDisconnect: 'zanaris:chat-disconnect',
     chatOpenLink: 'zanaris:chat-open-link',
     chatUserMenu: 'zanaris:chat-user-menu',
+    chatOpenPing: 'zanaris:chat-open-ping',
     homeServerSetSetting: 'zanaris:homeserver-set-setting',
     homeServerRetry: 'zanaris:homeserver-retry',
     homeServerOpenSaves: 'zanaris:homeserver-open-saves',
@@ -257,6 +258,8 @@ export interface ZanarisApi {
         disconnect(): Promise<void>;
         /** Opens a link from the log in the system browser. Main reads it again, and opens only http and https. */
         openLink(url: string): Promise<void>;
+        /** Opens chat on the room of `ChatView.ping`, beside the game or in a tab of its own. */
+        openPing(): Promise<void>;
         /**
          * Shows the menu for someone's name at a point in the window, and does
          * what was chosen that main can. Resolves to the choice, so the shell

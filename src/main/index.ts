@@ -393,6 +393,22 @@ function chatView(): ChatView {
     return chat?.view() ?? offlineChat(null);
 }
 
+/** Whether a chat pane is on screen anywhere: in the front tab of any window, since one conversation serves them all. */
+function chatOnScreen(): boolean {
+    return [...serverWindows.values()].some(sw => sw.showsChat());
+}
+
+/**
+ * A window is sending its state with a chat pane in its front tab, so
+ * whatever pinged you has been seen. When that clears a ping, every other
+ * window is told, since their game headers still show it; the one showing
+ * chat reads the view after this, and needs no push of its own.
+ */
+function chatShown(from: number): void {
+    if (!chat?.seePings()) return;
+    for (const [id, sw] of serverWindows) if (id !== from) sw.pushState();
+}
+
 async function fetchJson(url: string): Promise<unknown> {
     const response = await net.fetch(url, { signal: AbortSignal.timeout(8_000) });
     if (!response.ok) throw new HttpStatusError(response.status);
@@ -476,9 +492,10 @@ app.on('browser-window-focus', (_event, win) => {
 /**
  * Raises a system notification for a mention or a private message, but only
  * while no window of the kit's is in front: someone looking at the kit sees
- * the gold edge and the badge already. Clicking it brings the last window
- * back with that conversation open. Says whether it raised one, so chat's
- * rate limit counts only the banners that were shown.
+ * the gold edge and the badge already, or, with chat out of sight and the
+ * game on screen, the ping in the game's header. Clicking it brings the last
+ * window back with that conversation open. Says whether it raised one, so
+ * chat's rate limit counts only the banners that were shown.
  */
 function notifyMention(line: ChatLine): boolean {
     if (BrowserWindow.getFocusedWindow() !== null || !Notification.isSupported()) return false;
@@ -552,6 +569,7 @@ const windows = new ServerWindows(
                 worlds: worldsServiceFor(spec.server),
                 hiscores: hiscoresServiceFor(spec.server),
                 chat: chatView,
+                chatShown: () => chatShown(spec.id),
                 alwaysOnTop: () => appState.alwaysOnTop(),
                 confirmCloseGame: via => confirmCloseGame(spec, via),
                 setupsDir: join(userData, 'setups', slugify(spec.server.id)),
@@ -1498,6 +1516,18 @@ ipcMain.handle(IPC.chatSend, (_event, text: unknown) => {
 ipcMain.handle(IPC.chatSelect, (_event, channel: unknown) => {
     if (typeof channel !== 'string') return;
     chat?.select(channel);
+});
+
+/**
+ * The ping in the game's header, clicked: chat, open on the room the ping
+ * came in, beside the game or in a tab of its own. The room is read here
+ * rather than taken from the shell, so a click only ever opens one that chat
+ * already has.
+ */
+ipcMain.handle(IPC.chatOpenPing, event => {
+    const room = chat?.view().ping?.line.channel;
+    if (room !== undefined) chat?.select(room);
+    windowFor(event.sender)?.showChat();
 });
 
 /**
@@ -2986,8 +3016,11 @@ app.whenReady().then(async () => {
         }
     );
     // Every window's panel follows the one connection. Nothing is saved from
-    // here: chat's saved settings change only in the Settings tab.
+    // here: chat's saved settings change only in the Settings tab. A ping
+    // that arrives while chat is on screen is seen before any window reads
+    // the view, so no game header shows it even for the length of a push.
     chat.subscribe(() => {
+        if (chatOnScreen()) chat?.seePings();
         for (const sw of serverWindows.values()) sw.pushState();
     });
     loadCatalog();

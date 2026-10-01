@@ -20,7 +20,7 @@ import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuI
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, overlayFor, windowFrame } from './windowFrame';
-import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
+import { holdsGame, holdsTool, openWindowTabs, sharingWithoutPane } from './tabs';
 import { SETUP_PANES_MAX, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, type BuiltInSetupId } from './setups';
 import { loadShell, preloadPath } from './renderer';
@@ -167,6 +167,12 @@ export interface ServerWindowDeps {
      */
     chat: () => ChatView;
     /**
+     * Told as this window's state goes out with a chat pane in its front tab,
+     * before `chat` is read: whatever pinged you has been seen, so no game
+     * header, here or in another window, should still show it.
+     */
+    chatShown: () => void;
+    /**
      * Whether a window opened now should float above other apps, as the last
      * choice anywhere left it.
      */
@@ -242,6 +248,10 @@ export interface ServerWindow extends ServerWindowHandle {
      * Nothing on a window that is not Home server's.
      */
     showHomeServer(): void;
+    /** Whether a chat pane is on screen here: the tab in front holds one. */
+    showsChat(): boolean;
+    /** The game header's ping, clicked: chat's pane, added as `addPane` adds one, or in a new tab of its own when the active tab has no room for a column. */
+    showChat(): void;
     /** Raises the tab bar's Add pane menu at a point in the window. */
     showAddPaneMenu(x: number, y: number): void;
     /** Raises the tab bar's Setups menu at a point in the window. */
@@ -609,6 +619,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     function pushState(): void {
         if (shellView.webContents.isDestroyed()) return;
+        if (holdsTool(host.tree(), 'chat')) deps.chatShown();
         try {
             shellView.webContents.send(IPC.shellState, state());
         } catch (err) {
@@ -787,15 +798,19 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         win.setBounds(shrunkFrame(win.getBounds(), by, edge));
     }
 
-    function showHomeServer(): void {
-        if (!single) return;
-        const content: PaneContent = { kind: 'tool', tool: 'singleplayer' };
+    /** A tool's pane, added as `addPane` adds one, or in a new tab of its own when the active tab has no room for a column. */
+    function showTool(tool: ToolId): void {
+        const content: PaneContent = { kind: 'tool', tool };
         if (paneHolding(host.tree(), content) || canAppendColumn(host.tree(), rects.tree.width)) {
             addPane(content);
             return;
         }
         host.newTab();
         host.setContent(host.focusedPaneId(), content);
+    }
+
+    function showHomeServer(): void {
+        if (single) showTool('singleplayer');
     }
 
     /**
@@ -1699,6 +1714,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         close: () => win.close(),
         addPane,
         showHomeServer,
+        showsChat: () => holdsTool(host.tree(), 'chat'),
+        showChat: () => showTool('chat'),
         showAddPaneMenu,
         // Asked of the window rather than answered from a flag kept alongside
         // it. The window is where the state actually lives, so a copy here

@@ -378,6 +378,15 @@ chat is the kit's own reason to be open instead of a browser tab, and a pane
 nobody knows is there is a pane nobody opens. Closed, chat comes back from
 **Add pane** in the tab bar, as a column down the tab's right edge.
 
+While no chat pane is on screen in any window — closed, or in a tab behind the
+one you are looking at — a line that names you or a private message shows in
+the game pane's header, after the world: the newest one in gold, cut to fit,
+with how many more are waiting. Its tooltip has the whole line and the room.
+Clicking it opens chat on that room, as a column beside the game with the
+window growing to make room, as Add pane's does, or in a tab of its own when
+there is no room for one. It goes once chat is on screen again anywhere, or
+once you open its room.
+
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short
 lines, and at 320px almost every one of them wraps. Past about 560px the same

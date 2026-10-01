@@ -90,6 +90,20 @@ export interface ChatSettingsView {
     canSavePassword: boolean;
 }
 
+/**
+ * A line for you that nobody has seen: one that names you, or was said to you
+ * alone, since a chat pane was last on screen, in a room chat still counts it
+ * in. The game pane's header shows it while no chat pane is on screen.
+ */
+export interface ChatPing {
+    /** The newest of them. */
+    line: ChatLine;
+    /** Said to you alone, in a conversation or in Status, rather than naming you in a room. */
+    private: boolean;
+    /** How many more are waiting besides it. */
+    more: number;
+}
+
 /** What the Chat panel draws. Lines are for the active channel only. */
 export interface ChatView {
     status: ChatStatus;
@@ -103,6 +117,8 @@ export interface ChatView {
      * above it. Null otherwise. It stays while the tab stays open.
      */
     newFrom: number | null;
+    /** What pinged you while no chat pane was on screen, or null. Unlike `lines`, from any room. */
+    ping: ChatPing | null;
     /**
      * Why the connection failed, or why the server turned it away, in words
      * for a player; what the socket itself said is in Status. The panel shows
