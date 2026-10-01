@@ -367,6 +367,16 @@ export class ChatService {
     }
 
     /**
+     * No chat pane is on screen in any window: the open room counts what
+     * arrives from now on. Tells no subscriber, for the reason `seePings`
+     * does not, and has nothing to tell one: the change shows only in a
+     * chat pane, and none is on screen.
+     */
+    lookAway(): void {
+        this.client?.lookAway();
+    }
+
+    /**
      * The machine woke. Timers stand still while it sleeps, so the silence
      * count would pick up where it left off; this asks the server now instead,
      * since a sleep is the likeliest way for a socket to die without closing.

@@ -27,6 +27,8 @@ function fake(opts: Partial<ClientOpts> = {}): Fake {
         send: line => sent.push(line),
         ...opts
     });
+    // A chat pane on screen, as every test here assumes unless it says otherwise.
+    client.seePings();
     return {
         client,
         sent,
@@ -362,6 +364,130 @@ test('closing the room a ping came in takes the ping with it', () => {
     f.client.receive(':bob!b@h PRIVMSG mage :psst');
     f.client.close('bob');
     assert.equal(f.client.snapshot().ping, null);
+});
+
+// ── chat out of sight ─────────────────────────────────────────────────────
+
+test('a new client has seen nothing until a chat pane is on screen', () => {
+    const client = new IrcClient({ nick: 'mage', channels: ['#04scape'], now: () => 0, send: () => {} });
+    client.connecting();
+    client.opened();
+    client.receive(':irc.libera.chat 001 mage :Welcome');
+    client.receive(':bob!b@h PRIVMSG #04scape :before anyone looked');
+    assert.equal(client.snapshot().channels.find(c => c.name === '#04scape')?.unread, 1);
+});
+
+test('while chat is out of sight the open room counts what arrives, and chat on screen marks where it begins', () => {
+    const f = online();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :read on screen');
+    f.client.lookAway();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :while nobody looked');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :and again');
+    assert.equal(f.channel('#04scape').unread, 2);
+
+    f.client.seePings();
+    assert.equal(f.channel('#04scape').unread, 0, 'read by being on screen');
+    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'while nobody looked')?.id);
+});
+
+test('a mention in the open room while chat is out of sight is still counted after a ping elsewhere opens chat', () => {
+    const f = online({ channels: ['#LostHQ'] });
+    f.client.lookAway();
+    f.client.receive(':bob!b@h PRIVMSG #LostHQ :mage: are you there?');
+    f.client.receive(':Zezima!z@h PRIVMSG mage :psst');
+    assert.equal(f.client.snapshot().ping?.more, 1);
+
+    // The ping clicked: main opens chat on Zezima's conversation, then shows it.
+    f.client.select('Zezima');
+    f.client.seePings();
+    assert.equal(f.channel('Zezima').unread, 0);
+    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'psst')?.id);
+    assert.equal(f.channel('#LostHQ').unread, 1);
+    assert.equal(f.channel('#LostHQ').highlights, 1, 'gold on the rail');
+
+    f.client.select('#LostHQ');
+    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'mage: are you there?')?.id);
+});
+
+test('a room opened while chat is out of sight is read only once chat is on screen', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.lookAway();
+    f.client.receive(':bob!b@h PRIVMSG #other :mage: over here');
+    f.client.select('#other');
+    f.client.receive(':bob!b@h PRIVMSG #other :still here');
+    assert.equal(f.channel('#other').unread, 2);
+    assert.equal(f.channel('#other').highlights, 1);
+    assert.notEqual(f.client.snapshot().ping, null, 'still waiting in the game header');
+
+    f.client.seePings();
+    assert.equal(f.channel('#other').unread, 0);
+    assert.equal(f.channel('#other').highlights, 0);
+    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'mage: over here')?.id);
+});
+
+test('chat looking away again changes nothing about where the open room was left', () => {
+    const f = online();
+    f.client.lookAway();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :first while away');
+    f.client.lookAway();
+    f.client.receive(':bob!b@h PRIVMSG #04scape :second');
+    f.client.seePings();
+    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'first while away')?.id);
+});
+
+test('chat seen again while already on screen leaves the divider where it was', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #other :while you were away');
+    f.client.select('#other');
+    const divider = f.client.snapshot().newFrom;
+    assert.notEqual(divider, null);
+    f.client.receive(':bob!b@h PRIVMSG #other :and now');
+    f.client.seePings();
+    assert.equal(f.client.snapshot().newFrom, divider);
+});
+
+test('chat out of sight and back with nothing new draws no divider, as leaving a room and coming back does', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #other :hi');
+    f.client.select('#other');
+    assert.notEqual(f.client.snapshot().newFrom, null);
+    f.client.lookAway();
+    f.client.seePings();
+    assert.equal(f.client.snapshot().newFrom, null);
+});
+
+test('a mention read in the open room is not counted once chat is out of sight', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
+    f.client.lookAway();
+    f.client.select('#other');
+    assert.equal(f.channel('#04scape').unread, 0);
+    assert.equal(f.channel('#04scape').highlights, 0);
+});
+
+test("the kit's own word in Status counts while chat is out of sight, though Status is open", () => {
+    const f = fake({ channels: [] });
+    f.client.lookAway();
+    f.client.connecting();
+    f.client.opened();
+    f.client.receive(':irc.libera.chat 432 * mage :Erroneous Nickname');
+    assert.equal(f.client.snapshot().active, SERVER_LOG);
+    assert.equal(f.channel(SERVER_LOG).unread, 1);
+});
+
+test('a room taken away while chat is out of sight hands over to Status without reading it', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.select(SERVER_LOG);
+    f.client.select('#04scape');
+    f.client.lookAway();
+    f.client.receive(':irc.libera.chat NOTICE mage :maintenance at noon');
+    f.client.receive(':mage!m@h PART #04scape');
+    assert.equal(f.client.snapshot().active, SERVER_LOG);
+    assert.equal(f.channel(SERVER_LOG).unread, 1);
+
+    f.client.seePings();
+    assert.equal(f.channel(SERVER_LOG).unread, 0);
+    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text.includes('maintenance at noon'))?.id);
 });
 
 // ── churn and the New divider ─────────────────────────────────────────────

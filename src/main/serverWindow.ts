@@ -173,6 +173,12 @@ export interface ServerWindowDeps {
      */
     chatShown: () => void;
     /**
+     * Told as this window's state goes out without a chat pane in its front
+     * tab. If no other window shows one either, the room chat has open is no
+     * longer being read, and counts what arrives as any other room does.
+     */
+    chatHidden: () => void;
+    /**
      * Whether a window opened now should float above other apps, as the last
      * choice anywhere left it.
      */
@@ -620,6 +626,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     function pushState(): void {
         if (shellView.webContents.isDestroyed()) return;
         if (holdsTool(host.tree(), 'chat')) deps.chatShown();
+        else deps.chatHidden();
         try {
             shellView.webContents.send(IPC.shellState, state());
         } catch (err) {

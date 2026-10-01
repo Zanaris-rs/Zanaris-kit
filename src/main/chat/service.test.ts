@@ -882,6 +882,24 @@ test('with no connection ever made there is no ping to see', () => {
     const service = new ChatService({ ...SETTINGS, nick: null }, fake().io);
     assert.equal(service.view().ping, null);
     assert.equal(service.seePings(), false);
+    service.lookAway(); // and nothing to look away from
+});
+
+test('chat out of sight is told to the client, and to no subscriber', () => {
+    const f = fake();
+    const service = new ChatService({ ...SETTINGS, nick: 'mage' }, f.io);
+    f.register();
+    service.seePings();
+    f.line(`:bob!b@h PRIVMSG ${LOBBY} :on screen`);
+    const open = (): number | undefined => service.view().channels.find(c => c.name === LOBBY)?.unread;
+    assert.equal(open(), 0);
+
+    let pushes = 0;
+    service.subscribe(() => pushes++);
+    service.lookAway();
+    assert.equal(pushes, 0, 'main tells every window itself, in the order it needs');
+    f.line(`:bob!b@h PRIVMSG ${LOBBY} :out of sight`);
+    assert.equal(open(), 1);
 });
 
 test('a conversation can be closed like a channel, and is never parted', () => {

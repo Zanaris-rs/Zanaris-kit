@@ -409,6 +409,15 @@ function chatShown(from: number): void {
     for (const [id, sw] of serverWindows) if (id !== from) sw.pushState();
 }
 
+/**
+ * A window is sending its state without a chat pane in its front tab, or has
+ * closed. When no window shows one, chat is out of sight, and the room it
+ * has open counts what arrives as any other room does.
+ */
+function chatHidden(): void {
+    if (!chatOnScreen()) chat?.lookAway();
+}
+
 async function fetchJson(url: string): Promise<unknown> {
     const response = await net.fetch(url, { signal: AbortSignal.timeout(8_000) });
     if (!response.ok) throw new HttpStatusError(response.status);
@@ -555,6 +564,8 @@ const windows = new ServerWindows(
             () => {
                 serverWindows.delete(spec.id);
                 byShell.delete(sw.shellContentsId);
+                // A window closing with chat in front may have held the last chat pane on screen.
+                chatHidden();
                 log(`[main] closed ${spec.title}`);
                 onClosed();
                 // Focus lands somewhere else, or nowhere, and the menu's Always on
@@ -570,6 +581,7 @@ const windows = new ServerWindows(
                 hiscores: hiscoresServiceFor(spec.server),
                 chat: chatView,
                 chatShown: () => chatShown(spec.id),
+                chatHidden,
                 alwaysOnTop: () => appState.alwaysOnTop(),
                 confirmCloseGame: via => confirmCloseGame(spec, via),
                 setupsDir: join(userData, 'setups', slugify(spec.server.id)),

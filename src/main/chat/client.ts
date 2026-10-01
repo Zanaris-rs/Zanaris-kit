@@ -210,6 +210,13 @@ export class IrcClient {
     private lastId = 0;
     /** The latest line id when a chat pane was last on screen. No line up to it is a ping. */
     private pingsSeen = 0;
+    /**
+     * A chat pane is on screen, in some window. Only then is the open room
+     * being read; out of sight, it counts what arrives as any other room
+     * does. False until main says otherwise, since nobody has seen anything
+     * before a pane shows it.
+     */
+    private onScreen = false;
     private nickTries = 0;
     /** The nick a registration's underscores were added to, so giving up names the one that was asked for. */
     private triedFrom: string | null = null;
@@ -647,7 +654,7 @@ export class IrcClient {
      */
     private told(text: string): void {
         const chan = this.push(SERVER_LOG, 'system', null, text);
-        if (!same(chan.name, this.activeName)) chan.unread++;
+        if (!this.reading(chan)) chan.unread++;
     }
 
     /** Ends the attempt for a reason retrying cannot change. Whoever holds the socket reads it from turnedAway(). */
@@ -1131,39 +1138,80 @@ export class IrcClient {
     }
 
     /**
-     * Opens a tab. The one being left remembers where it was left and forgets
-     * what it had counted, a mention read while it was open included. The one
-     * being opened, if anything worth reading arrived while it was left, marks
-     * the first line since then for the New divider. Opening the tab already
-     * open changes neither.
+     * Opens a tab. With chat on screen, the one being left is left (`leave`)
+     * and the one being opened is read (`read`). Opening the tab already open
+     * changes nothing.
+     *
+     * With chat out of sight, neither is being read, so only which one is
+     * open changes. The one left keeps what it counted, and the one opened is
+     * read when a chat pane is next on screen (`seePings`). That is how a
+     * ping or a notification, which opens chat on its room before chat is
+     * shown, leaves the gold on the room that was open.
      */
     select(channel: string): void {
         const chan = this.chan(channel);
         const left = this.chans.get(key(this.activeName));
-        if (left !== chan) {
-            if (left !== undefined) {
-                left.seen = this.lastId;
-                left.newFrom = null;
-                left.highlights = 0;
-            }
-            chan.newFrom = chan.unread > 0 ? (chan.lines.find(l => l.id > chan.seen)?.id ?? null) : null;
-        }
         this.activeName = chan.name;
-        chan.unread = 0;
-        chan.highlights = 0;
+        if (!this.onScreen || left === chan) return;
+        if (left !== undefined) this.leave(left);
+        this.read(chan);
     }
 
     /**
      * A chat pane is on screen: every line for you so far has been seen,
      * whichever room it came in. No room's count is cleared, as opening one
      * clears it: a pane shows one room, and the rail's gold is how it points
-     * at the rest. Says whether a ping was waiting, since only then has
-     * anything changed.
+     * at the rest.
+     *
+     * The room that one pane shows is the exception, when chat was out of
+     * sight until now. It is read as opening it reads it, so the New divider
+     * marks what arrived while nobody looked.
+     *
+     * Says whether a ping was waiting. That is all a window not showing chat
+     * can see change.
      */
     seePings(): boolean {
         const waiting = this.pings().length > 0;
         this.pingsSeen = this.lastId;
+        if (!this.onScreen) {
+            this.onScreen = true;
+            const open = this.chans.get(key(this.activeName));
+            if (open !== undefined) this.read(open);
+        }
         return waiting;
+    }
+
+    /**
+     * No chat pane is on screen any more, in any window. The open room is
+     * left as opening another leaves it, so what arrives from now on is
+     * counted and is marked when chat is back. Told again while chat is
+     * already out of sight, nothing changes, so where the room was left
+     * stays put.
+     */
+    lookAway(): void {
+        if (!this.onScreen) return;
+        this.onScreen = false;
+        const open = this.chans.get(key(this.activeName));
+        if (open !== undefined) this.leave(open);
+    }
+
+    /** A line arriving here is read as it arrives: its room is open, and a chat pane is on screen. */
+    private reading(chan: Chan): boolean {
+        return this.onScreen && same(chan.name, this.activeName);
+    }
+
+    /** A room stops being read: it remembers where, and forgets what it had counted, a mention read while it was open included. */
+    private leave(chan: Chan): void {
+        chan.seen = this.lastId;
+        chan.newFrom = null;
+        chan.highlights = 0;
+    }
+
+    /** A room starts being read: if anything worth reading arrived since it was left, the first line since then is marked for the New divider. */
+    private read(chan: Chan): void {
+        chan.newFrom = chan.unread > 0 ? (chan.lines.find(l => l.id > chan.seen)?.id ?? null) : null;
+        chan.unread = 0;
+        chan.highlights = 0;
     }
 
     /** The channels we mean to be in, which is what to join on the next 001. */
@@ -1237,7 +1285,7 @@ export class IrcClient {
 
     private forget(channel: string): void {
         this.chans.delete(key(channel));
-        // Status is opened as a select would open it, so what it counted is read and what arrived while it was left is marked.
+        // Status is opened as a select would open it: with chat on screen, what it counted is read and what arrived while it was left is marked; out of sight, that waits for chat to be shown.
         if (same(this.activeName, channel)) this.select(SERVER_LOG);
         // A conversation closed is a slot free: the next time they run out is news again.
         if (isQuery(channel)) this.crowded = false;
@@ -1257,12 +1305,14 @@ export class IrcClient {
     /**
      * A line from the server, which is the only kind that badges the rail.
      * Membership churn goes through push() instead: a badge should promise
-     * something worth reading, not that someone reconnected.
+     * something worth reading, not that someone reconnected. It counts in
+     * every room but the one being read, and none is while chat is out of
+     * sight.
      */
     private incoming(channel: string, kind: ChatLine['kind'], nick: string | null, text: string, always = false): void {
         const highlight = always || (this.nickName !== null && mentions(text, this.nickName));
         const chan = this.push(channel, kind, nick, text, highlight);
-        if (!same(chan.name, this.activeName)) chan.unread++;
+        if (!this.reading(chan)) chan.unread++;
         if (highlight) {
             chan.highlights++;
             this.opts.onHighlight?.({ ...chan.lines.at(-1)! });

@@ -56,8 +56,14 @@ export interface ChatChannel {
     name: string;
     /** Highest rank first, then by name, as the server last reported them. */
     users: ChatUser[];
+    /** Lines worth reading that arrived while this tab was not being read: not open, or open with no chat pane on screen. */
     unread: number;
-    /** Lines for you — naming you, or said to you alone — since this tab was last opened or left. While there are any, its unread count is drawn in gold. */
+    /**
+     * Lines for you — naming you, or said to you alone — since this tab was
+     * last opened or left. Both happen only with a chat pane on screen, and
+     * chat going out of sight leaves the open tab and coming back opens it.
+     * While there are any, its unread count is drawn in gold.
+     */
     highlights: number;
     topic: ChatTopic | null;
     /** The channel's flags as "+nt", letters only — a key is not for showing. Null until the server has said. */
@@ -114,7 +120,9 @@ export interface ChatView {
     /**
      * The id of the first line that arrived in the open tab since it was last
      * left, when anything counted as unread did: the log draws a New divider
-     * above it. Null otherwise. It stays while the tab stays open.
+     * above it. Null otherwise. Opening another tab leaves it, and so does
+     * chat going out of sight, so it stays while the tab stays open with a
+     * chat pane on screen.
      */
     newFrom: number | null;
     /** What pinged you while no chat pane was on screen, or null. Unlike `lines`, from any room. */

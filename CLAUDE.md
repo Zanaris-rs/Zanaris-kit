@@ -287,13 +287,24 @@ hidden (`hideSecret`).
 **A ping shows in the game's header while chat is out of sight.** A line
 that names you or is said to you alone, arriving while no window's front
 tab holds a chat pane, stays after the game's read-out until a chat pane is
-on screen anywhere (`IrcClient.seePings`) or its room is opened. Main counts
+on screen anywhere (`IrcClient.seePings`). Main counts
 pings seen before any window reads chat's view — when a window sends its
 state with chat in front (`chatShown`), and when chat changes
 (`chatOnScreen`) — so no header ever shows one chat is already showing. A
 click opens chat on the ping's room through `showTool`, as the Sharing
 button opens Home server. The system notification is separate, and is still
 only for a kit in the background.
+
+**The open room is read only while a chat pane is on screen.** Out of sight,
+it counts what arrives, and keeps its gold, as any other room does, so the
+rail and the New divider point at what nobody saw. A window sending its state
+without chat in front, or closing, tells main (`chatHidden`), and when no
+window shows chat the client is told so (`IrcClient.lookAway`), which leaves
+the open room as opening another would. `seePings` is the way back, and reads
+the open room as opening it would. A `select` while out of sight only changes
+which room is open, so a ping or a notification that opens chat on its room
+leaves the gold where it was. The client starts out of sight: nothing has
+been seen before a pane shows it.
 
 **Links in the log open only if `linkTarget` says http or https**, read again
 in main whatever the shell sent: a chat line is a stranger's writing.
