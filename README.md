@@ -355,10 +355,11 @@ People coming and going is folded: a run of joins, parts, quits and renames is
 one faint line, "3 joined, 2 left", which opens to the lines on a click. Coming
 back to a tab where something arrived while you were away draws a gold **New**
 rule above the first line you missed, until you leave it again. Chat out of
-sight counts as away, even for the tab it had open: while no chat pane is on
-screen in any window, what arrives there is counted like anywhere else, and
-the rule marks it once chat is back. What you have half-typed stays with the
-tab you typed it in.
+sight counts as away, even for the tab it had open: while no chat pane shows
+the conversation in any window — closed, behind another tab, or on its
+Settings page — what arrives there is counted like anywhere else, and the
+rule marks it once chat is back. What you have half-typed stays with the tab
+you typed it in.
 
 Click a name, in the list or the log, for a menu: message them, mention them,
 look them up, or ignore them. Ignoring hides someone's messages, notices and
@@ -381,15 +382,16 @@ chat is the kit's own reason to be open instead of a browser tab, and a pane
 nobody knows is there is a pane nobody opens. Closed, chat comes back from
 **Add pane** in the tab bar, as a column down the tab's right edge.
 
-While no chat pane is on screen in any window — closed, or in a tab behind the
-one you are looking at — a line that names you or a private message shows in
-the game pane's header, after the world: the newest one in gold, cut to fit,
-with how many more are waiting. Its tooltip has the whole line and the room.
-Clicking it opens chat on that room, as a column beside the game with the
-window growing to make room, as Add pane's does, or in a tab of its own when
-there is no room for one. It goes once chat is on screen again anywhere, and
-the rail still counts in gold whatever else was for you, in the room chat had
-open as in any other.
+While no chat pane shows the conversation in any window — closed, in a tab
+behind the one you are looking at, or on its Settings page — a line that
+names you or a private message shows in the game pane's header, after the
+world: the newest one in gold, cut to fit, with how many more are waiting.
+Its tooltip has the whole line and the room. Clicking it opens chat on that
+room, as a column beside the game with the window growing to make room, as
+Add pane's does, or in a tab of its own when there is no room for one, and
+on the conversation if the pane was on Settings. It goes once chat is on
+screen again anywhere, and the rail still counts in gold whatever else was
+for you, in the room chat had open as in any other.
 
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short

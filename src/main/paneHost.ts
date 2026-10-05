@@ -29,6 +29,7 @@ import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
 import { canClosePane, paneContentItems, paneName, showsClocks } from './paneMenu.ts';
 import { closeTab, closingTab, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, selectTab, type TabClosing, type TabSet } from './tabs.ts';
 import { instantiateLayout, type StoredNode } from './layoutFile.ts';
+import type { ChatPage } from '../shared/chat.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
 import { troubleNotice, type PaneTrouble } from '../shared/paneNotice.ts';
@@ -87,6 +88,8 @@ export interface PaneHostDeps {
     contextMenu: (paneId: string, x: number, y: number) => void;
     /** The ground a page view shows before its page draws: the theme's `window`. A getter, since the theme can change while the window is open. */
     background: () => string;
+    /** A chat pane's page, Settings or the conversation, which the window keeps. Null for any other pane. */
+    chatPage: (paneId: string) => ChatPage | null;
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
@@ -453,6 +456,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                     focused: paneId === focused(),
                     closable: canClosePane(tree, paneId),
                     page: pageStates.get(paneId) ?? null,
+                    chatPage: deps.chatPage(paneId),
                     // Only the launcher draws a list; every other pane reaches
                     // the same one through its header, which main pops as a
                     // native menu and builds on the spot.

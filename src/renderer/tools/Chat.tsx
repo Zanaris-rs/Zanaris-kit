@@ -1,8 +1,8 @@
 import { Fragment, useId, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
-import { SERVER_LOG, type ChatLine, type ChatStatus, type ChatView, type ViewChannel } from '../../shared/chat';
+import { SERVER_LOG, type ChatLine, type ChatPage, type ChatStatus, type ChatView, type ViewChannel } from '../../shared/chat';
 import { COMMANDS, commandHint, commandMenu, complete, menuEnter, recall, remember, takeCommand, type CommandHelp, type CommandMenu, type Completion, type Recall } from '../../shared/chatInput';
 import { foldLog, type LogItem } from '../../shared/chatLog';
-import { clockTime, isConnectionWanted } from '../../shared/chatSettings';
+import { clockTime } from '../../shared/chatSettings';
 import { segments } from '../../shared/chatText';
 import { foldName, isChannel, sameName } from '../../shared/ircNames';
 import { Caret, Gear, Info, People } from '../icons';
@@ -807,19 +807,20 @@ const NARROW_BELOW = 200;
  * The Chat tool: one connection, shared by every window this kit has open.
  *
  * Which page a pane shows — Settings or a channel — is the pane's own, so two
- * chat panes can have one on Settings while the other follows the talk. Which
- * channel is open is app-wide, as it always was, since it is the client's.
- * With no nick yet, or nothing to show but Settings, Settings is the page.
+ * chat panes can have one on Settings while the other follows the talk. Main
+ * keeps it, since a pane on Settings shows no room and counts as chat out of
+ * sight; this only asks main to change it. Which channel is open is
+ * app-wide, as it always was, since it is the client's. With no nick yet, or
+ * nothing to show but Settings, Settings is the page.
  *
  * So is what fills its log's space, and whether a wide pane shows the user
  * list: People and Info, at the end of the tab row, change them. A different
  * channel, or a line sent, brings the log back — you chose a room to read it,
  * and you spoke to be part of it.
  */
-export default function Chat({ view, width }: { view: ChatView; width: number }): ReactNode {
+export default function Chat({ view, width, paneId, page }: { view: ChatView; width: number; paneId: string; page: ChatPage }): ReactNode {
     const wide = width >= WIDE_ENOUGH;
     const narrow = width < NARROW_BELOW;
-    const [page, setPage] = useState<'settings' | 'chat'>(() => (view.needsNick || !isConnectionWanted(view.status) ? 'settings' : 'chat'));
     const onSettings = page === 'settings' || view.needsNick || view.channels.length === 0;
     const [swap, setSwap] = useState<Swap>('log');
     const [sidebar, setSidebar] = useState(true);
@@ -842,10 +843,12 @@ export default function Chat({ view, width }: { view: ChatView; width: number })
             <ChatTabs
                 view={view}
                 onSettings={onSettings}
-                showSettings={() => setPage('settings')}
+                showSettings={() => void window.zanaris.chat.showPage(paneId, 'settings')}
                 showChannel={name => {
-                    setPage('chat');
-                    void window.zanaris.chat.select(name);
+                    // The room first, then the page: from Settings, a select
+                    // while chat is out of sight leaves the room that was
+                    // open unread, and the page then reads the one chosen.
+                    void window.zanaris.chat.select(name).then(() => window.zanaris.chat.showPage(paneId, 'chat'));
                 }}
                 end={
                     channel === null ? null : (
@@ -867,7 +870,7 @@ export default function Chat({ view, width }: { view: ChatView; width: number })
             />
             <Status view={view} onSettings={onSettings} />
             {onSettings ? (
-                <ChatSettings view={view} wide={wide} narrow={narrow} onConnected={() => setPage('chat')} />
+                <ChatSettings view={view} wide={wide} narrow={narrow} onConnected={() => void window.zanaris.chat.showPage(paneId, 'chat')} />
             ) : (
                 <Conversation view={view} wide={wide} narrow={narrow} shown={shown} sidebar={sidebar} onSent={() => setSwap('log')} />
             )}

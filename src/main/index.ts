@@ -394,26 +394,27 @@ function chatView(): ChatView {
 }
 
 /**
- * The windows whose state last went out with a chat pane in their front tab.
- * Kept from what each window says rather than asked of `serverWindows`: a
- * window's first state goes out from inside `createServerWindow`, before it
- * is in that map, and a new window opens with chat in front. Asked of the
- * map, the windows pushed by that window's `chatShown` would find chat on
- * screen nowhere, and look away from what it had just read.
+ * The windows whose state last went out with a chat pane showing the
+ * conversation in their front tab. Kept from what each window says rather
+ * than asked of `serverWindows`: a window's first state goes out from inside
+ * `createServerWindow`, before it is in that map, and a new window opens with
+ * chat in front. Asked of the map, the windows pushed by that window's
+ * `chatShown` would find chat on screen nowhere, and look away from what it
+ * had just read.
  */
 const chatInFront = new Set<number>();
 
-/** Whether a chat pane is on screen anywhere: in the front tab of any window, since one conversation serves them all. */
+/** Whether chat is on screen anywhere: a chat pane showing the conversation in the front tab of any window, since one conversation serves them all. */
 function chatOnScreen(): boolean {
     return chatInFront.size > 0;
 }
 
 /**
- * A window is sending its state with a chat pane in its front tab, so
- * whatever pinged you has been seen, and the room chat has open is being
- * read. When that clears a ping, every other window is told, since their
- * game headers still show it; the one showing chat reads the view after
- * this, and needs no push of its own.
+ * A window is sending its state with a chat pane showing the conversation in
+ * its front tab, so whatever pinged you has been seen, and the room chat has
+ * open is being read. When that clears a ping, every other window is told,
+ * since their game headers still show it; the one showing chat reads the
+ * view after this, and needs no push of its own.
  */
 function chatShown(from: number): void {
     chatInFront.add(from);
@@ -422,9 +423,10 @@ function chatShown(from: number): void {
 }
 
 /**
- * A window is sending its state without a chat pane in its front tab, or has
- * closed. When no window shows one, chat is out of sight, and the room it
- * has open counts what arrives as any other room does.
+ * A window is sending its state with no chat pane showing the conversation
+ * in its front tab, or has closed. When no window shows it, chat is out of
+ * sight, and the room it has open counts what arrives as any other room
+ * does.
  */
 function chatHidden(from: number): void {
     chatInFront.delete(from);
@@ -575,10 +577,10 @@ const windows = new ServerWindows(
         const sw = createServerWindow(
             spec,
             () => {
-                // A window closing with chat in front may have held the last chat
-                // pane on screen. First, since it needs nothing of `sw`: a window
-                // that threw after its first layout said it had chat in front, and
-                // is closed with no `sw` for the lines below to read.
+                // A window closing may have been the last to show the
+                // conversation. First, since it needs nothing of `sw`: a window
+                // that threw after its first layout may have said it showed it,
+                // and is closed with no `sw` for the lines below to read.
                 chatHidden(spec.id);
                 serverWindows.delete(spec.id);
                 byShell.delete(sw.shellContentsId);
@@ -1556,6 +1558,16 @@ ipcMain.handle(IPC.chatOpenPing, event => {
     const room = chat?.view().ping?.line.channel;
     if (room !== undefined) chat?.select(room);
     windowFor(event.sender)?.showChat();
+});
+
+/**
+ * A chat pane's gear, a room in its tabs, or Connect on its Settings: that
+ * pane shows Settings or the conversation. Kept in main rather than the
+ * shell, since a pane on Settings shows no room and is chat out of sight.
+ */
+ipcMain.handle(IPC.chatShowPage, (event, paneId: unknown, page: unknown) => {
+    if (typeof paneId !== 'string' || (page !== 'settings' && page !== 'chat')) return;
+    windowFor(event.sender)?.showChatPage(paneId, page);
 });
 
 /**

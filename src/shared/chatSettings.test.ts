@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AUTO_JOIN_MAX, IGNORE_MAX, readIgnore, sameNames, PASSWORD_MAX, channelProblem, clockTime, isNick, formatAutoJoin, isConnectionWanted, passwordProblem, rankTone, readSettingsDraft, sameSettings } from './chatSettings.ts';
+import { AUTO_JOIN_MAX, IGNORE_MAX, readIgnore, sameNames, PASSWORD_MAX, channelProblem, clockTime, isNick, firstPage, formatAutoJoin, isConnectionWanted, passwordProblem, rankTone, readSettingsDraft, sameSettings } from './chatSettings.ts';
 import { DEFAULT_AUTO_JOIN } from './chat.ts';
 
 // ── the form ──────────────────────────────────────────────────────────────
@@ -113,6 +113,13 @@ test('a channel added or removed is a change', () => {
 test('only offline is a connection to start; reconnecting is one to stop', () => {
     assert.equal(isConnectionWanted('offline'), false);
     for (const status of ['connecting', 'registering', 'online', 'reconnecting'] as const) assert.equal(isConnectionWanted(status), true, status);
+});
+
+test('a chat pane starts on Settings with no nick or no connection wanted, and on the conversation otherwise', () => {
+    assert.equal(firstPage({ needsNick: true, status: 'offline' }), 'settings');
+    assert.equal(firstPage({ needsNick: false, status: 'offline' }), 'settings', 'Connect is on Settings');
+    assert.equal(firstPage({ needsNick: false, status: 'reconnecting' }), 'chat');
+    assert.equal(firstPage({ needsNick: false, status: 'online' }), 'chat');
 });
 
 // ── what the log draws ────────────────────────────────────────────────────

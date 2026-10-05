@@ -30,6 +30,7 @@ const api: ZanarisApi = {
         disconnect: () => ipcRenderer.invoke(IPC.chatDisconnect),
         openLink: url => ipcRenderer.invoke(IPC.chatOpenLink, url),
         openPing: () => ipcRenderer.invoke(IPC.chatOpenPing),
+        showPage: (paneId, page) => ipcRenderer.invoke(IPC.chatShowPage, paneId, page),
         userMenu: (nick, x, y) => ipcRenderer.invoke(IPC.chatUserMenu, nick, x, y)
     },
     worlds: {

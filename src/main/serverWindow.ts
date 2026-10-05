@@ -3,7 +3,8 @@ import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'n
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId, type UpdateButton } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
-import type { ChatView } from '../shared/chat';
+import type { ChatPage, ChatView } from '../shared/chat';
+import { firstPage } from '../shared/chatSettings';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import { lineTitle, type HomeServerView } from '../shared/homeserver';
 import type { ShareView } from '../shared/share';
@@ -20,7 +21,7 @@ import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuI
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, overlayFor, windowFrame } from './windowFrame';
-import { holdsGame, holdsTool, openWindowTabs, sharingWithoutPane } from './tabs';
+import { chatPages, holdsGame, openWindowTabs, readsChat, sharingWithoutPane } from './tabs';
 import { SETUP_PANES_MAX, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, type BuiltInSetupId } from './setups';
 import { loadShell, preloadPath } from './renderer';
@@ -167,17 +168,20 @@ export interface ServerWindowDeps {
      */
     chat: () => ChatView;
     /**
-     * Told as this window's state goes out with a chat pane in its front tab,
-     * before `chat` is read: whatever pinged you has been seen, so no game
-     * header, here or in another window, should still show it, and the room
-     * chat has open is being read. Told from the window's first layout on,
-     * which runs before main has the window in its map.
+     * Told as this window's state goes out with a chat pane showing the
+     * conversation in its front tab, before `chat` is read: whatever pinged
+     * you has been seen, so no game header, here or in another window, should
+     * still show it, and the room chat has open is being read. Told from the
+     * window's first layout on, which runs before main has the window in its
+     * map.
      */
     chatShown: () => void;
     /**
-     * Told as this window's state goes out without a chat pane in its front
-     * tab. If no other window shows one either, the room chat has open is no
-     * longer being read, and counts what arrives as any other room does.
+     * Told as this window's state goes out with no chat pane showing the
+     * conversation in its front tab: none at all, or only ones on their
+     * Settings page. If no other window shows it either, the room chat has
+     * open is no longer being read, and counts what arrives as any other room
+     * does.
      */
     chatHidden: () => void;
     /**
@@ -256,8 +260,14 @@ export interface ServerWindow extends ServerWindowHandle {
      * Nothing on a window that is not Home server's.
      */
     showHomeServer(): void;
-    /** The game header's ping, clicked: chat's pane, added as `addPane` adds one, or in a new tab of its own when the active tab has no room for a column. */
+    /**
+     * The game header's ping, clicked: chat's pane, added as `addPane` adds
+     * one, or in a new tab of its own when the active tab has no room for a
+     * column, and on the conversation whichever page it was on.
+     */
     showChat(): void;
+    /** A chat pane's gear, a room in its tabs, or Connect on its Settings: that pane shows Settings or the conversation. Nothing for a pane that holds no chat. */
+    showChatPage(paneId: string, page: ChatPage): void;
     /** Raises the tab bar's Add pane menu at a point in the window. */
     showAddPaneMenu(x: number, y: number): void;
     /** Raises the tab bar's Setups menu at a point in the window. */
@@ -550,6 +560,20 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     gameView = makeGameView();
 
     /**
+     * Each chat pane's page, Settings or the conversation, in every tab: the
+     * shell shows it, and a pane on Settings is chat out of sight. Read only
+     * through `currentChatPages`, which brings it up to date with the tabs
+     * first (`tabs.chatPages`), so a chat pane new since starts on chat's
+     * `firstPage` and one gone drops out.
+     */
+    let chatPageOf = new Map<string, ChatPage>();
+
+    function currentChatPages(): ReadonlyMap<string, ChatPage> {
+        chatPageOf = chatPages(host.trees(), chatPageOf, () => firstPage(deps.chat()));
+        return chatPageOf;
+    }
+
+    /**
      * The active tab's panes and the views inside them. Every rule about the
      * tree is in `paneTree`, which is pure and tested; this end of it only
      * names the gesture and lets the window lay out around the answer.
@@ -567,7 +591,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         changed: () => applyLayout(),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState(),
-        background: () => deps.theme().colors.window
+        background: () => deps.theme().colors.window,
+        chatPage: paneId => currentChatPages().get(paneId) ?? null
     });
 
     // ── labels ───────────────────────────────────────────────────────────
@@ -625,7 +650,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     function pushState(): void {
         if (shellView.webContents.isDestroyed()) return;
-        if (holdsTool(host.tree(), 'chat')) deps.chatShown();
+        if (readsChat(host.tree(), currentChatPages())) deps.chatShown();
         else deps.chatHidden();
         try {
             shellView.webContents.send(IPC.shellState, state());
@@ -818,6 +843,19 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     function showHomeServer(): void {
         if (single) showTool('singleplayer');
+    }
+
+    function showChat(): void {
+        showTool('chat');
+        const shown = paneHolding(host.tree(), { kind: 'tool', tool: 'chat' });
+        if (shown !== null) showChatPage(shown, 'chat');
+    }
+
+    function showChatPage(paneId: string, page: ChatPage): void {
+        const pages = currentChatPages();
+        if (!pages.has(paneId) || pages.get(paneId) === page) return;
+        chatPageOf.set(paneId, page);
+        pushState();
     }
 
     /**
@@ -1721,7 +1759,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         close: () => win.close(),
         addPane,
         showHomeServer,
-        showChat: () => showTool('chat'),
+        showChat,
+        showChatPage,
         showAddPaneMenu,
         // Asked of the window rather than answered from a flag kept alongside
         // it. The window is where the state actually lives, so a copy here

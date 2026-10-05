@@ -357,8 +357,8 @@ export class ChatService {
     }
 
     /**
-     * A chat pane is on screen in some window: whatever pinged you has been
-     * seen, and the room chat has open is read if chat was out of sight until
+     * A chat pane shows the conversation in some window: whatever pinged you
+     * has been seen, and the room chat has open is read if chat was out of sight until
      * now. Says whether a ping was waiting, and tells no subscriber: main
      * calls this while it is telling the windows, and a push from in here
      * would reach some of them with the view it is about to replace.
@@ -368,10 +368,10 @@ export class ChatService {
     }
 
     /**
-     * No chat pane is on screen in any window: the open room counts what
-     * arrives from now on. Tells no subscriber, for the reason `seePings`
-     * does not, and has nothing to tell one: the change shows only in a
-     * chat pane, and none is on screen.
+     * No chat pane shows the conversation in any window: the open room
+     * counts what arrives from now on. Tells no subscriber, for the reason
+     * `seePings` does not, and has nothing to tell one: the change shows only
+     * in a chat pane's conversation, and none is on screen.
      */
     lookAway(): void {
         this.client?.lookAway();

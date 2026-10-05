@@ -56,12 +56,13 @@ export interface ChatChannel {
     name: string;
     /** Highest rank first, then by name, as the server last reported them. */
     users: ChatUser[];
-    /** Lines worth reading that arrived while this tab was not being read: not open, or open with no chat pane on screen. */
+    /** Lines worth reading that arrived while this tab was not being read: not open, or open with no chat pane showing the conversation. */
     unread: number;
     /**
      * Lines for you — naming you, or said to you alone — since this tab was
-     * last opened or left. Both happen only with a chat pane on screen, and
-     * chat going out of sight leaves the open tab and coming back opens it.
+     * last opened or left. Both happen only while a chat pane shows the
+     * conversation, and chat going out of sight leaves the open tab and
+     * coming back opens it.
      * While there are any, its unread count is drawn in gold.
      */
     highlights: number;
@@ -98,8 +99,8 @@ export interface ChatSettingsView {
 
 /**
  * A line for you that nobody has seen: one that names you, or was said to you
- * alone, since a chat pane was last on screen, in a room chat still counts it
- * in. The game pane's header shows it while no chat pane is on screen.
+ * alone, since a chat pane last showed the conversation, in a room chat still
+ * counts it in. The game pane's header shows it while none does.
  */
 export interface ChatPing {
     /** The newest of them. */
@@ -109,6 +110,13 @@ export interface ChatPing {
     /** How many more are waiting besides it. */
     more: number;
 }
+
+/**
+ * What one chat pane shows: its Settings page or the conversation. Each
+ * pane's own, and kept in main, since a pane on Settings shows no room and
+ * so counts as chat out of sight.
+ */
+export type ChatPage = 'settings' | 'chat';
 
 /** What the Chat panel draws. Lines are for the active channel only. */
 export interface ChatView {
@@ -122,10 +130,10 @@ export interface ChatView {
      * left, when anything counted as unread did: the log draws a New divider
      * above it. Null otherwise. Opening another tab leaves it, and so does
      * chat going out of sight, so it stays while the tab stays open with a
-     * chat pane on screen.
+     * chat pane showing the conversation.
      */
     newFrom: number | null;
-    /** What pinged you while no chat pane was on screen, or null. Unlike `lines`, from any room. */
+    /** What pinged you while no chat pane showed the conversation, or null. Unlike `lines`, from any room. */
     ping: ChatPing | null;
     /**
      * Why the connection failed, or why the server turned it away, in words

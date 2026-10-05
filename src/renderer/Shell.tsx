@@ -147,7 +147,7 @@ function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState })
         case 'tool':
             switch (pane.content.tool) {
                 case 'chat':
-                    return <Chat view={state.chat} width={pane.rect.width} />;
+                    return <Chat view={state.chat} width={pane.rect.width} paneId={pane.paneId} page={pane.chatPage ?? 'settings'} />;
                 case 'worlds':
                     return state.worlds ? <Worlds view={state.worlds} width={pane.rect.width} /> : null;
                 case 'hiscores':
@@ -199,8 +199,9 @@ function GameReadout({ state, width }: { state: ShellState; width: number }): Re
 /**
  * What pinged you, after the game's read-out: the newest line that names you
  * or was said to you alone, and how many more are waiting. Main leaves the
- * ping null while a chat pane is on screen in any window, so this shows only
- * while chat is out of sight, and it goes once chat is seen. A click opens
+ * ping null while a chat pane shows the conversation in any window, so this
+ * shows only while chat is out of sight — closed, behind another tab, or on
+ * its Settings page — and it goes once chat is seen. A click opens
  * chat on the ping's room, beside the game or in a tab of its own.
  *
  * Plain text, and nothing in it is a link: the line is a stranger's writing.

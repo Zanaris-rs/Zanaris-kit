@@ -208,13 +208,14 @@ export class IrcClient {
      */
     private refusal: string | null = null;
     private lastId = 0;
-    /** The latest line id when a chat pane was last on screen. No line up to it is a ping. */
+    /** The latest line id when chat was last on screen. No line up to it is a ping. */
     private pingsSeen = 0;
     /**
-     * A chat pane is on screen, in some window. Only then is the open room
-     * being read; out of sight, it counts what arrives as any other room
-     * does. False until main says otherwise, since nobody has seen anything
-     * before a pane shows it.
+     * Chat is on screen: a chat pane shows the conversation in some window's
+     * front tab. One on its Settings page shows no room, and main does not
+     * count it. Only then is the open room being read; out of sight, it
+     * counts what arrives as any other room does. False until main says
+     * otherwise, since nobody has seen anything before a pane shows it.
      */
     private onScreen = false;
     private nickTries = 0;
@@ -1144,7 +1145,7 @@ export class IrcClient {
      *
      * With chat out of sight, neither is being read, so only which one is
      * open changes. The one left keeps what it counted, and the one opened is
-     * read when a chat pane is next on screen (`seePings`). That is how a
+     * read when chat is next on screen (`seePings`). That is how a
      * click on a ping or on a notification, each of which selects its room,
      * leaves the gold on the room that was open when chat is out of sight.
      */
@@ -1158,7 +1159,7 @@ export class IrcClient {
     }
 
     /**
-     * A chat pane is on screen: every line for you so far has been seen,
+     * Chat is on screen (`onScreen`): every line for you so far has been seen,
      * whichever room it came in. No room's count is cleared, as opening one
      * clears it: a pane shows one room, and the rail's gold is how it points
      * at the rest.
@@ -1182,7 +1183,7 @@ export class IrcClient {
     }
 
     /**
-     * No chat pane is on screen any more, in any window. The open room is
+     * Chat is out of sight: no window shows the conversation. The open room is
      * left as opening another leaves it, so what arrives from now on is
      * counted and is marked when chat is back. Told again while chat is
      * already out of sight, nothing changes, so where the room was left
@@ -1195,7 +1196,7 @@ export class IrcClient {
         if (open !== undefined) this.leave(open);
     }
 
-    /** A line arriving here is read as it arrives: its room is open, and a chat pane is on screen. */
+    /** A line arriving here is read as it arrives: its room is open, and chat is on screen. */
     private reading(chan: Chan): boolean {
         return this.onScreen && same(chan.name, this.activeName);
     }
@@ -1246,7 +1247,7 @@ export class IrcClient {
      * The lines a ping is made of, oldest first. In each room, the ones its
      * count still holds — its last `highlights` highlighted lines, since the
      * count goes up by one for each and back to nothing when the room is
-     * opened or left — that arrived since a chat pane was last on screen.
+     * opened or left — that arrived since chat was last on screen.
      */
     private pings(): ChatLine[] {
         const found: ChatLine[] = [];
