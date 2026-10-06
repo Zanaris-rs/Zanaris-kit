@@ -137,9 +137,11 @@ function statusWord(status: HomeServerView['status']): string {
  * Whether a view composites two frames within a second and a half, for
  * capture mode. Two frames: the first schedules the render, the second proves
  * it composited. Raced against a timeout because requestAnimationFrame does
- * not fire at all in a window that is covered — waiting on it alone hangs
- * forever, which is exactly what it did — and the timeout answers false,
- * because a view that is not painting leaves capturePage its last frame.
+ * not fire at all in a page that is not painting — a covered window's did
+ * not, before capture's switch, and a window hidden once shown still does
+ * not — so waiting on it alone hangs forever, which is exactly what it did,
+ * and the timeout answers false, because a view that is not painting leaves
+ * capturePage its last frame.
  */
 export async function paintsFrames(contents: WebContents): Promise<boolean> {
     const frames = contents.executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))').then(
@@ -211,6 +213,15 @@ export interface ServerWindowDeps {
     theme: () => ThemeLook;
     /** The tab bar's update button: `UpdateService.button()`. A getter, since main pushes every window when it changes. */
     update: () => UpdateButton | null;
+    /**
+     * A capture's window, which is not shown when it loads and raises no
+     * banners: only capture's maximised shot puts one on screen. Its pages
+     * paint anyway, by the Chromium switch capture mode sets in index.ts.
+     * Shown and then hidden, the window would stop painting even with the
+     * switch, and a banner from a window nobody is meant to see would land on
+     * whatever the owner is doing.
+     */
+    headless: boolean;
 }
 
 export interface ServerWindow extends ServerWindowHandle {
@@ -314,10 +325,11 @@ export interface ServerWindow extends ServerWindowHandle {
      * Whether the shell is painting: true once it has composited two frames
      * since the call, false if it has not within a second and a half.
      * capturePage hands back the last composited frame, so a shot of a shell
-     * that is not painting — its window covered by another app's —
-     * photographs whatever it last drew, and reads as correct in the log.
-     * That had capture mode reporting a stale panel three times over, and
-     * writing byte-identical shots of different steps.
+     * that is not painting photographs whatever it last drew, and reads as
+     * correct in the log. A shell in a window another app's covered did
+     * exactly that until capture's switch kept such a window painting, and
+     * had capture mode reporting a stale panel three times over, and writing
+     * byte-identical shots of different steps.
      */
     settle(): Promise<boolean>;
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
@@ -505,12 +517,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         changed: () => pushState()
     });
 
-    /** A banner only when the window is not focused: in front of the player, the pane and the sound are already enough. */
+    /** A banner only when the window is not focused: in front of the player, the pane and the sound are already enough. Never in a capture, whose window is never focused. */
     function alertClock(def: TimerDef, at: 'threshold' | 'zero'): void {
         const heading = alertTitle(def, at);
         deps.log(`${tag} ${heading}`);
         if (win.isDestroyed()) return;
-        if (!win.isFocused()) showAlertBanner(win, heading, title());
+        if (!win.isFocused() && !deps.headless) showAlertBanner(win, heading, title());
         if (def.volume > 0 && !shellView.webContents.isDestroyed()) shellView.webContents.send(IPC.timersAlert, { volume: def.volume });
     }
 
@@ -1649,7 +1661,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     shellView.webContents.once('did-finish-load', () => {
         if (win.isDestroyed()) return;
         applyLayout();
-        win.show();
+        if (!deps.headless) win.show();
     });
 
     applyLayout();

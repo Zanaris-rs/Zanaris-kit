@@ -47,6 +47,8 @@ export function createSettingsWindow(opts: {
     closeQuestion: () => { message: string; detail: string } | null;
     onDiscard: () => void;
     onPageReset: () => void;
+    /** A capture's Settings, which is not shown when it loads or brought forward when opened again, as a capture's game windows are not shown (`ServerWindowDeps.headless`). Only the close question's sheet puts it on screen. */
+    headless: boolean;
 }): SettingsWindow {
     const display = opts.anchor ? screen.getDisplayMatching(opts.anchor) : screen.getPrimaryDisplay();
     const win = new BrowserWindow({
@@ -85,7 +87,7 @@ export function createSettingsWindow(opts: {
     // `loadShell`, below, holds the page to itself, as it does a game window's shell.
     // Keep "Settings": the page's own <title> is the shell's.
     win.on('page-title-updated', event => event.preventDefault());
-    win.once('ready-to-show', () => win.show());
+    if (!opts.headless) win.once('ready-to-show', () => win.show());
     win.on('closed', opts.onClosed);
     // Asked here and decided in `appearance.closeQuestion`: a draft with
     // changes asks before it is thrown away, since every window reverts with
@@ -139,6 +141,7 @@ export function createSettingsWindow(opts: {
         contentsId,
         loaded,
         focus: () => {
+            if (opts.headless) return;
             if (win.isMinimized()) win.restore();
             win.show();
             win.focus();
