@@ -585,16 +585,28 @@ file — shown in the kit's own pages, or one of the kit's own. Keep these true:
 | `npm run make:pictures [-- <content-dir>]` | make the kit's own pictures into `static/pictures/` from the content checkout, under Electron for `nativeImage` |
 | `npm run dist` | electron-builder output |
 
-**The capture hazard.** `npm run capture` opens real windows and makes real
-network requests, and `capturePage` hands back the last frame a view
-composited. A shell that is not painting — its window covered by another app's,
-or the display asleep — composites nothing, so a shot of it is a **silently
-stale frame**: a correct-looking log line over a PNG byte-identical to an
-earlier shot. `caffeinate -d` covers only the display. The harness guards the
-rest: `shoot` waits for the shell to paint (`settle` answers whether it did),
-fronting the window again for up to ten seconds; a shell that never paints is
-not written, a shell shot byte-identical to an earlier one is flagged
+**The capture hazard.** `npm run capture` makes real network requests, and
+`capturePage` hands back the last frame a view composited. A shell that is not
+painting composites nothing, so a shot of it is a **silently stale frame**: a
+correct-looking log line over a PNG byte-identical to an earlier shot.
+
+A capture runs out of sight, so the machine stays usable while it does. The
+kit shows none of its windows (`headless`, on each game window and Settings),
+and Chromium's `disable-backgrounding-occluded-windows` switch, which it keeps
+for its own tests, has a page in a window that is off screen or covered paint
+as if it were in front. Two steps still put a window on screen, unfocused on
+macOS, where this has been watched: the maximised shot, since macOS shows a
+hidden window to maximise it, and that window stays up for the rest of the
+run; and Settings' close question, a sheet, just before the quit. A window
+hidden or minimised once it was shown stops painting even with the switch, so
+nothing in a capture may hide one — and nor may the owner: minimising that
+window, or hiding the kit (another app's Hide Others does), fails every shot
+of it after. A sleeping display stopped most shots before the switch, and
+nothing has shown that the switch changes that: run it under `caffeinate -d`.
+
+The harness guards the rest: `shoot` waits up to ten seconds for the shell to
+paint (`settle` answers whether it did); a shell that never paints is not
+written, a shell shot byte-identical to an earlier one is flagged
 (`shotLedger.ts`), and either makes the run exit 1 with the faults listed last.
-A failed run usually means the machine was in use: rerun it under
-`caffeinate -d` and leave it alone. Game and page shots are not compared, and
-the log reads state, not pixels, so a green run still means opening the PNGs.
+Game and page shots are not compared, and the log reads state, not pixels, so
+a green run still means opening the PNGs.

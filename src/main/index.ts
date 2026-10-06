@@ -192,6 +192,17 @@ app.setAboutPanelOptions(branding?.about ?? aboutOptions(app.getVersion()));
 
 /** Dev-only: open every server, screenshot every view, and exit. See captureAndExit(). */
 const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
+/**
+ * A capture runs out of sight, so the owner can go on using the machine: the
+ * kit shows none of its windows (`headless`), and this switch, which Chromium keeps
+ * for its own tests, has a page in a window that is not on screen, or is
+ * covered, paint as if it were in front. Without it such a page paints
+ * nothing, and capturePage hands back its last frame. A window hidden or
+ * minimised after it was shown stops painting even with the switch, which is
+ * why a capture's are never shown rather than shown and hidden. Set before
+ * `ready`, as a command-line switch must be.
+ */
+if (CAPTURE_DIR) app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
 let quitting = false;
 // The entry for your home server names the revision of the line the world runs. Before
@@ -554,7 +565,8 @@ const windows = new ServerWindows(
                     return { listed: timersFor(spec.server.timers, state), customsFull: state.custom.length >= CUSTOM_TIMERS_MAX };
                 },
                 theme: () => lookFor(appState.appearance(), spec.server.id, editing),
-                update: () => updates.button()
+                update: () => updates.button(),
+                headless: Boolean(CAPTURE_DIR)
             }
         );
         serverWindows.set(spec.id, sw);
@@ -598,7 +610,8 @@ const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
         look: lookFor(appState.appearance(), null, editing),
         closeQuestion: () => closeQuestion(editing, quitting),
         onDiscard: endEditing,
-        onPageReset: endEditing
+        onPageReset: endEditing,
+        headless: Boolean(CAPTURE_DIR)
     })
 );
 
@@ -2043,7 +2056,7 @@ async function captureAndExit(dir: string): Promise<void> {
     mkdirSync(dir, { recursive: true });
     const settleMs = Number(process.env.ZANARIS_CAPTURE_WAIT) || 15_000;
     const loadTimeoutMs = 60_000;
-    const frontTimeoutMs = 10_000;
+    const paintTimeoutMs = 10_000;
 
     /** What makes this run's shots untrustworthy. Any at all and the run exits 1, in `finally` below. */
     const faults: string[] = [];
@@ -2079,38 +2092,35 @@ async function captureAndExit(dir: string): Promise<void> {
         return null;
     };
     /** What a shell shot needs from a window: a game window, or Settings. */
-    type ShotTarget = { readonly window: BrowserWindow; focus(): void; settle(): Promise<boolean>; captureShell(): Promise<NativeImage> };
+    type ShotTarget = { settle(): Promise<boolean>; captureShell(): Promise<NativeImage> };
     /**
-     * Fronts the window and waits for its shell to paint, which is what makes
-     * a shot of it current. A covered window's shell paints nothing, so
-     * capturePage would hand back the last frame it drew — some earlier
-     * step's — and the log would report it as this one. The window is fronted
-     * again on every attempt, since whatever covered it can still be there:
-     * one run lost a window to something outside the kit, and moveTop before
-     * each of two shots eight seconds apart left it covered for both.
-     * Resolves false if the shell never painted.
+     * Waits for the shell to paint, which is what makes a shot of it current.
+     * A shell that is not painting leaves capturePage the last frame it drew —
+     * some earlier step's — and the log would report it as this one. Nothing
+     * is fronted: the kit shows none of the windows, and the switch set beside
+     * CAPTURE_DIR keeps them painting out of sight. Fronting is what this did
+     * before that switch, and it took the screen from whoever was using the
+     * machine on every shot. Resolves false if the shell never painted.
      */
-    const front = async (sw: ShotTarget, shot: string): Promise<boolean> => {
+    const waitForPaint = async (sw: ShotTarget, shot: string): Promise<boolean> => {
         const started = Date.now();
         for (let attempt = 1; ; attempt++) {
-            sw.window.moveTop();
-            sw.focus();
             if (await sw.settle()) {
-                if (attempt > 1) log(`[capture] ${shot}: the shell painted only after ${Date.now() - started}ms of fronting its window`);
+                if (attempt > 1) log(`[capture] ${shot}: the shell painted only after ${Date.now() - started}ms`);
                 return true;
             }
-            if (Date.now() - started >= frontTimeoutMs) return false;
+            if (Date.now() - started >= paintTimeoutMs) return false;
         }
     };
     const shootShell = async (name: string, target: ShotTarget): Promise<void> => {
         const shell = `${name}-shell`;
-        if (await front(target, shell)) {
+        if (await waitForPaint(target, shell)) {
             const png = await save(shell, () => target.captureShell());
             const twin = png && shells.record(`${shell}.png`, png);
             if (twin) fault(`${shell}.png is byte-identical to ${twin}, so one of the two does not show its step: a stale frame, or a change gone before the shot`);
         } else {
             rmSync(join(dir, `${shell}.png`), { force: true });
-            fault(`${shell}.png not written: the shell did not paint in ${frontTimeoutMs}ms of fronting its window, so a shot would repeat its last frame`);
+            fault(`${shell}.png not written: the shell did not paint in ${paintTimeoutMs}ms, so a shot would repeat its last frame`);
         }
     };
     const shoot = async (name: string, sw: ServerWindow): Promise<void> => {
@@ -2159,9 +2169,8 @@ async function captureAndExit(dir: string): Promise<void> {
         for (const sw of opened) await shoot(sw.state().server.id, sw);
 
         // Settings, the one window that is not a game window. Anchored to the
-        // first game window as the gear in its tab bar would, and closed once shot:
-        // where it cannot sit beside a window it opens centred, on top of one,
-        // and every later shot of that window would fail its paint check.
+        // first game window as the gear in its tab bar would, and closed once
+        // shot, so each later step that wants it opens its own.
         {
             const settingsWindow = settings.open(opened[0]?.window.getBounds() ?? null);
             await settingsWindow.loaded;
@@ -2219,15 +2228,10 @@ async function captureAndExit(dir: string): Promise<void> {
         }
 
         // The Worlds tool: open it on a loaded window that has worlds, wait for
-        // the list, capture it, switch to another world, capture that. The
-        // window goes to the front first: a page in an occluded window stops
-        // painting, and capturePage would return its last frame.
+        // the list, capture it, switch to another world, capture that.
         const hopper = opened.find((sw, i) => results[i] === 'loaded' && sw.state().worlds !== null);
         if (hopper) {
             const id = hopper.state().server.id;
-            hopper.window.moveTop();
-            hopper.focus();
-            await wait(500);
             showTool(hopper, 'worlds');
             const until = Date.now() + 20_000;
             while (Date.now() < until && hopper.state().worlds?.status === 'loading') await wait(250);
@@ -2258,6 +2262,13 @@ async function captureAndExit(dir: string): Promise<void> {
             // nor `reduce` ever touched came up with its own dock open.
             // isMaximized() polled to true is what "settled" actually means
             // here; a fixed wait is a guess at how long that takes.
+            //
+            // The one step that puts a game window on screen: macOS shows a
+            // hidden window to maximise it, over whatever is there, though
+            // without the keyboard, since nothing here focuses it. It stays
+            // shown once restored, because hiding it again would stop it
+            // painting even with the switch; shown, the switch keeps it
+            // painting under whatever the owner puts over it.
             hopper.window.maximize();
             const maximised = Date.now() + 5_000;
             while (Date.now() < maximised && !hopper.window.isMaximized()) await wait(100);
@@ -2287,12 +2298,7 @@ async function captureAndExit(dir: string): Promise<void> {
 
             // A split down rather than across: the one arrangement a reader
             // cannot infer from the shots above, and the axis the fixed column
-            // layout had no way to express at all. Fronted first, as the Worlds
-            // tool is above: the pixel font is only fetched once the shell
-            // paints, and font-display: block leaves labels blank until it lands.
-            hopper.window.moveTop();
-            hopper.focus();
-            await wait(500);
+            // layout had no way to express at all.
             hopper.splitPane(focused(hopper), 'y');
             await wait(500);
             const stacked = hopper.state();
@@ -2318,12 +2324,6 @@ async function captureAndExit(dir: string): Promise<void> {
             const name = HISCORES_LOOKUP[server.id];
             const service = name && hiscoresServiceFor(server);
             if (!name || !service) continue;
-            // Fronted before the tool opens, as the Worlds tool is above: the
-            // panel's pixel font is only fetched once the shell paints, and
-            // until it arrives font-display: block leaves every label blank.
-            sw.window.moveTop();
-            sw.focus();
-            await wait(500);
             showTool(sw, 'hiscores');
             // Driven directly on the service, as switchWorld is above, rather
             // than over IPC — there is no renderer here to send the request.
@@ -2343,9 +2343,6 @@ async function captureAndExit(dir: string): Promise<void> {
         // sound, and deleted again after the shot.
         {
             const sw = first;
-            sw.window.moveTop();
-            sw.focus();
-            await wait(500);
             showTool(sw, 'timers');
             const refused = applyTimers(
                 saveTimer(appState.timers(), sw.state().server.timers, { id: null, name: 'Capture', kind: 'countdown', durationMs: 5_000, thresholdMs: 4_000, volume: 0, afk: false }, () => 'custom-capture')
@@ -2374,13 +2371,6 @@ async function captureAndExit(dir: string): Promise<void> {
         // the request. Proves the drag path end to end: the conversion from
         // pixels, the clamp against both neighbours' minimums, and the window
         // laying out around the answer.
-        //
-        // Fronted first, as the Worlds tool is: the pixel font is only fetched
-        // once the shell paints, and font-display: block leaves labels blank
-        // until it lands.
-        first.window.moveTop();
-        first.focus();
-        await wait(500);
         const seam = first.state().seams[0];
         if (seam) {
             const asked = Math.round(seam.gross * 0.25);
@@ -2410,12 +2400,6 @@ async function captureAndExit(dir: string): Promise<void> {
         // so this is the panel as a player finds it — status, port and the World section.
         const single = opened.find((sw, i) => results[i] === 'loaded' && sw.state().server.kind === 'singleplayer');
         if (single) {
-            // Fronted before the tool opens, as the Worlds tool is: the panel's
-            // pixel font is only fetched once the shell paints, and until it
-            // arrives `font-display: block` leaves every label blank.
-            single.window.moveTop();
-            single.focus();
-            await wait(500);
             showTool(single, 'singleplayer');
             await wait(500);
             await shoot('homeserver-tool', single);
@@ -2458,9 +2442,6 @@ async function captureAndExit(dir: string): Promise<void> {
         const reader = readers.find(sw => sw !== first && sw !== hopper) ?? readers[0];
         if (reader) {
             const id = reader.state().server.id;
-            reader.window.moveTop();
-            reader.focus();
-            await wait(500);
 
             // The launcher, which is what an empty pane shows and what replaced
             // the Guides panel: split a pane and photograph what the new half
@@ -2857,6 +2838,8 @@ async function captureAndExit(dir: string): Promise<void> {
         // draft — so the run's own `app.quit()` below, in `finally`, must
         // still go through with this window's question unanswered: the case
         // commit 2f34b03's fix exists for. If it does not, the run hangs.
+        // A sheet needs its window on screen, so this puts Settings there,
+        // unfocused, for the moment before the quit.
         {
             const settingsWindow = settings.open(first.window.getBounds());
             await settingsWindow.loaded;

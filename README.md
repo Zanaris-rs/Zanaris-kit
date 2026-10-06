@@ -928,12 +928,18 @@ instance of that server. It reads the builds from the installed kit's
 profile, as a development run does; a line that profile has not downloaded is
 skipped rather than left waiting. It keeps everything else in a profile of its
 own, `zanaris-kit-capture`, so a test switch never changes what the next real
-launch opens. A view that has no frame yet is retried, then
+launch opens. The kit shows none of its windows, and Chromium's
+`disable-backgrounding-occluded-windows` switch keeps them painting out of
+sight, so the machine stays usable while it runs. Two steps put a window on
+screen, and on macOS neither takes the keyboard: the maximised shot, whose
+window stays up for the rest of the run, and Settings' close question at the
+very end. Leave that window be: minimised, or hidden with the kit (another
+app's Hide Others does that), it stops painting, and every shot of it after
+fails. A view that has no frame yet is retried, then
 skipped, and a file of that name left by an earlier run is removed. A shell is
-shot only once it has painted, its window fronted again until it does; one that
-has not painted within ten seconds is not written, and a shell shot
-byte-identical to an earlier one is flagged. Either fails the run: it finishes,
-lists what went wrong, and exits 1.
+shot only once it has painted; one that has not painted within ten seconds is
+not written, and a shell shot byte-identical to an earlier one is flagged.
+Either fails the run: it finishes, lists what went wrong, and exits 1.
 
 ## Verified
 
@@ -985,23 +991,28 @@ right-click menu's splits.
   edge rather than the game server. Lost City's Singapore world reads 45 ms
   from the UK, which is the edge answering, not Singapore. Real game latency
   would have to come off the websocket.
-- **Capture mode needs a waking display.** macOS refuses `capturePage` on an
-  occluded surface, and once the screen sleeps most shots come back "Current
-  display surface not available for capture". The run still completes, but a
-  shell that cannot paint fails it; rerun it with the display awake.
-- **A capture needs the machine to itself.** `capturePage` does not always
-  fail loudly when a window is covered — it can hand back the last frame the
-  view composited, with no error at all, so the log reports success over a
-  PNG byte-identical to an earlier shot. `caffeinate -d` does not prevent
-  it: two consecutive runs under it each wrote a different stale pair, and an
-  instrumented run caught the cause — another app's window over the kit's,
-  and `moveTop` before each of two shots eight seconds apart not getting it
-  back. Capture now waits for each shell to paint and fails the run rather
-  than write one that did not, or one identical to an earlier shot, so a
-  failed run usually means something covered the windows: rerun it and leave
-  the machine alone. Game and page shots are not compared, since a page
-  brought back unchanged is meant to match, and a log line still reads state
-  rather than pixels, so the PNGs still need opening.
+- **Capture mode needs a waking display.** Once the screen sleeps, most shots
+  come back "Current display surface not available for capture". That was
+  seen before capture's windows ran out of sight and has not been tried since.
+  The run still completes, but a shell that cannot paint fails it; rerun it
+  under `caffeinate -d`.
+- **A capture no longer needs the machine to itself.** `capturePage` does not
+  always fail loudly when a view is not painting — it can hand back the last
+  frame the view composited, with no error at all, so the log reports success
+  over a PNG byte-identical to an earlier shot. That happened whenever another
+  app's window covered the kit's: `caffeinate -d` did not prevent it, and an
+  instrumented run caught `moveTop` before each of two shots eight seconds
+  apart not getting a covered window back. The kit now shows none of
+  capture's windows, and Chromium's `disable-backgrounding-occluded-windows`
+  switch keeps a window that is off screen or covered painting, so covering
+  them no longer reaches the shots. A window minimised, or hidden after it was
+  shown, still stops painting, switch or not. In a capture that is the
+  maximised shot's window, minimised, or hidden with the kit by another app's
+  Hide Others; the windows never shown paint through both. Capture still
+  waits for each shell to paint and fails the run rather than write one that
+  did not, or one identical to an earlier shot. Game and page shots are not
+  compared, since a page brought back unchanged is meant to match, and a log
+  line still reads state rather than pixels, so the PNGs still need opening.
 - **A kit that is killed outright can leave cloudflared running.** A quit, a
   closed window or Stop sharing ends it, and so does any exit that runs Node's
   `exit` handlers. A `kill -9` does not, and the orphan keeps a link that only
