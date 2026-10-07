@@ -168,8 +168,8 @@ export interface Size {
  * — they are at their floor — the game gives way last.
  *
  * The game still grows along an axis where nothing sits beside it, since a pane
- * spanning the tab is as long as the tab: the game over chat a window opens
- * with widens with the window. Splits off the game's path keep their fractions.
+ * spanning the tab is as long as the tab: the game over chat of Game and Chat
+ * widens with the window. Splits off the game's path keep their fractions.
  *
  * Returns the tree itself when there is no game in it or the size is unchanged.
  */

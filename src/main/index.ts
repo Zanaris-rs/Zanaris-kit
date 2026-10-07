@@ -510,7 +510,11 @@ function windowCounts(): Map<string, number> {
     return counts;
 }
 
-/** New windows cascade from the focused one, so several can open without stacking exactly. */
+/**
+ * Where a new window cascades to when it has no place of its own to go back
+ * to (`windowPlace.openingFrame`): 32px from the focused one, so several can
+ * open without stacking exactly.
+ */
 function nextPosition(): { x: number; y: number } | null {
     const anchor = focusedServerWindow() ?? [...serverWindows.values()].at(-1);
     if (!anchor || anchor.window.isDestroyed()) return null;
@@ -548,7 +552,9 @@ const windows = new ServerWindows(
             {
                 log,
                 confirmClose,
-                position: nextPosition(),
+                place: CAPTURE_DIR ? null : appState.place(spec.server.id, spec.slot),
+                cascade: nextPosition(),
+                newWindowSetup: () => appState.newWindowSetup(spec.server.id),
                 worlds: worldsServiceFor(spec.server),
                 hiscores: hiscoresServiceFor(spec.server),
                 chat: chatView,

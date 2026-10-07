@@ -21,8 +21,9 @@ import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, typ
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, overlayFor, windowFrame } from './windowFrame';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
-import { SETUP_PANES_MAX, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
-import { builtInSetups, type BuiltInSetupId } from './setups';
+import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
+import { builtInSetups, openingSetup, type BuiltInSetupId, type NewWindowSetup } from './setups';
+import { openingFrame, type Place } from './windowPlace';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
 import { WorldSwitch } from './worlds/switch';
@@ -34,9 +35,10 @@ import type { ServerWindowHandle, WindowSpec } from './windows';
 const OFFLINE_PAGE = join(__dirname, '../../static/offline.html');
 const STARTING_PAGE = join(__dirname, '../../static/starting.html');
 /**
- * The content area a new window opens with: the game at its preferred size and
- * the chat pane below it at its own, with the seam between them
- * (`tabs.openWindowTabs`). The tree fills the content area below the bar
+ * Game and Chat's content area: the game at its preferred size and the chat
+ * pane below it at its own, with the seam between them — the numbers
+ * `setups.builtInSetups` gives Game and Chat, and the size a saved setup from
+ * before setups carried one opens at. The tree fills the content area below the bar
  * exactly, so anything short of this would clip the bottom of the
  * canvas at the one size nobody chose. Lost City's page is taller than the
  * stock client's, so its windows open on its own game height.
@@ -45,15 +47,6 @@ function defaultContent(serverId: string): { width: number; height: number; game
     const game = serverId === 'lostcity' ? LOSTCITY_GAME_PREFERRED_HEIGHT : GAME_PREFERRED_HEIGHT;
     return { width: GAME_PREFERRED_WIDTH, height: game + SEAM + CHAT_PREFERRED_HEIGHT, game };
 }
-/**
- * Room left on the display for the window's own frame, which a content size
- * does not include: a caption and borders on Linux. macOS and Windows draw no
- * caption, since the tab bar stands in for their title bars
- * (`windowFrame.ts`), and the allowance there is only room to spare. Generous
- * rather than measured, since the frame cannot be asked for before the window
- * exists and an opening size a few pixels short costs nothing.
- */
-const FRAME_ALLOWANCE = 40;
 /**
  * How often a latency is measured again while something shows it: the game's
  * header, or a Worlds pane. Each is also measured once when it opens — a game
@@ -155,7 +148,16 @@ export interface ServerWindowDeps {
     log: (msg: string) => void;
     /** Return false to keep the window open. Main returns true without asking while quitting. */
     confirmClose: (title: string) => boolean;
-    position: { x: number; y: number } | null;
+    /**
+     * Where this server's window of this number last closed, or null: none
+     * recorded, or a capture, which reads none. `windowPlace.openingFrame`
+     * decides whether it can still be used.
+     */
+    place: Place | null;
+    /** 32px from the focused or last-opened game window, for when there is no place to go back to; null when none is open. */
+    cascade: { x: number; y: number } | null;
+    /** What new windows of this server open with, as stored, or null for Game and Chat. A getter: the Setups menu reads it again each time it opens. */
+    newWindowSetup: () => NewWindowSetup | null;
     /** The server's shared world list and latency, or null when the server has one page. */
     worlds: WorldsService | null;
     /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of the menus of a window running your home server. */
@@ -427,18 +429,35 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     let gameLoadPending = false;
 
     /*
-     * The game and chat together are taller than some laptop displays can show,
-     * and a window opened past the bottom of the screen hides the very pane it
-     * opened to show. So the height is held to the display it will open on, and
-     * the split's shares are worked out from the height the window actually got
-     * (see `openWindowTabs`).
+     * What the window opens with and where, both decided before it exists
+     * (`setups.openingSetup`, `windowPlace.openingFrame`): the setup chosen for
+     * this server's new windows, or Game and Chat, at the place this window's
+     * number last closed at if its tab bar can still be reached. So the window
+     * is built at its size and place rather than opened and then moved, and
+     * opening it is not one of the things that resize a window. The size is
+     * held to the display it opens on, and the first layout is fitted to the
+     * size it got as a resize is (`tabs.openWindowTabs`).
      */
-    const display = screen.getDisplayNearestPoint(deps.position ?? screen.getCursorScreenPoint());
     const content = defaultContent(server.id);
-    const openHeight = Math.max(TAB_BAR_HEIGHT + PANE_MIN_HEIGHT, Math.min(TAB_BAR_HEIGHT + content.height, display.workArea.height - FRAME_ALLOWANCE));
+    const opening = openingSetup(deps.newWindowSetup(), { builtIns: builtInSetups({ tools, gameHeight: content.game }), saved: savedSetups(), read: readSaved });
+    deps.log(`${tag} opens with ${opening.name}${opening.fellBack ? `, not the setup chosen: ${opening.fellBack}` : ''}`);
+    let openingPane = 1;
+    let openingSplit = 1;
+    const start = openWindowTabs(
+        instantiateLayout(opening.tree, { tools, links: server.bookmarks, nextPane: () => `pane-${openingPane++}`, nextSplit: () => `split-${openingSplit++}` }),
+        opening.size
+    );
+    // A saved setup from before setups carried a size opens at Game and Chat's, laid out by its fractions.
+    const tab = start.size ?? { width: content.width, height: content.height };
+    const opened = openingFrame({
+        content: { width: tab.width, height: TAB_BAR_HEIGHT + tab.height },
+        remembered: deps.place,
+        cascade: deps.cascade,
+        workAreas: screen.getAllDisplays().map(display => display.workArea),
+        cursor: screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
+    });
     const win = new BrowserWindow({
-        width: content.width,
-        height: openHeight,
+        ...opened.frame,
         // One pane's floor plus the chrome that never gives way. A constant
         // now: the old minimum moved as the dock opened and closed, because it
         // was protecting a region the layout was also protecting. Nothing is
@@ -447,7 +466,6 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         minWidth: PANE_MIN_WIDTH,
         minHeight: TAB_BAR_HEIGHT + PANE_MIN_HEIGHT,
         useContentSize: true,
-        ...(deps.position ?? {}),
         title: spec.title,
         // No title bar on macOS or Windows: the tab bar stands in for it (`windowFrame.ts`).
         ...frameOptions(process.platform, deps.theme()),
@@ -547,7 +565,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         hosts: () => server.hosts,
         sharing: () => linkLive(),
         log: line => deps.log(`${tag} ${line}`),
-        initial: openWindowTabs(win.getContentBounds().height - TAB_BAR_HEIGHT, content.game),
+        initial: start.set,
+        initialSize: start.size,
         changed: () => applyLayout(),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState(),
@@ -862,9 +881,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
-     * What Reset Game Size puts the game back to: the size a new window of this
-     * server opens it at, Lost City's taller page included, against the rect
-     * the tab is laid out in now.
+     * What Reset Game Size puts the game back to: its preferred size, the one
+     * the built-in setups open it at on this server, Lost City's taller page
+     * included, against the rect the tab is laid out in now. Not the size a
+     * saved setup opened it at, which is that setup's.
      */
     function gameSizes(): GameSizes {
         return { tab: rects.tree, game: { width: GAME_PREFERRED_WIDTH, height: content.game } };
@@ -1158,6 +1178,22 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         }
     }
 
+    /** A setup file's text, sized before it is read: a setup is a few kilobytes, and anything dropped into the folder is listed. Throws when it cannot be read. */
+    function readSetupText(path: string): string {
+        if (statSync(path).size > SETUP_FILE_MAX) throw new Error('far larger than any setup');
+        return readFileSync(path, 'utf8');
+    }
+
+    /** One of the folder's entries as `setups.openingSetup` reads it: its text, or null, logged, when it cannot be read. */
+    function readSaved(file: string): string | null {
+        try {
+            return readSetupText(join(deps.setupsDir, file));
+        } catch (err) {
+            deps.log(`${tag} could not read ${file}: ${(err as Error).message}`);
+            return null;
+        }
+    }
+
     async function saveSetupAs(tabId: string): Promise<void> {
         const label = host.tabs().find(tab => tab.id === tabId)?.label;
         if (label === undefined) return;
@@ -1223,10 +1259,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     async function openSetupFrom(tabId: string, path: string): Promise<'opened' | 'unreadable' | 'cancelled' | 'missing'> {
         let text: string;
         try {
-            // Sized before it is read: a setup is a few kilobytes, and anything
-            // dropped into the folder is listed.
-            if (statSync(path).size > SETUP_FILE_MAX) throw new Error('far larger than any setup');
-            text = readFileSync(path, 'utf8');
+            text = readSetupText(path);
         } catch (err) {
             deps.log(`${tag} could not read ${path}: ${(err as Error).message}`);
             return 'unreadable';

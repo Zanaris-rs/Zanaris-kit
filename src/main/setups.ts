@@ -46,7 +46,8 @@ function stack(axis: 'x' | 'y', children: StoredNode[], sizes: number[]): Stored
  * The built-ins this window can offer, in the menu's order.
  *
  * - **Game**: the game alone, at its preferred size.
- * - **Game and Chat**: the game over chat, as a new window opens.
+ * - **Game and Chat**: the game over chat, which a new window opens with when
+ *   no other setup is chosen for it (`openingSetup`).
  * - **Game, Chat and Tools**: that, with a column down its right holding every
  *   other tool the window offers, in the window's own order, sharing the
  *   column's height evenly.
