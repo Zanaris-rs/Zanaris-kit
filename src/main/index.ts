@@ -26,12 +26,15 @@ import {
     type Background,
     type Theme
 } from '../shared/themes';
-import type { PaneContent } from './paneTree';
+import { leaf, split as splitOf, type PaneContent } from './paneTree';
+import { writeLayout } from './layoutFile';
+import type { NewWindowSetup } from './setups';
+import type { Place } from './windowPlace';
 import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { roomFor } from './windowRoom';
 import { allowPermission } from './guard';
 import { readNoticeAction } from '../shared/paneNotice';
-import { COLUMN_PREFERRED_WIDTH, SEAM } from '../shared/layout';
+import { COLUMN_PREFERRED_WIDTH, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
@@ -203,6 +206,12 @@ const CAPTURE_DIR = process.env.ZANARIS_CAPTURE;
  * `ready`, as a command-line switch must be.
  */
 if (CAPTURE_DIR) app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+/**
+ * The place a capture hands the next window it opens, through the same deps a
+ * remembered one comes by, so a run can check a window opens at its place
+ * without reading or writing the profile's own.
+ */
+let capturePlace: Place | null = null;
 
 let quitting = false;
 // The entry for your home server names the revision of the line the world runs. Before
@@ -552,7 +561,7 @@ const windows = new ServerWindows(
             {
                 log,
                 confirmClose,
-                place: CAPTURE_DIR ? null : appState.place(spec.server.id, spec.slot),
+                place: CAPTURE_DIR ? capturePlace : appState.place(spec.server.id, spec.slot),
                 cascade: nextPosition(),
                 newWindowSetup: () => appState.newWindowSetup(spec.server.id),
                 setNewWindowSetup: choice => appState.setNewWindowSetup(spec.server.id, choice),
@@ -2059,8 +2068,11 @@ const shotOfThePage =
  * launcher, two pages beside the game, and the first of them brought back to
  * prove a tab switch did not reload it; a second instance of the first
  * server (slots and partitions), with a setup saved and opened into a new tab
- * and the game left behind another tab; every theme, Settings on Appearance,
- * a server's own theme and a custom theme with a picture and its editor, with
+ * and the game left behind another tab; new windows of the first server
+ * opened with Game, Chat and Tools, with a saved setup, with a setup gone
+ * from the folder, at a place handed to them and at one on no display; every
+ * theme, Settings on Appearance, a server's own theme and a custom theme with
+ * a picture and its editor, with
  * a draft typed there worn by the first window and cancelled; a built-in
  * setup opened on the first window, its tools column closed and the setup
  * opened again, the window sized around the game each way. Last comes
@@ -2166,6 +2178,9 @@ async function captureAndExit(dir: string): Promise<void> {
         for (const id of Object.keys(appState.appearance().servers)) appState.setServerTheme(id, null);
         for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
         prunePictures();
+        // Every window a capture opens is Game and Chat unless a step below
+        // says otherwise, whatever a run that died mid-step left chosen.
+        for (const server of catalog.list()) appState.setNewWindowSetup(server.id, null);
         // Home server needs its build on disk. Where there is none the entry is
         // dropped rather than left to wait on a download — so a capture wants the
         // selected build already downloaded in the real profile.
@@ -2573,6 +2588,67 @@ async function captureAndExit(dir: string): Promise<void> {
             }
         } finally {
             rmSync(setupPath, { force: true });
+        }
+
+        // What new windows open with, and where. Each is opened as File >
+        // New Window opens one, read back, and destroyed — `close` would
+        // raise a confirm nothing here can answer. The choices are set on the
+        // state, since the Setups menu is native, and cleared after.
+        {
+            const server = first.state().server;
+            const made: ServerWindow[] = [];
+            const sized = (sw: ServerWindow): string => {
+                const { width, height } = sw.window.getContentBounds();
+                return `${width}x${height}`;
+            };
+            const openWith = async (choice: NewWindowSetup | null, shot: string | null): Promise<ServerWindow> => {
+                appState.setNewWindowSetup(server.id, choice);
+                const sw = openServer(server);
+                made.push(sw);
+                log(`[capture] ${sw.state().title}: new window with ${choice ? JSON.stringify(choice) : 'nothing chosen'} — "${panesOf(sw)}" at ${sized(sw)}`);
+                if (shot) {
+                    log(`[capture] ${sw.state().title}: ${await loaded(sw)}`);
+                    await wait(Math.min(settleMs, 8_000));
+                    await shoot(shot, sw);
+                }
+                return sw;
+            };
+            const setupsDir = join(userData, 'setups', slugify(server.id));
+            const savedFile = 'capture-game-and-timers.json';
+            try {
+                const tools = await openWith({ builtIn: 'game-chat-tools' }, `${server.id}-new-tools`);
+                if (panesOf(tools) === 'game over chat') fault('new window: Game, Chat and Tools opened as Game and Chat');
+
+                mkdirSync(setupsDir, { recursive: true });
+                const width = GAME_PREFERRED_WIDTH + SEAM + 400;
+                const gameAndTimers = splitOf('split-1', 'x', [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: 'timers' })], [GAME_PREFERRED_WIDTH / (width - SEAM), 400 / (width - SEAM)]);
+                writeFileSync(join(setupsDir, savedFile), writeLayout(gameAndTimers, server.id, { width, height: GAME_PREFERRED_HEIGHT }));
+                const saved = await openWith({ file: savedFile }, `${server.id}-new-saved`);
+                if (panesOf(saved) !== 'game over timers') fault(`new window: the saved setup opened as "${panesOf(saved)}"`);
+                if (sized(saved) !== `${width}x${TAB_BAR_HEIGHT + GAME_PREFERRED_HEIGHT}`) log(`[capture] new window: the saved setup is ${sized(saved)}, not ${width}x${TAB_BAR_HEIGHT + GAME_PREFERRED_HEIGHT} — expected only on a display too small for it`);
+
+                const missing = await openWith({ file: 'capture-no-such-setup.json' }, null);
+                if (panesOf(missing) !== 'game over chat') fault(`new window: a missing setup opened as "${panesOf(missing)}", not Game and Chat`);
+
+                const area = screen.getPrimaryDisplay().workArea;
+                capturePlace = { x: area.x + 48, y: area.y + 36, maximized: false, fullScreen: false };
+                const placed = await openWith(null, null);
+                const at = placed.window.getBounds();
+                log(`[capture] ${placed.state().title}: opened at ${at.x},${at.y} for a place at ${capturePlace.x},${capturePlace.y}`);
+                if (at.x !== capturePlace.x || at.y !== capturePlace.y) fault(`place: ${placed.state().title} opened at ${at.x},${at.y}, not at its place ${capturePlace.x},${capturePlace.y}`);
+
+                capturePlace = { x: -100_000, y: -100_000, maximized: false, fullScreen: false };
+                const lost = await openWith(null, null);
+                const fell = lost.window.getBounds();
+                log(`[capture] ${lost.state().title}: a place on no display opened it at ${fell.x},${fell.y}`);
+                if (fell.x === capturePlace.x || fell.y === capturePlace.y) fault(`place: ${lost.state().title} opened on no display`);
+            } finally {
+                capturePlace = null;
+                appState.setNewWindowSetup(server.id, null);
+                rmSync(join(setupsDir, savedFile), { force: true });
+                for (const sw of made) if (!sw.window.isDestroyed()) sw.window.destroy();
+                await wait(500);
+            }
         }
 
         // Themes. Each as the app theme on the first window, with a tool
