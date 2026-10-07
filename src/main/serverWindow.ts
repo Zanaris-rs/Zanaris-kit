@@ -22,8 +22,8 @@ import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, overlayFor, windowFrame } from './windowFrame';
 import { holdsGame, openWindowTabs, sharingWithoutPane } from './tabs';
 import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
-import { builtInSetups, openingSetup, type BuiltInSetupId, type NewWindowSetup } from './setups';
-import { openingFrame, type Place } from './windowPlace';
+import { builtInSetups, openingSetup, opensWindow, sameSetup, type BuiltInSetupId, type NewWindowSetup } from './setups';
+import { openingFrame, placeOf, type Place } from './windowPlace';
 import { loadShell, preloadPath } from './renderer';
 import { windowTitle } from './slots';
 import { WorldSwitch } from './worlds/switch';
@@ -158,6 +158,10 @@ export interface ServerWindowDeps {
     cascade: { x: number; y: number } | null;
     /** What new windows of this server open with, as stored, or null for Game and Chat. A getter: the Setups menu reads it again each time it opens. */
     newWindowSetup: () => NewWindowSetup | null;
+    /** Stores what new windows of this server open with: the Setups menu's Open New Windows With. */
+    setNewWindowSetup: (choice: NewWindowSetup) => void;
+    /** Records where this window is as its close goes through, for the next window of its server and number. Main drops it in a capture. */
+    rememberPlace: (place: Place) => void;
     /** The server's shared world list and latency, or null when the server has one page. */
     worlds: WorldsService | null;
     /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of the menus of a window running your home server. */
@@ -1138,6 +1142,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * offer (`setups.builtInSetups`), the setups saved for this server, and
      * saving the tab in front as one. A setup chosen from it replaces the
      * panes of the tab in front, which is the tab the menu was opened over.
+     * Except Open New Windows With, which changes nothing on screen: it is
+     * what this server's next windows open with.
      *
      * Native and built here for the reason Add pane's is: it drops down over
      * the panes, and a list the shell drew would open behind a game or a page
@@ -1164,9 +1170,39 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             { label: 'Save This Tab as a Setup…', click: () => void saveSetupAs(tabId) },
             // A setup somebody sent is dropped into this folder, and is then
             // listed above like any other.
-            { label: 'Open Setups Folder', click: () => void openSetupsFolder() }
+            { label: 'Open Setups Folder', click: () => void openSetupsFolder() },
+            { type: 'separator' },
+            { label: 'Open New Windows With', submenu: newWindowsItems() }
         ];
         Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
+    }
+
+    /**
+     * Open New Windows With: the built-ins, then the saved setups, with the
+     * one the next window of this server would open with ticked. The tick is
+     * `openingSetup`'s answer, the one a window opening now would act on, so a
+     * choice that can no longer be used ticks Game and Chat, which is what
+     * would open instead. A saved setup that cannot be a new window's — no
+     * game in it, or not a setup — is greyed. Checkboxes rather than radios,
+     * for the reason the View menu's Server Theme gives: the separator makes
+     * two radio groups, and Electron ticks the first of a group with none.
+     */
+    function newWindowsItems(): MenuItemConstructorOptions[] {
+        const builtIns = builtInSetups({ tools, gameHeight: content.game });
+        const saved = savedSetups();
+        const texts = new Map(saved.map(entry => [entry.file, readSaved(entry.file)]));
+        const ticked = openingSetup(deps.newWindowSetup(), { builtIns, saved, read: file => texts.get(file) ?? null }).used;
+        const item = (label: string, choice: NewWindowSetup, enabled: boolean): MenuItemConstructorOptions => ({
+            label,
+            type: 'checkbox',
+            checked: sameSetup(ticked, choice),
+            enabled,
+            click: () => deps.setNewWindowSetup(choice)
+        });
+        return [
+            ...builtIns.map(setup => item(setup.name, { builtIn: setup.id }, true)),
+            ...(saved.length === 0 ? [] : [{ type: 'separator' as const }, ...saved.map(entry => item(entry.name, { file: entry.file }, opensWindow(texts.get(entry.file) ?? '')))])
+        ];
     }
 
     /** The folder's setups, or none when there is no folder yet. */
@@ -1668,7 +1704,16 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
     });
     win.on('close', event => {
-        if (!deps.confirmClose(spec.title)) event.preventDefault();
+        if (!deps.confirmClose(spec.title)) {
+            event.preventDefault();
+            return;
+        }
+        // Here rather than in 'closed', where the window can no longer say
+        // where it is; and only once the close is going through, so a
+        // Cancel records nothing. A quit closes every window this way. The
+        // normal bounds, so a window closed maximised, full screen or
+        // minimised records where it goes back to when it is none of those.
+        deps.rememberPlace(placeOf(win.getNormalBounds(), win.isMaximized(), win.isFullScreen()));
     });
     win.on('closed', () => {
         clocks.dispose();
@@ -1694,7 +1739,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     shellView.webContents.once('did-finish-load', () => {
         if (win.isDestroyed()) return;
         applyLayout();
-        if (!deps.headless) win.show();
+        // A capture's window is never shown, so never maximised or made full
+        // screen here either: maximising shows a hidden window.
+        if (deps.headless) return;
+        // Maximised before it is shown, so it never draws at its normal size
+        // first, and unmaximising it puts it at its place. `show` still gives
+        // it focus. Full screen is asked for once the window is on screen.
+        if (opened.maximized) win.maximize();
+        win.show();
+        if (opened.fullScreen) win.setFullScreen(true);
     });
 
     applyLayout();

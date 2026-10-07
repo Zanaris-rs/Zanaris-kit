@@ -555,6 +555,18 @@ const windows = new ServerWindows(
                 place: CAPTURE_DIR ? null : appState.place(spec.server.id, spec.slot),
                 cascade: nextPosition(),
                 newWindowSetup: () => appState.newWindowSetup(spec.server.id),
+                setNewWindowSetup: choice => appState.setNewWindowSetup(spec.server.id, choice),
+                // A capture records nowhere: no run depends on where the
+                // last one left its windows. A failed write is logged, and
+                // the window still closes.
+                rememberPlace: place => {
+                    if (CAPTURE_DIR) return;
+                    try {
+                        appState.setPlace(spec.server.id, spec.slot, place);
+                    } catch (err) {
+                        log(`[main] could not remember where ${spec.title} was: ${(err as Error).message}`);
+                    }
+                },
                 worlds: worldsServiceFor(spec.server),
                 hiscores: hiscoresServiceFor(spec.server),
                 chat: chatView,
