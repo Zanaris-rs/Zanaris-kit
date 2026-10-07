@@ -43,6 +43,8 @@ export interface PaneView {
      * notice, not main's.
      */
     notice: PaneNotice | null;
+    /** Whether the header carries the running clocks: the game's, while its tab has no Timers pane. Main's, from `paneMenu.showsClocks`. */
+    clocks: boolean;
 }
 
 export interface SeamView {

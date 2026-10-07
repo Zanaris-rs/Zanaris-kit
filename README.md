@@ -180,6 +180,16 @@ can be edited and restored to their defaults. Clocks you add are yours
 everywhere, in every server's windows; the clocks themselves run per window,
 since each window is its own login, and they keep running with the pane closed.
 
+While the game's tab has no Timers pane — closed, or left in another tab — the
+game pane's header carries the clocks instead, after the world and the latency:
+each one running, and each countdown holding at 0:00, with its name and its
+digits in the pane's colours. So an alert that sounds has something on screen
+to have come from. They are only shown there; the hint under the pointer says
+when each one alerts, and the Timers pane is where one is started, paused,
+reset or changed. They take only the room the header has to spare, so the
+world and the latency read as they always did, and a header too narrow for all
+of them drops whole clocks from its end.
+
 **The launcher** is the way into the reference pages, and it is what an empty
 pane shows. It lists this server's links, in order — for Lost City: Forums,
 Coordinates, Clue Help, Puzzle Solver, World Map, Markets, Quest Guides, Skill
@@ -1154,6 +1164,7 @@ src/renderer/tools/ChatUsers.tsx     a channel's users by rank
 src/renderer/tools/homeserver/Builds.tsx   the build lines: use, download, remove
 src/renderer/tools/homeserver/Friends.tsx  Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
+src/renderer/clocks.ts      what the Timers pane and the game's header share to draw digits
 static/offline.html         shown when a server can't be reached
 static/starting.html        your home server starting, failed, or not downloaded yet
 engines/*.json              your home server's build lines, pinned by digest

@@ -1,6 +1,7 @@
-import { useEffect, useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { CUSTOM_TIMERS_MAX, TIMER_NAME_MAX, blankDraft, clockTone, clockValueAt, draftOf, formatClock, readDraft, type ClockView, type TimerDraft, type TimerProblem, type TimersView } from '../../shared/timers';
 import { playAlert } from '../alertSound';
+import { TONE_CLASS, useNow } from '../clocks';
 import { Pause, Pencil, Play, Reload } from '../icons';
 
 /*
@@ -37,29 +38,8 @@ const FITTED_DIGITS: CSSProperties = { fontSize: 'min(26px, 24cqi)', lineHeight:
 
 const FIELD = 'sunk min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-cream placeholder:text-faint';
 
-/** Each digit tone `clockTone` decides, as the class that draws it. */
-const TONE_CLASS = { alarm: 'text-alarm', gold: 'text-gold', dim: 'text-dim' } as const;
-
 /** Quick durations, in minutes. */
 const PRESET_MINUTES = [1, 5, 30, 60] as const;
-
-/**
- * How often the digits are redrawn while a clock runs. Only the drawing: each
- * redraw reads the value from main's snapshot, so a slow interval makes a digit
- * change late, never wrong — and the alert is main's, not this interval's.
- */
-const DRAW_EVERY_MS = 250;
-
-function useNow(active: boolean): number {
-    const [now, setNow] = useState(() => Date.now());
-    useEffect(() => {
-        if (!active) return;
-        setNow(Date.now());
-        const interval = window.setInterval(() => setNow(Date.now()), DRAW_EVERY_MS);
-        return () => window.clearInterval(interval);
-    }, [active]);
-    return now;
-}
 
 /**
  * A secondary action: stone, a dim 13px label that lights on hover, and spent
@@ -166,7 +146,7 @@ export default function Timers({ view, width }: { view: TimersView; width: numbe
                 )}
                 {view.customsFull && <span className="text-[12px] text-dim">{CUSTOM_TIMERS_MAX} of your own is the most.</span>}
             </div>
-            <p className="text-[12px] text-dim">Timers run with the pane closed.</p>
+            <p className="text-[12px] text-dim">Timers run with the pane closed, and the game's header then shows any running or at 0:00.</p>
         </div>
     );
 }
