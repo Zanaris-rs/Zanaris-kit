@@ -112,7 +112,12 @@ Six properties in there are load-bearing and easy to break —
   tab by its fractions and leaves the window alone.
 
 Those three are the only things that resize the window — not Reset Game Size,
-not a drop.
+not a drop. Opening a window is not one of them either: a new window is built
+at the size of the setup its server's new windows open with and at the place
+its number last closed at, both decided before it exists
+(`setups.openingSetup`, `windowPlace.openingFrame`), never opened and then
+moved. Only the place is recorded without being asked for; the size is
+always the setup's.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file
 carries tool ids between people — that is the whole point of saving one — and
