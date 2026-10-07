@@ -1,4 +1,4 @@
-import type { ChatStatus } from './chat.ts';
+import type { ChatPage, ChatStatus, ChatView } from './chat.ts';
 import { asChannel, foldName, isChannel } from './ircNames.ts';
 
 /**
@@ -169,6 +169,15 @@ export function sameSettings(draft: SettingsDraft, nick: string | null, autoJoin
  */
 export function isConnectionWanted(status: ChatStatus): boolean {
     return status !== 'offline';
+}
+
+/**
+ * The page a chat pane opens on: Settings while there is no nick to connect
+ * as or no connection wanted, since Connect is there, and the conversation
+ * otherwise.
+ */
+export function firstPage(view: Pick<ChatView, 'needsNick' | 'status'>): ChatPage {
+    return view.needsNick || !isConnectionWanted(view.status) ? 'settings' : 'chat';
 }
 
 /** A line's time as the log prints it: 24-hour, local, to the second. */

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { arrangedAt, contentOf, layoutTree, leaf, paneIds, refit, split, type PaneNode } from './paneTree.ts';
-import { closeTab, closingTab, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, openTabs, openWindowTabs, selectTab, sharingWithoutPane } from './tabs.ts';
+import { chatPages, closeTab, closingTab, holdsTool, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, openTabs, openWindowTabs, readsChat, selectTab, sharingWithoutPane } from './tabs.ts';
 import { builtInSetups } from './setups.ts';
 import { instantiateLayout } from './layoutFile.ts';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
@@ -310,6 +310,58 @@ test('a link already shown in the tab in front marks no other tab', () => {
 
 test('a tab that is not there has no marks', () => {
     assert.deepEqual(marksOfTab(playingBehind(), 'nope', true), []);
+});
+
+test('a tool anywhere in a tree is held by it, however deep, and another tool is not', () => {
+    const inner = split('split-2', 'y', [leaf('p2', { kind: 'tool', tool: 'chat' }), leaf('p3', { kind: 'empty' })], [0.5, 0.5]);
+    const tree = split('split-1', 'x', [leaf('p1', { kind: 'game' }), inner], [0.5, 0.5]);
+    assert.equal(holdsTool(tree, 'chat'), true);
+    assert.equal(holdsTool(tree, 'worlds'), false);
+    assert.equal(holdsTool(leaf('p1', { kind: 'game' }), 'chat'), false);
+});
+
+// ── chat's pages ──────────────────────────────────────────────────────────
+
+const CHAT = { kind: 'tool', tool: 'chat' } as const;
+
+test('a tab reads chat only with a chat pane on its conversation, not on its Settings', () => {
+    const tree = split('split-1', 'y', [leaf('p1', { kind: 'game' }), leaf('p2', CHAT)], [0.5, 0.5]);
+    assert.equal(readsChat(tree, new Map([['p2', 'chat']])), true);
+    assert.equal(readsChat(tree, new Map([['p2', 'settings']])), false, 'Settings shows no room');
+    assert.equal(readsChat(leaf('p1', { kind: 'game' }), new Map()), false);
+});
+
+test('two chat panes in a tab read chat while either is on its conversation', () => {
+    const tree = split('split-1', 'x', [leaf('p1', CHAT), leaf('p2', CHAT)], [0.5, 0.5]);
+    assert.equal(readsChat(tree, new Map([['p1', 'settings'], ['p2', 'chat']])), true);
+    assert.equal(readsChat(tree, new Map([['p1', 'settings'], ['p2', 'settings']])), false);
+});
+
+test('a chat pane with no page known is not taken to be read', () => {
+    assert.equal(readsChat(leaf('p1', CHAT), new Map()), false);
+});
+
+test("every chat pane keeps its page, in every tab, and one new since starts on the page it is given", () => {
+    const trees = [split('split-1', 'y', [leaf('p1', { kind: 'game' }), leaf('p2', CHAT)], [0.5, 0.5]), leaf('p3', CHAT)];
+    const pages = chatPages(trees, new Map([['p2', 'settings']]), () => 'chat');
+    assert.deepEqual([...pages], [['p2', 'settings'], ['p3', 'chat']]);
+});
+
+test('a pane that no longer holds chat drops its page, so chat put back in it starts afresh', () => {
+    const pages = chatPages([leaf('p1', { kind: 'tool', tool: 'worlds' })], new Map([['p1', 'settings']]), () => 'chat');
+    assert.deepEqual([...pages], []);
+});
+
+test('the page a new chat pane starts on is asked for only when there is one', () => {
+    let asked = 0;
+    const fresh = (): 'chat' => {
+        asked++;
+        return 'chat';
+    };
+    chatPages([leaf('p1', CHAT)], new Map([['p1', 'settings']]), fresh);
+    assert.equal(asked, 0);
+    chatPages([leaf('p1', CHAT), leaf('p2', CHAT)], new Map([['p1', 'settings']]), fresh);
+    assert.equal(asked, 1);
 });
 
 test('a live link with Home server in no tab at all is for the bar to say', () => {

@@ -182,6 +182,21 @@ export function canClosePane(tree: PaneNode, paneId: string): boolean {
     return !(tree.kind === 'leaf' && content.kind === 'empty');
 }
 
+/**
+ * Whether this pane's header carries the clocks: the game's, while its tab
+ * has no Timers pane.
+ *
+ * Clocks keep running and alerting with the Timers pane closed, which is on
+ * purpose, but then the sound came from nowhere a player could see. The game
+ * is what an alert is about and what they are looking at, so its header takes
+ * over the countdowns. The tab rather than the window: a Timers pane in
+ * another tab is as far out of sight as a closed one, and one beside the game
+ * already shows them. `headerClocks` decides which.
+ */
+export function showsClocks(tree: PaneNode, paneId: string): boolean {
+    return contentOf(tree, paneId)?.kind === 'game' && paneHolding(tree, { kind: 'tool', tool: 'timers' }) === null;
+}
+
 export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }, sizes: GameSizes): PaneMenuItem[] {
     const isGame = contentOf(tree, paneId)?.kind === 'game';
     return [

@@ -6,6 +6,9 @@
 restart; the reasons are under **Rejected**. `design/Timers.dc.html` is the
 visual starting point for the pane.
 
+**Amended 2026-09-30:** while no Timers pane is beside the game, the game
+pane's header carries the running clocks. See **The game's header**.
+
 ## Goal
 
 A **Timers** tool that holds two kinds of clock:
@@ -355,7 +358,8 @@ refusal.
 countdown, 5:00, threshold 0:30, volume 80%, AFK mode off. It is disabled at 20
 custom clocks.
 
-The footer line: *Timers run with the panel closed.*
+The footer line: *Timers run with the pane closed, and the game's header then
+shows any running or at 0:00.*
 
 ### Where the tool is offered
 
@@ -365,6 +369,33 @@ app-wide and the built-ins are on every server. It is listed after Hiscores and
 before Single player. It is reached through Add pane, a pane's dropdown and an
 empty pane's launcher, like every other tool. The default layout for a new window
 (game over chat) does not change.
+
+## The game's header
+
+Added 2026-09-30. Clocks keep running and alerting with the Timers pane closed,
+which is the point of them, but the sound then came from nothing on screen: a
+player heard it with no idea which clock it was or when the next would come.
+
+While the game's **tab** has no Timers pane, the game pane's header carries the
+clocks, after the world and the latency. The tab rather than the window, since a
+Timers pane in another tab is as far out of sight as a closed one; one beside the
+game already shows them, and the header then shows none.
+
+| Question | Answer |
+|---|---|
+| Which clocks? | Those `running`, and countdowns `expired` at 0:00, in the pane's order (`headerClocks`). Idle and paused clocks cannot alert, and a header listing them would never be empty. |
+| What does each show? | Its name, 12px dim and cut short past 9em (about 18 letters), then its digits in bold Arial, toned by `clockTone` as the pane's are. |
+| Can they be clicked? | No. Read-only: the Timers pane is where a clock is started, paused, reset or changed. A stray click restarting AFK would restart the countdown without the client's idle timer. The hint under the pointer says when each alerts (`clockHint`): `AFK: alerts with 15s left`, `Thieving: alerts at 0:00`, `Stopwatch: alerts at 0:20 elapsed`. |
+| What if they do not fit? | They take only the room the header has spare, so the pane's name, the world and the latency read exactly as they would with no clocks, and a narrow game pane shows fewer. Within that room they sit on one line that wraps into a second the header clips, led by an empty item so that even the first clock wraps away rather than showing half its digits: whole clocks drop off the end, and the dropdown and the close stay where they are. Sized from their content, they shrank alongside the name, and a 430px pane read "Ga…". |
+
+An expired countdown without AFK mode stays red in the header until it is reset in
+the Timers pane, as it stays red in the pane: nothing returns a clock to idle but
+its definition changing.
+
+Whether a pane shows them is main's (`paneMenu.showsClocks`, carried on
+`PaneView.clocks`); which clocks and what the hint says are `shared/timers.ts`'s.
+The header draws the digits from the same `ShellState.timers` snapshot the pane
+does, on the same interval (`renderer/clocks.ts`), so the two cannot drift apart.
 
 ## IPC
 
@@ -409,7 +440,8 @@ export interface ClockView {
 
 | File | Holds | Tested |
 |---|---|---|
-| `src/shared/timers.ts` | `TimerDef`, `TimersView`, `ClockView`, validation, `formatClock`, `parseDuration`, `clockTone` | yes |
+| `src/shared/timers.ts` | `TimerDef`, `TimersView`, `ClockView`, validation, `formatClock`, `parseDuration`, `clockTone`, `headerClocks`, `clockHint` | yes |
+| `src/main/paneMenu.ts` | `showsClocks`: whether a pane's header carries the clocks | yes |
 | `src/main/timers/defs.ts` | `readTimers`, `timersFor`, the save / delete / restore rules, `newServerTimers`, custom id generation | yes |
 | `src/main/timers/runner.ts` | `TimersRunner` over `TimersIo { now, setTimer, alert, changed }` (`setTimer` returns its own cancel); `isGameInput`, which input restarts AFK clocks | yes |
 | `src/main/timers/electron.ts` | `readAlertSound()`, the banner | no — a seam, no rules |
@@ -417,7 +449,7 @@ export interface ClockView {
 | `src/main/appState.ts` | the `timers` block | yes |
 | `src/main/serverWindow.ts`, `src/main/index.ts` | one app-wide definition store, the sound request and the settle on a wake from sleep in `index`; one runner per window, `input-event`, `gameGone`, the banner and the alert send in `serverWindow` | no |
 | `src/preload/index.ts`, `src/shared/ipc.ts` | the `timers` API and channels | typecheck |
-| `src/renderer/tools/Timers.tsx`, `Shell.tsx` | the pane; the shell's alert player | no |
+| `src/renderer/tools/Timers.tsx`, `Shell.tsx`, `clocks.ts` | the pane; the shell's alert player and the game header's clocks; the digits' interval and tones, which both share | no |
 | `static/sounds/alert.wav`, `src/main/timers/alertSound.test.ts` | the alert sound (Kenney, CC0) and the check that it stays decodable, short and loud; `electron-builder.yml` already ships `static/**` | yes |
 
 Every rule is in a tested module; `serverWindow`, `index` and the renderer only
@@ -547,7 +579,8 @@ previous frame.
 
 ## Out of scope
 
-- A read-out of a clock in the tab bar or window title.
+- A read-out of a clock in the tab bar or window title. (The game pane's header
+  carries one since 2026-09-30; see **The game's header**.)
 - Global or in-game hotkeys for Start and Reset.
 - An always-on-top overlay window.
 - Repeating alerts, or a second alert at zero.

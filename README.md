@@ -180,6 +180,16 @@ can be edited and restored to their defaults. Clocks you add are yours
 everywhere, in every server's windows; the clocks themselves run per window,
 since each window is its own login, and they keep running with the pane closed.
 
+While the game's tab has no Timers pane — closed, or left in another tab — the
+game pane's header carries the clocks instead, after the world and the latency:
+each one running, and each countdown holding at 0:00, with its name and its
+digits in the pane's colours. So an alert that sounds has something on screen
+to have come from. They are only shown there; the hint under the pointer says
+when each one alerts, and the Timers pane is where one is started, paused,
+reset or changed. They take only the room the header has to spare, so the
+world and the latency read as they always did, and a header too narrow for all
+of them drops whole clocks from its end.
+
 **The launcher** is the way into the reference pages, and it is what an empty
 pane shows. It lists this server's links, in order — for Lost City: Forums,
 Coordinates, Clue Help, Puzzle Solver, World Map, Markets, Quest Guides, Skill
@@ -344,8 +354,12 @@ log. Another channel, or a line you send, brings the log back.
 People coming and going is folded: a run of joins, parts, quits and renames is
 one faint line, "3 joined, 2 left", which opens to the lines on a click. Coming
 back to a tab where something arrived while you were away draws a gold **New**
-rule above the first line you missed, until you leave it again. What you have
-half-typed stays with the tab you typed it in.
+rule above the first line you missed, until you leave it again. Chat out of
+sight counts as away, even for the tab it had open: while no chat pane shows
+the conversation in any window — closed, behind another tab, or on its
+Settings page — what arrives there is counted like anywhere else, and the
+rule marks it once chat is back. What you have half-typed stays with the tab
+you typed it in.
 
 Click a name, in the list or the log, for a menu: message them, mention them,
 look them up, or ignore them. Ignoring hides someone's messages, notices and
@@ -368,6 +382,17 @@ unless another setup is chosen for that server's new windows —
 chat is the kit's own reason to be open instead of a browser tab, and a pane
 nobody knows is there is a pane nobody opens. Closed, chat comes back from
 **Add pane** in the tab bar, as a column down the tab's right edge.
+
+While no chat pane shows the conversation in any window — closed, in a tab
+behind the one you are looking at, or on its Settings page — a line that
+names you or a private message shows in the game pane's header, after the
+world: the newest one in gold, cut to fit, with how many more are waiting.
+Its tooltip has the whole line and the room. Clicking it opens chat on that
+room, as a column beside the game with the window growing to make room, as
+Add pane's does, or in a tab of its own when there is no room for one, and
+on the conversation if the pane was on Settings. It goes once chat is on
+screen again anywhere, and the rail still counts in gold whatever else was
+for you, in the room chat had open as in any other.
 
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short
@@ -1181,6 +1206,7 @@ src/renderer/tools/ChatUsers.tsx     a channel's users by rank
 src/renderer/tools/homeserver/Builds.tsx   the build lines: use, download, remove
 src/renderer/tools/homeserver/Friends.tsx  Play with friends: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
+src/renderer/clocks.ts      what the Timers pane and the game's header share to draw digits
 static/offline.html         shown when a server can't be reached
 static/starting.html        your home server starting, failed, or not downloaded yet
 engines/*.json              your home server's build lines, pinned by digest

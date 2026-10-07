@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alertTitle, blankDraft, clockTone, clockValueAt, draftOf, formatClock, isCustomId, isTimerDef, parseDuration, readDraft, timerProblem, type TimerDef } from './timers.ts';
+import { alertTitle, blankDraft, clockHint, clockTone, clockValueAt, draftOf, formatClock, headerClocks, isCustomId, isTimerDef, parseDuration, readDraft, timerProblem, type ClockPhase, type ClockView, type TimerDef } from './timers.ts';
 
 const COUNTDOWN: TimerDef = { id: 'thieving', name: 'Thieving', kind: 'countdown', durationMs: 300_000, thresholdMs: 30_000, volume: 0.8, afk: false };
 const TIMER: TimerDef = { id: 'custom-0000abcd', name: 'Stopwatch', kind: 'timer', durationMs: null, thresholdMs: 20_000, volume: 0.5, afk: false };
@@ -138,4 +138,22 @@ test('a form names the field it cannot read, the name first', () => {
     assert.equal(timer.ok && timer.input.durationMs, null, "a timer's form ignores the duration box");
     const tooLong = readDraft({ ...named, duration: '1:00', threshold: '2:00' });
     assert.equal(!tooLong.ok && tooLong.problem.message, 'The threshold must be shorter than the duration.');
+});
+
+test("the game's header takes the clocks that are running or expired, in the pane's order", () => {
+    const clock = (id: string, phase: ClockPhase): ClockView => ({ def: { ...COUNTDOWN, id }, builtIn: false, edited: false, phase, valueMs: 0, at: 0, alerted: false });
+    const clocks = [clock('a', 'running'), clock('b', 'idle'), clock('c', 'expired'), clock('d', 'paused'), clock('e', 'running')];
+    assert.deepEqual(
+        headerClocks(clocks).map(c => c.def.id),
+        ['a', 'c', 'e'],
+        'idle and paused clocks cannot alert, so they stay out'
+    );
+    assert.deepEqual(headerClocks([]), []);
+});
+
+test("a clock's hint in the header says when it alerts", () => {
+    assert.equal(clockHint({ ...COUNTDOWN, name: 'AFK', thresholdMs: 15_000 }), 'AFK: alerts with 15s left');
+    assert.equal(clockHint({ ...COUNTDOWN, thresholdMs: 90_000 }), 'Thieving: alerts with 1:30 left');
+    assert.equal(clockHint({ ...COUNTDOWN, thresholdMs: 0 }), 'Thieving: alerts at 0:00');
+    assert.equal(clockHint(TIMER), 'Stopwatch: alerts at 0:20 elapsed');
 });
