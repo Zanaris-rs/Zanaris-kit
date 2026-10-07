@@ -87,15 +87,24 @@ export function readPlaces(x: unknown): Map<string, Map<number, Place>> {
 
 /**
  * The work area a window at (`x`, `y`) and `width` wide can be dragged on,
- * or null: its tab bar, which is what a window is dragged by, lies inside the
- * area from top to bottom and across at least a pane's width of it.
+ * or null: its tab bar, which is what a window is dragged by, overlaps the
+ * area's height and lies across at least a pane's width of it.
+ *
+ * Any overlap of the height, not all of it, because a window that sat at the
+ * top of its display finds its tab bar a little above the top once the work
+ * area's top has moved down — a menu bar that stopped hiding, or a taller one
+ * in another scaled mode — and `openingFrame` moves it down onto the area.
+ * The width is the one the window will have there, held to the area, since a
+ * setup wider than the display is opened narrower, and judged at its full
+ * width a window remembered off the left edge could open out of sight.
  */
 function reachable(x: number, y: number, width: number, workAreas: readonly Rect[]): Rect | null {
     return (
         workAreas.find(area => {
-            const within = y >= area.y && y + TAB_BAR_HEIGHT <= area.y + area.height;
-            const across = Math.min(x + width, area.x + area.width) - Math.max(x, area.x);
-            return within && across >= Math.min(PANE_MIN_WIDTH, width);
+            const held = Math.min(width, area.width);
+            const within = y + TAB_BAR_HEIGHT > area.y && y < area.y + area.height;
+            const across = Math.min(x + held, area.x + area.width) - Math.max(x, area.x);
+            return within && across >= Math.min(PANE_MIN_WIDTH, held);
         }) ?? null
     );
 }
@@ -117,9 +126,10 @@ function areaAt(point: { x: number; y: number }, workAreas: readonly Rect[]): Re
  * 3. Otherwise centred on `cursor`, the display under the pointer.
  *
  * The size is then held to that display — no wider than it, no taller than it
- * less `FRAME_ALLOWANCE` — and the window moved back onto it only as far as it
- * runs off the right or bottom (`windowRoom.grownFrame`), so one the player
- * left hanging off the left or top stays there.
+ * less `FRAME_ALLOWANCE` — and the window moved back onto it as far as it
+ * runs off the right or bottom (`windowRoom.grownFrame`), and down as far as
+ * its tab bar runs off the top, since that is what it is dragged by. One the
+ * player left hanging off the left stays there.
  */
 export function openingFrame(opts: {
     content: Size;
@@ -137,8 +147,9 @@ export function openingFrame(opts: {
         home && remembered
             ? { x: remembered.x, y: remembered.y }
             : (opts.cascade ?? { x: area.x + Math.floor((area.width - width) / 2), y: area.y + Math.floor((area.height - height) / 2) });
+    const frame = grownFrame({ ...origin, width, height }, area, { width: 0, height: 0 });
     return {
-        frame: grownFrame({ ...origin, width, height }, area, { width: 0, height: 0 }),
+        frame: { ...frame, y: Math.max(frame.y, area.y) },
         maximized: home !== null && remembered !== null && remembered.maximized,
         fullScreen: home !== null && remembered !== null && remembered.fullScreen
     };

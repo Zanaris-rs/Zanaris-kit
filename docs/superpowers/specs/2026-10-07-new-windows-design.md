@@ -36,7 +36,9 @@ pays for on every launch.
   be what new windows open with.
 - **Opening a window resizes nothing after it opens.** It is created at its
   setup's size and place, and the three things `CLAUDE.md` lists remain the
-  only things that resize a window.
+  only things that resize a window. The one exception is putting back the
+  player's own state: a window that closed maximised or full screen is made
+  so again as it is shown.
 
 ## 1. Open New Windows With
 
@@ -170,8 +172,14 @@ place for its slot, the cascade point, and every display's work area.
 1. **The remembered place, if its tab bar can be reached.** The tab bar is
    what a window is dragged by (on Linux, the system's caption above it), so
    the place is kept when the strip along the window's top, `TAB_BAR_HEIGHT`
-   tall, lies inside one display's work area from top to bottom and across at
-   least `PANE_MIN_WIDTH` of its width. That display is the one it opens on.
+   tall, overlaps one display's work area in height and lies across at least
+   `PANE_MIN_WIDTH` of its width, judged at the width the window will have
+   there. That display is the one it opens on. Any overlap of the height,
+   because a window at the top of its display finds its tab bar a little
+   above the top when the work area's top moves down (a menu bar that stopped
+   hiding, a taller one in another scaled mode); it is moved down onto it. A
+   display whose resolution dropped so far that the tab bar is no longer on
+   it counts as gone: the window cascades, as it would have before.
 2. **Otherwise the cascade, as now:** 32px right and down from the focused
    game window, or the last one opened, on that window's display.
 3. **Otherwise centred** on the display under the cursor. Today a first
@@ -181,10 +189,10 @@ place for its slot, the cascade point, and every display's work area.
 
 The window's size is then held to that display's work area: no wider than
 it, and no taller than it less `FRAME_ALLOWANCE`, as the height already is.
-Then the window is moved back onto the work area only as far as it runs off
-its right or bottom edge, the rule `windowRoom.grownFrame` already keeps for
-a window growing: a window the player left hanging off the left or top stays
-there. When the setup's size had to be held, the tree is fitted to the size
+Then the window is moved back onto the work area as far as it runs off its
+right or bottom edge, the rule `windowRoom.grownFrame` already keeps for a
+window growing, and down as far as its tab bar runs off the top: a window the
+player left hanging off the left stays there. When the setup's size had to be held, the tree is fitted to the size
 the window got the way a resize fits it, the game keeping its pixels while
 the other panes give way to their floors (`paneTree.refit` from the setup's
 own size), which is what `openWindowTabs` did for game over chat on a short

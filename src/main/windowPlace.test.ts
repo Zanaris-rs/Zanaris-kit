@@ -31,9 +31,20 @@ test('with neither a place nor a window to cascade from, the window is centred o
     assert.deepEqual(opening.frame, { x: 1440 + Math.floor((2560 - 765) / 2), y: Math.floor((1440 - 607) / 2), width: 765, height: 607 });
 });
 
-test('a tab bar above the top of its display cannot be reached, so the place is not used', () => {
+test('a tab bar partly above its display’s top, where a menu bar that grew left it, is kept and moved down onto it', () => {
     const opening = openingFrame({ content, remembered: place(100, 10), cascade: null, workAreas: [laptop], cursor: laptop });
+    assert.deepEqual(opening.frame, { x: 100, y: 25, width: 765, height: 607 });
+});
+
+test('a tab bar wholly above its display cannot be reached, so the place is not used', () => {
+    const opening = openingFrame({ content, remembered: place(100, 25 - TAB_BAR_HEIGHT), cascade: null, workAreas: [laptop], cursor: laptop });
     assert.deepEqual(opening.frame, { x: Math.floor((1440 - 765) / 2), y: 25 + Math.floor((875 - 607) / 2), width: 765, height: 607 });
+});
+
+test('a setup wider than its display, remembered off its left edge, is not opened out of sight', () => {
+    const wide = { width: 2000, height: 607 };
+    const opening = openingFrame({ content: wide, remembered: place(-1800, 100), cascade: null, workAreas: [laptop], cursor: laptop });
+    assert.deepEqual(opening.frame, { x: 0, y: 25 + Math.floor((875 - 607) / 2), width: 1440, height: 607 }, 'held to the display, it would have shown none of itself at -1800');
 });
 
 test('a window hanging off the left edge is kept, and left there, while a pane width of its tab bar shows', () => {

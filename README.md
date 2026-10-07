@@ -798,9 +798,11 @@ window number, so Lost City and Lost City (2) each come back to their own
 place, maximised or full screen if they were. Only the place: the size is the
 setup's, so a window dragged larger by hand comes back at its setup's size,
 and a size worth keeping is a saved setup. A place whose tab bar would land on
-no display — a monitor since unplugged — is passed over for the usual
+no display — a monitor since unplugged, or one whose resolution dropped so far
+that the window's tab bar is no longer on it — is passed over for the usual
 cascade, 32px from the window in front, or the centre of the display under
-the pointer. A capture neither reads nor writes places.
+the pointer. One whose tab bar is only a little above the top, where a taller
+menu bar now sits, is moved down onto the display. A capture neither reads nor writes places.
 
 **Setups**, in the tab bar just before Add pane, is a set of panes in a
 shape, one click away. Whatever you pick replaces the panes of the tab in front:

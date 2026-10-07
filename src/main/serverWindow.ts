@@ -438,7 +438,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * this server's new windows, or Game and Chat, at the place this window's
      * number last closed at if its tab bar can still be reached. So the window
      * is built at its size and place rather than opened and then moved, and
-     * opening it is not one of the things that resize a window. The size is
+     * opening it is not one of the things that resize a window; one that
+     * closed maximised or full screen is made so again as it is shown, below,
+     * which puts back the player's state rather than sizing it. The size is
      * held to the display it opens on, and the first layout is fitted to the
      * size it got as a resize is (`tabs.openWindowTabs`).
      */

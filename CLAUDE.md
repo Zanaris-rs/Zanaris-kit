@@ -116,8 +116,10 @@ not a drop. Opening a window is not one of them either: a new window is built
 at the size of the setup its server's new windows open with and at the place
 its number last closed at, both decided before it exists
 (`setups.openingSetup`, `windowPlace.openingFrame`), never opened and then
-moved. Only the place is recorded without being asked for; the size is
-always the setup's.
+moved. One that closed maximised or full screen is made so again as it is
+shown, which puts back the player's own state rather than sizing the window.
+Only the place is recorded without being asked for; the size is always the
+setup's.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file
 carries tool ids between people — that is the whole point of saving one — and
