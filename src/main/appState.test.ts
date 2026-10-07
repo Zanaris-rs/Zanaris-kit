@@ -840,3 +840,107 @@ test('the pictures a set-aside state named are found in it, cut short or not', (
     later.load();
     assert.deepEqual(later.picturesSetAside(), [PICTURE], 'and on every launch after');
 });
+
+const PLACE = { x: -1800, y: 100, maximized: true, fullScreen: false };
+
+test('new windows open with nothing chosen until a choice is saved, and a fresh instance reads it back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    assert.equal(a.newWindowSetup('lostcity'), null);
+    a.setNewWindowSetup('lostcity', { builtIn: 'game-chat-tools' });
+    a.setNewWindowSetup('zanaris', { file: 'skilling.json' });
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.newWindowSetup('lostcity'), { builtIn: 'game-chat-tools' });
+    assert.deepEqual(b.newWindowSetup('zanaris'), { file: 'skilling.json' });
+    assert.equal(b.newWindowSetup('lostcitylabs'), null);
+});
+
+test('a choice cleared goes back to nothing, and one that is not a choice changes nothing', () => {
+    const a = new AppState(tempFile());
+    a.load();
+    a.setNewWindowSetup('lostcity', { builtIn: 'game' });
+    a.setNewWindowSetup('lostcity', { file: '../state.json' });
+    assert.deepEqual(a.newWindowSetup('lostcity'), { builtIn: 'game' });
+    a.setNewWindowSetup('lostcity', null);
+    assert.equal(a.newWindowSetup('lostcity'), null);
+});
+
+test('a stored choice naming a path, or a built-in the kit does not know, is dropped while the rest load', () => {
+    const file = tempFile();
+    writeFileSync(
+        file,
+        JSON.stringify({
+            version: 1,
+            worlds: { lostcity: REMEMBERED },
+            newWindows: { lostcity: { builtIn: 'game' }, zanaris: { file: '../../state.json' }, labs: { builtIn: 'everything' } }
+        })
+    );
+    const a = new AppState(file);
+    a.load();
+    assert.deepEqual(a.newWindowSetup('lostcity'), { builtIn: 'game' });
+    assert.equal(a.newWindowSetup('zanaris'), null);
+    assert.equal(a.newWindowSetup('labs'), null);
+    assert.deepEqual(a.world('lostcity'), REMEMBERED);
+});
+
+test('a place saves per server and window number, and a fresh instance reads it back', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setPlace('lostcity', 1, PLACE);
+    a.setPlace('lostcity', 2, { ...PLACE, x: 40, maximized: false });
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.place('lostcity', 1), PLACE);
+    assert.deepEqual(b.place('lostcity', 2), { ...PLACE, x: 40, maximized: false });
+    assert.equal(b.place('lostcity', 3), null);
+    assert.equal(b.place('zanaris', 1), null);
+});
+
+test('a window numbered past the last one kept, or a place that is not one, is not recorded', () => {
+    const file = tempFile();
+    const a = new AppState(file);
+    a.load();
+    a.setPlace('lostcity', 17, PLACE);
+    a.setPlace('lostcity', 0, PLACE);
+    a.setPlace('lostcity', 1, { ...PLACE, x: 1.5 });
+    a.setPlace('', 1, PLACE);
+    assert.equal(a.place('lostcity', 17), null);
+    assert.equal(a.place('lostcity', 1), null);
+    a.setPlace('lostcity', 16, PLACE);
+    const b = new AppState(file);
+    b.load();
+    assert.deepEqual(b.place('lostcity', 16), PLACE);
+});
+
+test('a bad stored place costs only itself', () => {
+    const file = tempFile();
+    writeFileSync(
+        file,
+        JSON.stringify({ version: 1, worlds: {}, places: { lostcity: { '1': PLACE, '2': { x: 'left' } }, zanaris: [PLACE] } })
+    );
+    const a = new AppState(file);
+    a.load();
+    assert.deepEqual(a.place('lostcity', 1), PLACE);
+    assert.equal(a.place('lostcity', 2), null);
+    assert.equal(a.place('zanaris', 1), null);
+});
+
+test('a file written before either existed loads with no choices and no places', () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({ version: 1, worlds: { lostcity: REMEMBERED } }));
+    const a = new AppState(file);
+    a.load();
+    assert.equal(a.newWindowSetup('lostcity'), null);
+    assert.equal(a.place('lostcity', 1), null);
+});
+
+test('what a place getter hands back is a copy', () => {
+    const a = new AppState(tempFile());
+    a.load();
+    a.setPlace('lostcity', 1, PLACE);
+    a.place('lostcity', 1)!.x = 0;
+    assert.deepEqual(a.place('lostcity', 1), PLACE);
+});
