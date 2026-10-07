@@ -1,4 +1,4 @@
-import type { StoredNode } from './layoutFile.ts';
+import { layoutEntries, readSetup, type StoredNode } from './layoutFile.ts';
 import type { Size } from './paneTree.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import { CHAT_PREFERRED_HEIGHT, COLUMN_PREFERRED_WIDTH, GAME_PREFERRED_WIDTH, SEAM } from '../shared/layout.ts';
@@ -17,6 +17,9 @@ import { CHAT_PREFERRED_HEIGHT, COLUMN_PREFERRED_WIDTH, GAME_PREFERRED_WIDTH, SE
  * Each comes with the size of tab it was drawn for, in pixels, so opening one
  * can size the window around the game (`paneTree.arrangeForGame`) exactly as
  * a saved setup's own size does.
+ *
+ * Any of them, or a saved setup, can be what new windows of a server open
+ * with (`openingSetup`), which is decided here for the same reason.
  */
 
 export type BuiltInSetupId = 'game' | 'game-chat' | 'game-chat-tools';
@@ -72,4 +75,103 @@ export function builtInSetups(opts: { tools: readonly ToolId[]; gameHeight: numb
         });
     }
     return setups;
+}
+
+/**
+ * What new windows of a server open with: a built-in, or a saved setup by
+ * its name in that server's setups folder. Stored per server in `state.json`
+ * (`AppState.newWindowSetup`), and chosen from the Setups menu's Open New
+ * Windows With. A server with none opens Game and Chat.
+ *
+ * A file is a name, never a path. It is looked up in the folder's own
+ * listing when a window opens (`openingSetup`), so nothing stored is ever
+ * joined into a path, and a name that could reach outside the folder is
+ * dropped as `state.json` is read.
+ */
+export type NewWindowSetup = { builtIn: BuiltInSetupId } | { file: string };
+
+const BUILT_IN_IDS: readonly BuiltInSetupId[] = ['game', 'game-chat', 'game-chat-tools'];
+/** The longest file name the three platforms' file systems allow. */
+const FILE_NAME_MAX = 255;
+
+/** One stored choice, or null when it is not one: a built-in this kit does not know, or a name the folder's listing would never return. */
+export function readNewWindowSetup(x: unknown): NewWindowSetup | null {
+    if (typeof x !== 'object' || x === null) return null;
+    const choice = x as Record<string, unknown>;
+    if (typeof choice.builtIn === 'string') return (BUILT_IN_IDS as readonly string[]).includes(choice.builtIn) ? { builtIn: choice.builtIn as BuiltInSetupId } : null;
+    const file = choice.file;
+    if (typeof file !== 'string' || file.length > FILE_NAME_MAX || /[/\\\u0000]/.test(file)) return null;
+    return layoutEntries([file]).length === 1 ? { file } : null;
+}
+
+/** The stored choices, per server id, read one server at a time. */
+export function readNewWindows(x: unknown): Map<string, NewWindowSetup> {
+    const choices = new Map<string, NewWindowSetup>();
+    if (typeof x !== 'object' || x === null || Array.isArray(x)) return choices;
+    for (const [id, value] of Object.entries(x as Record<string, unknown>)) {
+        const choice = id === '' ? null : readNewWindowSetup(value);
+        if (choice) choices.set(id, choice);
+    }
+    return choices;
+}
+
+export function sameSetup(a: NewWindowSetup, b: NewWindowSetup): boolean {
+    if ('builtIn' in a) return 'builtIn' in b && a.builtIn === b.builtIn;
+    return 'file' in b && a.file === b.file;
+}
+
+function holdsGame(node: StoredNode): boolean {
+    return node.kind === 'leaf' ? node.content.kind === 'game' : node.children.some(holdsGame);
+}
+
+/** Whether a saved setup's text can be what new windows open with: a setup, holding the game, since a game window opens onto its game. */
+export function opensWindow(text: string): boolean {
+    const setup = readSetup(text);
+    return setup !== null && holdsGame(setup.tree);
+}
+
+/** What a new window opens with. */
+export interface OpeningSetup {
+    tree: StoredNode;
+    /** The tab size it was made at, or null for a saved setup from before setups carried one, laid out by its fractions. */
+    size: Size | null;
+    /** As the log names it: a built-in's name, or the file's without `.json`. */
+    name: string;
+    /** The choice it opened with: the one asked for, or Game and Chat when that could not be used. What the menu ticks. */
+    used: NewWindowSetup;
+    /** Why the choice asked for could not be used, or null when it was. */
+    fellBack: string | null;
+}
+
+/**
+ * The setup a new window opens with, from its server's stored `choice`.
+ *
+ * `saved` is the folder's listing (`layoutFile.layoutEntries`), and `read`
+ * reads one of its entries, null when it cannot: injected, so a test never
+ * touches a folder, and so a stored name is only ever opened as an entry the
+ * listing returned. Anything that cannot be used — a built-in this window
+ * does not offer, a file gone from the folder, one that is not a setup or
+ * holds no game — opens Game and Chat, with the reason.
+ */
+export function openingSetup(
+    choice: NewWindowSetup | null,
+    opts: { builtIns: readonly BuiltInSetup[]; saved: readonly { name: string; file: string }[]; read: (file: string) => string | null }
+): OpeningSetup {
+    const builtIn = (setup: BuiltInSetup, fellBack: string | null): OpeningSetup => ({ tree: setup.tree, size: setup.size, name: setup.name, used: { builtIn: setup.id }, fellBack });
+    // Every window has chat, so Game and Chat is always there; Game, which is
+    // always first, only stands in should a window ever have no chat.
+    const fallback = (reason: string | null): OpeningSetup => builtIn(opts.builtIns.find(s => s.id === 'game-chat') ?? opts.builtIns[0]!, reason);
+    if (choice === null) return fallback(null);
+    if ('builtIn' in choice) {
+        const setup = opts.builtIns.find(s => s.id === choice.builtIn);
+        return setup ? builtIn(setup, null) : fallback(`this window does not offer ${choice.builtIn}`);
+    }
+    const entry = opts.saved.find(e => e.file === choice.file);
+    if (!entry) return fallback(`${choice.file} is not in the setups folder`);
+    const text = opts.read(entry.file);
+    if (text === null) return fallback(`${entry.file} could not be read`);
+    const setup = readSetup(text);
+    if (!setup) return fallback(`${entry.file} is not a setup`);
+    if (!holdsGame(setup.tree)) return fallback(`${entry.file} holds no game`);
+    return { tree: setup.tree, size: setup.size, name: entry.name, used: { file: entry.file }, fellBack: null };
 }
