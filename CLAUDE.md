@@ -284,6 +284,44 @@ reopened on reconnect, and follows its person through a NICK. Anything said
 to NickServ, in a conversation or by `/msg`, is echoed with its secret words
 hidden (`hideSecret`).
 
+**A ping shows in the game's header while chat is out of sight.** A line
+that names you or is said to you alone, arriving while no window's front
+tab holds a chat pane showing the conversation, stays after the game's
+read-out until one does anywhere (`IrcClient.seePings`). Main counts
+pings seen before any window reads chat's view — when a window sends its
+state with the conversation in front (`chatShown`), and when chat changes
+(`chatOnScreen`) — so no header ever shows one chat is already showing. A
+click opens chat on the ping's room through `showChat`, which adds the pane
+through `showTool`, as the Sharing button opens Home server, and puts it on
+the conversation. The system notification is separate, and is still
+only for a kit in the background.
+
+**The open room is read only while a chat pane shows the conversation.**
+Out of sight — no chat pane in any window's front tab, or only ones on their
+Settings page, which shows no room — it counts what arrives, and keeps its
+gold, as any other room does, so the rail and the New divider point at what
+nobody saw. Each chat pane's page is main's, not the shell's
+(`serverWindow.currentChatPages`, reconciled with the tabs by
+`tabs.chatPages`), and `tabs.readsChat` says whether a tab shows the
+conversation; the shell only asks for a page (`chat.showPage`). Picking a
+room from Settings selects first and then shows the page, so the room that
+was open is not read on the way. A window sending its state without the
+conversation in front, or closing, tells main (`chatHidden`), and when no
+window shows it the client is told so (`IrcClient.lookAway`), which leaves
+the open room as opening another would. `seePings` is the way back, and reads
+the open room as opening it would. A `select` while out of sight only changes
+which room is open, so a click on a ping or a notification, which selects its
+room, leaves the gold where it was when chat is out of sight. The client
+starts out of sight: nothing has been seen before a pane shows it. Main keeps
+which windows last said they show the conversation (`chatInFront`) rather
+than asking its map of windows, because a new window says so from its first
+layout, before it is in the map. A ping clicked puts the chat pane it shows
+on the conversation, whichever page it was on. Otherwise a pane stays on the
+page it was left on, through a tab switch and a shell reload, on the owner's
+call on 2026-10-07. Picking the page again on every redraw was an accident
+of React remounting the pane, and with Settings counting as out of sight it
+would have moved a pane off Settings that nobody had moved.
+
 **Links in the log open only if `linkTarget` says http or https**, read again
 in main whatever the shell sent: a chat line is a stranger's writing.
 

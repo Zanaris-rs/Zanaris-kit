@@ -1,7 +1,7 @@
 /** Channel names and payload types, shared by main, preload and the renderer so they can't drift. */
 import type { NewServerInput, ServerDef } from './catalog';
 import type { Detail, WorldsView } from './worlds';
-import type { ChatView } from './chat';
+import type { ChatPage, ChatView } from './chat';
 import type { UserAction } from './chatInput';
 import type { SettingsSave } from './chatSettings';
 import type { HiscoresView } from './hiscores';
@@ -55,6 +55,8 @@ export const IPC = {
     chatDisconnect: 'zanaris:chat-disconnect',
     chatOpenLink: 'zanaris:chat-open-link',
     chatUserMenu: 'zanaris:chat-user-menu',
+    chatOpenPing: 'zanaris:chat-open-ping',
+    chatShowPage: 'zanaris:chat-show-page',
     homeServerSetSetting: 'zanaris:homeserver-set-setting',
     homeServerRetry: 'zanaris:homeserver-retry',
     homeServerOpenSaves: 'zanaris:homeserver-open-saves',
@@ -237,7 +239,7 @@ export interface ZanarisApi {
     chat: {
         /** Sends a line. Text beginning with / is a command: /me, /msg, /nick, /join and /part are read here, and anything else goes to the server as typed. */
         send(text: string): Promise<void>;
-        /** Shows a channel in the panel and marks it read. */
+        /** Opens a channel in chat, which reads it while a chat pane shows the conversation. */
         select(channel: string): Promise<void>;
         /**
          * Leaves a channel for the rest of the session. The saved auto-join
@@ -257,6 +259,10 @@ export interface ZanarisApi {
         disconnect(): Promise<void>;
         /** Opens a link from the log in the system browser. Main reads it again, and opens only http and https. */
         openLink(url: string): Promise<void>;
+        /** Opens chat on the room of `ChatView.ping`, beside the game or in a tab of its own. */
+        openPing(): Promise<void>;
+        /** Puts one chat pane on its Settings page or on the conversation. Main keeps the page, since a pane on Settings is chat out of sight. */
+        showPage(paneId: string, page: ChatPage): Promise<void>;
         /**
          * Shows the menu for someone's name at a point in the window, and does
          * what was chosen that main can. Resolves to the choice, so the shell

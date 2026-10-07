@@ -4,6 +4,7 @@ import type { PaneContentItem } from '../main/paneMenu.ts';
 import type { DropTargets, DropZone } from '../main/paneDrop.ts';
 import type { TabMark } from '../main/tabs.ts';
 import type { PaneNotice } from './paneNotice.ts';
+import type { ChatPage } from './chat.ts';
 
 export type { DropTargets, DropZone, PaneContent, PaneContentItem, PaneNotice, Rect, TabMark };
 
@@ -28,6 +29,8 @@ export interface PaneView {
     closable: boolean;
     /** Null unless `content.kind === 'page'`. */
     page: PageState | null;
+    /** Null unless the pane holds chat: whether it shows Settings or the conversation, which main keeps. */
+    chatPage: ChatPage | null;
     /**
      * What this pane could become, for the launcher an empty one shows. Null
      * for every other kind, which reaches the same list through the header's
