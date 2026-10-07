@@ -316,7 +316,11 @@ starts out of sight: nothing has been seen before a pane shows it. Main keeps
 which windows last said they show the conversation (`chatInFront`) rather
 than asking its map of windows, because a new window says so from its first
 layout, before it is in the map. A ping clicked puts the chat pane it shows
-on the conversation, whichever page it was on.
+on the conversation, whichever page it was on. Otherwise a pane stays on the
+page it was left on, through a tab switch and a shell reload, on the owner's
+call on 2026-10-07. Picking the page again on every redraw was an accident
+of React remounting the pane, and with Settings counting as out of sight it
+would have moved a pane off Settings that nobody had moved.
 
 **Links in the log open only if `linkTarget` says http or https**, read again
 in main whatever the shell sent: a chat line is a stranger's writing.
