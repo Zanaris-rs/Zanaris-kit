@@ -2109,8 +2109,9 @@ const shotOfThePage =
  * closed giving its room back; the Home server tool, as it opens and on World
  * at `PANE_MIN_WIDTH`; the reference pane — the
  * launcher, two pages beside the game, and the first of them brought back to
- * prove a tab switch did not reload it; a second instance of the first
- * server (slots and partitions), with a setup saved and opened into a new tab
+ * prove a tab switch did not reload it; Reset Game Size on a window widened
+ * by hand, on a window of its own; a second instance of the first server
+ * (slots and partitions), with a setup saved and opened into a new tab
  * and the game left behind another tab; every theme, Settings on Appearance,
  * a server's own theme and a custom theme with a picture and its editor, with
  * a draft typed there worn by the first window and cancelled; a built-in
@@ -2580,6 +2581,36 @@ async function captureAndExit(dir: string): Promise<void> {
             }
         } else {
             log('[capture] pages skipped: no loaded window offers any links');
+        }
+
+        // Reset Game Size on a window made wider and taller by hand: the game
+        // spans the width alone, so only the window can give that back, and
+        // chat keeps its height. On a window of its own, destroyed after, and
+        // before the second window, whose views are counted as whatever
+        // appeared after it opened.
+        {
+            const resetter = openServer(first.state().server);
+            log(`[capture] ${resetter.state().title}: ${await loaded(resetter)}`);
+            await wait(Math.min(settleMs, 8_000));
+            const gameRect = (): string => {
+                const rect = resetter.state().panes.find(p => p.content.kind === 'game')?.rect;
+                return rect ? `${rect.width}x${rect.height}` : 'none';
+            };
+            const chatHeight = (): number | undefined => resetter.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'chat')?.rect.height;
+            const opened = { game: gameRect(), chat: chatHeight(), window: resetter.window.getContentBounds() };
+            const frame = resetter.window.getBounds();
+            resetter.window.setBounds({ ...frame, width: frame.width + 300, height: frame.height + 120 });
+            await wait(800);
+            const widened = gameRect();
+            resetter.resetGameSize();
+            await wait(800);
+            const back = resetter.window.getContentBounds();
+            log(`[capture] ${resetter.state().title}: reset game size — game ${opened.game} → ${widened} by hand → ${gameRect()}, window ${opened.window.width}x${opened.window.height} → ${back.width}x${back.height}, chat ${opened.chat} → ${chatHeight()}`);
+            if (gameRect() !== opened.game) fault(`reset game size: the game came back at ${gameRect()}, not the ${opened.game} it opened at`);
+            if (back.width !== opened.window.width) fault(`reset game size: the window came back ${back.width} wide, not the ${opened.window.width} it opened at`);
+            if (chatHeight() !== opened.chat) fault(`reset game size: chat went from ${opened.chat} to ${chatHeight()} tall`);
+            resetter.window.destroy();
+            await wait(1_000);
         }
 
         // Every view that exists now is some other window's, so what is new
