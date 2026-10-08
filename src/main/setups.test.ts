@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { builtInSetups } from './setups.ts';
-import { instantiateLayout, type StoredNode } from './layoutFile.ts';
-import { contentOf, layoutTree, paneIds, type PaneNode } from './paneTree.ts';
+import { builtInSetups, opensWindow, openingSetup, readNewWindowSetup, readNewWindows, sameSetup } from './setups.ts';
+import { instantiateLayout, writeLayout, type StoredNode } from './layoutFile.ts';
+import { contentOf, layoutTree, leaf, paneIds, split, type PaneNode } from './paneTree.ts';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, LOSTCITY_GAME_PREFERRED_HEIGHT } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
@@ -94,4 +94,110 @@ test('a window without chat has no Game and Chat, and puts its tools beside the 
 test("Lost City's built-ins are drawn for its taller game", () => {
     const setups = builtInSetups({ tools: ALL, gameHeight: LOSTCITY_GAME_PREFERRED_HEIGHT });
     for (const setup of setups) assert.equal(drawn(setup.tree, setup.size, ALL).game!.height, LOSTCITY_GAME_PREFERRED_HEIGHT, setup.id);
+});
+
+const BUILT = builtInSetups({ tools: ALL, gameHeight: GAME_PREFERRED_HEIGHT });
+/** The game with a column of timers beside it, saved at 1169x567. */
+const SKILLING = writeLayout(split('s', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'timers' })], [765 / 1165, 400 / 1165]), 'lostcity', { width: 1169, height: 567 });
+/** A page reader with no game in it. */
+const WIKI = writeLayout(leaf('a', { kind: 'empty' }), 'lostcity', { width: 400, height: 600 });
+/** A setup saved before setups carried a size. */
+const OLD = writeLayout(leaf('a', { kind: 'game' }), 'lostcity');
+const FILES: Record<string, string> = { 'skilling.json': SKILLING, 'wiki.json': WIKI, 'old.json': OLD, 'broken.json': 'not json' };
+const SAVED = ['broken.json', 'gone.json', 'old.json', 'skilling.json', 'wiki.json'].map(file => ({ name: file.replace(/\.json$/, ''), file }));
+const OPTS = { builtIns: BUILT, saved: SAVED, read: (file: string): string | null => FILES[file] ?? null };
+const GAME_AND_CHAT = { builtIn: 'game-chat' } as const;
+
+test('with nothing chosen a new window opens as Game and Chat, as it always has', () => {
+    const opening = openingSetup(null, OPTS);
+    const gameChat = BUILT.find(s => s.id === 'game-chat')!;
+    assert.deepEqual(opening, { tree: gameChat.tree, size: gameChat.size, name: 'Game and Chat', used: GAME_AND_CHAT, fellBack: null });
+});
+
+test('a built-in chosen is the one a new window opens with', () => {
+    const opening = openingSetup({ builtIn: 'game-chat-tools' }, OPTS);
+    assert.equal(opening.name, 'Game, Chat and Tools');
+    assert.deepEqual(opening.used, { builtIn: 'game-chat-tools' });
+    assert.equal(opening.fellBack, null);
+});
+
+test('a built-in this window does not offer opens Game and Chat instead, and says why', () => {
+    const chatOnly = builtInSetups({ tools: ['chat'], gameHeight: GAME_PREFERRED_HEIGHT });
+    const opening = openingSetup({ builtIn: 'game-chat-tools' }, { ...OPTS, builtIns: chatOnly });
+    assert.deepEqual(opening.used, GAME_AND_CHAT);
+    assert.match(opening.fellBack ?? '', /does not offer/);
+});
+
+test('a saved setup opens at the size it was saved at, under its file’s name', () => {
+    const opening = openingSetup({ file: 'skilling.json' }, OPTS);
+    assert.equal(opening.name, 'skilling');
+    assert.deepEqual(opening.size, { width: 1169, height: 567 });
+    assert.deepEqual(opening.used, { file: 'skilling.json' });
+    assert.equal(opening.fellBack, null);
+    assert.equal(opening.tree.kind, 'split');
+});
+
+test('a saved setup renamed or removed from the folder opens Game and Chat, and says it is gone', () => {
+    const opening = openingSetup({ file: 'pking.json' }, OPTS);
+    assert.deepEqual(opening.used, GAME_AND_CHAT);
+    assert.match(opening.fellBack ?? '', /pking\.json is not in the setups folder/);
+});
+
+test('a saved setup with no game in it cannot open a game window', () => {
+    const opening = openingSetup({ file: 'wiki.json' }, OPTS);
+    assert.deepEqual(opening.used, GAME_AND_CHAT);
+    assert.match(opening.fellBack ?? '', /holds no game/);
+});
+
+test('a file that cannot be read, or is not a setup, opens Game and Chat', () => {
+    assert.match(openingSetup({ file: 'gone.json' }, OPTS).fellBack ?? '', /could not be read/);
+    assert.match(openingSetup({ file: 'broken.json' }, OPTS).fellBack ?? '', /is not a setup/);
+});
+
+test('a saved setup from before setups carried a size opens with none, to be laid out by its fractions', () => {
+    const opening = openingSetup({ file: 'old.json' }, OPTS);
+    assert.equal(opening.size, null);
+    assert.equal(opening.fellBack, null);
+});
+
+test('only a setup holding the game can be what new windows open with', () => {
+    assert.equal(opensWindow(SKILLING), true);
+    assert.equal(opensWindow(OLD), true);
+    assert.equal(opensWindow(WIKI), false);
+    assert.equal(opensWindow('not json'), false);
+    assert.equal(opensWindow(''), false);
+});
+
+test('a stored choice is a built-in the kit knows, or a file name in the folder and nothing more', () => {
+    assert.deepEqual(readNewWindowSetup({ builtIn: 'game' }), { builtIn: 'game' });
+    assert.deepEqual(readNewWindowSetup({ file: 'skilling.json' }), { file: 'skilling.json' });
+    assert.deepEqual(readNewWindowSetup({ file: `${'a'.repeat(250)}.json` }), { file: `${'a'.repeat(250)}.json` });
+    for (const bad of [
+        { builtIn: 'everything' },
+        { file: '../../state.json' },
+        { file: 'sub/x.json' },
+        { file: 'sub\\x.json' },
+        { file: '.hidden.json' },
+        { file: 'notes.txt' },
+        { file: '' },
+        { file: `${'a'.repeat(251)}.json` },
+        { file: 7 },
+        'game',
+        null
+    ]) {
+        assert.equal(readNewWindowSetup(bad), null, JSON.stringify(bad));
+    }
+});
+
+test('stored choices are read one server at a time', () => {
+    const read = readNewWindows({ lostcity: { builtIn: 'game' }, zanaris: { file: '../x.json' }, '': { builtIn: 'game' }, labs: 'game' });
+    assert.deepEqual([...read.entries()], [['lostcity', { builtIn: 'game' }]]);
+    assert.equal(readNewWindows(undefined).size, 0);
+});
+
+test('two choices are the same when they name the same built-in or the same file', () => {
+    assert.equal(sameSetup({ builtIn: 'game' }, { builtIn: 'game' }), true);
+    assert.equal(sameSetup({ builtIn: 'game' }, { builtIn: 'game-chat' }), false);
+    assert.equal(sameSetup({ file: 'a.json' }, { file: 'a.json' }), true);
+    assert.equal(sameSetup({ file: 'a.json' }, { builtIn: 'game' }), false);
 });

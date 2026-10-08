@@ -75,11 +75,18 @@ export interface PaneHostDeps {
     sharing: () => boolean;
     log: (line: string) => void;
     /**
-     * The arrangement the window opens with. Nothing is carried over from last
-     * time on its own — a setup is a file the player saves and opens from the
-     * tab bar's Setups menu — so this is the window's own default.
+     * The tab a window opens with: the setup its server's new windows open
+     * with (`tabs.openWindowTabs`). Nothing is carried over from last time on
+     * its own — a setup is chosen, or saved and opened, from the tab bar's
+     * Setups menu.
      */
     initial: TabSet;
+    /**
+     * The size `initial`'s tab was arranged at, or null to lay it out by its
+     * fractions. The first layout is fitted from it as a resize is, so a
+     * window its display held smaller than its setup keeps the game.
+     */
+    initialSize: Size | null;
     /** The tree's shape changed: lay the window out again and push state. */
     changed: () => void;
     /** Nothing geometric moved — a title, a back button. Push state only. */
@@ -138,6 +145,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
      * this only keeps one per tab.
      */
     const fits = new Map<string, Fitted>();
+    if (deps.initialSize) fits.set(set.activeId, arrangedAt(active(), deps.initialSize));
     /**
      * True while a pane is being dragged by its header.
      *
