@@ -12,6 +12,7 @@ import {
     makeRoom,
     paneIds,
     refit,
+    resetAround,
     resetGame,
     seamPixels,
     setContent,
@@ -634,8 +635,19 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             adopt(evenOut(active(), splitId));
         },
 
-        resetGame(want: Size): void {
-            adopt(resetGame(active(), bounds, want));
+        resetGame(want: Size, resizable: boolean): Size | null {
+            if (!resizable) {
+                adopt(resetGame(active(), bounds, want));
+                return null;
+            }
+            const reset = resetAround(active(), { width: bounds.width, height: bounds.height }, want);
+            if (!reset) return null;
+            // Fitted from the size it was arranged for, as a setup's tree is,
+            // so the resize toward it keeps the game rather than reading as a
+            // resize of the tab as it was.
+            fits.set(set.activeId, arrangedAt(reset.tree, reset.size));
+            adopt(reset.tree);
+            return reset.size;
         },
 
         dragSeam(splitId: string, index: number, px: number): number {
@@ -758,8 +770,15 @@ export interface PaneHost {
     /** Moves the game into a pane, emptying the one it was in, in whichever tab that was. */
     moveGame: (paneId: string) => void;
     evenOut: (splitId: string) => void;
-    /** Moves the seams around the active tab's game until it is `want`, or as near as the panes beside it allow. Nothing happens when the game is in another tab. */
-    resetGame: (want: Size) => void;
+    /**
+     * Reset Game Size. In a window that can resize, the active tab's game at
+     * `want` and every other pane at the pixels it has (`paneTree.resetAround`),
+     * recorded as arranged at the tab size returned, for the window to be sized
+     * to. In one that cannot, the seams around the game moved until it is
+     * `want` or as near as the panes beside it allow (`paneTree.resetGame`),
+     * and null. Null too when there is nothing to do.
+     */
+    resetGame: (want: Size, resizable: boolean) => Size | null;
     dragSeam: (splitId: string, index: number, px: number) => number;
     pageWebContents: () => WebContentsView | null;
     go: (where: 'back' | 'forward' | 'reload') => void;

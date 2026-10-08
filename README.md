@@ -649,10 +649,16 @@ it was left at, because each resize is worked out from the arrangement as the
 player left it rather than from the frame before. The game still grows along an
 axis where nothing sits beside it: the game over chat a window opens with widens
 with the window. **Reset Game Size**, in the game pane's dropdown and its
-right-click menu, moves the seams around the game until it is back at the size a
-window opens it at, taking the room from the panes beside it down to their floor.
-It never resizes the window, so along an axis the game spans alone it has nothing
-to trade, and it is greyed when it would not move the game.
+right-click menu, puts the game back at the size a window opens it at and resizes
+the window by exactly what that changed, on both axes, every other pane keeping
+its pixels — so the width the game spans alone comes back too. It grows the
+window no further than its display and shrinks it no further than the panes'
+floors. Maximised or full screen, the window stays as it is and the seams around
+the game move instead, taking the room from the panes beside it down to their
+floor. It is greyed when it would not move the game: already at its size, or,
+maximised, with nothing beside it to trade with. It used to only move seams, and
+in the window a launch opens, where the game spans the width alone, a window made
+wider left the game wider for good.
 
 Adding a pane leaves the game alone too. When Add pane's column or a split would
 take pixels from the game — Split Right or Split Down on the game's own pane, or
@@ -772,9 +778,9 @@ for the reason the right-click menu is: an item offered and then refused is
 worse than one never offered, and the launcher would otherwise be a second
 opinion about the same question. It was a second opinion, and it was wrong.
 
-The window resizes itself for three things: a pane added where the game would
-have paid for it, a pane closed that would have handed the game that room back
-(both above), and a setup opened around the game (below). Opening the old panel
+The window resizes itself for four things: a pane added where the game would
+have paid for it, a pane closed that would have handed the game that room back,
+Reset Game Size (all three above), and a setup opened around the game (below). Opening the old panel
 or dock grew the window rather than shrinking the game, through a
 `widen → shift → push` ladder, because reloading or rescaling the game view was
 believed to cost the player their login. That turned out not to be true of

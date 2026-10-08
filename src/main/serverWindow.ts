@@ -287,6 +287,8 @@ export interface ServerWindow extends ServerWindowHandle {
     settleTimers(): void;
     /** Splits a pane, putting an empty one showing the launcher in the new half. */
     splitPane(paneId: string, axis: 'x' | 'y'): void;
+    /** Reset Game Size, as the game pane's menus run it. */
+    resetGameSize(): void;
     /** Closes a pane. Asks first when it is the game's, since that disconnects the player. */
     closePane(paneId: string): Promise<void>;
     /** Puts something in a pane. A page must be one of this server's links; asking for the game moves it out of whatever pane held it. */
@@ -686,14 +688,16 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * push ladder, the content extent carried across a chrome toggle and the
      * per-axis mode the shell used to report all went with the fixed chrome
      * that motivated them, and so did the tool rail down the right; the bar's
-     * Add pane is how a pane is added. The window resizes itself for three
+     * Add pane is how a pane is added. The window resizes itself for four
      * things: a pane added where the game would otherwise have paid for it
      * (`paneTree.makeRoom`, through `growWindow`), a pane closed in the
      * game's own row or column giving that room back
-     * (`paneTree.closeGivingBack`, through `shrinkWindow`), and a setup
-     * opened that holds the game and carries a size, sized to hold the game
-     * at its pixels and every other pane at the ones it was saved with
-     * (`paneTree.arrangeForGame`, through `sizeWindow`). Each way it is the
+     * (`paneTree.closeGivingBack`, through `shrinkWindow`), a setup opened
+     * that holds the game and carries a size, sized to hold the game at its
+     * pixels and every other pane at the ones it was saved with
+     * (`paneTree.arrangeForGame`, through `sizeWindow`), and Reset Game Size,
+     * sized the same way around the game at its preferred size
+     * (`paneTree.resetAround`, through `sizeWindow`). Each way it is the
      * resize that lays everything out again, through here.
      *
      * The tree runs to the window's edges. It used to be inset by a pixel so a
@@ -924,10 +928,23 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /**
      * What Reset Game Size puts the game back to: the size a new window of this
      * server opens it at, Lost City's taller page included, against the rect
-     * the tab is laid out in now.
+     * the tab is laid out in now, and whether the window may be resized for it
+     * — not while it is maximised or full screen, where it only moves seams.
      */
     function gameSizes(): GameSizes {
-        return { tab: rects.tree, game: { width: GAME_PREFERRED_WIDTH, height: content.game } };
+        return { tab: rects.tree, game: { width: GAME_PREFERRED_WIDTH, height: content.game }, resizable: !win.isMaximized() && !win.isFullScreen() };
+    }
+
+    /**
+     * Reset Game Size: the game back at its size, the window resized by what
+     * it changed and every other pane keeping its pixels (`paneHost.resetGame`,
+     * `sizeWindow`), as a setup opened around the game is. Maximised or full
+     * screen, the seams around the game move instead.
+     */
+    function resetGameSize(): void {
+        const sizes = gameSizes();
+        const size = host.resetGame(sizes.game, sizes.resizable);
+        if (size) sizeWindow(size);
     }
 
     /**
@@ -967,7 +984,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 if (item.id === 'split-x') split(paneId, 'x');
                 else if (item.id === 'split-y') split(paneId, 'y');
                 else if (item.id === 'close') void closePane(paneId);
-                else if (item.id === 'reset-game') host.resetGame(gameSizes().game);
+                else if (item.id === 'reset-game') resetGameSize();
                 else {
                     const splitId = parentSplitOf(host.tree(), paneId);
                     if (splitId) host.evenOut(splitId);
@@ -1788,6 +1805,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         },
         settleTimers: () => clocks.settle(),
         splitPane: split,
+        resetGameSize,
         closePane,
         setPaneContent,
         focusPane: paneId => host.focus(paneId),
