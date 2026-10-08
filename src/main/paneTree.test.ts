@@ -804,3 +804,10 @@ test('the game is found in whichever tab holds it', () => {
     assert.deepEqual(gameSizeIn([leaf('e', { kind: 'empty' }), row], size), { width: 765, height: 567 });
     assert.equal(gameSizeIn([leaf('e', { kind: 'empty' })], size), null);
 });
+
+test('a split can be given what its new half holds, so the tree a window grows for is the final one', () => {
+    const next = splitPane(leaf('a', { kind: 'game' }), 'a', 'x', { paneId: 'b', splitId: 's1' }, { kind: 'tool', tool: 'worlds' });
+    assert.deepEqual(contentOf(next, 'b'), { kind: 'tool', tool: 'worlds' });
+    assert.deepEqual(contentOf(next, 'a'), { kind: 'game' }, 'the pane split keeps what it held');
+    assert.deepEqual(contentOf(splitPane(leaf('a', { kind: 'game' }), 'a', 'x', { paneId: 'b', splitId: 's1' }), 'b'), { kind: 'empty' }, 'empty when nothing is given');
+});

@@ -2109,8 +2109,9 @@ const shotOfThePage =
  * closed giving its room back; the Home server tool, as it opens and on World
  * at `PANE_MIN_WIDTH`; the reference pane — the
  * launcher, two pages beside the game, and the first of them brought back to
- * prove a tab switch did not reload it; a split filled in one step, on a
- * window of its own; a second instance of the first server (slots and
+ * prove a tab switch did not reload it; splits filled in one step, the game's
+ * own pane among them, and a page pane given another link, on a window of its
+ * own; a second instance of the first server (slots and
  * partitions), with a setup saved and opened into a new tab
  * and the game left behind another tab; every theme, Settings on Appearance,
  * a server's own theme and a custom theme with a picture and its editor, with
@@ -2587,28 +2588,68 @@ async function captureAndExit(dir: string): Promise<void> {
         // list does it, through the same `splitPaneWith` the menus call. On a
         // window of its own, destroyed after, so no later step inherits its
         // panes, and before the second window, whose views are counted as
-        // whatever appeared after it opened. Chat split right with Timers;
-        // then chat split down with the game, which moves rather than copies,
-        // leaving the launcher where it was.
+        // whatever appeared after it opened. The game's own pane split right
+        // with Worlds, which the window grows for, the game keeping its
+        // pixels; chat split right with Timers; chat split down with the
+        // game, which moves rather than copies, leaving the launcher where it
+        // was; then a page pane given another link, whose view must follow.
         {
+            const beforeSplitter = new Set(webContents.getAllWebContents().map(wc => wc.id));
             const splitter = openServer(first.state().server);
             const kinds = (): string => splitter.state().panes.map(p => (p.content.kind === 'tool' ? p.content.tool : p.content.kind)).join(' over ');
+            const gameRect = (): { width: number; height: number } | undefined => splitter.state().panes.find(p => p.content.kind === 'game')?.rect;
             log(`[capture] ${splitter.state().title}: ${await loaded(splitter)}`);
             await wait(Math.min(settleMs, 8_000));
+            const game = splitter.state().panes.find(p => p.content.kind === 'game')?.paneId;
             const chat = splitter.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'chat')?.paneId;
-            if (!chat) {
-                fault('split with: the window opened with no chat pane to split');
+            if (!game || !chat) {
+                fault('split with: the window opened without the game and chat to split');
             } else {
+                const before = gameRect()!;
+                const windowBefore = splitter.window.getContentBounds().width;
+                splitter.splitPaneWith(game, 'x', { kind: 'tool', tool: 'worlds' });
+                await wait(800);
+                const after = gameRect()!;
+                const windowAfter = splitter.window.getContentBounds().width;
+                log(`[capture] ${splitter.state().title}: game split right with Worlds — "${kinds()}", game ${before.width}x${before.height} → ${after.width}x${after.height}, window ${windowBefore} → ${windowAfter} wide`);
+                if (kinds() !== 'game over worlds over chat') fault(`split with: Worlds beside the game came out as "${kinds()}"`);
+                if (windowAfter > windowBefore && (after.width !== before.width || after.height !== before.height)) {
+                    fault(`split with: the window grew for Worlds but the game went from ${before.width}x${before.height} to ${after.width}x${after.height}`);
+                }
+
                 splitter.splitPaneWith(chat, 'x', { kind: 'tool', tool: 'timers' });
                 await wait(500);
                 const focusKind = splitter.state().panes.find(p => p.focused)?.content;
                 log(`[capture] ${splitter.state().title}: chat split right with Timers — "${kinds()}", focus on ${focusKind?.kind === 'tool' ? focusKind.tool : focusKind?.kind}`);
-                if (kinds() !== 'game over chat over timers') fault(`split with: Timers beside chat came out as "${kinds()}"`);
+                if (kinds() !== 'game over worlds over chat over timers') fault(`split with: Timers beside chat came out as "${kinds()}"`);
                 await shoot(`${first.state().server.id}-split-with`, splitter);
                 splitter.splitPaneWith(chat, 'y', { kind: 'game' });
                 await wait(500);
                 log(`[capture] ${splitter.state().title}: chat split down with the game — "${kinds()}"`);
-                if (kinds() !== 'empty over chat over game over timers') fault(`split with: the game moved below chat came out as "${kinds()}"`);
+                if (kinds() !== 'empty over worlds over chat over game over timers') fault(`split with: the game moved below chat came out as "${kinds()}"`);
+
+                const links = splitter.state().server.bookmarks;
+                const worlds = splitter.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'worlds')?.paneId;
+                if (links.length >= 2 && worlds) {
+                    // This window's own views only: the pages step above left
+                    // the same links open in another window.
+                    const hostname = (url: string): string => new URL(url).hostname;
+                    const pageHosts = (): string[] =>
+                        webContents
+                            .getAllWebContents()
+                            .filter(wc => !beforeSplitter.has(wc.id) && !wc.isDestroyed() && wc.getURL().startsWith('http') && hostname(wc.getURL()) !== hostname(splitter.state().server.url))
+                            .map(wc => hostname(wc.getURL()));
+                    void splitter.setPaneContent(worlds, { kind: 'page', bookmark: links[0]!.url });
+                    await wait(3_000);
+                    void splitter.setPaneContent(worlds, { kind: 'page', bookmark: links[1]!.url });
+                    await wait(3_000);
+                    const showing = pageHosts().includes(hostname(links[1]!.url));
+                    const stale = hostname(links[0]!.url) !== hostname(links[1]!.url) && pageHosts().includes(hostname(links[0]!.url));
+                    log(`[capture] ${splitter.state().title}: ${links[0]!.name} replaced with ${links[1]!.name} — header "${splitter.state().panes.find(p => p.paneId === worlds)?.name}", ${showing ? 'its page is showing' : 'its page is not showing'}${stale ? `, and ${links[0]!.name} is still open` : ''}`);
+                    if (!showing || stale) fault(`replace with: a page pane given ${links[1]!.name} still shows ${links[0]!.name}`);
+                } else {
+                    log('[capture] replace with: skipped, the server has fewer than two links');
+                }
             }
             splitter.window.destroy();
             await wait(1_000);

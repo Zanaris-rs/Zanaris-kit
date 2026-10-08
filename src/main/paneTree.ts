@@ -352,14 +352,17 @@ export function halvable(extent: number, floor: number): boolean {
 }
 
 /**
- * Splits the named pane, putting an empty pane in the new half.
+ * Splits the named pane, putting `content` in the new half: an empty pane
+ * showing the launcher unless something is given, as a split's list in a
+ * pane's menus gives it. Given here rather than set after, so the tree a
+ * window grows for (`makeRoom`, `arrangedAt`) is the one it ends with.
  *
  * Ids are handed in rather than counted here, so this stays a pure function of
  * its arguments — `serverWindow` owns the monotonic counter, exactly as it
  * does for page ids today.
  */
-export function splitPane(node: PaneNode, paneId: string, axis: 'x' | 'y', ids: { paneId: string; splitId: string }): PaneNode {
-    return insertBeside(node, paneId, axis, true, leaf(ids.paneId, { kind: 'empty' }), ids.splitId);
+export function splitPane(node: PaneNode, paneId: string, axis: 'x' | 'y', ids: { paneId: string; splitId: string }, content: PaneContent = { kind: 'empty' }): PaneNode {
+    return insertBeside(node, paneId, axis, true, leaf(ids.paneId, content), ids.splitId);
 }
 
 /**

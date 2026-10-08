@@ -44,7 +44,8 @@ import { troubleNotice, type PaneTrouble } from '../shared/paneNotice.ts';
  * what is left here is reconciliation.
  *
  * A page view is created when a page leaf appears in the tree and destroyed
- * when it leaves, and nothing else touches one. So moving focus, dragging a
+ * when it leaves, or when its pane is given another link — a fresh page, not
+ * this one's history — and nothing else touches one. So moving focus, dragging a
  * seam, switching tab or dragging the pane somewhere else cannot reload a page,
  * because there is no code path here that would — the guarantee is structural
  * rather than remembered, which is what `pagePane.ts` bought before this and
@@ -117,6 +118,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     });
 
     const pageViews = new Map<string, WebContentsView>();
+    /** The link each page view was made for, which its leaf names until the pane is given another. Not the page's url, which moves as it is browsed. */
+    const viewLinks = new Map<string, string>();
     const pageStates = new Map<string, PageState>();
     /** Pages whose renderer crashed or hung. Hidden while here, so the shell's notice shows where the page was. */
     const pageTrouble = new Map<string, PaneTrouble>();
@@ -207,7 +210,10 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     function syncViews(): void {
         for (const paneId of allPaneIds()) {
             const content = contentAnywhere(paneId);
-            if (content?.kind !== 'page' || pageViews.has(paneId)) continue;
+            if (content?.kind !== 'page' || viewLinks.get(paneId) === content.bookmark) continue;
+            // Given another link: Replace With in the pane's dropdown. The
+            // header already names the new link, so the view must show it.
+            destroyPageView(paneId);
             createPageView(paneId, content.bookmark);
         }
         for (const paneId of [...pageViews.keys()]) {
@@ -229,6 +235,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         const view = pageViews.get(paneId);
         if (!view) return;
         pageViews.delete(paneId);
+        viewLinks.delete(paneId);
         pageStates.delete(paneId);
         pageTrouble.delete(paneId);
         expectGone.delete(paneId);
@@ -253,6 +260,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         view.setVisible(false);
         deps.window.contentView.addChildView(view);
         pageViews.set(paneId, view);
+        viewLinks.set(paneId, url);
         pageStates.set(paneId, { url, title: paneName({ kind: 'page', bookmark: url }, deps.bookmarks()), canGoBack: false, canGoForward: false, loading: true });
 
         const wc = view.webContents;
@@ -576,11 +584,13 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.changed();
         },
 
-        split(paneId: string, axis: 'x' | 'y', room: Size): Size {
+        split(paneId: string, axis: 'x' | 'y', room: Size, content: PaneContent): { paneId: string | null; grown: Size } {
             const born = `pane-${nextPane++}`;
-            const grown = adoptAdded(splitPane(active(), paneId, axis, { paneId: born, splitId: `split-${nextSplit++}` }), room);
+            const next = splitPane(active(), paneId, axis, { paneId: born, splitId: `split-${nextSplit++}` }, content);
+            if (!paneIds(next).includes(born)) return { paneId: null, grown: { width: 0, height: 0 } };
+            const grown = adoptAdded(next, room);
             focus(born);
-            return grown;
+            return { paneId: born, grown };
         },
 
         appendColumn(content: PaneContent, width: number, room: Size): { paneId: string; grown: Size } {
@@ -745,11 +755,13 @@ export interface PaneHost {
     closeTab: (tabId: string) => boolean;
     selectTab: (tabId: string) => void;
     /**
-     * Splits a pane and focuses the new half. `room` is how much the window
-     * could grow; what it has to grow by, for the game to keep its size, is
-     * returned (`paneTree.makeRoom`), and nothing when the game paid nothing.
+     * Splits a pane, puts `content` in the new half and focuses it. `room` is
+     * how much the window could grow; what it has to grow by, for the game to
+     * keep its size, is returned (`paneTree.makeRoom`), and nothing when the
+     * game paid nothing. The new pane's id comes back too, or null when the
+     * tab in front has no such pane to split and nothing changed.
      */
-    split: (paneId: string, axis: 'x' | 'y', room: Size) => Size;
+    split: (paneId: string, axis: 'x' | 'y', room: Size, content: PaneContent) => { paneId: string | null; grown: Size };
     /** Adds a pane holding `content` down the active tab's right edge, `width` being the px the tab is laid out in, and focuses it. Returns the new pane's id, and the window's growth as `split` does. */
     appendColumn: (content: PaneContent, width: number, room: Size) => { paneId: string; grown: Size };
     /** Closes a pane in the active tab. `room` is how far the window could shrink; what it has to shrink by, and at which edge, for the game to keep its size, is returned (`paneTree.closeGivingBack`). */

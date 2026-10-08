@@ -27,7 +27,8 @@ export interface PaneMenuItem {
      * menu teaches it. Shown, not registered: the application menu already
      * owns these shortcuts, and a popup menu is not where they should live.
      * Absent for Reset Game Size, which is the game pane's own and not the
-     * View menu's.
+     * View menu's, and for the two splits, which open a list in a popup
+     * (`splitMenus`) where the View menu's Cmd/Ctrl+D splits at once.
      */
     accelerator?: string;
 }
@@ -200,8 +201,8 @@ export function showsClocks(tree: PaneNode, paneId: string): boolean {
 export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }, sizes: GameSizes): PaneMenuItem[] {
     const isGame = contentOf(tree, paneId)?.kind === 'game';
     return [
-        { id: 'split-x', label: 'Split Right', enabled: halvable(rect.width, PANE_MIN_WIDTH), accelerator: 'CmdOrCtrl+D' },
-        { id: 'split-y', label: 'Split Down', enabled: halvable(rect.height, PANE_MIN_HEIGHT), accelerator: 'CmdOrCtrl+Shift+D' },
+        { id: 'split-x', label: 'Split Right', enabled: halvable(rect.width, PANE_MIN_WIDTH) },
+        { id: 'split-y', label: 'Split Down', enabled: halvable(rect.height, PANE_MIN_HEIGHT) },
         // Nothing to even out when the pane is the whole tab: there are no
         // siblings to share with, and the item would be a no-op wearing the
         // same face as the working one.

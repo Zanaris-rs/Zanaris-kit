@@ -53,7 +53,7 @@ export const COLUMN_PREFERRED_WIDTH = 320;
 
 /**
  * Every pane's own header: what the pane is called, whatever controls belong to
- * that one thing, and the dropdown that changes what the pane holds.
+ * that one thing, and the dropdown that adds a pane beside it or changes what it holds.
  *
  * On all four kinds, not only on pages. A pane that could not say what it was
  * relied on its content to introduce itself, which the game and a reference page

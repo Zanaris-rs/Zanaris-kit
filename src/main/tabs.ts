@@ -260,6 +260,21 @@ export function labelOfTab(tree: PaneNode, links: readonly PaneLink[] = []): str
 }
 
 /**
+ * Whether putting `content` in a pane is closing the game: the pane holds it
+ * and `content` is anything else.
+ *
+ * Replacing a leaf swaps what the tree says the pane holds, and nothing in
+ * that destroys the game's view, which the window owns. Done silently, the
+ * game would go on running with no pane to show it and no tab to mark — the
+ * hidden game `CLAUDE.md`'s invariant rules out. So the window treats it as
+ * the close it is: it asks first and destroys the view, as closing the game's
+ * pane does.
+ */
+export function replaceDropsGame(tree: PaneNode, paneId: string, content: PaneContent): boolean {
+    return contentOf(tree, paneId)?.kind === 'game' && content.kind !== 'game';
+}
+
+/**
  * Opening a setup — a built-in or a saved one — into one tab, and what that
  * costs.
  *

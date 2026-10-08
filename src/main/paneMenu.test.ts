@@ -51,13 +51,13 @@ test("the game's header dropdown offers Reset Game Size too, the same item the r
     assert.deepEqual(chat.gestures, [], 'a pane that is not the game has none');
 });
 
-test('every gesture the View menu carries shows its shortcut there', () => {
+test('every gesture a popup runs itself shows the View menu\'s shortcut for it, and the splits, which open lists, show none', () => {
     const items = paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy, sizes);
     assert.deepEqual(
         items.map(i => [i.id, i.accelerator]),
         [
-            ['split-x', 'CmdOrCtrl+D'],
-            ['split-y', 'CmdOrCtrl+Shift+D'],
+            ['split-x', undefined],
+            ['split-y', undefined],
             ['even-out', 'CmdOrCtrl+Alt+='],
             ['reset-game', undefined],
             ['close', 'CmdOrCtrl+W']
