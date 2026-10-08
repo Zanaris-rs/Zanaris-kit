@@ -17,7 +17,7 @@ import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
 import { allowPermission, decideNavigation, isPress, mayOpenBrowser } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
-import { addPaneItems, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, type GameSizes, type PaneMenuItem } from './paneMenu';
+import { addPaneItems, paneDropdown, paneHolding, paneMenuItems, splitMenus, type GameSizes, type PaneContentItem, type PaneMenuItem, type SplitMenu } from './paneMenu';
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, overlayFor, windowFrame } from './windowFrame';
@@ -287,6 +287,8 @@ export interface ServerWindow extends ServerWindowHandle {
     settleTimers(): void;
     /** Splits a pane, putting an empty one showing the launcher in the new half. */
     splitPane(paneId: string, axis: 'x' | 'y'): void;
+    /** Splits a pane and puts `content` in the new half, as an item in Split Right or Split Down's list does. */
+    splitPaneWith(paneId: string, axis: 'x' | 'y', content: PaneContent): void;
     /** Closes a pane. Asks first when it is the game's, since that disconnects the player. */
     closePane(paneId: string): Promise<void>;
     /** Puts something in a pane. A page must be one of this server's links; asking for the game moves it out of whatever pane held it. */
@@ -952,8 +954,56 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // clicked rather than on whatever happened to have focus — every item
         // below names the pane, but Even Out and the accelerators do not.
         host.focus(paneId);
-        const menu = Menu.buildFromTemplate(paneMenuItems(host.tree(), paneId, rect, gameSizes()).map(item => gestureItem(paneId, item)));
-        menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
+        // The splits are submenus here as in the header's dropdown, so the two
+        // menus never disagree about what a split does.
+        const menus = splitMenus({ tree: host.tree(), trees: host.trees(), paneId, tools, links: server.bookmarks, rect, sizes: gameSizes() });
+        const template = paneMenuItems(host.tree(), paneId, rect, gameSizes()).map(item => {
+            const menu = menus.find(m => m.id === item.id);
+            return menu ? splitItem(paneId, menu) : gestureItem(paneId, item);
+        });
+        Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
+    }
+
+    /**
+     * Split Right or Split Down as a submenu of what the new half could hold
+     * (`paneMenu.splitMenus`). No shortcut beside it: the item opens a list
+     * rather than splitting, and Cmd/Ctrl+D, which splits at once and shows
+     * the launcher, is the View menu's.
+     */
+    function splitItem(paneId: string, menu: SplitMenu): MenuItemConstructorOptions {
+        const axis = menu.id === 'split-x' ? 'x' : 'y';
+        return { label: menu.label, enabled: menu.enabled, submenu: contentTemplate(menu.items, 'plain', content => splitWith(paneId, axis, content)) };
+    }
+
+    /**
+     * A list of contents as native menu items, with the line the launcher
+     * draws between the window's own things and this server's links. `ticked`
+     * marks what the pane holds, for a list that replaces it; `plain` marks
+     * nothing, for a list that fills a new pane.
+     */
+    function contentTemplate(items: readonly PaneContentItem[], mark: 'ticked' | 'plain', pick: (content: PaneContent) => void): MenuItemConstructorOptions[] {
+        return items.flatMap((item, i): MenuItemConstructorOptions[] => [
+            // The links are a different kind of destination from the window's
+            // own things, and the group each item arrives in is what says where
+            // that line falls — the same rule the launcher draws.
+            ...(i > 0 && item.group === 'link' && items[i - 1]!.group !== 'link' ? [{ type: 'separator' as const }] : []),
+            // Checkboxes, though a pane holds exactly one thing, for the reason
+            // the View menu's Server Theme gives: Electron ticks the first item
+            // of any radio group with none ticked, and the line before the
+            // links makes a second group, so radios ticked the first link too.
+            mark === 'ticked' ? { label: item.label, type: 'checkbox' as const, checked: item.current, click: () => pick(item.content) } : { label: item.label, click: () => pick(item.content) }
+        ]);
+    }
+
+    /**
+     * A split with its new half filled in one step: the split a gesture
+     * makes, window growth and all, then what was chosen put in the pane it
+     * made, which the split leaves focused. The game goes through
+     * `setPaneContent` like any other choice, so it is moved, not copied.
+     */
+    function splitWith(paneId: string, axis: 'x' | 'y', content: PaneContent): void {
+        split(paneId, axis);
+        setPaneContent(host.focusedPaneId(), content);
     }
 
     /** One gesture as a native menu item, for both menus that carry gestures. */
@@ -977,10 +1027,15 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
-     * The dropdown in a pane's header: everything that pane could become, and
-     * then, under a rule, the two ways to split it — which `paneSplitItems`
-     * takes from the right-click menu, because nothing on screen says that
-     * menu exists and the arrow is the control a player will actually try.
+     * The dropdown in a pane's header: adding first, then replacing.
+     *
+     * A pane holding something offers Split Right and Split Down, each a list
+     * of what the new half could hold, and then Replace With, the list of what
+     * this pane could become. An empty pane offers its list at the top, since
+     * filling it is the point, and the splits below. Reset Game Size follows
+     * on the game's pane. Which items exist, what they are called, which one
+     * is showing and what is greyed are `paneMenu.paneDropdown`'s, not this
+     * function's and certainly not the shell's.
      *
      * Native, and built here, for the reason the gesture menu above is: the
      * header of a game or a page pane sits directly over a native view, and a
@@ -988,33 +1043,20 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * what lets one object serve all four kinds of pane — the launcher an empty
      * pane shows is the same list from the same function, wearing the stone
      * instead of the system's chrome.
-     *
-     * Which items exist, what they are called and which one is already showing
-     * are `paneMenu.ts`'s, not this function's and certainly not the shell's.
-     * The game's label is the one that moves: it reads "Move game here" while
-     * the game is in some other pane of this window, in this tab or another.
      */
     function showPaneContentMenu(paneId: string, x: number, y: number): void {
         if (win.isDestroyed()) return;
         host.focus(paneId);
-        const items = paneContentItems({ trees: host.trees(), paneId, tools, links: server.bookmarks });
-        const template: MenuItemConstructorOptions[] = items.flatMap((item, i): MenuItemConstructorOptions[] => [
-            // The links are a different kind of destination from the window's
-            // own things, and the group each item arrives in is what says where
-            // that line falls — the same rule the launcher draws.
-            ...(i > 0 && item.group === 'link' && items[i - 1]!.group !== 'link' ? [{ type: 'separator' as const }] : []),
-            {
-                label: item.label,
-                // A radio rather than a checkbox: a pane holds exactly one
-                // thing, so these are alternatives rather than a set of toggles.
-                type: 'radio' as const,
-                checked: item.current,
-                click: () => setPaneContent(paneId, item.content)
-            }
-        ]);
         const rect = host.rectOf(paneId);
-        const gestures = rect ? paneHeaderItems(host.tree(), paneId, rect, gameSizes()) : [];
-        if (gestures.length > 0) template.push({ type: 'separator' }, ...gestures.map(item => gestureItem(paneId, item)));
+        if (!rect) return;
+        const menu = paneDropdown({ tree: host.tree(), trees: host.trees(), paneId, tools, links: server.bookmarks, rect, sizes: gameSizes() });
+        const replace = (content: PaneContent): void => setPaneContent(paneId, content);
+        const template: MenuItemConstructorOptions[] = [
+            ...(menu.fill ? [...contentTemplate(menu.fill, 'ticked', replace), { type: 'separator' as const }] : []),
+            ...menu.splits.map(each => splitItem(paneId, each)),
+            ...(menu.replace ? [{ type: 'separator' as const }, { label: 'Replace With', submenu: contentTemplate(menu.replace, 'ticked', replace) }] : []),
+            ...(menu.gestures.length > 0 ? [{ type: 'separator' as const }, ...menu.gestures.map(item => gestureItem(paneId, item))] : [])
+        ];
         Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
@@ -1788,6 +1830,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         },
         settleTimers: () => clocks.settle(),
         splitPane: split,
+        splitPaneWith: splitWith,
         closePane,
         setPaneContent,
         focusPane: paneId => host.focus(paneId),

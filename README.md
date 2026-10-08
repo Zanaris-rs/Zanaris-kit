@@ -679,8 +679,8 @@ by hand. It lists what a pane's own dropdown does — the tools, the game, this
 server's links — and whatever you pick opens as a new column down the tab's
 right edge: 320px wide, or an even share of the row on a narrow window, with the
 columns already there giving up the room in proportion and the window growing
-by the game's part of it (above). It adds rather than
-replaces — a pane's dropdown changes that pane, Add pane adds one. Something
+by the game's part of it (above). It adds a column at the tab's edge, where a
+pane's own Split Right and Split Down add beside that pane. Something
 already in the tab is ticked, and choosing it goes to that pane rather than
 opening a second copy; the game, when it is in another tab, is moved here. With
 no room for another column above the 120px floor, everything not already open is
@@ -721,13 +721,16 @@ only when the tab has more than one pane. It used to be a gold ring drawn round
 the whole pane, which was the loudest line in the window for the least
 interesting fact in it.
 
-Right-clicking a pane offers Split Right, Split Down, Even Out and Close, each
-with its shortcut beside it, and focuses that pane first so the menu acts on
-what was clicked. A split that
+Right-clicking a pane offers Split Right, Split Down, Even Out and Close, and
+focuses that pane first so the menu acts on what was clicked. Split Right and
+Split Down are lists, as in the pane's dropdown: whatever you pick opens in the
+new half in one step, rather than an empty pane to fill afterwards. A split that
 could not be drawn — either half under the 120x80 floor — is offered greyed
 rather than offered and then refused, and so is Close on a tab's only pane when
-it is already empty, since closing it would empty an empty pane. The same four are in the View menu with
-Cmd/Ctrl+D, Cmd/Ctrl+Shift+D, Cmd/Ctrl+W and Cmd/Ctrl+Alt+=; tabs are
+it is already empty, since closing it would empty an empty pane. Even Out and
+Close show their shortcuts. The same four are in the View menu with
+Cmd/Ctrl+D, Cmd/Ctrl+Shift+D, Cmd/Ctrl+W and Cmd/Ctrl+Alt+=, where a split
+opens an empty pane showing the launcher, as it always has; tabs are
 Cmd/Ctrl+T, Cmd/Ctrl+Shift+W and Cmd/Ctrl+1 to 9. **Cmd/Ctrl+W closes a pane,
 not the window** — the window goes when its last tab does, or from File >
 Close Window, which has no shortcut of its own: Electron's close gave it
@@ -753,10 +756,18 @@ carries four things and refuses a fifth. The pane's **name** comes first — a
 link's curated name from the catalog rather than the page's own `<title>`, which
 changes as you click through a wiki and would make the pane's identity move
 under it; then the tool's name, or "Game", or "Empty". Then **that pane's own
-controls**, which only a page has: back, forward, reload. Then a **dropdown**
-that changes what the pane holds, offering the same list the launcher does and,
-under a rule, Split Right and Split Down — because nothing on screen says a
-right-click exists, and the arrow is the control a new player will actually try.
+controls**, which only a page has: back, forward, reload. Then a **dropdown**,
+because nothing on screen says a right-click exists and the arrow is the control
+a new player will actually try. It adds first: Split Right and Split Down, each
+a list of what the new half could hold — the tools, the game, this server's
+links — so whatever you pick opens beside this pane in one step. Then **Replace
+With**, the same list again, which changes what this pane holds. The arrow used
+to open with that replacing list at the top, and opening something beside the
+pane is what it was reached for far more often, so the slip was replacing a pane
+you meant to keep. An empty pane is the exception: filling it is the point, so
+its list stays at the top and the splits follow. Splitting the game's own pane
+does not offer the game, which is already there; anywhere else it reads "Move
+game here", since there is one game and choosing it moves it.
 Last, a **close**, the same act as the right-click menu's, which asks first on
 the game's pane. Nothing else gets controls: Hiscores' name box, Worlds' detail switch and chat's
 Send stay in the pane body, because they are the pane's *work* rather than its
@@ -766,8 +777,9 @@ The dropdown is a native menu main pops rather than a panel the shell draws.
 In a game or page pane the header sits directly above a `WebContentsView`, so
 anything drawn below it by the shell would open behind that view — and building
 it in main is what lets one menu serve all four kinds of pane, the same way the
-right-click menu does. Which items it offers, what they are called and which one
-is already showing are decided in `main/paneMenu.ts`, which is pure and tested,
+right-click menu does. Which items it offers, what they are called, which one is
+already showing and which split is greyed are decided in `main/paneMenu.ts`
+(`paneDropdown`, `splitMenus`), which is pure and tested,
 for the reason the right-click menu is: an item offered and then refused is
 worse than one never offered, and the launcher would otherwise be a second
 opinion about the same question. It was a second opinion, and it was wrong.
@@ -1006,8 +1018,9 @@ full, short and tiny heights, and what opening a setup over a tab costs the
 game — the setup file (refusing anything that could not have been saved, the
 size it was saved at, fresh ids, and whatever this window cannot show coming up
 empty), the built-in setups per window, a setup arranged around the game, and
-what a pane is called and may be turned into, the header's dropdown sharing the
-right-click menu's splits.
+what a pane is called and may be turned into, the header's dropdown adding first
+and replacing from a submenu, and both menus' splits offering what the new half
+could hold.
 
 ## Known
 
