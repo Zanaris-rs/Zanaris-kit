@@ -1,5 +1,6 @@
 import { COLUMN_PREFERRED_WIDTH, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
+import { sizedBy } from './windowRoom.ts';
 
 /**
  * The pane tree: what a tab is arranged into, and how that arrangement maps
@@ -277,10 +278,12 @@ export function resetGame(node: PaneNode, size: Size, want: Size): PaneNode {
 }
 
 /**
- * Reset Game Size in a window that can resize: the game at `want`, every other
- * pane at the pixels it has in a tab of `size`, and the size of tab that
- * holds them, for the window to be sized to — what opening a setup does
- * (`arrangeForGame`), measured from the tab as it is.
+ * Reset Game Size in a window that can resize: the game at `want`, the panes
+ * beside it keeping their size across it, and the size of tab that holds
+ * them, for the window to be sized to — what opening a setup does
+ * (`arrangeForGame`), measured from the tab as it is. A pane sharing the
+ * game's extent, chat under it, narrows or widens with it, and a tab under
+ * its own floor is measured from the floor.
  *
  * Trading with the panes beside the game, as `resetGame` does, could not give
  * back an axis the game spans alone: in the window a launch opens, the game
@@ -288,13 +291,37 @@ export function resetGame(node: PaneNode, size: Size, want: Size): PaneNode {
  * the game wider for good. On the owner's call on 2026-10-08 the window takes
  * the difference instead, on both axes.
  *
- * Null when the game is already at `want`, or not in this tree.
+ * Null when the game is already at `want`, or not in this tree. Whether the
+ * window could then give it — its display, the panes' floors — is
+ * `resetMoves`.
  */
 export function resetAround(tree: PaneNode, size: Size, want: Size): { tree: PaneNode; size: Size } | null {
     const had = gameSize(tree, size);
     if (!had || (had.width === want.width && had.height === want.height)) return null;
     const arranged = arrangeForGame(tree, size, want);
     return arranged.size ? { tree: arranged.tree, size: arranged.size } : null;
+}
+
+/**
+ * Whether Reset Game Size, in a window that can resize, would change anything
+ * at all: the tab's size or the game's, once the window has grown as far as
+ * `room` on its display lets it (`windowRoom.sizedBy`) and the tree is fitted
+ * to the size it got, as the resize fits it. Shrinking always fits, as far as
+ * the tree's floor.
+ *
+ * The menu greys the item on this, so it is never offered where it would do
+ * nothing: the game at its size, or short of it with the window already at
+ * the edge of its display and the panes beside it at their floors, or wider
+ * than it with the panes under it at a floor wider than the game.
+ */
+export function resetMoves(tree: PaneNode, size: Size, want: Size, room: Size): boolean {
+    const reset = resetAround(tree, size, want);
+    if (!reset) return false;
+    const by = sizedBy(size, reset.size, room);
+    const final = { width: size.width + by.width, height: size.height + by.height };
+    const was = gameSize(tree, size)!;
+    const now = gameSize(keepGame(reset.tree, reset.size, final), final)!;
+    return final.width !== size.width || final.height !== size.height || now.width !== was.width || now.height !== was.height;
 }
 
 function gameSize(node: PaneNode, size: Size): Size | null {

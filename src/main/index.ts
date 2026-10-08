@@ -34,7 +34,7 @@ import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { roomFor } from './windowRoom';
 import { allowPermission } from './guard';
 import { readNoticeAction } from '../shared/paneNotice';
-import { COLUMN_PREFERRED_WIDTH, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
+import { COLUMN_PREFERRED_WIDTH, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
@@ -2617,10 +2617,12 @@ async function captureAndExit(dir: string): Promise<void> {
         }
 
         // Reset Game Size on a window made wider and taller by hand: the game
-        // spans the width alone, so only the window can give that back, and
-        // chat keeps its height. On a window of its own, destroyed after, and
-        // before the second window, whose views are counted as whatever
-        // appeared after it opened.
+        // spans the width alone, so only the window can give that back. The
+        // height the hand resize added went to chat, the game holding its own,
+        // and the reset leaves it there: the panes beside the game keep their
+        // size across it. On a window of its own, destroyed after, and before
+        // the second window, whose views are counted as whatever appeared
+        // after it opened.
         {
             const resetter = openServer(first.state().server);
             log(`[capture] ${resetter.state().title}: ${await loaded(resetter)}`);
@@ -2634,14 +2636,20 @@ async function captureAndExit(dir: string): Promise<void> {
             const frame = resetter.window.getBounds();
             resetter.window.setBounds({ ...frame, width: frame.width + 300, height: frame.height + 120 });
             await wait(800);
-            const widened = gameRect();
+            const widened = { game: gameRect(), chat: chatHeight(), window: resetter.window.getContentBounds() };
             resetter.resetGameSize();
             await wait(800);
             const back = resetter.window.getContentBounds();
-            log(`[capture] ${resetter.state().title}: reset game size — game ${opened.game} → ${widened} by hand → ${gameRect()}, window ${opened.window.width}x${opened.window.height} → ${back.width}x${back.height}, chat ${opened.chat} → ${chatHeight()}`);
-            if (gameRect() !== opened.game) fault(`reset game size: the game came back at ${gameRect()}, not the ${opened.game} it opened at`);
-            if (back.width !== opened.window.width) fault(`reset game size: the window came back ${back.width} wide, not the ${opened.window.width} it opened at`);
-            if (chatHeight() !== opened.chat) fault(`reset game size: chat went from ${opened.chat} to ${chatHeight()} tall`);
+            const preferred = `${GAME_PREFERRED_WIDTH}x${resetter.state().server.id === 'lostcity' ? LOSTCITY_GAME_PREFERRED_HEIGHT : GAME_PREFERRED_HEIGHT}`;
+            log(`[capture] ${resetter.state().title}: reset game size — game ${opened.game} → ${widened.game} by hand → ${gameRect()}, window ${opened.window.width}x${opened.window.height} → ${widened.window.width}x${widened.window.height} → ${back.width}x${back.height}, chat ${opened.chat} → ${widened.chat} → ${chatHeight()}`);
+            if (opened.game !== preferred) {
+                log(`[capture] reset game size: not checked, the window opened its game at ${opened.game} rather than ${preferred} — a display too short for it`);
+            } else {
+                if (gameRect() !== preferred) fault(`reset game size: the game came back at ${gameRect()}, not ${preferred}`);
+                if (back.width !== opened.window.width) fault(`reset game size: the window came back ${back.width} wide, not the ${opened.window.width} it opened at`);
+                if (back.height !== widened.window.height) fault(`reset game size: the window went from ${widened.window.height} to ${back.height} tall, though the game's height had not changed`);
+                if (chatHeight() !== widened.chat) fault(`reset game size: chat went from ${widened.chat} to ${chatHeight()} tall, though the panes beside the game keep their size`);
+            }
             resetter.window.destroy();
             await wait(1_000);
         }

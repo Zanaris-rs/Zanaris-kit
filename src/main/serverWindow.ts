@@ -960,14 +960,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * only moves seams.
      */
     function gameSizes(): GameSizes {
-        return { tab: rects.tree, game: { width: GAME_PREFERRED_WIDTH, height: content.game }, resizable: !win.isMaximized() && !win.isFullScreen() };
+        return { tab: rects.tree, game: { width: GAME_PREFERRED_WIDTH, height: content.game }, resizable: !win.isMaximized() && !win.isFullScreen(), room: roomToGrow() };
     }
 
     /**
      * Reset Game Size: the game back at its size, the window resized by what
-     * it changed and every other pane keeping its pixels (`paneHost.resetGame`,
-     * `sizeWindow`), as a setup opened around the game is. Maximised or full
-     * screen, the seams around the game move instead.
+     * it changed and the panes beside the game keeping their size across it
+     * (`paneHost.resetGame`, `sizeWindow`), as a setup opened around the game
+     * is. Maximised or full screen, the seams around the game move instead.
      */
     function resetGameSize(): void {
         const sizes = gameSizes();

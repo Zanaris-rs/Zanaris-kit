@@ -780,7 +780,8 @@ export interface PaneHost {
     evenOut: (splitId: string) => void;
     /**
      * Reset Game Size. In a window that can resize, the active tab's game at
-     * `want` and every other pane at the pixels it has (`paneTree.resetAround`),
+     * `want` and the panes beside it at the size they have across it
+     * (`paneTree.resetAround`),
      * recorded as arranged at the tab size returned, for the window to be sized
      * to. In one that cannot, the seams around the game moved until it is
      * `want` or as near as the panes beside it allow (`paneTree.resetGame`),

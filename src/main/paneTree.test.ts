@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendColumn, arrangedAt, arrangeForGame, canAppendColumn, clearGame, closeGivingBack, closePane, contentOf, evenOut, gameSizeIn, halvable, keepGame, layoutTree, leaf, makeRoom, movePane, paneIds, parentSplitOf, refit, resetAround, resetGame, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
+import { appendColumn, arrangedAt, arrangeForGame, canAppendColumn, clearGame, closeGivingBack, closePane, contentOf, evenOut, gameSizeIn, halvable, keepGame, layoutTree, leaf, makeRoom, movePane, paneIds, parentSplitOf, refit, resetAround, resetGame, resetMoves, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -542,6 +542,43 @@ test('Reset Game Size around the game has nothing to do when the game is at its 
     const want = { width: 765, height: 567 };
     assert.equal(resetAround(game, want, want), null);
     assert.equal(resetAround(split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]), { width: 1204, height: 600 }, want), null);
+});
+
+test('Reset Game Size around the game, as the window does it: arranged at the new size, laid out at the old one, then resized, the game exactly at its size', () => {
+    const size = { width: 1065, height: 573 + 4 + 352 };
+    const tree = split('s1', 'y', [game, chat], [573 / (573 + 352), 352 / (573 + 352)]);
+    const want = { width: 765, height: 573 };
+    const reset = resetAround(tree, size, want)!;
+    const first = refit(arrangedAt(reset.tree, reset.size), reset.tree, size);
+    assert.deepEqual(drawn(first.shown, size, 'g'), { width: 1065, height: 573 }, 'until the window resizes, the game spans the width it has');
+    const resized = refit(first, first.shown, reset.size);
+    assert.deepEqual(drawn(resized.shown, reset.size, 'g'), want);
+    assert.equal(drawn(resized.shown, reset.size, 'c').height, 352, 'chat keeps the height the hand resize gave it');
+    const partly = refit(first, first.shown, { width: 900, height: reset.size.height });
+    assert.deepEqual(drawn(partly.shown, { width: 900, height: reset.size.height }, 'g'), { width: 900, height: 573 }, 'a window that could not shrink all the way leaves the game as wide as the window it spans');
+});
+
+
+test('Reset Game Size would move something while the game is not at its size and the window can give it', () => {
+    const tree = split('s1', 'y', [game, chat], [573 / 805, 232 / 805]);
+    assert.equal(resetMoves(tree, { width: 1065, height: 809 }, { width: 765, height: 573 }, none), true, 'shrinking needs no room');
+    assert.equal(resetMoves(tree, { width: 765, height: 809 }, { width: 765, height: 573 }, plenty), false, 'already at its size');
+});
+
+test('Reset Game Size would move nothing where the panes under the game are at their floor, wider than the game', () => {
+    const columns = Array.from({ length: 7 }, (_, i) => leaf(`c${i}`, { kind: 'tool', tool: 'timers' }));
+    const row = split('s2', 'x', columns, columns.map(() => 1 / 7));
+    const floor = 7 * 120 + 6 * 4;
+    const tree = split('s1', 'y', [game, row], [573 / 773, 200 / 773]);
+    assert.equal(resetMoves(tree, { width: floor, height: 573 + 4 + 200 }, { width: 765, height: 573 }, plenty), false, 'the window cannot be narrower than its columns');
+    assert.equal(resetMoves(tree, { width: 1065, height: 573 + 4 + 200 }, { width: 765, height: 573 }, plenty), true, 'from wider than that it can still shrink to them');
+});
+
+test('Reset Game Size would move nothing where the window fills its display and the pane beside the game is at its floor', () => {
+    const worlds = leaf('w', { kind: 'tool', tool: 'worlds' });
+    const tree = split('s1', 'x', [game, worlds], [600 / 720, 120 / 720]);
+    assert.equal(resetMoves(tree, { width: 724, height: 573 }, { width: 765, height: 573 }, none), false);
+    assert.equal(resetMoves(tree, { width: 724, height: 573 }, { width: 765, height: 573 }, plenty), true, 'with room on the display, the window grows');
 });
 
 // ── a new pane is paid for by the window, not the game ───────────────────
