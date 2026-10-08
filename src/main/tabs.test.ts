@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { arrangedAt, contentOf, layoutTree, leaf, paneIds, refit, split, type PaneNode } from './paneTree.ts';
-import { chatPages, closeTab, closingTab, holdsTool, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, openTabs, openWindowTabs, readsChat, selectTab, sharingWithoutPane } from './tabs.ts';
+import { chatPages, closeTab, closingTab, holdsTool, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, openTabs, openWindowTabs, readsChat, replaceDropsGame, selectTab, sharingWithoutPane } from './tabs.ts';
 import { builtInSetups } from './setups.ts';
 import { instantiateLayout } from './layoutFile.ts';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
@@ -374,4 +374,14 @@ test('a Home server pane in any tab, in front or behind, leaves the bar with not
     const set = playingBehind();
     assert.equal(sharingWithoutPane(set.tabs.map(tab => tab.tree), true), false, 'behind: the tab carries the mark');
     assert.equal(sharingWithoutPane(selectTab(set, 'a').tabs.map(tab => tab.tree), true), false, 'in front: the pane itself says so');
+});
+
+test("putting anything but the game in the game's pane is closing the game", () => {
+    const tree = split('s', 'y', [leaf('g', { kind: 'game' }), leaf('c', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
+    assert.equal(replaceDropsGame(tree, 'g', { kind: 'tool', tool: 'worlds' }), true);
+    assert.equal(replaceDropsGame(tree, 'g', { kind: 'page', bookmark: 'https://2004.losthq.rs/' }), true);
+    assert.equal(replaceDropsGame(tree, 'g', { kind: 'empty' }), true);
+    assert.equal(replaceDropsGame(tree, 'g', { kind: 'game' }), false, 'the game into its own pane changes nothing');
+    assert.equal(replaceDropsGame(tree, 'c', { kind: 'tool', tool: 'worlds' }), false, 'any other pane is only replaced');
+    assert.equal(replaceDropsGame(tree, 'gone', { kind: 'tool', tool: 'worlds' }), false);
 });

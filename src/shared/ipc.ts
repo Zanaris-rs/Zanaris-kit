@@ -344,8 +344,9 @@ export interface ZanarisApi {
          */
         contextMenu(paneId: string, x: number, y: number): Promise<void>;
         /**
-         * Raises a pane header's dropdown: everything that pane could become,
-         * built in main from the same list the launcher shows. Native for the
+         * Raises a pane header's dropdown: Split Right and Split Down, each a
+         * list of what the new half could hold, then Replace With, built in
+         * main from the same list the launcher shows. Native for the
          * same reason the gesture menu is — a header sits directly over a
          * native view in a game or page pane, and a list the shell drew would
          * open behind it.
