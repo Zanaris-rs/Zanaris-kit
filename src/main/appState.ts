@@ -11,6 +11,8 @@ import { readHomeServerBuild, readHomeServerSettings } from './homeserver/settin
 import { CUSTOM_MAX, DEFAULT_THEME, isThemeId, readCustomTheme, type Appearance, type Theme } from '../shared/themes.ts';
 import { writeWhole } from './wholeFile.ts';
 import { picturesNamedIn } from './pictures.ts';
+import { readNewWindowSetup, readNewWindows, type NewWindowSetup } from './setups.ts';
+import { PLACE_SLOTS_MAX, readPlace, readPlaces, type Place } from './windowPlace.ts';
 
 /**
  * The version of state.json this kit writes and reads. A file of a later one
@@ -39,6 +41,10 @@ interface StateFile {
     startup: string[];
     /** The app's theme and the servers given their own, by theme id, and the player's own themes (`shared/themes.ts`). */
     appearance: Appearance;
+    /** What new windows of each server open with, by server id (`setups.NewWindowSetup`). A server with none opens Game and Chat. */
+    newWindows: Record<string, NewWindowSetup>;
+    /** Where each server's windows were when they last closed, by server id and window number (`windowPlace.Place`). */
+    places: Record<string, Record<string, Place>>;
 }
 
 // Well past base37's 12-character limit, so no real player name is ever
@@ -197,8 +203,9 @@ function readAppearance(x: unknown): Appearance {
  * settings they configured — the last world and detail chosen per server, and
  * whether they still want warning before a switch reloads the game — and some
  * that really is configuration: the chat nick and the IRC server to reach it
- * on, which servers a launch opens, and the frame's theme, the app's and any
- * server's own, all living alongside the rest for want of a second file worth
+ * on, which servers a launch opens, what each server's new windows open with
+ * and where each of its windows last closed, and the frame's theme, the app's
+ * and any server's own, all living alongside the rest for want of a second file worth
  * keeping. It also holds the player's own countdowns and timers,
  * and their changes to a server's built-in ones, since both are app-wide
  * rather than a single server's. Loading never fails: a file that cannot be
@@ -228,6 +235,10 @@ export class AppState {
     private startup: string[] = [];
     // The look the kit has always had, until asked otherwise.
     private appearanceState: Appearance = defaultAppearance();
+    // Per server, the setup its new windows open with; none is Game and Chat.
+    private newWindows = new Map<string, NewWindowSetup>();
+    // Per server and window number, where that window last closed.
+    private places = new Map<string, Map<number, Place>>();
     // The version of a state.json a newer kit wrote, which this one reads and never writes.
     private newer: number | null = null;
     // Where the last load set aside a state.json it could not read.
@@ -249,6 +260,8 @@ export class AppState {
         this.timersState = emptyTimersState();
         this.startup = [];
         this.appearanceState = defaultAppearance();
+        this.newWindows = new Map();
+        this.places = new Map();
         this.newer = null;
         this.asideAt = null;
         if (!existsSync(this.file)) return;
@@ -308,6 +321,8 @@ export class AppState {
         this.timersState = readTimers(parsed?.timers);
         this.startup = readStartup(parsed?.startup);
         this.appearanceState = readAppearance(parsed?.appearance);
+        this.newWindows = readNewWindows(parsed?.newWindows);
+        this.places = readPlaces(parsed?.places);
     }
 
     /**
@@ -511,6 +526,47 @@ export class AppState {
         this.save();
     }
 
+    /** What new windows of this server open with, or null for Game and Chat. A copy. */
+    newWindowSetup(serverId: string): NewWindowSetup | null {
+        const choice = this.newWindows.get(serverId);
+        return choice ? { ...choice } : null;
+    }
+
+    /** Read back through `readNewWindowSetup` on the way in, as a file would be, so nothing stored here is something a later load would drop. Null clears it. */
+    setNewWindowSetup(serverId: string, choice: NewWindowSetup | null): void {
+        if (serverId === '') return;
+        if (choice === null) {
+            if (!this.newWindows.delete(serverId)) return;
+        } else {
+            const read = readNewWindowSetup(choice);
+            if (!read) return;
+            this.newWindows.set(serverId, read);
+        }
+        this.save();
+    }
+
+    /** Where this server's window of this number last closed, or null. A copy. */
+    place(serverId: string, slot: number): Place | null {
+        const place = this.places.get(serverId)?.get(slot);
+        return place ? { ...place } : null;
+    }
+
+    /**
+     * Written as a window closes, which a quit does to every window. A slot
+     * past `PLACE_SLOTS_MAX`, or a place a load would not read back, changes
+     * nothing; the same place again writes nothing.
+     */
+    setPlace(serverId: string, slot: number, place: Place): void {
+        const read = readPlace(place);
+        if (serverId === '' || !read || !Number.isInteger(slot) || slot < 1 || slot > PLACE_SLOTS_MAX) return;
+        const slots = this.places.get(serverId) ?? new Map<number, Place>();
+        const was = slots.get(slot);
+        if (was && was.x === read.x && was.y === read.y && was.maximized === read.maximized && was.fullScreen === read.fullScreen) return;
+        slots.set(slot, read);
+        this.places.set(serverId, slots);
+        this.save();
+    }
+
     /** The app's theme, the servers given their own, and the player's own themes. A copy: changes go through the setters below. */
     appearance(): Appearance {
         const { theme, servers, custom } = this.appearanceState;
@@ -595,7 +651,9 @@ export class AppState {
             alwaysOnTop: this.onTop,
             timers: this.timersState,
             startup: [...this.startup],
-            appearance: this.appearance()
+            appearance: this.appearance(),
+            newWindows: Object.fromEntries(this.newWindows),
+            places: Object.fromEntries([...this.places].map(([id, slots]) => [id, Object.fromEntries(slots)]))
         };
         writeWhole(this.file, `${JSON.stringify(data, null, 2)}\n`);
     }
