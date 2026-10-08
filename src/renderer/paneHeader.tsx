@@ -31,10 +31,11 @@ import { BAR_END } from './topBar';
  *   Send stay in the pane body, because they are the pane's *work* rather than
  *   its identity, and a header that collected them would become a second body.
  *   They are the first thing a narrow pane gives up; see `ROOM_FOR_NAV`.
- * - **The dropdown**, which changes what the pane holds and, below a rule,
- *   splits it. The splits are there as well as on the right-click menu because
- *   nothing on screen says a right-click exists; the arrow is the one control
- *   a new player can be expected to try. It is a native menu
+ * - **The dropdown**, which adds first — Split Right and Split Down, each a
+ *   list of what the new half could hold — and changes what the pane holds
+ *   from Replace With. The splits are there as well as on the right-click menu
+ *   because nothing on screen says a right-click exists; the arrow is the one
+ *   control a new player can be expected to try. It is a native menu
  *   main pops, not a panel drawn here: in a game or page pane this strip sits
  *   directly above a `WebContentsView`, and anything the shell drew below it
  *   would open behind that view.
