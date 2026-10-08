@@ -377,7 +377,8 @@ Settings turns them off — at most one every five seconds, and one a minute
 from any one person.
 
 Chat is a pane like anything else: drag its header to wherever you want it, drag
-its seams, close it. A new window opens with it already there, in a pane below the game —
+its seams, close it. A new window opens with it already there, in a pane below the game,
+unless another setup is chosen for that server's new windows —
 chat is the kit's own reason to be open instead of a browser tab, and a pane
 nobody knows is there is a pane nobody opens. Closed, chat comes back from
 **Add pane** in the tab bar, as a column down the tab's right edge.
@@ -618,8 +619,9 @@ it, so each server's storage partition starts fresh once. A window keeps its
 own copy of its server, so editing the file never affects windows already
 open.
 
-`<userData>/state.json` remembers the last world and detail per server, and
-whether the switch confirmation still shows. It is
+`<userData>/state.json` remembers the last world and detail per server,
+whether the switch confirmation still shows, which setup each server's new
+windows open with, and where each window was when it last closed. It is
 not configuration and never interrupts a launch: a broken file is kept aside
 and the state starts empty. It does not remember how the panes were arranged:
 that is saved only when you ask, as a setup (see Layout below).
@@ -647,10 +649,11 @@ the window changes around it. Shrinking takes the other panes to their floor
 before the game gives anything up, and growing back returns the game to the size
 it was left at, because each resize is worked out from the arrangement as the
 player left it rather than from the frame before. The game still grows along an
-axis where nothing sits beside it: the game over chat a window opens with widens
+axis where nothing sits beside it: the game over chat of Game and Chat widens
 with the window. **Reset Game Size**, in the game pane's dropdown and its
-right-click menu, moves the seams around the game until it is back at the size a
-window opens it at, taking the room from the panes beside it down to their floor.
+right-click menu, moves the seams around the game until it is back at its
+preferred size, the size the kit's own setups open it at, taking the room from
+the panes beside it down to their floor.
 It never resizes the window, so along an axis the game spans alone it has nothing
 to trade, and it is greyed when it would not move the game.
 
@@ -803,9 +806,8 @@ not rescale to follow unless the player picked **Auto Sizing** from the controls
 under the game, so the canvas clips rather than shrinking — still reachable by
 scrolling, though with no bar to hint at it, since the injected stylesheet hides
 them. 765x503 plus the client page's controls strip plus the pane header — 765
-by 567 — is what a game pane *asks for* when it is first placed, what the
-window opens at and what Reset Game Size goes back to, not a floor anything
-protects.
+by 567 — is what a game pane *asks for*: the size the kit's own setups place
+it at and what Reset Game Size goes back to, not a floor anything protects.
 
 Below that the client page is not ours: every server serves the same template,
 and its own `overflow: auto` around a `100vh` centring column can put up a
@@ -817,21 +819,34 @@ actually stops the two axes inducing each other — and separately swaps that
 `100vh` for a percentage of the view's own height, which keeps the canvas centred
 in an oversized pane now that `vh` is gone rather than fixing anything itself.
 
-Nothing about the arrangement is saved on its own. A new window always opens
-the same way — the game at its full 765x567 (765x573 on Lost City, whose client
-page has a taller controls strip and drew scrollbars at the stock size), a 232px
-chat pane below it, and the game's pane focused, so a split starts from the game
-rather than from chat. The
-window opens tall enough for both and no taller than the display it opens on;
-on a display too short for that, chat gives way to its 80px floor before the
-game loses any height.
+Nothing about the arrangement is saved on its own. A new window opens with
+the setup chosen for its server's new windows (Setups, below), or Game and
+Chat when none is: the game at its full 765x567 (765x573 on Lost City, whose
+client page has a taller controls strip and drew scrollbars at the stock
+size), a 232px chat pane below it, and the game's pane focused, so a split
+starts from the game rather than from chat. The window is built at the
+setup's size, no bigger than the display it opens on; on a display too short,
+the other panes give way to their floors before the game loses any height, as
+a resize does — for Game and Chat, chat gives way to its 80px floor first.
+
+**Where it opens** is the one thing remembered without asking. Each window
+records its place as it closes — a quit closes every window — per server and
+window number, so Lost City and Lost City (2) each come back to their own
+place, maximised or full screen if they were. Only the place: the size is the
+setup's, so a window dragged larger by hand comes back at its setup's size,
+and a size worth keeping is a saved setup. A place whose tab bar would land on
+no display — a monitor since unplugged, or one whose resolution dropped so far
+that the window's tab bar is no longer on it — is passed over for the usual
+cascade, 32px from the window in front, or the centre of the display under
+the pointer. One whose tab bar is only a little above the top, where a taller
+menu bar now sits, is moved down onto the display. A capture neither reads nor writes places.
 
 **Setups**, in the tab bar just before Add pane, is a set of panes in a
 shape, one click away. Whatever you pick replaces the panes of the tab in front:
 
 - **Game**, **Game and Chat** and **Game, Chat and Tools** are the kit's own.
-  Game is the game alone; Game and Chat is the game over chat, as a new window
-  opens; Game, Chat and Tools adds a 320px column down the right holding every
+  Game is the game alone; Game and Chat is the game over chat, which a new
+  window opens with unless another is chosen; Game, Chat and Tools adds a 320px column down the right holding every
   other tool the window offers — Worlds, Hiscores, Timers, and Home server in
   its own window — sharing the column's height evenly. A built-in leaves out a
   tool the window does not offer rather than showing an empty pane.
@@ -843,6 +858,14 @@ shape, one click away. Whatever you pick replaces the panes of the tab in front:
 - **Open Setups Folder** opens the folder in Finder or Explorer, which is how a
   setup is shared: copy the file out, or drop somebody else's in and it is
   listed with your own.
+- **Open New Windows With** chooses what this server's new windows open
+  with — at launch, from the File menu, from Settings and from the dock:
+  any of the kit's own, or a saved setup holding the game. A saved setup
+  without the game is greyed, since a game window opens onto its game. The
+  tick is what the next window will open with: a choice whose file has since
+  gone, or no longer holds the game, ticks Game and Chat, which is what opens
+  instead. The file is read as each window opens, so editing it changes the
+  next window. Choosing changes nothing already open.
 
 A setup opens around the game. The game keeps the pixels it has — or, with no
 game running, the ones the setup was saved with — every other pane gets the
@@ -1013,8 +1036,9 @@ service (supersession by sequence number, the last table kept through a
 failure, the rate-limit message), the per-window switch state, the app state
 store, the navigation guard, the latency probe against a local listener, the
 pane tree and its solver, the workspace tabs — including moving the game out of
-one tab and into another, the game-and-chat arrangement a window opens with at
-full, short and tiny heights, and what opening a setup over a tab costs the
+one tab and into another, Game and Chat as a new window opens it at full, short
+and tiny heights, what a new window opens with and where, and what a closing
+one records, and what opening a setup over a tab costs the
 game — the setup file (refusing anything that could not have been saved, the
 size it was saved at, fresh ids, and whatever this window cannot show coming up
 empty), the built-in setups per window, a setup arranged around the game, and
@@ -1132,7 +1156,8 @@ src/main/paneDrop.ts        pure: what a header drop does and where the pane lan
 src/main/tabs.ts            pure: workspace tabs, moving the game, the opening
                             arrangement, opening a setup into a tab                 (tested)
 src/main/layoutFile.ts      pure: a setup file — writing, validating, fresh ids     (tested)
-src/main/setups.ts          pure: the built-in setups, from a window's tools        (tested)
+src/main/setups.ts          pure: the built-in setups, from a window's tools, and
+                            what a new window opens with                            (tested)
 src/main/paneMenu.ts        pure: a pane's name, its gestures, what it may become    (tested)
 src/main/paneHost.ts        the views inside a tab's panes; holds no rules
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)
@@ -1142,6 +1167,8 @@ src/main/settingsWindow.ts  pure: the Settings window's slot, and where it opens
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
 src/main/windowFrame.ts     pure: the title bar macOS and Windows don't draw, and
                             where their window buttons go                           (tested)
+src/main/windowPlace.ts     pure: where a new window opens, and what a closing
+                            one records                                             (tested)
 src/main/windows.ts         pure: registry of open windows over a factory           (tested)
 src/main/guard.ts           pure: what a page-initiated navigation may do           (tested)
 src/main/appState.ts        the state.json store                                    (tested)
@@ -1209,8 +1236,7 @@ the reload button) is parked in `git stash`.
 ## Next
 
 3. **The reference pane, beyond the links.** An address row and wiki search,
-   per-pane zoom, and tearing a pane off into its own window. (Reopening what
-   was open at quit landed with the pane tree.)
+   per-pane zoom, and tearing a pane off into its own window.
 4. **Shared tools.** Screenshot cropped to the canvas, notes, settings.
 5. **Chat.** Private-message tabs, input history and nick completion. IRC on
    SwiftIRC, with Settings, users and topics, landed on 2026-09-15.

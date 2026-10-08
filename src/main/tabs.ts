@@ -1,5 +1,4 @@
-import { clearGame, contentOf, leaf, paneIds, setContent, split, type PaneContent, type PaneNode } from './paneTree.ts';
-import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, PANE_MIN_HEIGHT, SEAM } from '../shared/layout.ts';
+import { arrangeForGame, clearGame, contentOf, leaf, paneIds, setContent, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
 import { paneName, type PaneLink } from './paneMenu.ts';
 import type { ChatPage } from '../shared/chat.ts';
 import type { ToolId } from '../shared/ipc.ts';
@@ -37,43 +36,28 @@ export function openTabs(tabId: string, paneId: string, content: PaneContent): T
 }
 
 /**
- * The arrangement a new window opens with: the game, and chat below it.
+ * The tab a new window opens with: one tab holding `tree`, the setup its
+ * server's new windows open with made real in this window
+ * (`setups.openingSetup`), focused on the game, so Cmd/Ctrl+D and a
+ * right-click's splits start from the pane the player is looking at.
  *
- * On the game because a game window opens straight onto its game — Settings
- * is the app's one other window, and it has no tabs or panes of its own, so
- * whatever reaches this function is building a game window. With chat under
- * it because chat is the kit's own reason to be open instead of a browser
- * tab, and a pane nobody knows is there is a pane nobody opens. Below rather
- * than beside, where the 2004 client keeps its own chat box, so the
- * conversation gets the game's full width.
+ * `saved` is the tab size the setup was made at. The tree comes back
+ * arranged at that size, raised to the tree's own floor
+ * (`paneTree.arrangeForGame`), with the size it was arranged at: the window
+ * is built to hold it, and the host fits the first layout from it, so on a
+ * display too small for the setup the other panes give way to their floors
+ * before the game does. Game and Chat on a short display is chat giving way
+ * first, as it always was. A null `saved`, a setup from before setups
+ * carried a size, comes back null: laid out by its fractions.
  *
- * `gameHeight` is the game pane's preferred height, which is the stock one
- * unless the server's client page needs more (`LOSTCITY_GAME_PREFERRED_HEIGHT`).
- *
- * The game keeps its preferred height whenever the window has room for that
- * and a chat pane above the floor: a canvas cut off at the bottom is the one
- * cost here a player cannot scroll or read past. On a display too short for
- * that, chat gives way down to the floor first and the game takes the rest;
- * only below two floors are they shared in proportion, and there the solver's
- * own minimums decide. Nothing in the tree remembers these numbers — they are
- * the shares the split starts with. A resize keeps the game at whatever size it
- * has, and Reset Game Size is the way back to these.
- *
- * Focus is on the game, so Cmd/Ctrl+D and a right-click's splits start from the
- * pane the player is looking at rather than from the chat below it.
+ * Every setup a window opens with holds the game; with none, it would focus
+ * the first pane.
  */
-export function openWindowTabs(treeHeight: number, gameHeight: number = GAME_PREFERRED_HEIGHT): TabSet {
-    const gross = Math.max(0, treeHeight - SEAM);
-    const game = Math.min(gameHeight, gross - PANE_MIN_HEIGHT);
-    const shares = game >= PANE_MIN_HEIGHT ? [game, gross - game] : [gameHeight, CHAT_PREFERRED_HEIGHT];
-    const total = shares[0]! + shares[1]!;
-    const tree = split(
-        'split-1',
-        'y',
-        [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: 'chat' })],
-        shares.map(share => share / total)
-    );
-    return { tabs: [{ id: 'tab-1', tree, focusedPaneId: 'pane-1' }], activeId: 'tab-1' };
+export function openWindowTabs(tree: PaneNode, saved: Size | null): { set: TabSet; size: Size | null } {
+    const arranged = arrangeForGame(tree, saved, null);
+    const ids = paneIds(arranged.tree);
+    const focus = ids.find(id => contentOf(arranged.tree, id)?.kind === 'game') ?? ids[0]!;
+    return { set: { tabs: [{ id: 'tab-1', tree: arranged.tree, focusedPaneId: focus }], activeId: 'tab-1' }, size: arranged.size };
 }
 
 export function newTab(set: TabSet, tabId: string, paneId: string): TabSet {
