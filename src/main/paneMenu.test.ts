@@ -5,7 +5,7 @@ import { addPaneItems, canClosePane, paneContentItems, paneHeaderItems, paneHold
 
 const roomy = { width: 800, height: 600 };
 /** A tab the size of the one pane in it, and the size the game opens at. */
-const sizes = { tab: roomy, game: { width: 765, height: 567 } };
+const sizes = { tab: roomy, game: { width: 765, height: 567 }, resizable: false };
 const byId = (items: ReturnType<typeof paneMenuItems>, id: string): (typeof items)[number] => items.find(i => i.id === id)!;
 
 test('a roomy pane offers both splits', () => {
@@ -40,7 +40,7 @@ test("the header's dropdown offers the right-click menu's two splits, greyed und
 
 test("the game's header dropdown offers Reset Game Size too, the same item the right-click menu does", () => {
     const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
-    const tab = { tab: { width: 765, height: 1003 }, game: sizes.game };
+    const tab = { tab: { width: 765, height: 1003 }, game: sizes.game, resizable: false };
     const items = paneHeaderItems(tree, 'a', { width: 765, height: 500 }, tab);
     assert.deepEqual(
         items.map(i => i.id),
@@ -65,18 +65,28 @@ test('every gesture the View menu carries shows its shortcut there', () => {
 
 test('only the game pane offers Reset Game Size', () => {
     const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
-    const tab = { tab: { width: 765, height: 1003 }, game: sizes.game };
+    const tab = { tab: { width: 765, height: 1003 }, game: sizes.game, resizable: false };
     assert.equal(byId(paneMenuItems(tree, 'a', { width: 765, height: 500 }, tab), 'reset-game').label, 'Reset Game Size');
     assert.equal(byId(paneMenuItems(tree, 'b', { width: 765, height: 499 }, tab), 'reset-game'), undefined, 'chat has no game to reset');
 });
 
 test('Reset Game Size is offered only when it would move the game', () => {
     const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
-    const tall = { tab: { width: 765, height: 1003 }, game: sizes.game };
+    const tall = { tab: { width: 765, height: 1003 }, game: sizes.game, resizable: false };
     assert.equal(byId(paneMenuItems(tree, 'a', { width: 765, height: 500 }, tall), 'reset-game').enabled, true, 'half of a tall window is not the size the game opens at');
-    const tight = { tab: { width: 765, height: 1138 }, game: sizes.game };
+    const tight = { tab: { width: 765, height: 1138 }, game: sizes.game, resizable: false };
     assert.equal(byId(paneMenuItems(tree, 'a', { width: 765, height: 567 }, tight), 'reset-game').enabled, false, 'already at its size');
     assert.equal(byId(paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy, sizes), 'reset-game').enabled, false, 'alone in its tab, with nothing to trade space with');
+});
+
+test('in a window that can resize, Reset Game Size is offered whenever the game is not at its size, even along an axis it spans alone', () => {
+    const resizable = { ...sizes, resizable: true };
+    assert.equal(byId(paneMenuItems(leaf('a', { kind: 'game' }), 'a', roomy, resizable), 'reset-game').enabled, true, 'the window gives the width and height back');
+    const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [567 / 799, 232 / 799]);
+    const wide = { tab: { width: 1200, height: 803 }, game: sizes.game, resizable: true };
+    assert.equal(byId(paneMenuItems(tree, 'a', { width: 1200, height: 567 }, wide), 'reset-game').enabled, true, 'only the width is off, and nothing sits beside the game to take it');
+    const atSize = { tab: { width: 765, height: 803 }, game: sizes.game, resizable: true };
+    assert.equal(byId(paneMenuItems(tree, 'a', { width: 765, height: 567 }, atSize), 'reset-game').enabled, false, 'already at its size');
 });
 
 test('even out is offered only to a pane that has siblings to even out with', () => {
