@@ -1,6 +1,6 @@
 import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
-import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, resetGame, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
+import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, resetGame, resetMoves, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
 
 /**
  * What a pane is called, and what its two menus offer: the gestures a
@@ -33,10 +33,14 @@ export interface PaneMenuItem {
     accelerator?: string;
 }
 
-/** What Reset Game Size needs to know whether it would do anything: the size the tab is laid out in, and the size the game opens at. */
+/** What Reset Game Size needs to know whether it would do anything: the size the tab is laid out in, the size the game opens at, and whether the window may be resized. */
 export interface GameSizes {
     tab: Size;
     game: Size;
+    /** Whether the window can be resized to give the game its size: not while it is maximised or full screen, where Reset Game Size can only move seams. */
+    resizable: boolean;
+    /** How much the window could grow on its display (`windowRoom.roomFor`), nothing while it cannot be resized. */
+    room: Size;
 }
 
 /** One of this server's curated links, as much of it as naming a pane needs. */
@@ -207,10 +211,14 @@ export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: num
         // siblings to share with, and the item would be a no-op wearing the
         // same face as the working one.
         { id: 'even-out', label: 'Even Out', enabled: parentSplitOf(tree, paneId) !== null, accelerator: 'CmdOrCtrl+Alt+=' },
-        // The game's alone. Greyed by the same test that decides what it does,
-        // so it is never offered where the game would not move: already at its
-        // size, or with nothing beside it to take or give the room.
-        ...(isGame ? [{ id: 'reset-game' as const, label: 'Reset Game Size', enabled: resetGame(tree, sizes.tab, sizes.game) !== tree }] : []),
+        // The game's alone. Greyed when it would change nothing, worked out by
+        // the same steps the reset takes: in a window that can resize, the
+        // tab sized around the game as far as the display and the panes'
+        // floors allow (`resetMoves`); in one that cannot, the seams around
+        // the game, with something beside it to take or give the room.
+        ...(isGame
+            ? [{ id: 'reset-game' as const, label: 'Reset Game Size', enabled: sizes.resizable ? resetMoves(tree, sizes.tab, sizes.game, sizes.room) : resetGame(tree, sizes.tab, sizes.game) !== tree }]
+            : []),
         {
             id: 'close',
             // Named for what it costs. Closing the game destroys its view and

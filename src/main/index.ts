@@ -34,7 +34,7 @@ import { DROP_ZONES, type DropTargets, type DropZone } from './paneDrop';
 import { roomFor } from './windowRoom';
 import { allowPermission } from './guard';
 import { readNoticeAction } from '../shared/paneNotice';
-import { COLUMN_PREFERRED_WIDTH, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
+import { COLUMN_PREFERRED_WIDTH, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
 import { Catalog, slugify } from './catalog';
 import { AppState } from './appState';
 import { ServerWindows, type WindowSpec } from './windows';
@@ -2136,14 +2136,15 @@ const shotOfThePage =
  * closed giving its room back; the Home server tool, as it opens and on World
  * at `PANE_MIN_WIDTH`; the reference pane — the
  * launcher, two pages beside the game, and the first of them brought back to
- * prove a tab switch did not reload it; splits filled in one step, the game's
- * own pane among them, and a page pane given another link, on a window of its
- * own; a second instance of the first server (slots and partitions), with a
- * setup saved and opened into a new tab and the game left behind another tab;
- * new windows of the first server opened with Game, Chat and Tools, with a
- * saved setup, with a setup gone from the folder, at a place handed to them
- * and at one on no display; every theme, Settings on Appearance, a server's
- * own theme and a custom theme with a picture and its editor, with
+ * prove a tab switch did not reload it; Reset Game Size on a window widened
+ * by hand, and splits filled in one step, the game's own pane among them, and
+ * a page pane given another link, each on a window of its own; a second
+ * instance of the first server (slots and partitions), with a setup saved and
+ * opened into a new tab and the game left behind another tab; new windows of
+ * the first server opened with Game, Chat and Tools, with a saved setup, with
+ * a setup gone from the folder, at a place handed to them and at one on no
+ * display; every theme, Settings on Appearance, a server's own theme and a
+ * custom theme with a picture and its editor, with
  * a draft typed there worn by the first window and cancelled; a built-in
  * setup opened on the first window, its tools column closed and the setup
  * opened again, the window sized around the game each way. Last comes
@@ -2614,6 +2615,44 @@ async function captureAndExit(dir: string): Promise<void> {
             }
         } else {
             log('[capture] pages skipped: no loaded window offers any links');
+        }
+
+        // Reset Game Size on a window made wider and taller by hand: the game
+        // spans the width alone, so only the window can give that back. The
+        // height the hand resize added went to chat, the game holding its own,
+        // and the reset leaves it there: the panes beside the game keep their
+        // size across it. On a window of its own, destroyed after, and before
+        // the second window, whose views are counted as whatever appeared
+        // after it opened.
+        {
+            const resetter = openServer(first.state().server);
+            log(`[capture] ${resetter.state().title}: ${await loaded(resetter)}`);
+            await wait(Math.min(settleMs, 8_000));
+            const gameRect = (): string => {
+                const rect = resetter.state().panes.find(p => p.content.kind === 'game')?.rect;
+                return rect ? `${rect.width}x${rect.height}` : 'none';
+            };
+            const chatHeight = (): number | undefined => resetter.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'chat')?.rect.height;
+            const opened = { game: gameRect(), chat: chatHeight(), window: resetter.window.getContentBounds() };
+            const frame = resetter.window.getBounds();
+            resetter.window.setBounds({ ...frame, width: frame.width + 300, height: frame.height + 120 });
+            await wait(800);
+            const widened = { game: gameRect(), chat: chatHeight(), window: resetter.window.getContentBounds() };
+            resetter.resetGameSize();
+            await wait(800);
+            const back = resetter.window.getContentBounds();
+            const preferred = `${GAME_PREFERRED_WIDTH}x${resetter.state().server.id === 'lostcity' ? LOSTCITY_GAME_PREFERRED_HEIGHT : GAME_PREFERRED_HEIGHT}`;
+            log(`[capture] ${resetter.state().title}: reset game size — game ${opened.game} → ${widened.game} by hand → ${gameRect()}, window ${opened.window.width}x${opened.window.height} → ${widened.window.width}x${widened.window.height} → ${back.width}x${back.height}, chat ${opened.chat} → ${widened.chat} → ${chatHeight()}`);
+            if (opened.game !== preferred) {
+                log(`[capture] reset game size: not checked, the window opened its game at ${opened.game} rather than ${preferred} — a display too short for it`);
+            } else {
+                if (gameRect() !== preferred) fault(`reset game size: the game came back at ${gameRect()}, not ${preferred}`);
+                if (back.width !== opened.window.width) fault(`reset game size: the window came back ${back.width} wide, not the ${opened.window.width} it opened at`);
+                if (back.height !== widened.window.height) fault(`reset game size: the window went from ${widened.window.height} to ${back.height} tall, though the game's height had not changed`);
+                if (chatHeight() !== widened.chat) fault(`reset game size: chat went from ${widened.chat} to ${chatHeight()} tall, though the panes beside the game keep their size`);
+            }
+            resetter.window.destroy();
+            await wait(1_000);
         }
 
         // A split filled in one step, as an item in Split Right or Split Down's

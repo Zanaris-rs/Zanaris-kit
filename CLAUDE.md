@@ -64,7 +64,7 @@ be shown. What a tab close takes with it is `tabs.closingTab`, pure and tested;
 
 Everything else about the layout is `src/main/paneTree.ts`: a tab is a tree of
 leaves and n-ary splits, and one recursive walk turns it into a rect per pane.
-Six properties in there are load-bearing and easy to break —
+Seven properties in there are load-bearing and easy to break —
 
 - Shares are distributed by **largest remainder**, so children sum to their
   container exactly. A round per child leaves a hairline of shell showing
@@ -110,16 +110,27 @@ Six properties in there are load-bearing and easy to break —
   window is not resized at all; the tree is fitted to it from that size, as a
   resize is, holding the game. One with no game or no size is fitted to the
   tab by its fractions and leaves the window alone.
+- **Reset Game Size** puts the game back at its preferred size and **sizes
+  the window around it** (`resetAround`, through `sizeWindow`): the window
+  grows or shrinks by exactly what the game changed, on both axes, and the
+  panes beside the game keep their size across it, as for a setup — chat
+  under the game narrows with it, sharing its width. It is greyed where that
+  would change nothing (`resetMoves`): the display has no more room, or the
+  panes are at their floors. It used to move only the seams,
+  which could not give back an axis the game spans alone — the width of the
+  game over chat a window opens with — so a window made wider left the game
+  wider for good; the window taking the difference was the owner's call on
+  2026-10-08. A maximised or full-screen window is not resized; there the
+  seams move as they always did (`resetGame`).
 
-Those three are the only things that resize the window — not Reset Game Size,
-not a drop. Opening a window is not one of them either: a new window is built
-at the size of the setup its server's new windows open with and at the place
-its number last closed at, both decided before it exists
-(`setups.openingSetup`, `windowPlace.openingFrame`), never opened and then
-moved. One that closed maximised or full screen is made so again as it is
-shown, which puts back the player's own state rather than sizing the window.
-Only the place is recorded without being asked for; the size is always the
-setup's.
+Those four are the only things that resize the window — not a drop. Opening
+a window is not one of them either: a new window is built at the size of the
+setup its server's new windows open with and at the place its number last
+closed at, both decided before it exists (`setups.openingSetup`,
+`windowPlace.openingFrame`), never opened and then moved. One that closed
+maximised or full screen is made so again as it is shown, which puts back the
+player's own state rather than sizing the window. Only the place is recorded
+without being asked for; the size is always the setup's.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file
 carries tool ids between people — that is the whole point of saving one — and
