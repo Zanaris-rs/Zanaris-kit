@@ -4,9 +4,9 @@ import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, resetGame
 
 /**
  * What a pane is called, and what its two menus offer: the gestures a
- * right-click gives it, and the contents its header's dropdown can put in it —
- * followed there by the gesture menu's two splits. The tab bar's Add pane
- * offers the same contents for a new column.
+ * right-click gives it, and its header's dropdown — the two splits, each a
+ * list of what the new half could hold, then what this pane could become. The
+ * tab bar's Add pane offers the same contents for a new column.
  *
  * Pure and tested for the usual reason, and for one specific to a menu: an item
  * that is offered and then refused is worse than one that was never offered,
@@ -227,19 +227,96 @@ export function paneMenuItems(tree: PaneNode, paneId: string, rect: { width: num
 }
 
 /**
- * The gestures the header's dropdown carries: the two ways to make a new pane,
- * and on the game's pane, Reset Game Size.
+ * What the new half of a split could hold: everything a pane could, in the
+ * same order and the same words, with nothing marked, since it holds nothing
+ * yet. Choosing one splits the pane and fills the new half in one step.
  *
- * The same items the right-click menu has, taken from it rather than restated,
- * so the dropdown greys a split under exactly the floor the gesture menu does.
- * They are repeated there because a right-click is invisible: the arrow on the
- * header is the one control a player can see, and a menu reached from it that
- * could change a pane but not add one left splitting as something only the
- * people who already knew about it would ever do. Reset Game Size is there for
- * the same reason, and because it is about this pane. Even Out and Close stay
- * off it — the close sits beside the arrow already, and evening out is about
- * the panes around this one rather than this one.
+ * Not the game when the pane being split is the game's: it is already there,
+ * and moving it into the new half would only leave this one empty. Anywhere
+ * else it reads "Move game here", as it does in every list, because there is
+ * one game view and choosing it moves it.
  */
-export function paneHeaderItems(tree: PaneNode, paneId: string, rect: { width: number; height: number }, sizes: GameSizes): PaneMenuItem[] {
-    return paneMenuItems(tree, paneId, rect, sizes).filter(item => item.id === 'split-x' || item.id === 'split-y' || item.id === 'reset-game');
+export function splitContentItems(opts: { trees: readonly PaneNode[]; paneId: string; tools: readonly ToolId[]; links: readonly PaneLink[] }): PaneContentItem[] {
+    const here = opts.trees.reduce<PaneContent | null>((found, tree) => found ?? contentOf(tree, opts.paneId), null);
+    const holdsGame = here?.kind === 'game';
+    const gameElsewhere = !holdsGame && opts.trees.some(tree => paneHolding(tree, { kind: 'game' }) !== null);
+    return offered(opts.tools, opts.links)
+        .filter(({ content }) => !(holdsGame && content.kind === 'game'))
+        .map(({ content, group }) => ({ content, label: labelFor(content, opts.links, gameElsewhere), group, current: false }));
+}
+
+/** Split Right or Split Down as a submenu: the gesture, and what the new half could hold. */
+export interface SplitMenu {
+    id: 'split-x' | 'split-y';
+    label: string;
+    enabled: boolean;
+    items: PaneContentItem[];
+}
+
+/**
+ * The two splits as submenus, for the header's dropdown and the right-click
+ * menu alike. Their names and whether they are greyed are the gesture menu's
+ * own (`paneMenuItems`), so neither menu can offer a split the other refuses.
+ * The keyboard's splits stay as they were — Cmd/Ctrl+D and Cmd/Ctrl+Shift+D,
+ * from the View menu, open an empty pane showing the launcher — since an item
+ * that opens a submenu cannot also be the act.
+ */
+export function splitMenus(opts: {
+    tree: PaneNode;
+    trees: readonly PaneNode[];
+    paneId: string;
+    tools: readonly ToolId[];
+    links: readonly PaneLink[];
+    rect: { width: number; height: number };
+    sizes: GameSizes;
+}): SplitMenu[] {
+    const items = splitContentItems(opts);
+    return paneMenuItems(opts.tree, opts.paneId, opts.rect, opts.sizes).flatMap(item =>
+        item.id === 'split-x' || item.id === 'split-y' ? [{ id: item.id, label: item.label, enabled: item.enabled, items }] : []
+    );
+}
+
+/** A pane header's dropdown, as `paneDropdown` lays it out. */
+export interface PaneDropdown {
+    /** An empty pane's contents at the top level, where choosing one fills it. Null for a pane holding something. */
+    fill: PaneContentItem[] | null;
+    splits: SplitMenu[];
+    /** Replace With's list, what the pane holds marked. Null for an empty pane, whose list is `fill`. */
+    replace: PaneContentItem[] | null;
+    /** Reset Game Size, on the game's pane alone: the right-click menu's own item. */
+    gestures: PaneMenuItem[];
+}
+
+/**
+ * The dropdown in a pane's header: adding first, replacing in a submenu.
+ *
+ * The arrow is the one control on a pane a player can see, and what they
+ * reach for it to do, far more often than not, is open something beside the
+ * pane. When its list replaced the pane at the top level, that was the click
+ * they made by accident. So a pane holding something offers Split Right and
+ * Split Down first, each a list of what the new half could hold, and its own
+ * list under Replace With. An empty pane is the exception: filling it is the
+ * point, so its list stays at the top, the splits below it.
+ *
+ * Reset Game Size follows on the game's pane, because it is about this pane.
+ * Even Out and Close stay off it — the close sits beside the arrow already,
+ * and evening out is about the panes around this one rather than this one.
+ */
+export function paneDropdown(opts: {
+    tree: PaneNode;
+    trees: readonly PaneNode[];
+    paneId: string;
+    tools: readonly ToolId[];
+    links: readonly PaneLink[];
+    rect: { width: number; height: number };
+    sizes: GameSizes;
+}): PaneDropdown {
+    const empty = contentOf(opts.tree, opts.paneId)?.kind === 'empty';
+    const list = paneContentItems(opts);
+    return {
+        fill: empty ? list : null,
+        splits: splitMenus(opts),
+        replace: empty ? null : list,
+        gestures: paneMenuItems(opts.tree, opts.paneId, opts.rect, opts.sizes).filter(item => item.id === 'reset-game')
+    };
 }

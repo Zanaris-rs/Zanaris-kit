@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaf, split } from './paneTree.ts';
-import { addPaneItems, canClosePane, paneContentItems, paneHeaderItems, paneHolding, paneMenuItems, paneName, showsClocks } from './paneMenu.ts';
+import { addPaneItems, canClosePane, paneContentItems, paneDropdown, paneHolding, paneMenuItems, paneName, showsClocks, splitContentItems, splitMenus } from './paneMenu.ts';
 
 const roomy = { width: 800, height: 600 };
 /** A tab the size of the one pane in it, and the size the game opens at. */
@@ -26,27 +26,29 @@ test('a pane too short to halve cannot be split down', () => {
     assert.equal(byId(items, 'split-y').enabled, false);
 });
 
-test("the header's dropdown offers the right-click menu's two splits, greyed under the same floor", () => {
+test("a split too narrow to halve is greyed in the dropdown's submenus by the right-click menu's own test", () => {
     const tree = leaf('a', { kind: 'empty' });
     const narrow = { width: 243, height: 600 };
-    const splits = paneHeaderItems(tree, 'a', narrow, sizes);
+    const menus = splitMenus({ tree, trees: [tree], paneId: 'a', tools: ['chat'], links: [], rect: narrow, sizes });
     assert.deepEqual(
-        splits.map(i => i.id),
-        ['split-x', 'split-y']
+        menus.map(m => [m.id, m.label, m.enabled]),
+        paneMenuItems(tree, 'a', narrow, sizes)
+            .slice(0, 2)
+            .map(i => [i.id, i.label, i.enabled]),
+        'the same splits, not a second opinion about them'
     );
-    assert.deepEqual(splits, paneMenuItems(tree, 'a', narrow, sizes).slice(0, 2), 'the same items, not a second opinion about them');
-    assert.equal(byId(splits, 'split-x').enabled, false, 'a pane too narrow to halve is greyed here as well');
+    assert.equal(menus[0]!.enabled, false, 'too narrow to halve across');
+    assert.equal(menus[1]!.enabled, true);
 });
 
 test("the game's header dropdown offers Reset Game Size too, the same item the right-click menu does", () => {
     const tree = split('s1', 'y', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
     const tab = { tab: { width: 765, height: 1003 }, game: sizes.game };
-    const items = paneHeaderItems(tree, 'a', { width: 765, height: 500 }, tab);
-    assert.deepEqual(
-        items.map(i => i.id),
-        ['split-x', 'split-y', 'reset-game']
-    );
-    assert.deepEqual(byId(items, 'reset-game'), byId(paneMenuItems(tree, 'a', { width: 765, height: 500 }, tab), 'reset-game'));
+    const rect = { width: 765, height: 500 };
+    const dropdown = paneDropdown({ tree, trees: [tree], paneId: 'a', tools: ['chat'], links: [], rect, sizes: tab });
+    assert.deepEqual(dropdown.gestures, [byId(paneMenuItems(tree, 'a', rect, tab), 'reset-game')]);
+    const chat = paneDropdown({ tree, trees: [tree], paneId: 'b', tools: ['chat'], links: [], rect, sizes: tab });
+    assert.deepEqual(chat.gestures, [], 'a pane that is not the game has none');
 });
 
 test('every gesture the View menu carries shows its shortcut there', () => {
@@ -247,4 +249,63 @@ test('only the game pane shows the clocks', () => {
     assert.equal(showsClocks(tree, 'c'), false);
     assert.equal(showsClocks(tree, 'e'), false);
     assert.equal(showsClocks(tree, 'nope'), false, 'a pane the tree does not hold');
+});
+
+const splitList = (trees: ReturnType<typeof leaf>[], paneId: string): ReturnType<typeof splitContentItems> =>
+    splitContentItems({ trees, paneId, tools: ['chat', 'worlds'], links: LINKS });
+
+test("a split's submenu offers everything the new half could hold, with nothing marked", () => {
+    const tree = split('s', 'x', [leaf('a', { kind: 'tool', tool: 'worlds' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    const list = splitContentItems({ trees: [tree], paneId: 'a', tools: ['chat', 'worlds'], links: LINKS });
+    assert.deepEqual(
+        list.map(item => item.label),
+        ['Chat', 'Worlds', 'Game', 'Forums', 'World Map'],
+        'the order of every other list of contents'
+    );
+    assert.deepEqual(
+        list.map(item => item.current),
+        [false, false, false, false, false],
+        'the new half holds nothing yet, so Worlds in the pane being split is not marked'
+    );
+});
+
+test("splitting the game's own pane does not offer the game, which is already there", () => {
+    assert.deepEqual(
+        splitList([leaf('g', { kind: 'game' })], 'g').map(item => item.label),
+        ['Chat', 'Worlds', 'Forums', 'World Map']
+    );
+});
+
+test('the game in another pane or another tab is offered as a move into the new half', () => {
+    const game = (list: ReturnType<typeof splitContentItems>): string | undefined => list.find(item => item.group === 'game')?.label;
+    assert.equal(game(splitList([split('s', 'x', [leaf('a', { kind: 'empty' }), leaf('g', { kind: 'game' })], [0.5, 0.5])], 'a')), 'Move game here');
+    assert.equal(game(splitList([leaf('a', { kind: 'tool', tool: 'chat' }), leaf('g', { kind: 'game' })], 'a')), 'Move game here', 'from another tab');
+    assert.equal(game(splitList([leaf('a', { kind: 'tool', tool: 'chat' })], 'a')), 'Game', 'with no game running, choosing it starts one');
+});
+
+const dropdown = (tree: ReturnType<typeof leaf>, paneId: string): ReturnType<typeof paneDropdown> =>
+    paneDropdown({ tree, trees: [tree], paneId, tools: ['chat', 'worlds'], links: LINKS, rect: roomy, sizes });
+
+test('the dropdown of a pane holding something adds first, and replaces from a submenu', () => {
+    const tree = split('s', 'x', [leaf('a', { kind: 'tool', tool: 'worlds' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    const menu = dropdown(tree, 'a');
+    assert.equal(menu.fill, null, 'nothing at the top level replaces what the pane holds');
+    assert.deepEqual(
+        menu.splits.map(m => [m.id, m.label]),
+        [
+            ['split-x', 'Split Right'],
+            ['split-y', 'Split Down']
+        ]
+    );
+    for (const m of menu.splits) assert.deepEqual(m.items, splitContentItems({ trees: [tree], paneId: 'a', tools: ['chat', 'worlds'], links: LINKS }));
+    assert.deepEqual(menu.replace, paneContentItems({ trees: [tree], paneId: 'a', tools: ['chat', 'worlds'], links: LINKS }), 'Replace With is the list it always was, Worlds ticked');
+    assert.equal(menu.replace!.find(item => item.current)?.label, 'Worlds');
+});
+
+test("an empty pane's dropdown fills it from the top level, with the splits below and nothing to replace", () => {
+    const tree = split('s', 'x', [leaf('a', { kind: 'tool', tool: 'worlds' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]);
+    const menu = dropdown(tree, 'b');
+    assert.deepEqual(menu.fill, paneContentItems({ trees: [tree], paneId: 'b', tools: ['chat', 'worlds'], links: LINKS }));
+    assert.equal(menu.replace, null);
+    assert.equal(menu.splits.length, 2);
 });
