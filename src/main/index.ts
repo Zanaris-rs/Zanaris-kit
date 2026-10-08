@@ -2109,8 +2109,9 @@ const shotOfThePage =
  * closed giving its room back; the Home server tool, as it opens and on World
  * at `PANE_MIN_WIDTH`; the reference pane — the
  * launcher, two pages beside the game, and the first of them brought back to
- * prove a tab switch did not reload it; a second instance of the first
- * server (slots and partitions), with a setup saved and opened into a new tab
+ * prove a tab switch did not reload it; a split filled in one step, on a
+ * window of its own; a second instance of the first server (slots and
+ * partitions), with a setup saved and opened into a new tab
  * and the game left behind another tab; every theme, Settings on Appearance,
  * a server's own theme and a custom theme with a picture and its editor, with
  * a draft typed there worn by the first window and cancelled; a built-in
@@ -2580,6 +2581,37 @@ async function captureAndExit(dir: string): Promise<void> {
             }
         } else {
             log('[capture] pages skipped: no loaded window offers any links');
+        }
+
+        // A split filled in one step, as an item in Split Right or Split Down's
+        // list does it, through the same `splitPaneWith` the menus call. On a
+        // window of its own, destroyed after, so no later step inherits its
+        // panes, and before the second window, whose views are counted as
+        // whatever appeared after it opened. Chat split right with Timers;
+        // then chat split down with the game, which moves rather than copies,
+        // leaving the launcher where it was.
+        {
+            const splitter = openServer(first.state().server);
+            const kinds = (): string => splitter.state().panes.map(p => (p.content.kind === 'tool' ? p.content.tool : p.content.kind)).join(' over ');
+            log(`[capture] ${splitter.state().title}: ${await loaded(splitter)}`);
+            await wait(Math.min(settleMs, 8_000));
+            const chat = splitter.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'chat')?.paneId;
+            if (!chat) {
+                fault('split with: the window opened with no chat pane to split');
+            } else {
+                splitter.splitPaneWith(chat, 'x', { kind: 'tool', tool: 'timers' });
+                await wait(500);
+                const focusKind = splitter.state().panes.find(p => p.focused)?.content;
+                log(`[capture] ${splitter.state().title}: chat split right with Timers — "${kinds()}", focus on ${focusKind?.kind === 'tool' ? focusKind.tool : focusKind?.kind}`);
+                if (kinds() !== 'game over chat over timers') fault(`split with: Timers beside chat came out as "${kinds()}"`);
+                await shoot(`${first.state().server.id}-split-with`, splitter);
+                splitter.splitPaneWith(chat, 'y', { kind: 'game' });
+                await wait(500);
+                log(`[capture] ${splitter.state().title}: chat split down with the game — "${kinds()}"`);
+                if (kinds() !== 'empty over chat over game over timers') fault(`split with: the game moved below chat came out as "${kinds()}"`);
+            }
+            splitter.window.destroy();
+            await wait(1_000);
         }
 
         // Every view that exists now is some other window's, so what is new
