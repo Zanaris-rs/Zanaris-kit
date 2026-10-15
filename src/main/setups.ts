@@ -22,7 +22,7 @@ import { CHAT_PREFERRED_HEIGHT, COLUMN_PREFERRED_WIDTH, GAME_PREFERRED_WIDTH, SE
  * with (`openingSetup`), which is decided here for the same reason.
  */
 
-export type BuiltInSetupId = 'game' | 'game-chat' | 'game-chat-tools';
+export type BuiltInSetupId = 'game' | 'game-chat' | 'game-chat-homeserver' | 'game-chat-tools';
 
 export interface BuiltInSetup {
     id: BuiltInSetupId;
@@ -47,15 +47,20 @@ function stack(axis: 'x' | 'y', children: StoredNode[], sizes: number[]): Stored
  *
  * - **Game**: the game alone, at its preferred size.
  * - **Game and Chat**: the game over chat, which a new window opens with when
- *   no other setup is chosen for it (`openingSetup`).
- * - **Game, Chat and Tools**: that, with a column down its right holding every
- *   other tool the window offers, in the window's own order, sharing the
- *   column's height evenly.
+ *   no other setup is chosen for it (`openingSetup`), your home server's
+ *   aside.
+ * - **Game, Chat and Home server**: that, with the Home server tool alone in
+ *   a column down its right, on a window that offers the tool. It is what
+ *   that window opens with when nothing else is chosen, since your home
+ *   server's settings are what you came to that window to set.
+ * - **Game, Chat and Tools**: Game and Chat with a column down its right
+ *   holding every other tool the window offers, in the window's own order,
+ *   sharing the column's height evenly.
  *
  * `gameHeight` is the game pane's preferred height, which is the stock one
  * unless the server's client page needs more. A window without chat has no
- * Game and Chat, and its tools setup puts the column beside the game alone; a
- * window with no tool but chat has no tools setup.
+ * Game and Chat, and its columns stand beside the game alone; a window with
+ * no tool but chat has no tools setup.
  */
 export function builtInSetups(opts: { tools: readonly ToolId[]; gameHeight: number }): BuiltInSetup[] {
     const width = GAME_PREFERRED_WIDTH;
@@ -63,8 +68,17 @@ export function builtInSetups(opts: { tools: readonly ToolId[]; gameHeight: numb
     const left = chat ? stack('y', [GAME, tool('chat')], [opts.gameHeight, CHAT_PREFERRED_HEIGHT]) : GAME;
     const height = chat ? opts.gameHeight + SEAM + CHAT_PREFERRED_HEIGHT : opts.gameHeight;
     const others = opts.tools.filter(id => id !== 'chat');
+    const withColumn = { width: width + SEAM + COLUMN_PREFERRED_WIDTH, height };
     const setups: BuiltInSetup[] = [{ id: 'game', name: 'Game', tree: GAME, size: { width, height: opts.gameHeight } }];
     if (chat) setups.push({ id: 'game-chat', name: 'Game and Chat', tree: left, size: { width, height } });
+    if (opts.tools.includes('singleplayer')) {
+        setups.push({
+            id: 'game-chat-homeserver',
+            name: chat ? 'Game, Chat and Home server' : 'Game and Home server',
+            tree: stack('x', [left, tool('singleplayer')], [width, COLUMN_PREFERRED_WIDTH]),
+            size: withColumn
+        });
+    }
     if (others.length > 0) {
         const gross = height - SEAM * (others.length - 1);
         const column = stack('y', others.map(tool), others.map(() => gross / others.length));
@@ -72,7 +86,7 @@ export function builtInSetups(opts: { tools: readonly ToolId[]; gameHeight: numb
             id: 'game-chat-tools',
             name: chat ? 'Game, Chat and Tools' : 'Game and Tools',
             tree: stack('x', [left, column], [width, COLUMN_PREFERRED_WIDTH]),
-            size: { width: width + SEAM + COLUMN_PREFERRED_WIDTH, height }
+            size: withColumn
         });
     }
     return setups;
@@ -82,7 +96,8 @@ export function builtInSetups(opts: { tools: readonly ToolId[]; gameHeight: numb
  * What new windows of a server open with: a built-in, or a saved setup by
  * its name in that server's setups folder. Stored per server in `state.json`
  * (`AppState.newWindowSetup`), and chosen from the Setups menu's Open New
- * Windows With. A server with none opens Game and Chat.
+ * Windows With. A server with none opens its window's default: Game, Chat and
+ * Home server where the window offers that, Game and Chat everywhere else.
  *
  * A file is a name, never a path. It is looked up in the folder's own
  * listing when a window opens (`openingSetup`), so nothing stored is ever
@@ -91,7 +106,7 @@ export function builtInSetups(opts: { tools: readonly ToolId[]; gameHeight: numb
  */
 export type NewWindowSetup = { builtIn: BuiltInSetupId } | { file: string };
 
-const BUILT_IN_IDS: readonly BuiltInSetupId[] = ['game', 'game-chat', 'game-chat-tools'];
+const BUILT_IN_IDS: readonly BuiltInSetupId[] = ['game', 'game-chat', 'game-chat-homeserver', 'game-chat-tools'];
 /** The longest file name the three platforms' file systems allow. */
 const FILE_NAME_MAX = 255;
 
@@ -138,7 +153,7 @@ export interface OpeningSetup {
     size: Size | null;
     /** As the log names it: a built-in's name, or the file's without `.json`. */
     name: string;
-    /** The choice it opened with: the one asked for, or Game and Chat when that could not be used. What the menu ticks. */
+    /** The choice it opened with: the one asked for, or the window's default when that could not be used. What the menu ticks. */
     used: NewWindowSetup;
     /** Why the choice asked for could not be used, or null when it was. */
     fellBack: string | null;
@@ -150,18 +165,22 @@ export interface OpeningSetup {
  * `saved` is the folder's listing (`layoutFile.layoutEntries`), and `read`
  * reads one of its entries, null when it cannot: injected, so a test never
  * touches a folder, and so a stored name is only ever opened as an entry the
- * listing returned. Anything that cannot be used — a built-in this window
- * does not offer, a file gone from the folder, one that is not a setup or
- * holds no game — opens Game and Chat, with the reason.
+ * listing returned. Nothing chosen opens the window's default: Game, Chat and
+ * Home server on a window that offers it, Game and Chat on any other.
+ * Anything that cannot be used — a built-in this window does not offer, a
+ * file gone from the folder, one that is not a setup or holds no game —
+ * opens that default too, with the reason.
  */
 export function openingSetup(
     choice: NewWindowSetup | null,
     opts: { builtIns: readonly BuiltInSetup[]; saved: readonly { name: string; file: string }[]; read: (file: string) => string | null }
 ): OpeningSetup {
     const builtIn = (setup: BuiltInSetup, fellBack: string | null): OpeningSetup => ({ tree: setup.tree, size: setup.size, name: setup.name, used: { builtIn: setup.id }, fellBack });
-    // Every window has chat, so Game and Chat is always there; Game, which is
-    // always first, only stands in should a window ever have no chat.
-    const fallback = (reason: string | null): OpeningSetup => builtIn(opts.builtIns.find(s => s.id === 'game-chat') ?? opts.builtIns[0]!, reason);
+    // Every window has chat, so Game and Chat is always there for a window
+    // without the Home server tool; Game, which is always first, only stands
+    // in should a window ever have no chat.
+    const preferred = opts.builtIns.find(s => s.id === 'game-chat-homeserver') ?? opts.builtIns.find(s => s.id === 'game-chat') ?? opts.builtIns[0]!;
+    const fallback = (reason: string | null): OpeningSetup => builtIn(preferred, reason);
     if (choice === null) return fallback(null);
     if ('builtIn' in choice) {
         const setup = opts.builtIns.find(s => s.id === choice.builtIn);

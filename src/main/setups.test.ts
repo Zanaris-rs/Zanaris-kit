@@ -91,6 +91,41 @@ test('a window without chat has no Game and Chat, and puts its tools beside the 
     assert.deepEqual(panes, { game: { width: 765, height: GAME_PREFERRED_HEIGHT }, timers: { width: 320, height: GAME_PREFERRED_HEIGHT } });
 });
 
+const HOME: ToolId[] = ['chat', 'timers', 'singleplayer'];
+
+test('a Home server window has Game, Chat and Home server too, before the tools setup', () => {
+    assert.deepEqual(
+        builtInSetups({ tools: HOME, gameHeight: GAME_PREFERRED_HEIGHT }).map(s => [s.id, s.name]),
+        [
+            ['game', 'Game'],
+            ['game-chat', 'Game and Chat'],
+            ['game-chat-homeserver', 'Game, Chat and Home server'],
+            ['game-chat-tools', 'Game, Chat and Tools']
+        ]
+    );
+});
+
+test('Game, Chat and Home server is Game and Chat with the Home server tool alone in a 320px column down its whole height', () => {
+    const setup = builtInSetups({ tools: HOME, gameHeight: GAME_PREFERRED_HEIGHT }).find(s => s.id === 'game-chat-homeserver')!;
+    const height = GAME_PREFERRED_HEIGHT + 4 + CHAT_PREFERRED_HEIGHT;
+    assert.deepEqual(setup.size, { width: 765 + 4 + 320, height });
+    assert.deepEqual(drawn(setup.tree, setup.size, HOME), {
+        game: { width: 765, height: GAME_PREFERRED_HEIGHT },
+        chat: { width: 765, height: CHAT_PREFERRED_HEIGHT },
+        singleplayer: { width: 320, height }
+    });
+});
+
+test('a Home server window without chat has Game and Home server: the tool beside the game', () => {
+    const tools: ToolId[] = ['timers', 'singleplayer'];
+    const setup = builtInSetups({ tools, gameHeight: GAME_PREFERRED_HEIGHT }).find(s => s.id === 'game-chat-homeserver')!;
+    assert.equal(setup.name, 'Game and Home server');
+    assert.deepEqual(drawn(setup.tree, setup.size, tools), {
+        game: { width: 765, height: GAME_PREFERRED_HEIGHT },
+        singleplayer: { width: 320, height: GAME_PREFERRED_HEIGHT }
+    });
+});
+
 test("Lost City's built-ins are drawn for its taller game", () => {
     const setups = builtInSetups({ tools: ALL, gameHeight: LOSTCITY_GAME_PREFERRED_HEIGHT });
     for (const setup of setups) assert.equal(drawn(setup.tree, setup.size, ALL).game!.height, LOSTCITY_GAME_PREFERRED_HEIGHT, setup.id);
@@ -112,6 +147,27 @@ test('with nothing chosen a new window opens as Game and Chat, as it always has'
     const opening = openingSetup(null, OPTS);
     const gameChat = BUILT.find(s => s.id === 'game-chat')!;
     assert.deepEqual(opening, { tree: gameChat.tree, size: gameChat.size, name: 'Game and Chat', used: GAME_AND_CHAT, fellBack: null });
+});
+
+const HOME_OPTS = { ...OPTS, builtIns: builtInSetups({ tools: HOME, gameHeight: GAME_PREFERRED_HEIGHT }) };
+const GAME_CHAT_AND_HOME_SERVER = { builtIn: 'game-chat-homeserver' } as const;
+
+test('with nothing chosen a Home server window opens as Game, Chat and Home server, its settings in view', () => {
+    const opening = openingSetup(null, HOME_OPTS);
+    const setup = HOME_OPTS.builtIns.find(s => s.id === 'game-chat-homeserver')!;
+    assert.deepEqual(opening, { tree: setup.tree, size: setup.size, name: 'Game, Chat and Home server', used: GAME_CHAT_AND_HOME_SERVER, fellBack: null });
+});
+
+test('a choice a Home server window cannot use opens Game, Chat and Home server instead, and says why', () => {
+    const opening = openingSetup({ file: 'pking.json' }, HOME_OPTS);
+    assert.deepEqual(opening.used, GAME_CHAT_AND_HOME_SERVER);
+    assert.match(opening.fellBack ?? '', /pking\.json is not in the setups folder/);
+});
+
+test('a Home server window opens Game and Chat when that is what was chosen', () => {
+    const opening = openingSetup(GAME_AND_CHAT, HOME_OPTS);
+    assert.deepEqual(opening.used, GAME_AND_CHAT);
+    assert.equal(opening.fellBack, null);
 });
 
 test('a built-in chosen is the one a new window opens with', () => {
@@ -170,6 +226,7 @@ test('only a setup holding the game can be what new windows open with', () => {
 
 test('a stored choice is a built-in the kit knows, or a file name in the folder and nothing more', () => {
     assert.deepEqual(readNewWindowSetup({ builtIn: 'game' }), { builtIn: 'game' });
+    assert.deepEqual(readNewWindowSetup({ builtIn: 'game-chat-homeserver' }), { builtIn: 'game-chat-homeserver' });
     assert.deepEqual(readNewWindowSetup({ file: 'skilling.json' }), { file: 'skilling.json' });
     assert.deepEqual(readNewWindowSetup({ file: `${'a'.repeat(250)}.json` }), { file: `${'a'.repeat(250)}.json` });
     for (const bad of [

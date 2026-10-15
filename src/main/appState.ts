@@ -41,7 +41,7 @@ interface StateFile {
     startup: string[];
     /** The app's theme and the servers given their own, by theme id, and the player's own themes (`shared/themes.ts`). */
     appearance: Appearance;
-    /** What new windows of each server open with, by server id (`setups.NewWindowSetup`). A server with none opens Game and Chat. */
+    /** What new windows of each server open with, by server id (`setups.NewWindowSetup`). A server with none opens its window's default (`setups.openingSetup`). */
     newWindows: Record<string, NewWindowSetup>;
     /** Where each server's windows were when they last closed, by server id and window number (`windowPlace.Place`). */
     places: Record<string, Record<string, Place>>;
@@ -235,7 +235,7 @@ export class AppState {
     private startup: string[] = [];
     // The look the kit has always had, until asked otherwise.
     private appearanceState: Appearance = defaultAppearance();
-    // Per server, the setup its new windows open with; none is Game and Chat.
+    // Per server, the setup its new windows open with; none is the window's default.
     private newWindows = new Map<string, NewWindowSetup>();
     // Per server and window number, where that window last closed.
     private places = new Map<string, Map<number, Place>>();
@@ -526,7 +526,7 @@ export class AppState {
         this.save();
     }
 
-    /** What new windows of this server open with, or null for Game and Chat. A copy. */
+    /** What new windows of this server open with, or null for the window's default. A copy. */
     newWindowSetup(serverId: string): NewWindowSetup | null {
         const choice = this.newWindows.get(serverId);
         return choice ? { ...choice } : null;
