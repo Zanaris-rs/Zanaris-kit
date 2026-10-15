@@ -2944,6 +2944,9 @@ async function captureAndExit(dir: string): Promise<void> {
         // written as pictures of their own, through the same `nativeImage`
         // call the menu makes.
         for (const theme of THEMES) await save(`swatch-${theme.id}`, async () => nativeImage.createFromBuffer(swatchPng(theme.colors, 2), { scaleFactor: 2 }));
+        // What the pass starts from: a server with a theme of its own here
+        // would wear it through every shot below, and they would all match.
+        log(`[capture] themes before the pass: app ${appState.appearance().theme}, servers ${JSON.stringify(appState.appearance().servers)}${editing ? `, a draft of ${editing.name}` : ''}`);
         for (const theme of THEMES) {
             appState.setTheme(theme.id);
             appearanceChanged();
@@ -2985,7 +2988,11 @@ async function captureAndExit(dir: string): Promise<void> {
             // on the first window, whose tab in front holds the game.
             await save(`theme-override-${own}-game`, () => first.captureGame());
             const other = opened.find(sw => sw.state().server.id !== own);
-            if (other) await shootShell(`theme-override-${other.state().server.id}`, other);
+            if (other) {
+                await shootShell(`theme-override-${other.state().server.id}`, other);
+                // Its game page in the app's Morytania, at the game's own width.
+                await save(`theme-override-${other.state().server.id}-game`, () => other.captureGame());
+            }
             log(`[capture] override: ${own} wears stone ${second.state().theme.colors.stone}, ${other ? `${other.state().server.id} wears stone ${other.state().theme.colors.stone}` : 'no other server open'}`);
             appState.setServerTheme(own, null);
             appState.setTheme(DEFAULT_THEME);
