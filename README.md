@@ -4,17 +4,13 @@ An Electron client that opens several 04scape servers at once, one window per
 server, where every window knows which server it is running and can hop
 between that server's worlds.
 
-**Status: split panes — any pane, any axis, dragged and closed like iTerm —
-on top of the reference pane and your home server.** The window is a tree of
-panes now rather than four fixed regions: the game, a reference page and any
-tool can sit anywhere in it, split left/right or up/down, and every seam
-drags. A fresh pane shows a launcher of this server's links and this window's
-tools. Workspace tabs are in, and so are setups — shapes of panes opened from
-the tab bar in one click, and saved as files you can hand to someone else;
-background images follow.
-The design is in `docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`,
-which supersedes the layout halves of the server-windows and chat-dock specs
-beside it; the plans are under `docs/superpowers/plans/`.
+**Status: test releases (0.9.x) for a few players, on the way to 1.0.** Each
+window is a tree of panes — the game, a reference page and any tool, split
+left/right or up/down, every seam dragging — with workspace tabs, setups you
+can save and hand to someone else, themes with pictures, chat, and your home
+server, which friends can join by link. The layout's design is in
+`docs/superpowers/specs/2026-09-12-panes-and-tabs-design.md`; the other specs
+and the plans are beside it under `docs/superpowers/`.
 
 ## Download
 
@@ -1034,7 +1030,7 @@ One capture run with every catalog server open at once:
 | Lost City (2), a setup saved and opened into a new tab (as a layout before 2026-09-26; as a setup, a run of 2026-09-26) | not reloaded — one load of the window in the log | tabs "Empty" and "Game": the file saved "game over chat", the new tab opened it at 765x809, the size it was saved at, so the window did not resize, and the game moved into it, leaving the first tab's game pane empty. `state.json` holds no setups. That run's shell shot of this step was not written: the window did not paint |
 | Lost City, Setups > Game, Chat and Tools, then its tools column closed pane by pane (2026-09-26) | kept at 408x809 through both — 408 wide because the seam drag earlier in the run left it there | the window went from 1482 to 732 wide: the game over chat, and a 320px column of Worlds, Hiscores and Timers beside it. The window could not grow the full height on that display, so chat gave up the difference and the game none. Closing the column's three panes took the window to 408, the game over chat alone |
 
-1078 tests cover the pure modules: layout, catalog (validation, defaults, file
+1344 tests cover the pure modules: layout, catalog (validation, defaults, file
 recovery, a version 1, 2 or 3 file each migrating into version 4, and a
 built-in's hiscores block re-adopted from the defaults), slots, tabs, the
 window registry, the world sources against the real API payloads (including a
