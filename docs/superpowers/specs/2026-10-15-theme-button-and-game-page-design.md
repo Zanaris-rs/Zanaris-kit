@@ -78,9 +78,12 @@ Theme ▾
   theme while it has one, else the app's. It shows the stored choice, so a
   draft open in the editor moves no tick, as View > Server Theme already
   behaves.
-- **Each theme carries a swatch** as its menu icon: a 16-point square of the
-  theme's stone with its bevel, lit edge above and left and dark edge below
-  and right — the trim is what tells the places apart. Names are labelled
+- **Each theme carries a swatch** as its menu icon, on macOS: a 16-point
+  square of the theme's stone with its bevel, lit edge above and left and
+  dark edge below and right — the trim is what tells the places apart. Off
+  macOS there is none: Windows' and GTK's menus are reported to draw an
+  item's check or its image, not both, and the tick is the one that means
+  something. Names are labelled
   as View > Server Theme labels them (`themeLabel`, moved beside the menu's
   other rules): a built-in in Title Case, the player's own as typed, an `&`
   doubled off macOS.

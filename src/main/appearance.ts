@@ -172,8 +172,10 @@ export type ThemeMenuAction = { kind: 'wear'; theme: string } | { kind: 'own'; o
 
 /**
  * One line of the Theme menu. `checked` is null for an item that is not a
- * checkbox; `swatch` is the theme's colours for a theme's line, which main
- * draws as its icon (`swatch.ts`), and null otherwise.
+ * checkbox; `swatch` is the theme's colours for a theme's line on macOS,
+ * which main draws as its icon (`swatch.ts`), and null otherwise. Off macOS
+ * there is none: Windows' and GTK's menus are reported to draw an item's
+ * check or its image, not both, and the tick is the one that means something.
  */
 export type ThemeMenuEntry =
     | { kind: 'separator' }
@@ -199,7 +201,7 @@ export function themeMenu(opts: { appearance: Appearance; server: { id: string; 
         label: themeLabel(theme, isMac),
         checked: theme.id === worn.id,
         enabled: true,
-        swatch: theme.colors,
+        swatch: isMac ? theme.colors : null,
         action: { kind: 'wear', theme: theme.id }
     });
     const plain = (label: string, action: ThemeMenuAction): ThemeMenuEntry => ({ kind: 'item', label, checked: null, enabled: true, swatch: null, action });

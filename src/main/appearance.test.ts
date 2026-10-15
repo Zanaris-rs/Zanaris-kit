@@ -257,3 +257,14 @@ test('the view says where Save goes', () => {
     assert.equal(view.savesTo?.id, 'lostcity');
     assert.equal(appearanceView({ appearance: { theme: 'stone', servers: {}, custom: [] }, catalog, presets: [] }).savesTo, null);
 });
+
+test('off macOS the Theme menu carries no swatches, so nothing can stand in for its ticks', () => {
+    const entries = themeMenu({ appearance: { theme: 'stone', servers: {}, custom: [rock] }, server: lostCity, listed: true, isMac: false });
+    assert.ok(items(entries).every(e => e.swatch === null));
+    assert.deepEqual(
+        items(entries)
+            .filter(e => e.checked)
+            .map(e => e.label),
+        ['2004 Stone']
+    );
+});
