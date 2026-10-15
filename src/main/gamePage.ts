@@ -31,7 +31,14 @@ const SHADOW = '1px 1px 0 rgba(0, 0, 0, 0.78)';
  * Each rule leads with `html`, to outrank the template's own selectors, and
  * is `!important`, to outrank the one rule there that is — the full-screen
  * ground. The dropdown and green-text rules stand on their own, so a page
- * with no `#controls` still has its ground, dropdowns and words follow.
+ * with no `#controls` still has its ground, dropdowns and words follow. A
+ * dropdown loses the system's look, which an older template leaves on: drawn
+ * natively it stays light under the theme's cream text. Its arrow, two
+ * small gradients, is placed and sized here, since only Lost City's page
+ * places it: left to a page that does not, the gradients fill the whole box.
+ * Only the strip's own dropdowns change height, where the strut is known to
+ * hold the line; a page the kit does not know keeps its lines as they were,
+ * and its dropdowns change only their width.
  */
 export function clientPageCss(look: ThemeLook): string {
     const c = look.colors;
@@ -45,15 +52,20 @@ html #controls {
 html .green, html .icon-control { color: ${c.cream} !important; }
 html a.green:hover, html .icon-control:hover { color: ${c.gold} !important; }
 html select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
     background-color: ${c.well} !important;
     background-image: linear-gradient(45deg, transparent 50%, ${c.cream} 50%), linear-gradient(135deg, ${c.cream} 50%, transparent 50%) !important;
+    background-position: calc(100% - 0.6em) center, calc(100% - 0.3em) center !important;
+    background-size: 0.3em 0.3em !important;
+    background-repeat: no-repeat !important;
     box-shadow: inset 2px 2px 0 ${c['edge-dark']}, inset -2px -2px 0 ${c['edge-lit']} !important;
     color: ${c.cream} !important;
     text-shadow: ${SHADOW} !important;
-    line-height: 24px !important;
     padding-left: 6px !important;
     padding-right: 1.3em !important;
 }
+html #controls select { line-height: 24px !important; }
 html option, html optgroup { background-color: ${c.well} !important; color: ${c.cream} !important; }
 `;
 }

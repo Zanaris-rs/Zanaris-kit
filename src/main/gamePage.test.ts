@@ -49,3 +49,24 @@ test('the kit sheet sets a variable for every token, and nothing else', () => {
     for (const token of THEME_TOKENS) assert.ok(css.includes(`--zk-${token}: ${look.colors[token]};`), token);
     assert.match(css, /^:root \{[^{}]*\}$/);
 });
+
+test("a dropdown loses the system's look, so the well and the text are what draw it", () => {
+    const rule = /(?:^|\n)html select \{([^}]*)\}/.exec(clientPageCss(look))?.[1] ?? '';
+    assert.match(rule, /(^|\s)appearance: none !important/);
+    assert.match(rule, /-webkit-appearance: none !important/);
+});
+
+test("only the strip's own dropdowns change height, so a page the kit does not know keeps its lines", () => {
+    const css = clientPageCss(look);
+    const generic = /(?:^|\n)html select \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    assert.doesNotMatch(generic, /line-height|height|padding:|padding-top|padding-bottom/);
+    assert.match(css, /(?:^|\n)html #controls select \{[^}]*line-height: 24px[^}]*\}/);
+});
+
+test("the dropdown's arrow is one small mark at its right, placed by the sheet, not left to the page", () => {
+    const generic = /(?:^|\n)html select \{([^}]*)\}/.exec(clientPageCss(look))?.[1] ?? '';
+    assert.match(generic, /background-repeat: no-repeat !important/);
+    assert.match(generic, /background-size: 0\.3em 0\.3em !important/);
+    assert.match(generic, /background-position: calc\(100% - 0\.6em\) center, calc\(100% - 0\.3em\) center !important/);
+    assert.match(generic, /padding-right: 1\.3em !important/);
+});
