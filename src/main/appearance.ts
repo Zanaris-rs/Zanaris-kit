@@ -44,10 +44,9 @@ export function deleteQuestion(opts: { appearance: Appearance; catalog: readonly
     if (!theme) return null;
     const wearing = opts.catalog.filter(server => serverOverride(opts.appearance, server.id) === opts.id).map(server => server.name);
     const lines: string[] = [];
-    if (wearing.length > 0) lines.push(`${listed(wearing)} ${wearing.length === 1 ? 'wears' : 'wear'} it, and will follow the app theme.`);
-    if (opts.appearance.theme === opts.id) lines.push('It is the app theme: Settings, and every server without its own, will wear 2004 stone.');
-    if (lines.length === 0) lines.push('Nothing wears it.');
-    lines.push('Export it first to keep a copy: this cannot be undone.');
+    if (wearing.length > 0) lines.push(`${listed(wearing)} ${wearing.length === 1 ? 'goes' : 'go'} back to the app theme.`);
+    if (opts.appearance.theme === opts.id) lines.push('Every window wearing it goes back to 2004 stone.');
+    lines.push("This can't be undone.");
     return { message: `Delete ${theme.name}?`, detail: lines.join(' ') };
 }
 
@@ -106,7 +105,8 @@ export function lookFor(appearance: Appearance, serverId: string | null, editing
  */
 export function closeQuestion(editing: Editing | null, quitting: boolean): { message: string; detail: string } | null {
     if (!editing || !editing.changed || quitting) return null;
-    return { message: `Discard your changes to ${editing.name}?`, detail: 'Every window goes back to the theme it wore before.' };
+    // No detail: an empty one shows nothing under the message.
+    return { message: `Discard your changes to ${editing.name}?`, detail: '' };
 }
 
 /**

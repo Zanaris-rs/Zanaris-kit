@@ -36,13 +36,15 @@ test("Electron's reasons become words", () => {
 test('a tool that failed to draw can be opened again or closed', () => {
     const notice = toolNotice('Hiscores');
     assert.equal(notice.title, 'Hiscores stopped working');
+    assert.equal(notice.detail, 'Something went wrong.');
     assert.deepEqual(ids(notice), ['retry', 'close']);
 });
 
-test('a window that failed to draw offers a reload, and the shell says the game is unharmed', () => {
+test('a window that failed to draw offers a reload, and only the shell says more: that the game is unharmed', () => {
     assert.deepEqual(ids(windowNotice('shell')), ['reload']);
-    assert.match(windowNotice('shell').detail, /game keeps running/);
-    assert.doesNotMatch(windowNotice('settings').detail, /game/);
+    assert.deepEqual(ids(windowNotice('settings')), ['reload']);
+    assert.equal(windowNotice('shell').detail, 'The game keeps running.');
+    assert.equal(windowNotice('settings').detail, undefined);
 });
 
 test('only the actions main answers arrive over IPC', () => {

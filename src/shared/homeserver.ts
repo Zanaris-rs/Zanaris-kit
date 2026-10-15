@@ -152,7 +152,7 @@ export type ImportPick = { ok: true; token: string; suggestedName: string; summa
 /** How a change to a character ended. */
 export type CharacterOutcome = { kind: 'done'; name: string } | { kind: 'cancelled' } | { kind: 'refused'; message: string };
 
-/** What a character's menu can ask for. Renaming and copying as want a name, which the shell asks for; the rest go to main as they are. */
+/** What a character's menu can ask for. Renaming and duplicating want a name, which the shell asks for; the rest go to main as they are. */
 export type CharacterAction = { kind: 'rename' } | { kind: 'duplicate' } | { kind: 'copy-to'; revision: number } | { kind: 'export' } | { kind: 'delete' };
 
 export type CharacterMenuItem = { kind: 'item'; label: string; action: CharacterAction; enabled: boolean } | { kind: 'separator' };
@@ -169,7 +169,7 @@ export function characterMenu(character: Pick<CharacterInfo, 'summary'>, otherRe
     const item = (label: string, action: CharacterAction, enabled = true): CharacterMenuItem => ({ kind: 'item', label, action, enabled });
     return [
         item('Rename…', { kind: 'rename' }, usable),
-        item('Copy as…', { kind: 'duplicate' }, usable),
+        item('Duplicate…', { kind: 'duplicate' }, usable),
         ...otherRevisions.map(revision => item(`Copy to rev ${revision}`, { kind: 'copy-to', revision }, usable)),
         item('Export…', { kind: 'export' }),
         { kind: 'separator' },
@@ -185,10 +185,10 @@ export const HOME_SERVER_SECTIONS: readonly { id: HomeServerSection; label: stri
     { id: 'characters', label: 'Characters' },
     { id: 'commands', label: 'Commands' },
     { id: 'builds', label: 'Builds' },
-    { id: 'friends', label: 'Friends' }
+    { id: 'friends', label: 'Sharing' }
 ];
 
-/** The sections a window's tool offers: Friends only where main sends a share. */
+/** The sections a window's tool offers: Sharing only where main sends a share. */
 export function sectionsOffered(shared: boolean): { id: HomeServerSection; label: string }[] {
     return HOME_SERVER_SECTIONS.filter(section => section.id !== 'friends' || shared);
 }

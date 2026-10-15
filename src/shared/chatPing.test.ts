@@ -24,11 +24,12 @@ test('a line with nobody behind it is its text alone', () => {
     assert.equal(pingWords(ping({ nick: null, kind: 'system', text: 'you were kicked by zed' })), 'you were kicked by zed');
 });
 
-test('the title adds where it was said, how many more are waiting, and what a click does', () => {
-    assert.equal(pingTitle(ping({}, 2)), 'bob: mage: look\nin #LostHQ, and 2 more for you\nClick to open chat');
-    assert.equal(pingTitle(ping({ channel: SERVER_LOG, nick: null, kind: 'system', text: '-NickServ- hi mage' })), '-NickServ- hi mage\nin Status\nClick to open chat');
+test('the title adds where it was said and how many more are waiting', () => {
+    assert.equal(pingTitle(ping({}, 2)), 'bob: mage: look\nin #LostHQ · 2 more');
+    assert.equal(pingTitle(ping({ channel: SERVER_LOG, nick: null, kind: 'system', text: '-NickServ- hi mage' })), '-NickServ- hi mage\nin Status');
 });
 
 test('a private line needs no room in its title, since its words already say whose it is', () => {
-    assert.equal(pingTitle(ping({ channel: 'bob', text: 'psst' }, 1, true)), 'bob (private): psst\n1 more for you\nClick to open chat');
+    assert.equal(pingTitle(ping({ channel: 'bob', text: 'psst' }, 1, true)), 'bob (private): psst\n1 more');
+    assert.equal(pingTitle(ping({ channel: 'bob', text: 'psst' }, 0, true)), 'bob (private): psst');
 });

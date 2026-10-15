@@ -808,7 +808,7 @@ async function continueWithNewerFiles(): Promise<boolean> {
     const listNewer = catalog.newer !== null;
     if (!settingsNewer && !listNewer) return true;
     const what = settingsNewer && listNewer ? 'settings and server list are' : settingsNewer ? 'settings are' : 'server list is';
-    const lost = settingsNewer && listNewer ? 'anything you change' : settingsNewer ? 'changes to themes, chat, timers and the rest' : 'servers you add or remove';
+    const lost = settingsNewer && listNewer ? 'Anything you change' : settingsNewer ? 'Changes to themes, chat, timers and the rest' : 'Servers you add or remove';
     log(`[main] ${what} from a newer kit; reading ${settingsNewer && listNewer ? 'them' : 'it'} and writing nothing`);
     const { response } = await dialog.showMessageBox({
         type: 'warning',
@@ -816,7 +816,7 @@ async function continueWithNewerFiles(): Promise<boolean> {
         defaultId: 0,
         cancelId: 1,
         message: `Your ${what} from a newer version of Zanaris Kit.`,
-        detail: `This version uses what it can read and leaves ${settingsNewer && listNewer ? 'both files' : 'the file'} as ${settingsNewer && listNewer ? 'they are' : 'it is'}, so ${lost} until you update won't be kept. The newer version is on the releases page, and the kit offers it in the tab bar once it has found it.`
+        detail: `${lost} won't be kept until you update.`
     });
     return response === 0;
 }
@@ -894,7 +894,7 @@ const actions: MenuActions = {
         const focused = focusedServerWindow();
         const server = focused ? (catalog.get(focused.state().server.id) ?? focused.state().server) : catalog.list()[0];
         if (!server) {
-            void dialog.showMessageBox({ type: 'info', message: 'The server list is empty.', detail: 'Use File > Edit Server List… to add one.' });
+            void dialog.showMessageBox({ type: 'info', message: 'The server list is empty.', detail: 'Add one in Settings.' });
             return;
         }
         openServer(server);
@@ -1265,7 +1265,7 @@ ipcMain.handle(IPC.worldsSwitch, async (event, world: unknown) => {
     const worlds = sw?.state().worlds;
     // Nothing to confirm when the window has no worlds, or is on that world already.
     if (!sw || !worlds || worlds.current === world) return;
-    if (!(await confirmSwitch(sw, { kind: 'world', to: world, from: worlds.current }))) return;
+    if (!(await confirmSwitch(sw, { kind: 'world', to: world }))) return;
     await sw.switchWorld(world);
 });
 
@@ -1274,7 +1274,7 @@ ipcMain.handle(IPC.worldsSetDetail, async (event, detail: unknown) => {
     const sw = windowFor(event.sender);
     const worlds = sw?.state().worlds;
     if (!sw || !worlds || worlds.detail === detail) return;
-    if (!(await confirmSwitch(sw, { kind: 'detail', to: detail, world: worlds.current }))) return;
+    if (!(await confirmSwitch(sw, { kind: 'detail', to: detail }))) return;
     await sw.setDetail(detail);
 });
 
@@ -1730,7 +1730,7 @@ async function confirmCloseGame(spec: WindowSpec, via: 'pane' | 'tab' | 'setup')
         defaultId: 1,
         cancelId: 1,
         message: via === 'tab' ? 'Close this tab and the game in it?' : via === 'setup' ? 'Open this setup and close the game?' : 'Close the game?',
-        detail: `Zanaris Kit disconnects from ${spec.server.name} straight away, whether or not you are logged in. If you are in game, that logs you out. Opening the game again is a fresh login.`,
+        detail: `You'll be logged out of ${spec.server.name}.`,
         checkboxLabel: "Don't ask again",
         checkboxChecked: false
     });
@@ -1937,11 +1937,11 @@ ipcMain.handle(IPC.homeServerShowLog, async () => {
     mkdirSync(homeServer.home, { recursive: true });
     const logPath = join(homeServer.home, 'world.log');
     if (!existsSync(logPath)) writeFileSync(logPath, '');
-    await openInSystem(logPath, "the world's log");
+    await openInSystem(logPath, "your home server's log");
 });
 
 // ── sharing your home server ──────────────────────────────────────────
-// Asked for from the Friends section of a window running your home server, and nowhere else.
+// Asked for from the Sharing section of a window running your home server, and nowhere else.
 
 ipcMain.handle(IPC.shareStart, async event => {
     const sw = homeServerWindow(event.sender);
@@ -2087,7 +2087,7 @@ ipcMain.handle(IPC.serversRemove, async (event, id: unknown): Promise<string | n
     if (!server) return 'That server is no longer in the list.';
     // Asked first, since nothing puts it back (`servers.removeQuestion`).
     // Cancel is an answer with nothing to say, as a remove that went is.
-    const question = removeQuestion(server, windowCounts().get(id) ?? 0);
+    const question = removeQuestion(server);
     const { response } = await dialog.showMessageBox(win, {
         type: 'question',
         message: question.message,
@@ -2513,8 +2513,8 @@ async function captureAndExit(dir: string): Promise<void> {
 
             // And narrow: the seam before the tool dragged as far as it goes,
             // which leaves the tool at `PANE_MIN_WIDTH`. The tool opens on
-            // World, so this shows World's narrow shape: each switch's note
-            // under it rather than beside it, as in the shot above.
+            // World, so this shows World's narrow shape: the Cheats note under
+            // its button, as at any width, and the XP rates wrapping under their label.
             const tool = single.state().panes.find(p => p.content.kind === 'tool' && p.content.tool === 'singleplayer');
             const seam = tool && single.state().seams.find(s => s.axis === 'x' && Math.abs(s.rect.x + s.rect.width - tool.rect.x) <= 1);
             if (tool && seam) {
@@ -3193,7 +3193,7 @@ app.whenReady().then(async () => {
         void dialog.showMessageBox({
             type: 'warning',
             message: "Your settings couldn't be read and were reset.",
-            detail: `Themes, chat's nick and password, timers and the servers opened at launch start again from the defaults. The old file was kept in the same folder, as ${basename(aside)}.`
+            detail: `The old file was kept as ${basename(aside)}.`
         });
     }
     if (branding) app.dock?.setIcon(branding.dockIcon);

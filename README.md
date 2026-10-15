@@ -108,12 +108,10 @@ fifteen minutes while it stays open, or now with Refresh. Choosing a world
 loads it in the same window; flipping detail reloads the current world. The world and detail you
 chose are remembered per server; the next window for that server opens there.
 
-Either switch asks first. The dialog names where you are going and says the
-switch happens whether or not you are logged in: Zanaris Kit loads the page
-straight away, and if you are in game that logs you out. Switch goes, Cancel
-changes nothing. The dialog carries a "don't ask again" checkbox, and ticking
-it is reversible from View > Warn Before Switching Worlds, which shows the
-current setting.
+Either switch asks first. The dialog names where you are going and says that,
+if you are in game, you'll be logged out. Switch goes, Cancel changes nothing. The dialog carries a "don't ask again" checkbox, and ticking
+it is reversible from View > Warn Before Logging Out, which shows the
+current setting and covers closing the game as well.
 
 Opening the same server twice gives the second window its own storage
 partition (`persist:server:<id>:2`) and the title "Lost City — World 5 (2)",
@@ -145,9 +143,9 @@ the panel ever sees it, matching the whole numbers Zanaris and Labs already
 send, which is the one place comparing the panel against the raw API will look
 wrong without being wrong. The **Full hiscores** link at the foot opens the
 server's own page in your system browser rather than in the reference pane —
-the pane shows the server's own curated links and refuses anything else, so the
-label says where the link goes rather than leaving a new window to explain
-itself.
+the pane shows the server's own curated links and refuses anything else, so its
+icon and tooltip say where the link goes rather than leaving a new window to
+explain itself.
 
 **Timers** is in every window. It holds countdowns, which run down to 0:00, and
 timers, which count up. Every clock has a threshold, a volume and AFK mode. A
@@ -253,8 +251,8 @@ as for developers — and downloads, switches between and removes them. Each
 revision keeps its own characters: switching from 274 to 289 starts with none,
 and switching back finds them again. A character's Copy to rev copies it across,
 after saying the other game may read it differently, since a save holds items
-and progress from the game that wrote it. **Friends** shares the world with a
-link; see Playing with friends below.
+and progress from the game that wrote it. **Sharing** shares your home server
+with a link; see Sharing your home server below.
 
 Your home server is not a live one, and it does not pretend to be: the RuneScape
 Guide will offer to skip the tutorial, whether cheats are on or off and however
@@ -265,8 +263,8 @@ the Cheats switch controls is the staff level the world gives you and everyone
 you share it with: it turns the developer commands on, and with them the few
 things the game does differently for staff — random events, for one, stop.
 
-**Playing with friends.** The Home server tool's Friends section lets friends
-join that world from a browser. Share with friends downloads Cloudflare's tunnel
+**Sharing your home server.** The Home server tool's Sharing section lets
+friends join your home server from a browser. Share downloads Cloudflare's tunnel
 program the first time — 19 to 55 MB depending on the system, from Cloudflare's
 own GitHub release, checked against a digest pinned in the kit — then opens a
 free Cloudflare quick tunnel, which needs no Cloudflare account. Once the link
@@ -303,12 +301,12 @@ conversation. It connects to SwiftIRC over TLS, the network LostHQ's community
 actually uses, and joins the channels on its auto-join list:
 `#2004scape, #LostHQ, #Zanaris` until you change it.
 
-Its tabs are **Settings**, drawn as a gear, **Status**, then one per channel
+Its tabs are **Chat settings**, drawn as a gear, **Status**, then one per channel
 or private conversation in the order they were opened. A tab's unread count is
 gold when a line in it is for you, naming you or said to you alone, and cream
 when none is:
 
-- **Settings** can't be closed. It has the nickname, an optional NickServ
+- **Chat settings** can't be closed. It has the nickname, an optional NickServ
   password, the auto-join list, the ignore list, whether mentions raise a
   system notification, and Connect or Disconnect.
 - **Status** is where the server talks to you. It shows the welcome, the
@@ -319,14 +317,14 @@ when none is:
   the most: past that, a message from someone new lands in Status, marked pm,
   until you close one.
 - **Every channel has its own close.** Closing a tab leaves that channel for
-  the session, and `/join` joins one for the session. Only Settings changes the
+  the session, and `/join` joins one for the session. Only Chat settings changes the
   saved list, and each Connect joins that list again.
 - **The nick works the same way.** A `/nick`, the underscore added to a taken
   nick, or a services rename to a guest nick lasts until the connection drops:
   every connection, a reconnect included, starts from the saved nick. A saved
   nick the server refuses — taken, with its three underscored tries, or not
   one it will take at all — stops chat with a message rather than retrying,
-  and Connect tries again. Settings shows the saved nick and, while they
+  and Connect tries again. Chat settings shows the saved nick and, while they
   differ, what the connection is called.
 - **Disconnect is remembered.** A kit you disconnected stays offline on its
   next launch until you press Connect.
@@ -339,7 +337,7 @@ when none is:
     rather than written into `state.json` in the clear.
   - The chat pane is never given it back.
   - Where there is no real store, such as Linux with no keyring, it is kept only
-    until you quit, and Settings says so.
+    until you quit, and Chat settings says so.
 
 Inside a channel, each line carries the time it arrived, with the full date in
 its tooltip. The log has the pane to itself: nothing sits between it and the
@@ -357,7 +355,7 @@ back to a tab where something arrived while you were away draws a gold **New**
 rule above the first line you missed, until you leave it again. Chat out of
 sight counts as away, even for the tab it had open: while no chat pane shows
 the conversation in any window — closed, behind another tab, or on its
-Settings page — what arrives there is counted like anywhere else, and the
+Chat settings page — what arrives there is counted like anywhere else, and the
 rule marks it once chat is back. What you have half-typed stays with the tab
 you typed it in.
 
@@ -373,7 +371,7 @@ Down move through them, Tab takes one, and so does Enter, unless you have typed
 a whole command that needs nothing more, which Enter sends. Once the command
 is taken, a line above the box says how it is used. While the kit is in the background, a
 line that names you or a private message raises a system notification, unless
-Settings turns them off — at most one every five seconds, and one a minute
+Chat settings turns them off — at most one every five seconds, and one a minute
 from any one person.
 
 Chat is a pane like anything else: drag its header to wherever you want it, drag
@@ -384,13 +382,13 @@ nobody knows is there is a pane nobody opens. Closed, chat comes back from
 **Add pane** in the tab bar, as a column down the tab's right edge.
 
 While no chat pane shows the conversation in any window — closed, in a tab
-behind the one you are looking at, or on its Settings page — a line that
+behind the one you are looking at, or on its Chat settings page — a line that
 names you or a private message shows in the game pane's header, after the
 world: the newest one in gold, cut to fit, with how many more are waiting.
 Its tooltip has the whole line and the room. Clicking it opens chat on that
 room, as a column beside the game with the window growing to make room, as
 Add pane's does, or in a tab of its own when there is no room for one, and
-on the conversation if the pane was on Settings. It goes once chat is on
+on the conversation if the pane was on Chat settings. It goes once chat is on
 screen again anywhere, and the rail still counts in gold whatever else was
 for you, in the room chat had open as in any other.
 
@@ -403,7 +401,7 @@ log, and People hides it to give the log the width. Narrow, the tabs wrap, and
 People swaps the log for the list. Dragging the seam is what "move chat to the bottom" used to
 mean.
 
-The first time you open chat it opens on Settings, because there is nothing
+The first time you open chat it opens on Chat settings, because there is nothing
 sensible to default a nick to, and a name others see should be chosen rather
 than assigned. Nothing connects until you pick one, which is also why an
 unattended capture run never opens a socket. Some commands are the kit's own,
@@ -518,7 +516,7 @@ set there, by a colour well or by hex. While the editor is open, every window
 — Settings and every server's, whatever each would otherwise wear — wears the
 theme as it is being edited, so each change shows on the app itself as it is
 made. When a pair of colours reads worse than it does in 2004 stone, the
-editor says which and by how much; saving is still yours. Save keeps the
+editor names the pair under Hard to read; saving is still yours. Save keeps the
 theme and makes it the app theme; a server with its own theme goes back to
 that one. Cancel puts every window back as it was, and closing Settings with
 changes unsaved asks first. Up to 32 themes of your own are kept, and each is
@@ -870,7 +868,7 @@ shape, one click away. Whatever you pick replaces the panes of the tab in front:
 - **Open Setups Folder** opens the folder in Finder or Explorer, which is how a
   setup is shared: copy the file out, or drop somebody else's in and it is
   listed with your own.
-- **Open New Windows With** chooses what this server's new windows open
+- **Use for New Windows** chooses what this server's new windows open
   with — at launch, from the File menu, from Settings and from the dock:
   any of the kit's own, or a saved setup holding the game. A saved setup
   without the game is greyed, since a game window opens onto its game. The
@@ -1127,7 +1125,7 @@ the world's RSA key and every save — and accept writes under `/content/`.
 cloudflared is started with `--no-autoupdate`, a `--config` file holding `{}`
 and none of its `TUNNEL_*` environment, so nothing else on the machine can
 point the tunnel somewhere else or swap the checked binary. The link itself
-is the only access control; see Playing with friends.
+is the only access control; see Sharing your home server.
 
 **Home server's builds** are one of the two things the kit downloads and then
 runs as a program; the kit's own update, below, is the other. It downloads only the archive a recipe it shipped with pins, from
@@ -1161,7 +1159,7 @@ src/shared/worlds.ts        WorldsDef, World, Detail, WorldsView, RememberedWorl
 src/shared/ipc.ts           channel names, ShellState, the tool ids
 src/shared/timers.ts        pure: clocks, their limits, digits and the edit form    (tested)
 src/shared/chatSettings.ts  pure: the chat Settings form, line times, rank tones    (tested)
-src/shared/share.ts         ShareView — what Play with friends draws
+src/shared/share.ts         ShareView — what the Sharing section draws
 src/shared/engines.ts       pure: a build recipe, its tag and its download url      (tested)
 src/main/paneTree.ts        pure: the split tree, its solver, splits, moves, swaps  (tested)
 src/main/paneDrop.ts        pure: what a header drop does and where the pane lands  (tested)
@@ -1229,7 +1227,7 @@ src/renderer/tools/Chat.tsx the chat tabs, the log with its times and folds, a c
 src/renderer/tools/ChatSettings.tsx  nickname, NickServ password, auto-join, connect
 src/renderer/tools/ChatUsers.tsx     a channel's users by rank
 src/renderer/tools/homeserver/Builds.tsx   the build lines: use, download, remove
-src/renderer/tools/homeserver/Friends.tsx  Play with friends: share, the link, stop
+src/renderer/tools/homeserver/Friends.tsx  the Sharing section: share, the link, stop
 src/renderer/alertSound.ts  plays an alert at a clock's volume
 src/renderer/clocks.ts      what the Timers pane and the game's header share to draw digits
 static/offline.html         shown when a server can't be reached

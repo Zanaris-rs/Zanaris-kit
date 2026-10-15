@@ -81,15 +81,16 @@ const LINE: BuildLine = {
 test('switching builds asks as a restart, and says where the characters are', () => {
     const across = switchConfirmation(LINE, 274);
     assert.equal(across.message, 'Switching to Lost City 289 restarts your home server and logs you out.');
-    assert.match(across.detail, /Your rev 274 characters stay where they are, and rev 289 has its own/);
+    assert.equal(across.detail, 'Rev 289 has its own characters.');
     assert.equal(across.button, 'Switch');
     assert.equal(across.destructive, false);
-    assert.match(switchConfirmation({ ...LINE, revision: 274 }, 274).detail, /Your characters come with you/);
+    assert.equal(switchConfirmation({ ...LINE, revision: 274 }, 274).detail, 'Your characters come with you.');
 });
 
-test('switching to a build not downloaded yet says it downloads first, and the world runs until then', () => {
-    assert.match(switchConfirmation({ ...LINE, state: 'absent' }, 274).detail, /^It downloads first \(54 MB\), and your home server keeps running until then\./);
-    assert.doesNotMatch(switchConfirmation(LINE, 274).detail, /downloads first/);
+test('switching to a build not downloaded yet says it downloads first, and how much', () => {
+    assert.equal(switchConfirmation({ ...LINE, state: 'absent' }, 274).detail, 'Downloads 54 MB first. Rev 289 has its own characters.');
+    assert.equal(switchConfirmation({ ...LINE, state: 'absent', revision: 274 }, 274).detail, 'Downloads 54 MB first. Your characters come with you.');
+    assert.doesNotMatch(switchConfirmation(LINE, 274).detail, /Downloads/);
 });
 
 test('removing a build says the characters stay and it can come back', () => {

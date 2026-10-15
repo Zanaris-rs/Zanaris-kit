@@ -56,11 +56,11 @@ export default function Commands({ cheats, wide }: { cheats: boolean; wide: bool
     return (
         <div className={sectionClass(wide)}>
             <div className="flex flex-col gap-1.5">
-                {!cheats && <p className="text-[12px] text-warn">These need cheats on, in World. With cheats off the world ignores them.</p>}
+                {!cheats && <p className="text-[12px] text-warn">Turn cheats on in World to use these.</p>}
                 <p className="text-[12px] text-dim">
-                    Type them into the game's chat box. Debug procs start with <code className="font-mono text-cream">::~</code>, and <code className="font-mono text-cream">::~help</code> opens the game's own menu of the common ones, which leaves the ~ out.
+                    Type these in the game's chat. <code className="font-mono text-cream">::~help</code> lists common ones.
                 </p>
-                {procs === null && <p className="text-[12px] text-dim">This build has no list of debug procs the kit can read, or is not downloaded yet, so only the engine's commands are here.</p>}
+                {procs === null && <p className="text-[12px] text-dim">This build lists no debug procs; engine commands only.</p>}
                 <input
                     type="search"
                     value={query}

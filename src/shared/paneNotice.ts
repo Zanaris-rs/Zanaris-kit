@@ -20,7 +20,8 @@ export type PaneNoticeAction = 'reload' | 'wait' | 'close' | 'retry';
 
 export interface PaneNotice {
     title: string;
-    detail: string;
+    /** Absent where the title and the buttons say it all: Settings' window notice. */
+    detail?: string;
     /** The buttons, in order. The first is the one to press. */
     actions: { id: PaneNoticeAction; label: string }[];
 }
@@ -46,7 +47,7 @@ function goneBecause(reason: string): string {
  * says a reload is a fresh login, because it is: whatever was on screen is
  * gone either way, and the player should not press it expecting otherwise.
  */
-export function troubleNotice(subject: 'game' | 'page', trouble: PaneTrouble): PaneNotice {
+export function troubleNotice(subject: 'game' | 'page', trouble: PaneTrouble): Required<PaneNotice> {
     const game = subject === 'game';
     const reload = { id: 'reload' as const, label: game ? 'Reload game' : 'Reload page' };
     const login = game ? ' Reloading it is a fresh login.' : '';
@@ -65,10 +66,10 @@ export function troubleNotice(subject: 'game' | 'page', trouble: PaneTrouble): P
 }
 
 /** A tool the shell failed to draw. Its state is main's, so drawing it again loses nothing but what was typed into it. */
-export function toolNotice(name: string): PaneNotice {
+export function toolNotice(name: string): Required<PaneNotice> {
     return {
         title: `${name} stopped working`,
-        detail: 'Something went wrong while drawing it. Opening it again draws it fresh.',
+        detail: 'Something went wrong.',
         actions: [
             { id: 'retry', label: 'Open again' },
             { id: 'close', label: 'Close pane' }
@@ -78,14 +79,14 @@ export function toolNotice(name: string): PaneNotice {
 
 /**
  * The whole page failed to draw: a game window's shell, or Settings. The
- * game is a view of its own and keeps running under a shell that is redrawn.
+ * game is a view of its own and keeps running under a shell that is redrawn,
+ * so the shell's notice says so. Settings has no game, and its notice is the
+ * title and Reload alone.
  */
 export function windowNotice(page: 'shell' | 'settings'): PaneNotice {
-    return {
-        title: 'Something went wrong in this window',
-        detail: page === 'shell' ? 'Reloading draws it again. The game keeps running.' : 'Reloading draws it again.',
-        actions: [{ id: 'reload', label: 'Reload' }]
-    };
+    const reload = [{ id: 'reload' as const, label: 'Reload' }];
+    const title = 'Something went wrong in this window';
+    return page === 'shell' ? { title, detail: 'The game keeps running.', actions: reload } : { title, actions: reload };
 }
 
 /** An action as it arrives over IPC, or null. Only the three main answers: `retry` never leaves the shell. */

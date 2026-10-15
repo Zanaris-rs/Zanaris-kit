@@ -14,14 +14,13 @@ const TIGHT: CSSProperties = { paddingLeft: 4, paddingRight: 4 };
 const COPIED_MS = 1_500;
 
 /**
- * The Friends section: sharing the world with a link. Every rule is in main —
+ * The Sharing section: sharing the world with a link. Every rule is in main —
  * what to ask first, when the share ends — so this only draws the view and
  * forwards four clicks.
  *
- * Narrow, what sits beside Share with friends or Cancel goes above or below
- * it instead. Beside Share with friends, 165px, the note was pushed past the
- * section's edge and the section scrolled sideways, and beside Cancel the
- * words it cancels were left a word to a line and Cancel went past the edge.
+ * Share's note sits under it at every width. Narrow, what sits beside Cancel
+ * goes above it instead: beside it, the words it cancels were left a word to
+ * a line and Cancel went past the section's edge.
  */
 export default function Friends({ view, worldReady, wide }: { view: ShareView; worldReady: boolean; wide: boolean }): ReactNode {
     const [copied, setCopied] = useState(false);
@@ -33,8 +32,8 @@ export default function Friends({ view, worldReady, wide }: { view: ShareView; w
 
     if (!view.available) {
         return (
-            <section aria-label="Play with friends">
-                <p className="text-[12px] text-dim">Playing with friends is not available on this computer: Cloudflare makes no tunnel program for it.</p>
+            <section aria-label="Sharing">
+                <p className="text-[12px] text-dim">Sharing isn't available on this computer: Cloudflare makes no tunnel program for it.</p>
             </section>
         );
     }
@@ -48,18 +47,18 @@ export default function Friends({ view, worldReady, wide }: { view: ShareView; w
     );
 
     return (
-        <section aria-label="Play with friends" className={scrollClass(wide)}>
+        <section aria-label="Sharing" className={scrollClass(wide)}>
             {view.status === 'off' && (
-                <div className={row}>
-                    <button type="button" onClick={() => void window.zanaris.share.start()} style={sides} className="btn shrink-0">
-                        Share with friends
+                <div className="flex flex-col items-start gap-1.5">
+                    <button type="button" onClick={() => void window.zanaris.share.start()} style={sides} className="btn">
+                        Share
                     </button>
-                    <span className="text-[12px] text-dim">A link your friends open in a browser to join this world.</span>
+                    <span className="text-[12px] text-dim">Friends join from their browser.</span>
                 </div>
             )}
             {view.status === 'downloading' && (
                 <div className={row} aria-live="polite">
-                    <span className="text-cream">Downloading Cloudflare&apos;s tunnel program… {Math.floor((view.progress ?? 0) * 100)}%</span>
+                    <span className="text-cream">Downloading… {Math.floor((view.progress ?? 0) * 100)}%</span>
                     {cancel}
                 </div>
             )}
@@ -71,7 +70,7 @@ export default function Friends({ view, worldReady, wide }: { view: ShareView; w
             )}
             {view.status === 'checking' && (
                 <div className={row} aria-live="polite">
-                    <span className="text-cream">Link made. Waiting for it to work from the internet, which can take a minute…</span>
+                    <span className="text-cream">Waiting for the link to go live…</span>
                     {cancel}
                 </div>
             )}
@@ -98,7 +97,7 @@ export default function Friends({ view, worldReady, wide }: { view: ShareView; w
                         </button>
                     </div>
                     <p className="mt-1.5 text-[12px] text-warn">Anyone with this link can log in as any character, yours included.</p>
-                    {!worldReady && <p className="text-[12px] text-dim" aria-live="polite">Your home server is restarting. The link stays the same: friends reload once it is back.</p>}
+                    {!worldReady && <p className="text-[12px] text-dim" aria-live="polite">Restarting. The link stays the same.</p>}
                 </>
             )}
             {view.status === 'failed' && (

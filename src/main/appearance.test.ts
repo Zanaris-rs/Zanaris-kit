@@ -79,12 +79,13 @@ test('the delete question says who wears the theme and what they will wear inste
     const worn = { theme: 'custom-0000000a', servers: { lostcity: 'custom-0000000a', zanaris: 'custom-0000000a', lostcitylabs: 'stone' }, custom: [night] };
     const asked = deleteQuestion({ appearance: worn, catalog, id: 'custom-0000000a' });
     assert.equal(asked?.message, 'Delete Night?');
-    assert.match(asked!.detail, /It is the app theme: Settings, and every server without its own, will wear 2004 stone\./);
-    assert.ok(asked!.detail.includes(`${lostcity.name} and ${zanaris.name} wear it, and will follow the app theme.`));
+    assert.equal(asked!.detail, `${lostcity.name} and ${zanaris.name} go back to the app theme. Every window wearing it goes back to 2004 stone. This can't be undone.`);
     assert.ok(!asked!.detail.includes(labs.name));
+    const app = deleteQuestion({ appearance: { theme: 'custom-0000000a', servers: {}, custom: [night] }, catalog, id: 'custom-0000000a' });
+    assert.equal(app?.detail, "Every window wearing it goes back to 2004 stone. This can't be undone.");
     const one = deleteQuestion({ appearance: { theme: 'stone', servers: { zanaris: 'custom-0000000a' }, custom: [night] }, catalog, id: 'custom-0000000a' });
-    assert.ok(one?.detail.startsWith(`${zanaris.name} wears it`));
-    assert.match(deleteQuestion({ appearance: { theme: 'stone', servers: {}, custom: [night] }, catalog, id: 'custom-0000000a' })!.detail, /^Nothing wears it\./);
+    assert.equal(one?.detail, `${zanaris.name} goes back to the app theme. This can't be undone.`);
+    assert.equal(deleteQuestion({ appearance: { theme: 'stone', servers: {}, custom: [night] }, catalog, id: 'custom-0000000a' })!.detail, "This can't be undone.");
     assert.equal(deleteQuestion({ appearance: { theme: 'stone', servers: {}, custom: [] }, catalog, id: 'custom-0000000a' }), null);
 });
 
@@ -128,7 +129,7 @@ test("with nothing being edited, a window wears its own theme or the app's", () 
 
 test('closing Settings asks only about a draft with changes, and never while quitting', () => {
     const editing = { look: draftLook, name: 'Mine', changed: true };
-    assert.deepEqual(closeQuestion(editing, false), { message: 'Discard your changes to Mine?', detail: 'Every window goes back to the theme it wore before.' });
+    assert.deepEqual(closeQuestion(editing, false), { message: 'Discard your changes to Mine?', detail: '' });
     assert.equal(closeQuestion({ ...editing, changed: false }, false), null);
     assert.equal(closeQuestion(editing, true), null);
     assert.equal(closeQuestion(null, false), null);

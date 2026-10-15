@@ -131,15 +131,15 @@ export default function Settings(): ReactNode {
                         {/*
                          * The file behind the list, for the fields no form here exposes —
                          * a server's worlds source, its bookmarks, its map. Safe to edit
-                         * with the kit open, which is what the note says: `servers.json` is
-                         * re-read whenever a window regains focus.
+                         * with the kit open: `servers.json` is re-read whenever a window
+                         * regains focus.
                          */}
                         <div className="flex flex-col gap-1 border-t border-edge-dark px-2.5 pt-2 pb-2">
                             {/* In a row of its own: the button sizes to its label, where a column would stretch it the width of the window. */}
                             <div className="flex items-center">
                                 <QuietButton onClick={() => void window.zanaris.settings.editServers()}>Edit server list…</QuietButton>
                             </div>
-                            <p className="text-[12px] text-dim">Opens servers.json. The kit re-reads it whenever a window regains focus.</p>
+                            <p className="text-[12px] text-dim">Opens servers.json.</p>
                         </div>
                     </>
                 )}

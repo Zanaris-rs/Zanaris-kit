@@ -24,7 +24,7 @@ export default function PaneNotice({ notice, onAction, row = false }: { notice: 
         return (
             <div role="alert" className="flex min-w-0 items-center justify-center gap-3 px-3">
                 <span className="shrink-0 font-pixel text-[15px] text-gold">{notice.title}</span>
-                <span className="min-w-0 truncate text-[13px] text-dim">{notice.detail}</span>
+                {notice.detail && <span className="min-w-0 truncate text-[13px] text-dim">{notice.detail}</span>}
                 {buttons}
             </div>
         );
@@ -32,7 +32,7 @@ export default function PaneNotice({ notice, onAction, row = false }: { notice: 
     return (
         <div role="alert" className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
             <p className="font-pixel text-[15px] text-gold">{notice.title}</p>
-            <p className="max-w-[360px] text-[13px] text-dim">{notice.detail}</p>
+            {notice.detail && <p className="max-w-[360px] text-[13px] text-dim">{notice.detail}</p>}
             <div className="flex flex-wrap justify-center gap-2">{buttons}</div>
         </div>
     );

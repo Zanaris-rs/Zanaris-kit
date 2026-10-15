@@ -106,14 +106,12 @@ export function serversView(opts: { catalog: readonly ServerDef[]; startup: read
  * What Remove asks before it removes. Removing is permanent: the name,
  * address, revision and notes were typed by hand and nothing puts them back.
  * The windows open on it are not closed — each keeps its copy of the server
- * until it is — so the question says so rather than leaving it to be guessed.
+ * until it is.
  */
-export function removeQuestion(server: { name: string }, openWindows: number): { message: string; detail: string } {
-    const windows =
-        openWindows === 0 ? '' : openWindows === 1 ? ' The window open on it stays open until you close it.' : ` The ${openWindows} windows open on it stay open until you close them.`;
+export function removeQuestion(server: { name: string }): { message: string; detail: string } {
     return {
         message: `Remove ${server.name}?`,
-        detail: `Its address and notes are removed with it, and adding it again means typing them again.${windows}`
+        detail: "You'd have to add it again by hand."
     };
 }
 

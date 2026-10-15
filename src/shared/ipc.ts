@@ -154,7 +154,8 @@ export interface WindowFrame {
 /** The tab bar's update button, the same in every window: main words it (`update.updateButton`), and a press asks about it. */
 export interface UpdateButton {
     label: string;
-    title: string;
+    /** Its tooltip, absent where the label says it all. */
+    title?: string;
 }
 
 export interface ShellState {

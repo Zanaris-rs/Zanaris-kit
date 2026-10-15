@@ -91,7 +91,7 @@ function TabMarks({ tab }: { tab: TabView }): ReactNode {
 
 /** A tab's tooltip: its full name, and why it carries a mark. */
 function tabTitle(tab: TabView): string {
-    const why = [tab.marks.includes('game') && 'the game is still running here', tab.marks.includes('sharing') && 'Your home server is shared with a link'].filter(Boolean);
+    const why = [tab.marks.includes('game') && 'game running', tab.marks.includes('sharing') && 'shared'].filter(Boolean);
     return why.length === 0 ? tab.label : `${tab.label} (${why.join('; ')})`;
 }
 
@@ -568,13 +568,13 @@ export default function Shell(): ReactNode {
                 </div>
                 {/*
                  * A live link with no pane showing Home server, so no tab
-                 * can carry the mark. It opens the pane, whose Friends
+                 * can carry the mark. It opens the pane, whose Sharing
                  * section is where the link is copied or stopped.
                  */}
                 {state.sharingWithoutPane && (
                     <button
                         type="button"
-                        title="Your home server is shared with a link, and no pane shows it. Open Home server"
+                        title="Shared with a link. Open Home server"
                         onClick={() => void window.zanaris.panes.showHomeServer()}
                         style={SHARING_BOX}
                         className="btn shrink-0"
@@ -601,7 +601,7 @@ export default function Shell(): ReactNode {
                  */}
                 <button
                     type="button"
-                    title="Open this tab in a setup, or save it as one"
+                    title="Open or save a setup"
                     aria-haspopup="menu"
                     onClick={event => {
                         const box = event.currentTarget.getBoundingClientRect();
@@ -630,7 +630,6 @@ export default function Shell(): ReactNode {
                  */}
                 <button
                     type="button"
-                    title="Add a pane to this tab"
                     aria-haspopup="menu"
                     onClick={event => {
                         const box = event.currentTarget.getBoundingClientRect();

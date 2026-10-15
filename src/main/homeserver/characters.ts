@@ -53,10 +53,13 @@ type Trashed = 'absent' | 'trashed' | 'failed';
 const CANCELLED: CharacterOutcome = { kind: 'cancelled' };
 const done = (name: string): CharacterOutcome => ({ kind: 'done', name });
 const refused = (message: string): CharacterOutcome => ({ kind: 'refused', message });
-const GONE = 'That character is not in the saves folder any more.';
+const GONE = 'That character is not in the characters folder any more.';
 const NOT_WAITING = 'That file is no longer waiting to be imported. Choose it again.';
-const PLAYING = 'Your home server is running.';
 const replaced = (who: string): string => `The ${who} you have now goes to the trash.`;
+/** What a running home server adds: a character logged in as `who` writes its save again on logout, over an import or a duplicate under that name… */
+const playing = (who: string): string => `If ${who} is logged in, logging out overwrites this.`;
+/** …and back beside a rename, or in place of a delete, of `who`. */
+const savesAgain = (who: string): string => `If ${who} is logged in, logging out saves ${who} again.`;
 
 /** A typed name as a character's name, or why it cannot be one. */
 function named(typed: string): Named {
@@ -89,7 +92,7 @@ export function importQuestion(name: string, replacing: boolean, running: boolea
     const who = toDisplayName(name);
     return {
         message: replacing ? `Replace ${who} with the imported save?` : `Import this save as ${who}?`,
-        detail: sentences(replacing ? replaced(who) : null, running ? `${PLAYING} If anyone is logged in as ${who}, logging out will write over the import.` : null),
+        detail: sentences(replacing ? replaced(who) : null, running ? playing(who) : null),
         button: replacing ? 'Replace' : 'Import',
         destructive: replacing
     };
@@ -100,7 +103,7 @@ export function renameQuestion(from: string, to: string, replacing: boolean, run
     const becomes = toDisplayName(to);
     return {
         message: replacing ? `Rename ${was} to ${becomes}, replacing the ${becomes} you have?` : `Rename ${was} to ${becomes}?`,
-        detail: sentences(replacing ? replaced(becomes) : null, running ? `${PLAYING} If anyone is logged in as ${was}, logging out will save ${was} again under the old name.` : null),
+        detail: sentences(replacing ? replaced(becomes) : null, running ? savesAgain(was) : null),
         button: 'Rename',
         destructive: replacing
     };
@@ -110,9 +113,9 @@ export function duplicateQuestion(from: string, to: string, replacing: boolean, 
     const source = toDisplayName(from);
     const copy = toDisplayName(to);
     return {
-        message: replacing ? `Copy ${source} over ${copy}?` : `Copy ${source} as ${copy}?`,
-        detail: sentences(replacing ? replaced(copy) : null, running ? `${PLAYING} The copy is ${source} as last saved, and if anyone is logged in as ${copy}, logging out will write over it.` : null),
-        button: 'Copy',
+        message: replacing ? `Duplicate ${source} over ${copy}?` : `Duplicate ${source} as ${copy}?`,
+        detail: sentences(replacing ? replaced(copy) : null, running ? playing(copy) : null),
+        button: 'Duplicate',
         destructive: replacing
     };
 }
@@ -127,7 +130,7 @@ export function copyToQuestion(name: string, from: number, to: number): Confirma
     const who = toDisplayName(name);
     return {
         message: `Copy ${who} to rev ${to}?`,
-        detail: `The copy is ${who} as last saved in rev ${from}. A save holds items and progress from the game that wrote it, so rev ${to} may read it differently. ${who} stays in rev ${from} as well.`,
+        detail: `Rev ${to} may read its items differently. ${who} stays in rev ${from}.`,
         button: 'Copy',
         destructive: false
     };
@@ -144,7 +147,7 @@ export function deleteQuestion(name: string, running: boolean): Confirmation {
     const who = toDisplayName(name);
     return {
         message: `Move ${who} to the trash?`,
-        detail: sentences('You can put the save back from there.', running ? `${PLAYING} If anyone is logged in as ${who}, logging out will save ${who} again.` : null),
+        detail: sentences(running ? savesAgain(who) : null),
         button: 'Move to Trash',
         destructive: true
     };

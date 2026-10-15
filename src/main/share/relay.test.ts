@@ -133,7 +133,8 @@ test('while the world is down, pages answer 503 and upgrades are refused', async
     const relay = await relayTo(t, () => null);
     const res = await send(relay.port, 'GET', '/rs2.cgi');
     assert.equal(res.status, 503);
-    assert.match(res.body, /isn.t running/);
+    assert.match(res.body, /<title>Home server not running<\/title>/);
+    assert.match(res.body, /The host's home server isn't running right now\./);
     assert.equal(res.headers['cache-control'], 'no-store');
     const up = await upgrade(relay.port);
     assert.deepEqual(up, { refused: 503 });
@@ -170,7 +171,9 @@ test('a world that refuses the connection is a 502, and a refused upgrade is clo
     const port = w.port;
     await w.close();
     const relay = await relayTo(t, () => port);
-    assert.equal((await send(relay.port, 'GET', '/rs2.cgi')).status, 502);
+    const refused = await send(relay.port, 'GET', '/rs2.cgi');
+    assert.equal(refused.status, 502);
+    assert.equal(refused.body, "The host's home server did not answer.");
     const up = await upgrade(relay.port).catch(() => ({ refused: -1 }));
     assert.ok('refused' in up);
 });

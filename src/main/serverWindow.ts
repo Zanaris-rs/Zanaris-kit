@@ -159,7 +159,7 @@ export interface ServerWindowDeps {
     cascade: { x: number; y: number } | null;
     /** What new windows of this server open with, as stored, or null for the window's default (`setups.openingSetup`). A getter: the Setups menu reads it again each time it opens. */
     newWindowSetup: () => NewWindowSetup | null;
-    /** Stores what new windows of this server open with: the Setups menu's Open New Windows With. */
+    /** Stores what new windows of this server open with: the Setups menu's Use for New Windows. */
     setNewWindowSetup: (choice: NewWindowSetup) => void;
     /** Records where this window is as its close goes through, for the next window of its server and number. Main drops it in a capture. */
     rememberPlace: (place: Place) => void;
@@ -1297,7 +1297,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * offer (`setups.builtInSetups`), the setups saved for this server, and
      * saving the tab in front as one. A setup chosen from it replaces the
      * panes of the tab in front, which is the tab the menu was opened over.
-     * Except Open New Windows With, which changes nothing on screen: it is
+     * Except Use for New Windows, which changes nothing on screen: it is
      * what this server's next windows open with.
      *
      * Native and built here for the reason Add pane's is: it drops down over
@@ -1327,13 +1327,13 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             // listed above like any other.
             { label: 'Open Setups Folder', click: () => void openSetupsFolder() },
             { type: 'separator' },
-            { label: 'Open New Windows With', submenu: newWindowsItems() }
+            { label: 'Use for New Windows', submenu: newWindowsItems() }
         ];
         Menu.buildFromTemplate(template).popup({ window: win, x: Math.round(x), y: Math.round(y) });
     }
 
     /**
-     * Open New Windows With: the built-ins, then the saved setups, with the
+     * Use for New Windows: the built-ins, then the saved setups, with the
      * one the next window of this server would open with ticked. The tick is
      * `openingSetup`'s answer, the one a window opening now would act on, so a
      * choice that can no longer be used ticks the window's default, which is
@@ -1395,8 +1395,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (panes > SETUP_PANES_MAX) {
             await dialog.showMessageBox(win, {
                 type: 'info',
-                message: `A setup holds up to ${SETUP_PANES_MAX} panes, and this tab has ${panes}.`,
-                detail: 'Close a few of its panes, then save it again.'
+                message: `A setup holds up to ${SETUP_PANES_MAX} panes, and this tab has ${panes}.`
             });
             return;
         }
@@ -1441,8 +1440,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if ((await openSetupFrom(tabId, path)) !== 'unreadable' || win.isDestroyed()) return;
         await dialog.showMessageBox(win, {
             type: 'warning',
-            message: "That file isn't a Zanaris Kit setup.",
-            detail: `${basename(path)} could not be read as a setup, so the tab was left as it was.`
+            message: "That file isn't a Zanaris Kit setup."
         });
     }
 
@@ -1575,10 +1573,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (!single || win.isDestroyed()) return;
         const view = single.view();
         const line = view.builds.find(l => l.id === view.selected);
-        const version = view.version ? `engine ${view.version.engine.slice(0, 8)} · content ${view.version.content.slice(0, 8)} · rev ${view.version.revision}` : '';
         const query = {
             state: override?.state ?? view.status,
-            version,
             reason: override?.reason ?? view.reason ?? '',
             log: view.logTail.slice(-20).join('\n'),
             // What a missing world would download, and how far it has got, in tens
@@ -1779,11 +1775,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 // the world is running, the page itself is what failed, and the starting
                 // page has to say so rather than claim the world is up.
                 const running = single.view().status === 'ready';
-                showStarting(running ? { state: 'pagefailed', reason: 'The game page did not load, though the world is running.' } : undefined);
+                showStarting(running ? { state: 'pagefailed', reason: 'The game page did not load, though your home server is running.' } : undefined);
                 return;
             }
             void wc.loadFile(OFFLINE_PAGE, {
-                query: { url: expected, name: gameLabel(), reason: description }
+                query: { url: expected, name: server.name, reason: description }
             });
         });
         // `insertCSS` is per-document, so it must be re-applied on every navigation. `dom-ready`

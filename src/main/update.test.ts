@@ -184,11 +184,18 @@ test('the button says where the update is, and nothing while there is none', () 
     assert.equal(updateButton({ kind: 'failed', version: '0.9.1', reason: 'x', release: null })?.label, 'Update failed');
 });
 
+test('only a ready or failed update has a tooltip', () => {
+    assert.equal(updateButton({ kind: 'available', release, how: { kind: 'self', target: { kind: 'windows' } } })?.title, undefined);
+    assert.equal(updateButton({ kind: 'downloading', release, percent: 42 })?.title, undefined);
+    assert.equal(updateButton({ kind: 'ready', version: '0.9.1' })?.title, 'Installs when you quit');
+    assert.equal(updateButton({ kind: 'failed', version: '0.9.1', reason: 'x', release: null })?.title, "Zanaris Kit couldn't update to 0.9.1");
+});
+
 test('each dialog offers what can be done from where the update is', () => {
     const actions = (q: ReturnType<typeof updateQuestion>): string[] | undefined => q?.buttons.map(b => b.action);
     const offered = updateQuestion({ kind: 'available', release, how: { kind: 'self', target: { kind: 'windows' } } }, false);
     assert.deepEqual(actions(offered), ['download', 'page', 'not-now']);
-    assert.match(offered!.detail, /270 MB/);
+    assert.equal(offered!.detail, '270 MB. Installs when you quit or restart.');
     assert.equal(offered!.page, 'https://github.com/Zanaris-rs/Zanaris-kit/releases/tag/v0.9.1');
     const byHand = updateQuestion({ kind: 'available', release, how: { kind: 'manual', reason: 'not-moved' } }, false);
     assert.deepEqual(actions(byHand), ['page', 'not-now']);
@@ -196,9 +203,8 @@ test('each dialog offers what can be done from where the update is', () => {
     assert.match(updateQuestion({ kind: 'available', release, how: { kind: 'manual', reason: 'unwritable', folder: '/opt' } }, false)!.detail, /\/opt/);
     assert.deepEqual(actions(updateQuestion({ kind: 'downloading', release, percent: 3 }, false)), ['keep-going', 'cancel-download']);
     assert.deepEqual(actions(updateQuestion({ kind: 'ready', version: '0.9.1' }, false)), ['restart', 'later']);
-    assert.match(updateQuestion({ kind: 'ready', version: '0.9.1' }, false)!.detail, /closes and opens again by itself/);
-    assert.match(updateQuestion({ kind: 'ready', version: '0.9.1' }, true)!.detail, /home server/);
-    assert.doesNotMatch(updateQuestion({ kind: 'ready', version: '0.9.1' }, false)!.detail, /home server/);
+    assert.equal(updateQuestion({ kind: 'ready', version: '0.9.1' }, false)!.detail, 'Every game is logged out. Later installs it when you quit.');
+    assert.equal(updateQuestion({ kind: 'ready', version: '0.9.1' }, true)!.detail, 'Every game is logged out and your home server stops. Later installs it when you quit.');
     const failed = updateQuestion({ kind: 'failed', version: '0.9.1', reason: 'The download stalled.', release: null }, false);
     assert.deepEqual(actions(failed), ['retry', 'page', 'not-now']);
     assert.equal(failed!.detail, 'The download stalled.');

@@ -49,10 +49,14 @@ test('matchesQuery searches names and notes, and ignores a typed :: or ::~', () 
     assert.equal(matchesQuery(proc('bank', 'cheats'), 'teleport'), false);
 });
 
-test('inFilter sorts commands into cheats, engine, test scripts and all', () => {
+test('inFilter sorts commands into Common, Built-in, Testing and All', () => {
     assert.deepEqual(
         COMMAND_FILTERS.map(f => f.id),
         ['cheats', 'engine', 'scripts', 'all']
+    );
+    assert.deepEqual(
+        COMMAND_FILTERS.map(f => f.label),
+        ['Common', 'Built-in', 'Testing', 'All']
     );
     const maxme = proc('maxme', 'cheats');
     const cannon = proc('cannon', 'debug');

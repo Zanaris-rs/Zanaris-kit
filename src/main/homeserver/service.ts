@@ -536,7 +536,7 @@ export class HomeServerService {
             // in that gap and a 200 from a dead world is not a world that is ready.
             const guard = (): void => {
                 if (this.stopped()) throw new Failure('Stopped while starting');
-                if (exit !== undefined) this.fail(`The world exited before it was ready (code ${exit})`);
+                if (exit !== undefined) this.fail(`Your home server exited before it was ready (code ${exit})`);
                 if (this.process !== process) throw new Failure('Stopped while starting');
             };
             const deadline = deps.now() + READY_TIMEOUT_MS;
@@ -553,7 +553,7 @@ export class HomeServerService {
             }
             process.kill();
             this.process = null;
-            this.fail(`The world did not answer within ${READY_TIMEOUT_MS / 1000} s`);
+            this.fail(`Your home server did not answer within ${READY_TIMEOUT_MS / 1000} s`);
         } catch (err) {
             // Never leave a world behind: while this start's process is still ours, no
             // one else can reap it, and a failed status would hide it from stop().
@@ -595,7 +595,7 @@ export class HomeServerService {
         if (this.process !== process) return;
         this.process = null;
         if (this.status === 'ready') {
-            this.reason = `The world stopped unexpectedly (code ${code})`;
+            this.reason = `Your home server stopped unexpectedly (code ${code})`;
             this.set('failed');
             this.deps.log(`[homeserver] ${this.reason}`);
         }

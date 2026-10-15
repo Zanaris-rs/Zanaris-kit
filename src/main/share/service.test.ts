@@ -452,9 +452,7 @@ test('a window that throws while being told does not stop the others hearing', a
 test('the first share asks to download cloudflared, naming the file, its size and where it comes from', () => {
     const [download, share] = shareDialogs({ asset: ASSET, installed: false, cheats: false });
     assert.equal(download!.kind, 'download');
-    assert.match(download!.detail, /cloudflared-darwin-arm64\.tgz/);
-    assert.match(download!.detail, /19\.2 MB/);
-    assert.match(download!.detail, /github\.com\/cloudflare\/cloudflared/);
+    assert.equal(download!.detail, "Downloads cloudflared-darwin-arm64.tgz (19.2 MB) from Cloudflare's GitHub, once.");
     assert.equal(share!.kind, 'share');
 });
 
@@ -466,14 +464,12 @@ test('once cloudflared is here, only the share itself is asked about', () => {
 test('the share dialog says anyone with the link can be any character, and that cheats go with it when on', () => {
     const [off] = shareDialogs({ asset: ASSET, installed: true, cheats: false });
     const [on] = shareDialogs({ asset: ASSET, installed: true, cheats: true });
-    for (const dialog of [off!, on!]) {
-        assert.match(dialog.detail, /anyone who has the link/i);
-        assert.match(dialog.detail, /any character, yours included/i);
-        assert.match(dialog.detail, /changes every time/i);
-        assert.equal(dialog.confirm, 'Share');
-    }
-    assert.doesNotMatch(off!.detail, /cheat/i);
-    assert.match(on!.detail, /cheats are on/i);
+    for (const dialog of [off!, on!]) assert.equal(dialog.confirm, 'Share');
+    assert.equal(off!.detail, 'Anyone with the link can log in as any character, yours included. Only share it with people you trust. The link ends when you stop sharing or quit.');
+    assert.equal(
+        on!.detail,
+        'Anyone with the link can log in as any character, yours included. Only share it with people you trust. Cheats work for them too. The link ends when you stop sharing or quit.'
+    );
 });
 
 test('sharing again while a stop is finishing waits for it, then starts afresh', async () => {

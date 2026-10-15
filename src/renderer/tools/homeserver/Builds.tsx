@@ -14,7 +14,7 @@ const STATE: Record<BuildLine['state'], string> = {
     downloading: 'Downloading',
     installed: 'Installed',
     outdated: 'Update needed',
-    unavailable: 'Not in this version of the kit'
+    unavailable: 'Unavailable'
 };
 
 function megabytes(bytes: number): string {
@@ -118,8 +118,7 @@ export default function Builds({ view, wide }: { view: HomeServerView; wide: boo
                     {notice}
                 </p>
             )}
-            <p className="text-[12px] text-dim">Each revision keeps its own characters. Characters can copy one from this revision to another.</p>
-            <p className="text-[12px] text-dim">Builds download from the kit's releases on GitHub, and each is checked against the digest this version of the kit carries before it runs.</p>
+            <p className="text-[12px] text-dim">Each revision has its own characters.</p>
         </div>
     );
 }

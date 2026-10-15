@@ -624,12 +624,12 @@ export class IrcClient {
         // that is what is said.
         const asked = this.triedFrom ?? attempted;
         if (numeric === '432' && this.triedFrom === null) {
-            this.told(`the server won't take the nick ${asked}${because(reason)} — pick another in chat's Settings tab`);
-            this.turnAway(`The chat server won't take the nick ${asked}. It may be too long, or reserved. Pick another in chat's Settings tab.`);
+            this.told(`the server won't take the nick ${asked}${because(reason)} — pick another in Chat settings`);
+            this.turnAway(`The chat server won't take the nick ${asked}. Pick another.`);
             return;
         }
-        this.told(`the nick ${asked} is taken — pick another in chat's Settings tab`);
-        this.turnAway(`The nick ${asked} is taken. Pick another in chat's Settings tab.`);
+        this.told(`the nick ${asked} is taken — pick another in Chat settings`);
+        this.turnAway(`The nick ${asked} is taken. Pick another.`);
     }
 
     /**

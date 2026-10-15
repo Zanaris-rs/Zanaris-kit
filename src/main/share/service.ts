@@ -273,18 +273,14 @@ export function shareDialogs(opts: { asset: CloudflaredAsset; installed: boolean
         dialogs.push({
             kind: 'download',
             message: "Sharing needs Cloudflare's tunnel program.",
-            detail: `Zanaris Kit will download ${opts.asset.file} (${megabytes} MB) from github.com/cloudflare/cloudflared, check it against the checksum this version of the kit expects, and keep it for next time.`,
+            detail: `Downloads ${opts.asset.file} (${megabytes} MB) from Cloudflare's GitHub, once.`,
             confirm: 'Download'
         });
     }
     dialogs.push({
         kind: 'share',
         message: 'Share your home server with a link?',
-        detail: [
-            'Anyone who has the link can join your home server and log in as any character, yours included: a world on this computer checks no passwords. Only give it to people you trust.',
-            ...(opts.cheats ? ['Cheats are on, so everyone who joins can use them too.'] : []),
-            'The link changes every time you share. It closes when you stop sharing, close the last window for your home server, or quit.'
-        ].join('\n\n'),
+        detail: `Anyone with the link can log in as any character, yours included. Only share it with people you trust.${opts.cheats ? ' Cheats work for them too.' : ''} The link ends when you stop sharing or quit.`,
         confirm: 'Share'
     });
     return dialogs;

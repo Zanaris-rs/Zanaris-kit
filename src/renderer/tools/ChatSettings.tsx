@@ -175,7 +175,7 @@ export default function ChatSettings({ view, wide, narrow, onConnected }: { view
                         {note('nick') ??
                             (calledElse !== null && (
                                 <span className="text-[12px] text-dim">
-                                    Connected as <span className="text-cream">{calledElse}</span> for now. The next connect asks for {saved.nick}.
+                                    Connected as <span className="text-cream">{calledElse}</span> for now.
                                 </span>
                             ))}
                     </div>
@@ -201,7 +201,7 @@ export default function ChatSettings({ view, wide, narrow, onConnected }: { view
                             className={field}
                         />
                         <span id={`${id}-password-note`} className={`text-[12px] ${passwordNote !== null ? 'text-warn' : 'text-dim'}`}>
-                            {passwordNote ?? (saved.canSavePassword ? 'Sent to NickServ each time you connect. Kept encrypted by your system.' : 'This computer has no secure store for it, so it is kept only until you quit.')}
+                            {passwordNote ?? (saved.canSavePassword ? 'Stored encrypted.' : 'This computer has no secure store for it, so it is kept only until you quit.')}
                         </span>
                         {saved.hasPassword && password === '' && (
                             /* Text, not a button: forgetting is rare, and it only happens on Save. */
@@ -223,17 +223,13 @@ export default function ChatSettings({ view, wide, narrow, onConnected }: { view
                             spellCheck={false}
                             placeholder="#LostHQ, #2004scape"
                             aria-invalid={shows('channels')}
-                            aria-describedby={`${id}-channels-note`}
+                            aria-describedby={shows('channels') ? `${id}-channels-note` : undefined}
                             onChange={e => edit(() => setChannelsDraft(e.target.value))}
                             onKeyDown={submitOnEnter}
                             style={LIST}
                             className={field}
                         />
-                        {note('channels') ?? (
-                            <span id={`${id}-channels-note`} className="text-[12px] text-dim">
-                                Joined every time you connect. Closing a channel's tab leaves it until the next connect.
-                            </span>
-                        )}
+                        {note('channels')}
                     </div>
 
                     <div className={`flex min-w-0 flex-col gap-0.5 ${wide ? 'col-span-2' : ''}`}>
@@ -248,28 +244,28 @@ export default function ChatSettings({ view, wide, narrow, onConnected }: { view
                             spellCheck={false}
                             placeholder="Nobody"
                             aria-invalid={!ignoreReading.ok}
-                            aria-describedby={`${id}-ignore-note`}
+                            aria-describedby={ignoreReading.ok ? undefined : `${id}-ignore-note`}
                             onChange={e => edit(() => setIgnoreDraft(e.target.value))}
                             onKeyDown={submitOnEnter}
                             style={LIST}
                             className={field}
                         />
-                        <span id={`${id}-ignore-note`} className={`text-[12px] ${ignoreReading.ok ? 'text-dim' : 'text-warn'}`}>
-                            {ignoreReading.ok ? 'Their messages, notices and invites are hidden. /ignore and /unignore change this list too.' : ignoreReading.message}
-                        </span>
+                        {!ignoreReading.ok && (
+                            <span id={`${id}-ignore-note`} className="text-[12px] text-warn">
+                                {ignoreReading.message}
+                            </span>
+                        )}
                     </div>
 
                     {/*
                      * The words are let go narrower than their longest, which
                      * breaks it rather than pushing the page sideways. Narrow,
                      * the box drops the margins the system gives it at its
-                     * sides, so "background" still fits beside it whole.
+                     * sides, leaving that room to the words.
                      */}
                     <label className={`flex items-start text-cream ${narrow ? 'gap-1.5' : 'gap-2'} ${wide ? 'col-span-2' : ''}`}>
                         <input type="checkbox" checked={notify} onChange={e => edit(() => setNotifyDraft(e.target.checked))} style={ACCENT} className={narrow ? 'mx-0 mt-[3px]' : 'mt-[3px]'} />
-                        <span className="min-w-0 break-words">
-                            Notify me of mentions and private messages <span className="text-[12px] text-dim">while the kit is in the background</span>
-                        </span>
+                        <span className="min-w-0 break-words">Notify me of mentions and private messages</span>
                     </label>
                 </div>
 
@@ -292,8 +288,9 @@ export default function ChatSettings({ view, wide, narrow, onConnected }: { view
                         </button>
                     </>
                 ) : (
+                    /* Connect saves first whatever changed, as Save would, though its name does not say so. */
                     <button type="submit" disabled={!valid || busy} style={BUTTON_SIZE} className="btn btn-red disabled:opacity-60">
-                        {changed ? 'Save and connect' : 'Connect'}
+                        Connect
                     </button>
                 )}
             </div>

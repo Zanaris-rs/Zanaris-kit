@@ -70,12 +70,12 @@ function megabytes(bytes: number): string {
 /**
  * Switching builds while the world runs, asked on the window. A line that is
  * not downloaded yet downloads first, and the world keeps running on the old
- * build until it lands. Characters live per revision, so the question says
- * whether they come along.
+ * build until it lands; the question gives the size. Characters live per
+ * revision, so the question says whether they come along.
  */
 export function switchConfirmation(to: BuildLine, fromRevision: number): Confirmation {
-    const download = to.state !== 'installed' && to.size !== null ? `It downloads first (${megabytes(to.size)}), and your home server keeps running until then.` : null;
-    const characters = to.revision === fromRevision ? 'Your characters come with you.' : `Your rev ${fromRevision} characters stay where they are, and rev ${to.revision} has its own. Characters can copy one across.`;
+    const download = to.state !== 'installed' && to.size !== null ? `Downloads ${megabytes(to.size)} first.` : null;
+    const characters = to.revision === fromRevision ? 'Your characters come with you.' : `Rev ${to.revision} has its own characters.`;
     return {
         message: `Switching to ${to.name} restarts your home server and logs you out.`,
         detail: download === null ? characters : `${download} ${characters}`,

@@ -20,7 +20,7 @@ export interface MenuActions {
     closeTab(): void;
     /** Cmd/Ctrl+1..9. Out of range is a no-op, so a window with three tabs ignores the other six. */
     selectTabAt(index: number): void;
-    /** Whether a world or detail switch is confirmed before it reloads the game. */
+    /** Whether a world or detail switch, or closing the game, is confirmed before it logs the player out. */
     setWarnOnSwitch(value: boolean): void;
     /** Pins the focused window above other apps, and remembers the choice for the windows opened after it. */
     setAlwaysOnTop(value: boolean): void;
@@ -140,8 +140,10 @@ export function installMenu(
         {
             label: 'View',
             submenu: [
-                // The only way back once the switch dialog's "Don't ask again" has been ticked.
-                { label: 'Warn Before Switching Worlds', type: 'checkbox', checked: warnOnSwitch, click: item => actions.setWarnOnSwitch(item.checked) },
+                // One preference for both questions that log the player out —
+                // switching worlds and closing the game — and the only way back
+                // once either one's "Don't ask again" has been ticked.
+                { label: 'Warn Before Logging Out', type: 'checkbox', checked: warnOnSwitch, click: item => actions.setWarnOnSwitch(item.checked) },
                 { type: 'separator' },
                 { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => actions.newTab() },
                 { label: 'Close Tab', accelerator: 'CmdOrCtrl+Shift+W', click: () => actions.closeTab() },

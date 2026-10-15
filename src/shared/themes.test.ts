@@ -82,14 +82,12 @@ test('no built-in reads worse than 2004 stone: contrastWarnings finds nothing in
     for (const theme of THEMES) assert.deepEqual(contrastWarnings(theme.colors), [], theme.id);
 });
 
-test('contrastWarnings names each pair under its floor, with both ratios', () => {
+test('contrastWarnings names each pair under its floor', () => {
     // Dim the colour of the well is unreadable on the well, and too dark on every other surface.
     const warnings = contrastWarnings({ ...stone, dim: stone.well });
-    assert.equal(warnings.length, 5);
-    assert.ok(warnings.every(w => w.startsWith('Dim text on ')));
-    assert.ok(warnings.includes('Dim text on wells reads at 1.0:1, where 2004 stone reads at 4.8:1.'));
+    assert.deepEqual(warnings, ['Dim text on ink', 'Dim text on panels', 'Dim text on lit stone', 'Dim text on tabs', 'Dim text on wells']);
     const nicks = contrastWarnings({ ...stone, well: '#9db8c3' });
-    assert.ok(nicks.some(w => /^Chat names in #[0-9a-f]{6} on wells read at /.test(w)));
+    assert.ok(nicks.some(w => /^Chat names in #[0-9a-f]{6} on wells$/.test(w)));
 });
 
 test('a derived theme darkens with a darker place and never lightens with a lighter one', () => {

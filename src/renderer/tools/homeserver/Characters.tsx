@@ -26,7 +26,7 @@ const FIELD = 'sunk w-full min-w-0 px-[7px] py-[3px] font-sans text-[13px] text-
 /** The one name being asked for: a picked save waiting to be imported, or a character being renamed or copied. */
 type Prompt = { kind: 'import'; token: string; summary: SaveSummary; draft: string } | { kind: 'rename' | 'duplicate'; from: string; draft: string };
 
-const ACTION: Record<Prompt['kind'], string> = { import: 'Import', rename: 'Rename', duplicate: 'Copy' };
+const ACTION: Record<Prompt['kind'], string> = { import: 'Import', rename: 'Rename', duplicate: 'Duplicate' };
 
 /** A secondary action. A label of more than one word wraps inside it in a narrow pane, as Timers' does, rather than running past the edge of its row. */
 function QuietButton({ onClick, disabled = false, children }: { onClick: () => void; disabled?: boolean; children: ReactNode }): ReactNode {
@@ -44,7 +44,7 @@ function summaryLine(summary: SaveSummary): string {
 function promptLabel(prompt: Prompt): string {
     if (prompt.kind === 'import') return 'Import as';
     const who = toDisplayName(prompt.from);
-    return prompt.kind === 'rename' ? `Rename ${who} to` : `Copy ${who} as`;
+    return prompt.kind === 'rename' ? `Rename ${who} to` : `Duplicate ${who} as`;
 }
 
 /**
@@ -176,7 +176,7 @@ export default function Characters({ view, wide }: { view: HomeServerView; wide:
             {/* The rows carry their own sides, so that a row's highlight reaches the well's. */}
             <div className={`sunk ${scrollClass(wide)} py-1`}>
                 {view.characters.length === 0 ? (
-                    <p className={`py-1 text-dim ${wide ? 'px-2' : 'px-1'}`}>No characters yet. Type any name at the game's login screen to make one; it shows here once the game has saved it.</p>
+                    <p className={`py-1 text-dim ${wide ? 'px-2' : 'px-1'}`}>No characters yet. Log in with any name to make one.</p>
                 ) : (
                     <ul>
                         {view.characters.map(character => (
@@ -228,7 +228,7 @@ export default function Characters({ view, wide }: { view: HomeServerView; wide:
                                     You'll log in as <span className="text-cream">{toDisplayName(prompt.draft)}</span>.
                                 </>
                             ) : (
-                                'Letters, numbers and spaces. The game keeps the first twelve.'
+                                'Letters, numbers, spaces; up to 12.'
                             ))}
                     </span>
                 </form>
@@ -240,7 +240,7 @@ export default function Characters({ view, wide }: { view: HomeServerView; wide:
                 </p>
             )}
 
-            <p className="text-[12px] text-dim">The game saves a character when you log out and every 15 minutes, so one you are playing shows its last save.</p>
+            <p className="text-[12px] text-dim">Shows each character's last save.</p>
             {/* Actions run along the bottom of a panel here, as they do in the client's own interfaces. Import is gold until a name is being asked for. */}
             <div className="flex flex-wrap items-center gap-2">
                 {prompt === null ? (
@@ -252,7 +252,7 @@ export default function Characters({ view, wide }: { view: HomeServerView; wide:
                         Import…
                     </QuietButton>
                 )}
-                <QuietButton onClick={() => void api.openSaves()}>Open saves folder</QuietButton>
+                <QuietButton onClick={() => void api.openSaves()}>Open characters folder</QuietButton>
             </div>
         </div>
     );

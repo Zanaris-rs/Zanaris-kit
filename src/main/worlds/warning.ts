@@ -2,8 +2,8 @@ import type { Detail } from '../../shared/worlds.ts';
 
 /** A switch the user asked for and has not confirmed yet. */
 export type SwitchIntent =
-    | { kind: 'world'; to: number; from: number }
-    | { kind: 'detail'; to: Detail; world: number };
+    | { kind: 'world'; to: number }
+    | { kind: 'detail'; to: Detail };
 
 /**
  * What the confirmation asks before a switch throws the player out of the
@@ -14,11 +14,11 @@ export function switchWarning(intent: SwitchIntent): { message: string; detail: 
     if (intent.kind === 'world') {
         return {
             message: `Switch to World ${intent.to}?`,
-            detail: `Zanaris Kit loads World ${intent.to} straight away, whether or not you are logged in. If you are in game on World ${intent.from}, that logs you out.`
+            detail: "If you're in game, you'll be logged out."
         };
     }
     return {
         message: `Switch to ${intent.to} detail?`,
-        detail: `Zanaris Kit reloads World ${intent.world} at ${intent.to} detail straight away, whether or not you are logged in. If you are in game, that logs you out.`
+        detail: "If you're in game, you'll be logged out."
     };
 }

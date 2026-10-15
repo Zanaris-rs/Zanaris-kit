@@ -251,7 +251,7 @@ export default function ThemeEditor({
 
                 {warnings.length > 0 && (
                     <div role="status" className="px-2.5 pt-2 text-[12px] text-warn">
-                        <p>Some pairs read worse than they do in 2004 stone:</p>
+                        <p>Hard to read:</p>
                         <ul className="list-disc pl-5">
                             {warnings.map(w => (
                                 <li key={w}>{w}</li>
@@ -315,10 +315,9 @@ export default function ThemeEditor({
                                 />
                                 <span className="w-[36px] shrink-0 text-right text-[12px] text-cream">{Math.round(draft.background.show * 100)}%</span>
                             </div>
-                            <p className="text-[12px] text-faint">The picture shows across the whole window, through the stone. The game and the pages cover it.</p>
                         </>
                     ) : (
-                        <p className="text-[12px] text-faint">One of the kit&apos;s, or a PNG, JPEG, WebP or GIF of your own of up to 10 MB, shown across the whole window through the stone.</p>
+                        <p className="text-[12px] text-faint">PNG, JPEG, WebP or GIF, up to 10 MB.</p>
                     )}
                 </div>
 

@@ -108,7 +108,7 @@ function pickOk(characters: Characters, path: string): string {
 }
 
 const FIXTURE_SUMMARY = { version: 7, combatLevel: 126, totalLevel: 1881, playtimeTicks: 3529 };
-const GONE = 'That character is not in the saves folder any more.';
+const GONE = 'That character is not in the characters folder any more.';
 
 test('list shows each save with its levels, newest first, and a damaged one with its problem', () => {
     const d = setup();
@@ -231,7 +231,7 @@ test('while the world runs, even a free name asks, and says why', async () => {
     const ctx = answering(true, true);
     await d.characters.importAs(pickOk(d.characters, '/downloads/x.sav'), 'Zezima', ctx);
     assert.equal(ctx.asked[0]!.message, 'Import this save as Zezima?');
-    assert.match(ctx.asked[0]!.detail, /home server is running\. If anyone is logged in as .*logging out will write over the import/);
+    assert.equal(ctx.asked[0]!.detail, 'If Zezima is logged in, logging out overwrites this.');
     assert.equal(ctx.asked[0]!.destructive, false);
 });
 
@@ -277,8 +277,8 @@ test('rename refuses the name it has, a character that is gone, and a bad name',
     save(d, 'zezima');
     const ctx = answering(true);
     assert.deepEqual(await d.characters.rename('zezima', ' ZEZIMA ', ctx), { kind: 'refused', message: 'Zezima already has that name.' });
-    assert.deepEqual(await d.characters.rename('nobody', 'bob', ctx), { kind: 'refused', message: 'That character is not in the saves folder any more.' });
-    assert.deepEqual(await d.characters.rename('../zezima', 'bob', ctx), { kind: 'refused', message: 'That character is not in the saves folder any more.' });
+    assert.deepEqual(await d.characters.rename('nobody', 'bob', ctx), { kind: 'refused', message: GONE });
+    assert.deepEqual(await d.characters.rename('../zezima', 'bob', ctx), { kind: 'refused', message: GONE });
     assert.equal((await d.characters.rename('zezima', '???', ctx)).kind, 'refused');
     assert.deepEqual(d.calls, []);
 });
@@ -290,7 +290,7 @@ test('rename onto a character asks, trashes that one, then moves', async () => {
     const ctx = answering(true, true);
     assert.deepEqual(await d.characters.rename('zezima', 'bob', ctx), { kind: 'done', name: 'bob' });
     assert.equal(ctx.asked[0]!.message, 'Rename Zezima to Bob, replacing the Bob you have?');
-    assert.match(ctx.asked[0]!.detail, /Bob you have now goes to the trash.*anyone is logged in as Zezima.*under the old name/);
+    assert.equal(ctx.asked[0]!.detail, 'The Bob you have now goes to the trash. If Zezima is logged in, logging out saves Zezima again.');
     assert.deepEqual(d.calls, [`trash ${DIR}/bob.sav`, `rename ${DIR}/zezima.sav ${DIR}/bob.sav`]);
 });
 
@@ -308,10 +308,22 @@ test('delete always asks, with Cancel as the default, and sends the save to the 
     save(d, 'zezima');
     const no = answering(false);
     assert.deepEqual(await d.characters.remove('zezima', no), { kind: 'cancelled' });
-    assert.deepEqual(no.asked[0], { message: 'Move Zezima to the trash?', detail: 'You can put the save back from there.', button: 'Move to Trash', destructive: true });
+    assert.deepEqual(no.asked[0], { message: 'Move Zezima to the trash?', detail: '', button: 'Move to Trash', destructive: true });
     assert.deepEqual(d.trashed, []);
     assert.deepEqual(await d.characters.remove('zezima', answering(true)), { kind: 'done', name: 'zezima' });
     assert.deepEqual(d.trashed, [`${DIR}/zezima.sav`]);
+});
+
+test('while the world runs, a delete says a logout saves the character again, and a copy over one that a logout can overwrite it', async () => {
+    const d = setup();
+    save(d, 'zezima');
+    save(d, 'bob');
+    const deleting = answering(false, true);
+    await d.characters.remove('zezima', deleting);
+    assert.equal(deleting.asked[0]!.detail, 'If Zezima is logged in, logging out saves Zezima again.');
+    const copying = answering(false, true);
+    await d.characters.duplicate('zezima', 'bob', copying);
+    assert.equal(copying.asked[0]!.detail, 'The Bob you have now goes to the trash. If Bob is logged in, logging out overwrites this.');
 });
 
 test('a delete the trash refuses leaves the save in place', async () => {
@@ -529,8 +541,7 @@ test('a copy to another revision asks first, says the other game may read it dif
     assert.equal(d.files.has(`${DIR}/zezima.sav`), true);
     assert.equal(ctx.asked.length, 1);
     assert.equal(ctx.asked[0]!.message, 'Copy Zezima to rev 289?');
-    assert.match(ctx.asked[0]!.detail, /as last saved in rev 274/);
-    assert.match(ctx.asked[0]!.detail, /may read it differently/);
+    assert.equal(ctx.asked[0]!.detail, 'Rev 289 may read its items differently. Zezima stays in rev 274.');
     assert.equal(ctx.asked[0]!.destructive, false);
 });
 

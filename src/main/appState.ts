@@ -378,7 +378,7 @@ export class AppState {
         this.save();
     }
 
-    /** Whether to confirm before a world or detail switch reloads the game. */
+    /** Whether to confirm before a world or detail switch reloads the game, or a close ends it. */
     warnOnSwitch(): boolean {
         return this.warn;
     }
