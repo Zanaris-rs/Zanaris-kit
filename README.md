@@ -283,8 +283,10 @@ client only. Cloudflare offers quick tunnels for testing, with no uptime promise
 and a cap of 200 requests in flight at once, which a ten-player world stays well
 under.
 
-Nothing is injected into a game page: no preload, no main-world code. The page
-that runs is byte-for-byte the page the server served. A modified client is
+Nothing but two stylesheets is injected into a game page — one for its layout
+(Layout, below) and one for its theme (How it looks) — and no preload or
+main-world code. The page that runs is byte-for-byte the page the server
+served. A modified client is
 both the most detectable thing we could ship and the most likely to be against
 server policy. LostKit 2 injects a preload for its screenshots, zoom and AFK
 detection; everything equivalent here is done from main or not at all.
@@ -478,12 +480,22 @@ between is left as a plain number.
 
 **Themes.** The frame can wear one of six: 2004 stone, which is the look
 described here, and five places in the 2004 world — Zanaris, the Wilderness,
-Al Kharid, Morytania and Lumbridge. Settings > Appearance sets the app's theme,
-which Settings and every server wear; any server can wear its own instead,
-set there or from View > Server Theme, which acts on the window in front and
-restyles every window of its server. A change applies at once and reloads
-nothing. The game and the reference pages are the servers' own, and are never
-themed.
+Al Kharid, Morytania and Lumbridge. Theme, in every window's tab bar between
+Setups and Add pane, lists them — on macOS each beside a swatch of its stone —
+with the one the window wears ticked. A pick sets the app's theme, which Settings and
+every server wear. Just for, in the same menu, gives the window's server a
+theme of its own instead, and while it is ticked a pick is that server's
+alone; unticked, the server follows the app again. Settings > Appearance sets
+the same two things, and so does View > Server Theme for the window in front.
+A change restyles every window it touches at once and reloads nothing.
+
+The game pane's page wears the theme too: its ground around the canvas, and
+the controls strip under the canvas as a band of the theme's stone, its
+dropdowns sunk into it and its words and icons in the theme's text. That is a
+stylesheet and nothing else. The canvas, and everything the client draws on
+it, is the game's own art and is never themed; neither are the reference
+pages. The kit's own offline and starting pages, which show in the game's
+pane, follow the theme as well.
 
 On macOS and Windows a theme runs to the window's top edge. The system's title
 bar can't wear one, since its colour is the system's whatever the frame is, so
@@ -507,14 +519,16 @@ grass in black void, not the blue of later years. A test holds every theme to
 the stone's own contrast, pair by pair.
 
 **Your own themes.** Customise, under any theme's card in Settings > Appearance,
-opens an editor on a copy of it. Every one of the frame's 21 colours can be
+opens an editor on a copy of it, and Customise in a window's Theme menu opens
+Settings there on the theme that window wears. Every one of the frame's 21 colours can be
 set there, by a colour well or by hex. While the editor is open, every window
 — Settings and every server's, whatever each would otherwise wear — wears the
 theme as it is being edited, so each change shows on the app itself as it is
 made. When a pair of colours reads worse than it does in 2004 stone, the
 editor names the pair under Hard to read; saving is still yours. Save keeps the
 theme and makes it the app theme; a server with its own theme goes back to
-that one. Cancel puts every window back as it was, and closing Settings with
+that one — unless the editor was opened from that server's window, when Save
+makes the theme that server's own, and the editor says so above its buttons. Cancel puts every window back as it was, and closing Settings with
 changes unsaved asks first. Up to 32 themes of your own are kept, and each is
 chosen from its card, per server and from View > Server Theme like any other.
 
@@ -820,6 +834,9 @@ alone) that hides the scrollbar — a hidden bar reserves no gutter, which is wh
 actually stops the two axes inducing each other — and separately swaps that
 `100vh` for a percentage of the view's own height, which keeps the canvas centred
 in an oversized pane now that `vh` is gone rather than fixing anything itself.
+The theme's sheet goes in beside it, on the kit's own pages too. It moves
+nothing that sets the page's height — its bevels are inset shadows, never
+borders — since the sizes here are measured off the stock page.
 
 Nothing about the arrangement is saved on its own. A new window opens with
 the setup chosen for its server's new windows (Setups, below), or Game and
