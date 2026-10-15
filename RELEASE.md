@@ -55,12 +55,16 @@ against the pins the artifact was built with.
 
 ## 3. Tag
 
-Tag what `main` is on GitHub now, not what this checkout last heard it was:
+Tag what `main` is on GitHub now, not what this checkout last heard it was,
+and tag it here, never from GitHub's web page: a release drafted there with a
+new tag skips step 0's version bump, and publishing it puts an empty release
+in front of every installed kit.
 
 ```sh
 git fetch origin
-git tag v0.9.1 origin/main
-git push origin v0.9.1
+version=v$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0)).version")
+git tag "$version" origin/main
+git push origin "$version"
 ```
 
 Wait for the Release workflow. Once the checks pass it makes one draft
@@ -92,6 +96,9 @@ Fix on a branch, dry-run again, then delete the draft and delete and re-push
 the tag, only if the draft was never published. A published release is never
 rebuilt: bump the version and release again. 0.9.0 was published with its
 files split between two drafts and withdrawn, and the first release is 0.9.1.
+0.9.2 was drafted in GitHub's web page on a commit still at 0.9.1, so the
+workflow refused its tag and the release went out with no files; it was
+deleted, and the next release is 0.9.3.
 
 ## Moving a build
 
