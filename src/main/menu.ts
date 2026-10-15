@@ -2,6 +2,7 @@ import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { ServerDef } from '../shared/catalog';
 import { serverMenuLabel } from './catalog';
 import { THEMES, type Theme } from '../shared/themes';
+import { themeLabel } from './appearance';
 import { REPO_URL } from './branding';
 
 export interface MenuActions {
@@ -57,19 +58,6 @@ export interface MenuWindowState {
     canPin: boolean;
     /** The focused game window's server's own theme, or null when it follows the app; null altogether when no game window has focus, or its server is no longer in the catalog. */
     serverTheme: { override: string | null } | null;
-}
-
-/** Native menus are Title Case; a built-in's name is sentence case, as the renderer draws it. */
-const menuName = (name: string): string => name.replace(/(^|\s)\S/g, c => c.toUpperCase());
-
-/**
- * A theme as the menu names it: a built-in title-cased, a player's own as they
- * typed it. Windows and Linux read an `&` in a label as the mark for the next
- * letter's shortcut, so a typed one is doubled there to show as itself.
- */
-function themeLabel(theme: Theme, isMac: boolean): string {
-    if (THEMES.some(builtIn => builtIn.id === theme.id)) return menuName(theme.name);
-    return isMac ? theme.name : theme.name.replace(/&/g, '&&');
 }
 
 export function installMenu(

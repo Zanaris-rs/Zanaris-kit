@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing } from './appearance.ts';
+import { appearanceView, closeQuestion, deleteQuestion, editFromWindow, lookFor, readEditing, themeChoice, themeLabel, themeMenu, type ThemeMenuEntry } from './appearance.ts';
 import { DEFAULT_SERVERS } from './catalog.ts';
-import { THEMES, themeById, type Theme } from '../shared/themes.ts';
+import { THEMES, draftOf, themeById, type Theme } from '../shared/themes.ts';
 import type { ServerDef } from '../shared/catalog.ts';
 
 const catalog = DEFAULT_SERVERS.map(s => ({ ...s }) as ServerDef);
@@ -139,4 +139,87 @@ test('while a theme is being edited, Settings wears it, and the app theme is sti
     const view = appearanceView({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, catalog, presets: [], editing: { look: { colors: themeById('wilderness').colors, background: null }, name: 'Mine', changed: true } });
     assert.equal(view.theme, 'zanaris');
     assert.deepEqual(view.look, { colors: themeById('wilderness').colors, background: null });
+});
+
+// ── the Theme menu ────────────────────────────────────────────────────────
+
+const lostCity = { id: 'lostcity', name: 'Lost City' };
+const items = (entries: ThemeMenuEntry[]): Extract<ThemeMenuEntry, { kind: 'item' }>[] => entries.filter((e): e is Extract<ThemeMenuEntry, { kind: 'item' }> => e.kind === 'item');
+const rock: Theme = { id: 'custom-0a0b0c0d', name: 'Rock & roll', colors: themeById('lumbridge').colors, background: null };
+
+test('a built-in is named in Title Case in a native menu, a player\'s own as typed, with an & doubled off macOS', () => {
+    assert.equal(themeLabel(themeById('alkharid'), true), 'Al Kharid');
+    assert.equal(themeLabel(themeById('stone'), false), '2004 Stone');
+    assert.equal(themeLabel(rock, true), 'Rock & roll');
+    assert.equal(themeLabel(rock, false), 'Rock && roll');
+});
+
+test('the Theme menu lists every built-in, ticks what the server wears, and offers the tick and the editor', () => {
+    const entries = themeMenu({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, server: lostCity, listed: true, isMac: true });
+    assert.deepEqual(
+        items(entries).map(e => e.label),
+        ['2004 Stone', 'Zanaris', 'Wilderness', 'Al Kharid', 'Morytania', 'Lumbridge', 'Just for Lost City', 'Customise Zanaris…', 'All Themes…']
+    );
+    assert.deepEqual(
+        items(entries)
+            .filter(e => e.checked)
+            .map(e => e.label),
+        ['Zanaris']
+    );
+    assert.equal(items(entries).find(e => e.label === 'Just for Lost City')?.checked, false);
+    assert.deepEqual(items(entries)[0]?.swatch, themeById('stone').colors);
+    assert.equal(items(entries).find(e => e.label === 'All Themes…')?.checked, null);
+    assert.equal(items(entries).find(e => e.label === 'All Themes…')?.swatch, null);
+    assert.deepEqual(
+        entries.map(e => e.kind),
+        [...THEMES.map(() => 'item'), 'separator', 'item', 'separator', 'item', 'item']
+    );
+});
+
+test("a server with its own theme has it ticked and Just for ticked; the player's own follow a separator, and one of theirs is Edit", () => {
+    const entries = themeMenu({ appearance: { theme: 'stone', servers: { lostcity: rock.id }, custom: [rock] }, server: lostCity, listed: true, isMac: false });
+    assert.deepEqual(
+        items(entries)
+            .filter(e => e.checked)
+            .map(e => e.label),
+        ['Rock && roll', 'Just for Lost City']
+    );
+    assert.ok(items(entries).some(e => e.label === 'Edit Rock && roll…'));
+    const firstOwn = entries.findIndex(e => e.kind === 'item' && e.label === 'Rock && roll');
+    assert.equal(entries[firstOwn - 1]?.kind, 'separator');
+    assert.deepEqual(items(entries).find(e => e.label === 'Just for Lost City')?.action, { kind: 'own', on: false });
+});
+
+test('a window whose server was removed from the list greys Just for', () => {
+    const entries = themeMenu({ appearance: { theme: 'stone', servers: {}, custom: [] }, server: lostCity, listed: false, isMac: true });
+    assert.equal(items(entries).find(e => e.label === 'Just for Lost City')?.enabled, false);
+    assert.ok(items(entries).filter(e => e.label !== 'Just for Lost City').every(e => e.enabled));
+});
+
+test("a pick sets the app theme, or the server's own while it keeps one", () => {
+    const app = { theme: 'stone', servers: {}, custom: [] };
+    assert.deepEqual(themeChoice(app, 'lostcity', true, { kind: 'wear', theme: 'zanaris' }), { theme: 'zanaris' });
+    const kept = { theme: 'stone', servers: { lostcity: 'wilderness' }, custom: [] };
+    assert.deepEqual(themeChoice(kept, 'lostcity', true, { kind: 'wear', theme: 'zanaris' }), { server: 'lostcity', theme: 'zanaris' });
+    assert.deepEqual(themeChoice(kept, 'lostcity', false, { kind: 'wear', theme: 'zanaris' }), { theme: 'zanaris' });
+    assert.equal(themeChoice(app, 'lostcity', true, { kind: 'wear', theme: 'parchment' }), null);
+});
+
+test('the tick gives the server the app theme as its own, and takes it back', () => {
+    const app = { theme: 'morytania', servers: {}, custom: [] };
+    assert.deepEqual(themeChoice(app, 'lostcity', true, { kind: 'own', on: true }), { server: 'lostcity', theme: 'morytania' });
+    assert.deepEqual(themeChoice(app, 'lostcity', true, { kind: 'own', on: false }), { server: 'lostcity', theme: null });
+    assert.equal(themeChoice(app, 'lostcity', false, { kind: 'own', on: true }), null);
+    assert.equal(themeChoice(app, 'lostcity', true, { kind: 'customise' }), null);
+    assert.equal(themeChoice(app, 'lostcity', true, { kind: 'all' }), null);
+});
+
+test('an app theme the kit does not know is given to the server as the stone it falls back to', () => {
+    assert.deepEqual(themeChoice({ theme: 'parchment', servers: {}, custom: [] }, 'lostcity', true, { kind: 'own', on: true }), { server: 'lostcity', theme: 'stone' });
+});
+
+test('Customise from a window opens on what it wears, saving to its server only while it keeps its own', () => {
+    assert.deepEqual(editFromWindow({ theme: 'zanaris', servers: {}, custom: [] }, 'lostcity', true), { draft: draftOf(themeById('zanaris'), false), forServer: null });
+    assert.deepEqual(editFromWindow({ theme: 'stone', servers: { lostcity: rock.id }, custom: [rock] }, 'lostcity', true), { draft: draftOf(rock, true), forServer: 'lostcity' });
+    assert.equal(editFromWindow({ theme: 'stone', servers: { lostcity: 'wilderness' }, custom: [] }, 'lostcity', false).forServer, null);
 });
