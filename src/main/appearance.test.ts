@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appearanceView, closeQuestion, deleteQuestion, editFromWindow, lookFor, readEditing, themeChoice, themeLabel, themeMenu, type ThemeMenuEntry } from './appearance.ts';
+import { appearanceView, closeQuestion, deleteQuestion, editFromWindow, lookFor, readEditing, savesTo, themeChoice, themeLabel, themeMenu, type Editing, type ThemeMenuEntry } from './appearance.ts';
 import { DEFAULT_SERVERS } from './catalog.ts';
 import { THEMES, draftOf, themeById, type Theme } from '../shared/themes.ts';
 import type { ServerDef } from '../shared/catalog.ts';
@@ -92,7 +92,7 @@ test('the delete question says who wears the theme and what they will wear inste
 const draftLook = { colors: themeById('zanaris').colors, background: null };
 
 test('a report of the theme being edited is read with its look, name and whether it changed', () => {
-    assert.deepEqual(readEditing({ look: draftLook, name: 'Mine', changed: true }), { look: draftLook, name: 'Mine', changed: true });
+    assert.deepEqual(readEditing({ look: draftLook, name: 'Mine', changed: true }), { look: draftLook, name: 'Mine', changed: true, forServer: null });
 });
 
 test('a report with a colour or a picture that cannot be read is ignored', () => {
@@ -115,7 +115,7 @@ test('a long name is cut, and an empty one reads as "this theme"', () => {
 
 test('while a theme is being edited, every window wears it, a server with its own theme included', () => {
     const appearance = { theme: 'stone', servers: { lostcity: 'wilderness' }, custom: [] };
-    const editing = { look: draftLook, name: 'Mine', changed: true };
+    const editing: Editing = { look: draftLook, name: 'Mine', changed: true, forServer: null };
     assert.deepEqual(lookFor(appearance, null, editing), draftLook);
     assert.deepEqual(lookFor(appearance, 'lostcity', editing), draftLook);
 });
@@ -128,7 +128,7 @@ test("with nothing being edited, a window wears its own theme or the app's", () 
 });
 
 test('closing Settings asks only about a draft with changes, and never while quitting', () => {
-    const editing = { look: draftLook, name: 'Mine', changed: true };
+    const editing: Editing = { look: draftLook, name: 'Mine', changed: true, forServer: null };
     assert.deepEqual(closeQuestion(editing, false), { message: 'Discard your changes to Mine?', detail: '' });
     assert.equal(closeQuestion({ ...editing, changed: false }, false), null);
     assert.equal(closeQuestion(editing, true), null);
@@ -136,7 +136,7 @@ test('closing Settings asks only about a draft with changes, and never while qui
 });
 
 test('while a theme is being edited, Settings wears it, and the app theme is still named', () => {
-    const view = appearanceView({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, catalog, presets: [], editing: { look: { colors: themeById('wilderness').colors, background: null }, name: 'Mine', changed: true } });
+    const view = appearanceView({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, catalog, presets: [], editing: { look: { colors: themeById('wilderness').colors, background: null }, name: 'Mine', changed: true, forServer: null } });
     assert.equal(view.theme, 'zanaris');
     assert.deepEqual(view.look, { colors: themeById('wilderness').colors, background: null });
 });
@@ -222,4 +222,38 @@ test('Customise from a window opens on what it wears, saving to its server only 
     assert.deepEqual(editFromWindow({ theme: 'zanaris', servers: {}, custom: [] }, 'lostcity', true), { draft: draftOf(themeById('zanaris'), false), forServer: null });
     assert.deepEqual(editFromWindow({ theme: 'stone', servers: { lostcity: rock.id }, custom: [rock] }, 'lostcity', true), { draft: draftOf(rock, true), forServer: 'lostcity' });
     assert.equal(editFromWindow({ theme: 'stone', servers: { lostcity: 'wilderness' }, custom: [] }, 'lostcity', false).forServer, null);
+});
+
+// ── where the editor's Save goes ──────────────────────────────────────────
+
+const editingFor = (forServer: string | null): Editing => ({ look: { colors: themeById('stone').colors, background: null }, name: 'x', changed: false, forServer });
+
+test('Save goes to the server whose window opened the editor while it keeps its own theme, else the app', () => {
+    const kept = { theme: 'stone', servers: { lostcity: 'wilderness' }, custom: [] };
+    assert.deepEqual(savesTo(kept, catalog, editingFor('lostcity')), { id: 'lostcity', name: catalog.find(s => s.id === 'lostcity')!.name });
+    assert.equal(savesTo({ theme: 'stone', servers: {}, custom: [] }, catalog, editingFor('lostcity')), null);
+    assert.equal(
+        savesTo(
+            kept,
+            catalog.filter(s => s.id !== 'lostcity'),
+            editingFor('lostcity')
+        ),
+        null
+    );
+    assert.equal(savesTo(kept, catalog, editingFor(null)), null);
+    assert.equal(savesTo(kept, catalog, null), null);
+});
+
+test('the editing report carries the server it saves for, and refuses one that is not a string', () => {
+    const look = { colors: themeById('stone').colors, background: null };
+    assert.equal(readEditing({ look, name: 'a', changed: false, forServer: 'lostcity' })?.forServer, 'lostcity');
+    assert.equal(readEditing({ look, name: 'a', changed: false, forServer: null })?.forServer, null);
+    assert.equal(readEditing({ look, name: 'a', changed: false })?.forServer, null);
+    assert.equal(readEditing({ look, name: 'a', changed: false, forServer: 7 }), null);
+});
+
+test('the view says where Save goes', () => {
+    const view = appearanceView({ appearance: { theme: 'stone', servers: { lostcity: 'wilderness' }, custom: [] }, catalog, presets: [], editing: editingFor('lostcity') });
+    assert.equal(view.savesTo?.id, 'lostcity');
+    assert.equal(appearanceView({ appearance: { theme: 'stone', servers: {}, custom: [] }, catalog, presets: [] }).savesTo, null);
 });

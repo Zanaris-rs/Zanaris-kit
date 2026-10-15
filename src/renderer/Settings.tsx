@@ -41,7 +41,8 @@ function useReportEditing(editing: ThemeEditing | null): void {
                 ? {
                       look: { colors: editing.draft.colors, background: editing.draft.background },
                       name: editing.draft.name,
-                      changed: JSON.stringify(editing.draft) !== JSON.stringify(editing.initial)
+                      changed: JSON.stringify(editing.draft) !== JSON.stringify(editing.initial),
+                      forServer: null
                   }
                 : null
         };

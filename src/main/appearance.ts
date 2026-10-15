@@ -23,6 +23,8 @@ export interface ThemeCard extends Theme {
 export interface AppearanceView {
     theme: string;
     look: ThemeLook;
+    /** The server the editor's Save makes the theme its own for, or null when Save makes it the app theme (`savesTo`). The editor says so only when it is a server. */
+    savesTo: { id: string; name: string } | null;
     /** The built-ins, then the player's own in the order they were made. */
     themes: ThemeCard[];
     servers: ServerThemeRow[];
@@ -53,13 +55,16 @@ export function deleteQuestion(opts: { appearance: Appearance; catalog: readonly
 /**
  * The theme being edited, as Settings reports it while its editor is open:
  * the draft's look, which every window wears until the editor closes, its name
- * for the question closing Settings asks, and whether it differs from what the
- * editor opened on.
+ * for the question closing Settings asks, whether it differs from what the
+ * editor opened on, and the server whose window opened it from its Theme menu
+ * while that server kept its own theme — null otherwise, and always from a
+ * card in Settings.
  */
 export interface Editing {
     look: ThemeLook;
     name: string;
     changed: boolean;
+    forServer: string | null;
 }
 
 /**
@@ -75,13 +80,14 @@ export function readEditing(x: unknown): Editing | null {
     if (typeof x !== 'object' || x === null) return null;
     const e = x as Record<string, unknown>;
     if (typeof e.look !== 'object' || e.look === null || typeof e.name !== 'string' || typeof e.changed !== 'boolean') return null;
+    if (e.forServer !== undefined && e.forServer !== null && typeof e.forServer !== 'string') return null;
     const look = e.look as Record<string, unknown>;
     const colors = readColors(look.colors);
     if (colors === null) return null;
     const background = look.background === null || look.background === undefined ? null : readBackground(look.background);
     if (look.background !== null && look.background !== undefined && background === null) return null;
     const name = e.name.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, THEME_NAME_MAX).trim();
-    return { look: { colors, background }, name: name || 'this theme', changed: e.changed };
+    return { look: { colors, background }, name: name || 'this theme', changed: e.changed, forServer: typeof e.forServer === 'string' ? e.forServer : null };
 }
 
 /**
@@ -96,6 +102,21 @@ export function lookFor(appearance: Appearance, serverId: string | null, editing
     if (editing) return editing.look;
     const theme = themeFor(appearance, serverId);
     return { colors: theme.colors, background: theme.background };
+}
+
+/**
+ * Where the editor's Save puts the theme it keeps: the server whose window
+ * opened the editor, while that server is still in the catalog and still
+ * keeps its own theme, or null for the app theme. Without it, saving from a
+ * window with its own theme would leave that window in its old theme the
+ * moment the draft ended. Main's Save and the editor's line both read this.
+ */
+export function savesTo(appearance: Appearance, catalog: readonly ServerDef[], editing: Editing | null): { id: string; name: string } | null {
+    const id = editing?.forServer;
+    if (!id) return null;
+    const server = catalog.find(s => s.id === id);
+    if (!server || serverOverride(appearance, id) === null) return null;
+    return { id, name: server.name };
 }
 
 /**
@@ -125,6 +146,7 @@ export function appearanceView(opts: { appearance: Appearance; catalog: readonly
     return {
         theme: app.id,
         look: lookFor(opts.appearance, null, opts.editing ?? null),
+        savesTo: savesTo(opts.appearance, opts.catalog, opts.editing ?? null),
         themes: [...THEMES.map(theme => card(theme, false)), ...opts.appearance.custom.map(theme => card(theme, true))],
         servers: opts.catalog.map(server => ({ id: server.id, name: server.name, theme: serverOverride(opts.appearance, server.id) })),
         presets: opts.presets.map(preset => ({ ...preset }))
