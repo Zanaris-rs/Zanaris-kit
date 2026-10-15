@@ -2940,6 +2940,10 @@ async function captureAndExit(dir: string): Promise<void> {
         // The ledger flags a shot byte-identical to an earlier one, so a
         // theme that failed to apply fails the run.
         showTool(first, 'timers');
+        // A native menu cannot be shot, so the Theme menu's swatches are
+        // written as pictures of their own, through the same `nativeImage`
+        // call the menu makes.
+        for (const theme of THEMES) await save(`swatch-${theme.id}`, async () => nativeImage.createFromBuffer(swatchPng(theme.colors, 2), { scaleFactor: 2 }));
         for (const theme of THEMES) {
             appState.setTheme(theme.id);
             appearanceChanged();
@@ -2977,9 +2981,63 @@ async function captureAndExit(dir: string): Promise<void> {
             appearanceChanged();
             await wait(500);
             await shootShell(`theme-override-${own}`, second);
+            // The game page in the Wilderness: its ground and controls strip,
+            // on the first window, whose tab in front holds the game.
+            await save(`theme-override-${own}-game`, () => first.captureGame());
             const other = opened.find(sw => sw.state().server.id !== own);
             if (other) await shootShell(`theme-override-${other.state().server.id}`, other);
             log(`[capture] override: ${own} wears stone ${second.state().theme.colors.stone}, ${other ? `${other.state().server.id} wears stone ${other.state().theme.colors.stone}` : 'no other server open'}`);
+            appState.setServerTheme(own, null);
+            appState.setTheme(DEFAULT_THEME);
+            appearanceChanged();
+        }
+
+        // The Theme menu's choices, through the function the menu calls,
+        // since a native menu cannot be clicked from here, each read back
+        // from the state: a pick sets the app theme while the server follows
+        // it; Just for gives the server the app's theme as its own; a pick
+        // then is the server's alone; unticked, it follows the app again.
+        // Then Customise from a window whose server keeps its own theme: the
+        // editor opens on a copy of that theme, and says where Save goes.
+        {
+            const own = first.state().server.id;
+            const read = (): string => `app ${appState.appearance().theme}, ${own} ${appState.appearance().servers[own] ?? 'follows'}`;
+            const expect = (step: string, wanted: string): void => {
+                if (read() !== wanted) fault(`theme-menu: after ${step}, ${read()} — expected ${wanted}`);
+            };
+            themeMenuChose(first, { kind: 'wear', theme: 'zanaris' });
+            expect('a pick', `app zanaris, ${own} follows`);
+            themeMenuChose(first, { kind: 'own', on: true });
+            expect('Just for', `app zanaris, ${own} zanaris`);
+            themeMenuChose(first, { kind: 'wear', theme: 'lumbridge' });
+            expect('a pick with Just for ticked', `app zanaris, ${own} lumbridge`);
+            if (first.state().theme.colors.stone !== themeById('lumbridge').colors.stone) fault(`theme-menu: ${own}'s window does not wear its own Lumbridge`);
+            themeMenuChose(first, { kind: 'own', on: false });
+            expect('Just for unticked', `app zanaris, ${own} follows`);
+            log(`[capture] theme menu: ${read()}`);
+
+            appState.setServerTheme(own, 'wilderness');
+            appearanceChanged();
+            themeMenuChose(first, { kind: 'customise' });
+            const settingsWindow = settings.current();
+            if (!settingsWindow) fault('settings-editor-from-window: Customise opened no Settings');
+            else {
+                await settingsWindow.loaded;
+                const contents = settingsWindow.window.webContents;
+                const heading = (): Promise<string[]> => contents.executeJavaScript(`[...document.querySelectorAll('h2')].map(h => h.textContent)`);
+                const saying = (): Promise<string | null> => contents.executeJavaScript(`[...document.querySelectorAll('p')].map(p => p.textContent).find(t => t.startsWith('Save makes this')) ?? null`);
+                for (let tries = 0; tries < 20 && !((await heading()).includes('New theme') && (await saying()) !== null); tries++) await wait(250);
+                if (!(await heading()).includes('New theme')) fault('settings-editor-from-window: Customise from a window did not open the editor');
+                const line = await saying();
+                if (line === null) fault('settings-editor-from-window: the editor does not say Save goes to the server');
+                const name = await contents.executeJavaScript(`document.querySelector('input')?.value ?? null`);
+                if (name !== `${themeById('wilderness').name} (copy)`) fault(`settings-editor-from-window: the editor opened on ${String(name)}, not a copy of the Wilderness`);
+                await wait(500);
+                await shootShell('settings-editor-from-window', settingsWindow);
+                log(`[capture] customise from ${own}: editor on ${String(name)}, "${line ?? 'no line'}"`);
+                settingsWindow.window.close();
+                await wait(800);
+            }
             appState.setServerTheme(own, null);
             appState.setTheme(DEFAULT_THEME);
             appearanceChanged();
