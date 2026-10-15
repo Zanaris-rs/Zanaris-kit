@@ -113,8 +113,8 @@ function ServerRow({ row, view }: { row: ServerThemeRow; view: AppearanceView })
  * player's own after the built-ins, then a theme per server. The editor takes
  * the section's place while it is open, on the draft Settings holds. A change
  * applies at once to every window it touches and reloads nothing: the game
- * and the pages are never themed. While the editor is open, every window
- * wears the draft.
+ * page takes it as a stylesheet, and the reference pages are never themed.
+ * While the editor is open, every window wears the draft.
  */
 export default function Appearance({
     view,
@@ -134,6 +134,7 @@ export default function Appearance({
                 initial={editing.initial}
                 draft={editing.draft}
                 presets={view.presets}
+                savesTo={view.savesTo}
                 onChange={update => setEditing(e => (e ? { ...e, draft: update(e.draft) } : e))}
                 onClose={() => setEditing(null)}
             />
@@ -165,7 +166,7 @@ export default function Appearance({
                         chosen={theme.id === view.theme}
                         onEdit={() => {
                             const draft = draftOf(theme, theme.custom);
-                            setEditing({ initial: draft, draft });
+                            setEditing({ initial: draft, draft, forServer: null });
                         }}
                     />
                 ))}

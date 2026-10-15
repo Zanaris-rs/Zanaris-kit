@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { SettingsState } from '../shared/ipc';
 import { TAB_BAR_HEIGHT } from '../shared/layout';
 import type { ThemeDraft } from '../shared/themes';
@@ -19,10 +19,17 @@ const SECTIONS: readonly { id: Section; label: string }[] = [
 /** A game window's tab bar's height, so the window buttons sit on both the same. */
 const BAR: CSSProperties = { height: TAB_BAR_HEIGHT, flexShrink: 0 };
 
-/** The theme being edited and what its editor opened on. Held here rather than in the editor so a trip to Servers and back keeps it. */
+/**
+ * The theme being edited and what its editor opened on. Held here rather than
+ * in the editor so a trip to Servers and back keeps it. `forServer` is the
+ * server whose window opened it from its Theme menu while that server kept
+ * its own theme, for main to save it to (`appearance.savesTo`); null from a
+ * card here.
+ */
 export interface ThemeEditing {
     initial: ThemeDraft;
     draft: ThemeDraft;
+    forServer: string | null;
 }
 
 /**
@@ -42,7 +49,7 @@ function useReportEditing(editing: ThemeEditing | null): void {
                       look: { colors: editing.draft.colors, background: editing.draft.background },
                       name: editing.draft.name,
                       changed: JSON.stringify(editing.draft) !== JSON.stringify(editing.initial),
-                      forServer: null
+                      forServer: editing.forServer
                   }
                 : null
         };
@@ -61,6 +68,38 @@ function useReportEditing(editing: ThemeEditing | null): void {
             sending.current = false;
         })();
     }, [editing]);
+}
+
+/**
+ * Takes what a game window asked Settings to show (`settings.takeShow`): once
+ * as the page starts, and again whenever main says there is something to
+ * take. Main answers each request once, and only once this page has finished
+ * loading, so the two can never both open it. A request for the editor opens
+ * it on the draft main sent, unless an editor is already open: that one
+ * keeps its draft, and only the section changes.
+ */
+function useShowRequests(setSection: (section: Section) => void, setEditing: Dispatch<SetStateAction<ThemeEditing | null>>): void {
+    useEffect(() => {
+        let alive = true;
+        const take = (): void => {
+            void window.zanaris.settings.takeShow().then(
+                request => {
+                    if (!alive || !request) return;
+                    setSection(request.section);
+                    const edit = request.edit;
+                    if (edit) setEditing(e => e ?? { initial: edit.draft, draft: edit.draft, forServer: edit.forServer });
+                },
+                // Nothing to show: a request that could not be taken is asked for again on the next ping.
+                () => undefined
+            );
+        };
+        const unsubscribe = window.zanaris.settings.onShow(take);
+        take();
+        return () => {
+            alive = false;
+            unsubscribe();
+        };
+    }, [setSection, setEditing]);
 }
 
 /**
@@ -83,6 +122,7 @@ export default function Settings(): ReactNode {
     const [section, setSection] = useState<Section>('servers');
     const [editing, setEditing] = useState<ThemeEditing | null>(null);
     useReportEditing(editing);
+    useShowRequests(setSection, setEditing);
 
     useEffect(() => {
         let alive = true;

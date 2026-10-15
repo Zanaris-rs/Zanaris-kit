@@ -151,7 +151,9 @@ function ColorRow({ token, label, value, onChange }: { token: ThemeToken; label:
  * The draft is Settings' own (`Settings.tsx`), so a trip to Servers and back
  * keeps it, and every window wears it while the editor is open: the changes
  * are seen on the app itself, not on a picture of it. Nothing is kept until
- * Save, which also makes it the app theme; Cancel puts every window back.
+ * Save, which also makes it the app theme — or, opened from a window whose
+ * server keeps its own theme, that server's, which the editor then says
+ * (`savesTo`); Cancel puts every window back.
  * Every colour is the player's to set; the warnings say when a pair reads
  * worse than 2004 stone's, and saving is still their call. A picture is one
  * of the kit's own, from the gallery, or a file chosen in a dialog of main's;
@@ -164,12 +166,15 @@ export default function ThemeEditor({
     initial,
     draft,
     presets,
+    savesTo,
     onChange: setDraft,
     onClose
 }: {
     initial: ThemeDraft;
     draft: ThemeDraft;
     presets: readonly PresetCard[];
+    /** The server Save makes this theme its own for, or null when Save makes it the app theme, which goes unsaid. */
+    savesTo: { id: string; name: string } | null;
     onChange: (update: (draft: ThemeDraft) => ThemeDraft) => void;
     onClose: () => void;
 }): ReactNode {
@@ -335,6 +340,7 @@ export default function ThemeEditor({
 
             {/* Exactly one gold `.btn` here: Save. */}
             <div className="flex shrink-0 flex-col gap-1.5 border-t border-edge-dark px-2.5 pt-2 pb-2.5">
+                {savesTo && <p className="text-[12px] text-cream">Save makes this {savesTo.name}'s own theme.</p>}
                 {said && (
                     <p role={said.alert ? 'alert' : 'status'} className={`text-[12px] ${said.alert ? 'text-warn' : 'text-dim'}`}>
                         {said.text}

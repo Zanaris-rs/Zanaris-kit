@@ -62,6 +62,7 @@ const api: ZanarisApi = {
         tabMenu: (tabId, x, y) => ipcRenderer.invoke(IPC.tabContextMenu, tabId, x, y),
         addPaneMenu: (x, y) => ipcRenderer.invoke(IPC.tabAddPaneMenu, x, y),
         setupsMenu: (x, y) => ipcRenderer.invoke(IPC.tabSetupsMenu, x, y),
+        themeMenu: (x, y) => ipcRenderer.invoke(IPC.tabThemeMenu, x, y),
         appMenu: (x, y) => ipcRenderer.invoke(IPC.tabAppMenu, x, y),
         showHomeServer: () => ipcRenderer.invoke(IPC.tabShowHomeServer),
         openExternal: url => ipcRenderer.invoke(IPC.paneOpenExternal, url)
@@ -126,7 +127,15 @@ const api: ZanarisApi = {
             };
         },
         open: () => ipcRenderer.invoke(IPC.settingsOpen),
-        editServers: () => ipcRenderer.invoke(IPC.settingsEditServers)
+        editServers: () => ipcRenderer.invoke(IPC.settingsEditServers),
+        takeShow: () => ipcRenderer.invoke(IPC.settingsTakeShow),
+        onShow: cb => {
+            const handler = (): void => cb();
+            ipcRenderer.on(IPC.settingsShow, handler);
+            return () => {
+                ipcRenderer.off(IPC.settingsShow, handler);
+            };
+        }
     },
     appearance: {
         setTheme: id => ipcRenderer.invoke(IPC.appearanceTheme, id),

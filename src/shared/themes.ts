@@ -1,7 +1,8 @@
 /**
  * Themes for the kit's frame: the tab bar, pane headers, the launcher, the
- * tools and Settings. Never the game or a reference page — those are native
- * views the kit does not style, and nothing is injected into a game page.
+ * tools and Settings, and the game pane's page around the canvas — its ground
+ * and controls strip, by a stylesheet and nothing else (`main/gamePage.ts`).
+ * Never the canvas, which is the game's own art, and never a reference page.
  *
  * A theme is one value per token, and the renderer puts each on the page as
  * the `--color-*` variable `styles.css` and Tailwind's utilities already read.
