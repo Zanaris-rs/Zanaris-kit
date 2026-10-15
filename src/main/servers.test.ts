@@ -70,11 +70,8 @@ test('nextStartup drops stale ids and never adds one the catalog lacks', () => {
     assert.deepEqual(nextStartup(['zanaris'], catalog, 'gone', true), ['zanaris']);
 });
 
-test('Remove asks by name, and says what stays open', () => {
-    assert.equal(removeQuestion({ name: 'My Server' }, 0).message, 'Remove My Server?');
-    assert.doesNotMatch(removeQuestion({ name: 'My Server' }, 0).detail, /window/);
-    assert.match(removeQuestion({ name: 'My Server' }, 1).detail, /The window open on it stays open/);
-    assert.match(removeQuestion({ name: 'My Server' }, 3).detail, /The 3 windows open on it stay open/);
+test('Remove asks by name, and says it would have to be added again by hand', () => {
+    assert.deepEqual(removeQuestion({ name: 'My Server' }), { message: 'Remove My Server?', detail: "You'd have to add it again by hand." });
 });
 
 test('readNewServerInput refuses anything that is not the five fields', () => {

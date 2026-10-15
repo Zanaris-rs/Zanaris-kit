@@ -72,7 +72,6 @@ pre {
        paste into a bug report. */
     -webkit-user-select: text; user-select: text;
 }
-.version { color: #a89c86; font-size: 12px; margin-top: 12px; }
 /* The pre rule above sets display, and an author display beats the UA's
    [hidden] rule — without this the empty log well shows on every state that
    hides it. Restated so the page's own hidden attribute keeps working. */

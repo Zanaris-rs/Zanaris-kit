@@ -427,7 +427,7 @@ const GROUNDS: readonly [ThemeToken, string][] = [
 const FLOOR = 0.9;
 
 /**
- * Every pair that reads worse than 2004 stone's own, as a sentence: each text
+ * Every pair that reads worse than 2004 stone's own, by name: each text
  * token on each surface it sits on, and each chat name colour on the wells
  * the log sits in, held to 90% of stone's ratio for that pair. Stone's own
  * ratios are the floors, not a general standard: some of them — dim on
@@ -439,19 +439,17 @@ const FLOOR = 0.9;
  */
 export function contrastWarnings(colors: ThemeColors): string[] {
     const warnings: string[] = [];
-    const say = (what: string, verb: string, ratio: number, stoneRatio: number): string =>
-        `${what} ${verb} at ${ratio.toFixed(1)}:1, where 2004 stone reads at ${stoneRatio.toFixed(1)}:1.`;
     for (const [text, words] of TEXT_ON) {
         for (const [ground, where] of GROUNDS) {
             const ratio = contrastRatio(colors[text], colors[ground]);
             const stoneRatio = contrastRatio(STONE[text], STONE[ground]);
-            if (ratio < FLOOR * stoneRatio) warnings.push(say(`${words} on ${where}`, 'reads', ratio, stoneRatio));
+            if (ratio < FLOOR * stoneRatio) warnings.push(`${words} on ${where}`);
         }
     }
     for (const nick of NICK_COLOURS) {
         const ratio = contrastRatio(nick, colors.well);
         const stoneRatio = contrastRatio(nick, STONE.well);
-        if (ratio < FLOOR * stoneRatio) warnings.push(say(`Chat names in ${nick} on wells`, 'read', ratio, stoneRatio));
+        if (ratio < FLOOR * stoneRatio) warnings.push(`Chat names in ${nick} on wells`);
     }
     return warnings;
 }

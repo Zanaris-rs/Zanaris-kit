@@ -24,7 +24,7 @@ const TOGGLE: CSSProperties = { height: 26, width: 'auto', paddingLeft: 6, paddi
 
 /** Plain words, not a state name: what is true right now and whether to wait. */
 const STATUS_NOTE: Record<ChatStatus, string | null> = {
-    offline: 'Not connected. Connect from Settings.',
+    offline: 'Not connected.',
     connecting: 'Connecting to chat…',
     registering: 'Signing in…',
     online: null,
@@ -37,7 +37,7 @@ const STATUS_NOTE: Record<ChatStatus, string | null> = {
  * appearing silently; it collapses when there is nothing to say.
  */
 function Status({ view, onSettings }: { view: ChatView; onSettings: boolean }): ReactNode {
-    /* On Settings, "connect from Settings" is the button under the reader's hand; before a nick exists, offline is not news either. A real error still gets through. */
+    /* On Settings, the Connect button under the reader's hand says it is offline; before a nick exists, offline is not news either. A real error still gets through. */
     const quiet = view.status === 'offline' && (onSettings || view.needsNick);
     const note = quiet ? null : STATUS_NOTE[view.status];
     return (
@@ -722,7 +722,7 @@ function Conversation({ view, wide, narrow, shown, sidebar, onSent }: { view: Ch
                 <div>
                     {/* The size inline: `button { font: inherit }` is unlayered, and beats a text- utility. */}
                     <button type="button" onClick={toBottom} style={{ fontSize: 12 }} className="link">
-                        More below — jump to the latest
+                        Jump to latest
                     </button>
                 </div>
             )}

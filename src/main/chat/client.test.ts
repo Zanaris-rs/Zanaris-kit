@@ -614,7 +614,7 @@ test('433 tries again with an underscore, and gives up rather than looping', () 
     assert.match(f.lines().at(-1)?.text ?? '', /nick/i, 'the panel is told why the nick is not the one asked for');
 });
 
-test('433s past the last underscore end the attempt, naming the nick asked for and where to pick another', () => {
+test('433s past the last underscore end the attempt, naming the nick asked for', () => {
     const f = fake();
     f.client.connecting();
     f.client.opened();
@@ -623,7 +623,7 @@ test('433s past the last underscore end the attempt, naming the nick asked for a
 
     f.client.receive(':irc.swiftirc.net 433 * mage___ :Nickname is already in use.');
     const why = f.client.turnedAway();
-    assert.match(why ?? '', /The nick mage is taken\. Pick another in chat's Settings tab\./);
+    assert.match(why ?? '', /The nick mage is taken\. Pick another\./);
     assert.equal(f.client.snapshot().error, why);
 
     // The close the holder of the socket makes next keeps the reason rather than clearing it.
@@ -664,7 +664,7 @@ test('432 during registration ends the attempt at once, with the server\'s reaso
     f.sent.length = 0;
     f.client.receive(':irc.swiftirc.net 432 * averyveryverylongnickname :Erroneous Nickname');
     assert.deepEqual(f.sent, [], 'no underscore: a longer nick is no more acceptable');
-    assert.match(f.client.turnedAway() ?? '', /won't take the nick averyveryverylongnickname\..*Pick another in chat's Settings tab\./);
+    assert.match(f.client.turnedAway() ?? '', /won't take the nick averyveryverylongnickname\. Pick another\./);
     assert.equal(f.channel(SERVER_LOG).unread, 1, 'badged');
     assert.deepEqual(seen, [], 'but not a mention, though it names our nick');
     f.client.select(SERVER_LOG);

@@ -43,8 +43,8 @@ const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'p
 
 const NOT_RUNNING = `<!doctype html>
 <meta charset="utf-8">
-<title>World not running</title>
-<p>The host's world isn't running right now. It may be restarting: try again in a moment.</p>
+<title>Home server not running</title>
+<p>The host's home server isn't running right now. It may be restarting: try again in a moment.</p>
 `;
 
 function endToEnd(headers: IncomingHttpHeaders): OutgoingHttpHeaders {
@@ -103,7 +103,7 @@ export async function startRelay(opts: RelayOptions): Promise<Relay> {
         upstream.on('error', () => {
             if (!res.headersSent) {
                 res.writeHead(502, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
-                res.end('The host\'s world did not answer.');
+                res.end('The host\'s home server did not answer.');
             } else {
                 res.destroy();
             }

@@ -72,7 +72,7 @@ function IconButton({ label, onClick, expanded, children }: { label: string; onC
 }
 
 /** A small fact about a clock beside its name: its kind, or AFK mode. */
-function Badge({ title, children }: { title: string; children: ReactNode }): ReactNode {
+function Badge({ title, children }: { title?: string; children: ReactNode }): ReactNode {
     return (
         <span title={title} className="shrink-0 border border-edge-lit px-[3px] text-[10px] leading-[13px] text-dim">
             {children}
@@ -127,7 +127,6 @@ export default function Timers({ view, width }: { view: TimersView; width: numbe
                 })}
                 {open?.kind === 'new' && (
                     <li className={row}>
-                        <span className="text-[12px] text-dim">New countdown or timer</span>
                         <ClockForm clock={null} wide={wide} onDone={close} />
                     </li>
                 )}
@@ -137,16 +136,16 @@ export default function Timers({ view, width }: { view: TimersView; width: numbe
             <div className="flex flex-wrap items-center gap-2">
                 {open === null && !view.customsFull ? (
                     <button type="button" onClick={() => setOpen({ kind: 'new' })} style={BUTTON_SIZE} className="btn">
-                        Add countdown or timer
+                        Add timer
                     </button>
                 ) : (
                     <QuietButton disabled={view.customsFull || open?.kind === 'new'} onClick={() => setOpen({ kind: 'new' })}>
-                        Add countdown or timer
+                        Add timer
                     </QuietButton>
                 )}
                 {view.customsFull && <span className="text-[12px] text-dim">{CUSTOM_TIMERS_MAX} of your own is the most.</span>}
             </div>
-            <p className="text-[12px] text-dim">Timers run with the pane closed, and the game's header then shows any running or at 0:00.</p>
+            <p className="text-[12px] text-dim">Timers keep running with this pane closed.</p>
         </div>
     );
 }
@@ -172,7 +171,7 @@ function ClockRow({ clock, now, wide, editing, onEdit }: { clock: ClockView; now
                 <span title={name} className="min-w-0 truncate text-[12px] text-dim">
                     {name}
                 </span>
-                <Badge title={kind === 'countdown' ? 'Counts down to 0:00' : 'Counts up from 0:00'}>{kind === 'countdown' ? 'Countdown' : 'Timer'}</Badge>
+                <Badge>{kind === 'countdown' ? 'Countdown' : 'Timer'}</Badge>
                 {afk && <Badge title="Restarts on any click or key in the game">AFK</Badge>}
             </div>
             <div className={`flex flex-wrap items-center ${wide ? 'gap-1' : 'gap-y-1'}`} style={wide ? undefined : FITTED_LINE}>
@@ -204,6 +203,9 @@ function ClockRow({ clock, now, wide, editing, onEdit }: { clock: ClockView; now
  * here with the same `readDraft` main's rules sit behind, so Save is off while
  * the form is wrong and the reason sits under the field; main checks again
  * and its refusal is shown rather than swallowed.
+ *
+ * A clock's form opens under its row, and a rule parts the two. A new
+ * clock's form is a row of its own, with nothing above it to part from.
  */
 function ClockForm({ clock, wide, onDone }: { clock: ClockView | null; wide: boolean; onDone: () => void }): ReactNode {
     const id = useId();
@@ -240,7 +242,7 @@ function ClockForm({ clock, wide, onDone }: { clock: ClockView | null; wide: boo
     const note = (field: TimerProblem['field']): ReactNode => (problem?.field === field ? <span className="text-[12px] text-warn">{problem.message}</span> : null);
 
     return (
-        <form onSubmit={submit} className="mt-2 flex flex-col gap-2 border-t border-edge-dark pt-2">
+        <form onSubmit={submit} className={`flex flex-col gap-2${clock ? ' mt-2 border-t border-edge-dark pt-2' : ''}`}>
             <div className="flex flex-col gap-0.5">
                 <label htmlFor={`${id}-name`} className="text-[12px] text-dim">
                     Name

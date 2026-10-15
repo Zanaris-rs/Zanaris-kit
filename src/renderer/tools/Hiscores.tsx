@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import type { HiscoresView, PlayerSkill } from '../../shared/hiscores';
 import { hiscoresSkillName, normaliseName } from '../../shared/hiscores';
+import { OpenExternal } from '../icons';
 
 /*
  * .btn is hand-written CSS carrying the gold label, so a control that wants a
@@ -254,15 +255,6 @@ export default function Hiscores({ view, width }: { view: HiscoresView; width: n
                         </>
                     )
                 )}
-                {/*
-                 * Only the untouched panel explains itself here. Every other
-                 * empty table has a reason the foot is already giving in the
-                 * service's own words, and saying it twice in one panel would
-                 * read as two separate things having gone wrong.
-                 */}
-                {rows.length === 0 && view.status === 'idle' && (
-                    <p className="px-2 py-2 text-[12px] text-dim">Nothing looked up yet. Type a name and press Look up.</p>
-                )}
             </div>
 
             {/* What the last lookup came to, under the table it belongs to, in the words the service chose for it. */}
@@ -282,11 +274,19 @@ export default function Hiscores({ view, width }: { view: HiscoresView; width: n
                      * the reference pane could hold it, but the pane shows the
                      * server's own curated links and main refuses any url that is
                      * not one of them. So it opens in the system browser, and the
-                     * label says so rather than letting the window that appears be
+                     * launcher's icon for a link off to the browser says so, with
+                     * its label, rather than letting the window that appears be
                      * the way the user finds out.
                      */}
-                    <button type="button" onClick={() => void window.zanaris.hiscores.openSite()} className="link">
-                        Full hiscores <span className="text-dim">— opens in your browser</span>
+                    <button
+                        type="button"
+                        title="Open Full hiscores in your browser"
+                        aria-label="Open Full hiscores in your browser"
+                        onClick={() => void window.zanaris.hiscores.openSite()}
+                        className="link inline-flex items-center gap-1"
+                    >
+                        Full hiscores
+                        <OpenExternal />
                     </button>
                 </p>
             )}

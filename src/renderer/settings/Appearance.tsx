@@ -153,7 +153,7 @@ export default function Appearance({
         try {
             const answer = await window.zanaris.appearance.importTheme();
             if (answer === null) return;
-            setSaid('error' in answer ? { text: answer.error, alert: true } : { text: `Added ${answer.name}. Click its card to wear it.`, alert: false });
+            setSaid('error' in answer ? { text: answer.error, alert: true } : { text: `Added ${answer.name}.`, alert: false });
         } catch {
             setSaid({ text: "That didn't work, and the kit couldn't say why. Its log may.", alert: true });
         } finally {
@@ -177,9 +177,7 @@ export default function Appearance({
                     />
                 ))}
             </div>
-            <p className="px-2.5 pt-1.5 text-[12px] text-dim">
-                Settings and every server wear it, unless the server has its own below. The game and the pages beside it keep their own look.
-            </p>
+            <p className="px-2.5 pt-1.5 text-[12px] text-dim">Used everywhere unless a server has its own below.</p>
             <div className="flex items-center gap-2 px-2.5 pt-2">
                 <QuietButton disabled={busy} onClick={() => void importTheme()}>
                     Import theme…
@@ -192,14 +190,11 @@ export default function Appearance({
             )}
 
             <h2 className="px-2.5 pt-3 pb-1.5 font-pixel text-[15px] text-gold">Servers</h2>
-            <ul className="sunk mx-2.5">
+            <ul className="sunk mx-2.5 mb-2.5">
                 {view.servers.map(row => (
                     <ServerRow key={row.id} row={row} view={view} />
                 ))}
             </ul>
-            <p className="px-2.5 pt-1.5 pb-2.5 text-[12px] text-dim">
-                A server&apos;s theme is worn by every window of it. View &gt; Server Theme sets it from the window in front.
-            </p>
         </div>
     );
 }

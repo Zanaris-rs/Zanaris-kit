@@ -320,7 +320,7 @@ test('a world that exits before it is ready fails with its last lines', async ()
     h.processes[0]!.exit(1);
     await assert.rejects(pending, /exited before it was ready \(code 1\)/);
     assert.equal(service.view().status, 'failed');
-    assert.match(service.view().reason!, /code 1/);
+    assert.equal(service.view().reason, 'Your home server exited before it was ready (code 1)');
     assert.deepEqual(service.view().logTail, ['Starting world', 'Error: boom']);
     assert.match(h.files.get('/worlds/274/world.log')!, /boom/);
 });
@@ -330,6 +330,7 @@ test('a world that never answers fails at the deadline and is killed', async () 
     const service = new HomeServerService(h.deps);
     await assert.rejects(service.acquire(), /did not answer within 60 s/);
     assert.equal(service.view().status, 'failed');
+    assert.equal(service.view().reason, 'Your home server did not answer within 60 s');
     assert.equal(h.processes[0]!.killed, 1);
 });
 
@@ -385,7 +386,7 @@ test('a crash while ready is reported as failed and subscribers hear about it', 
     h.processes[0]!.exit(134);
     await tick();
     assert.equal(service.view().status, 'failed');
-    assert.match(service.view().reason!, /stopped unexpectedly \(code 134\)/);
+    assert.equal(service.view().reason, 'Your home server stopped unexpectedly (code 134)');
     assert.ok(pushes > before);
 });
 
@@ -638,7 +639,7 @@ test('a change while the world runs asks with the reason, and a no changes nothi
         return false;
     });
     assert.deepEqual(outcome, { kind: 'cancelled' });
-    assert.match(asked[0]!.detail, /home server is running\. If anyone is logged in/);
+    assert.equal(asked[0]!.detail, 'If Zezima is logged in, logging out saves Zezima again.');
     assert.ok(h.saves.has(`${SAVES}/zezima.sav`));
     assert.deepEqual(h.trashed, []);
 });

@@ -70,19 +70,19 @@ function Row({ row }: { row: ServerRow }): ReactNode {
                  * Ticked for what a launch opens, the fallback included, and
                  * held ticked on the only one: a launch always opens a server,
                  * so unticking the last would only bring it straight back
-                 * (`servers.nextStartup`). The note says why it will not move.
+                 * (`servers.nextStartup`). Its tooltip says why it will not move.
                  */}
                 <label className="flex items-center gap-2 text-[12px] text-cream">
                     <input
                         type="checkbox"
                         checked={row.atStartup}
                         disabled={row.onlyStartup}
+                        title={row.onlyStartup ? 'Tick another to stop opening this one' : undefined}
                         style={ACCENT}
                         onChange={e => void window.zanaris.servers.setStartup(row.id, e.target.checked)}
                     />
                     Open at startup
                 </label>
-                {row.onlyStartup && <span className="text-[12px] text-dim">Tick another to stop opening this one</span>}
                 {row.removable && (
                     /* Text, not a button: removing is rare, and a red slab beside Save is the loudest thing in this section. Routed through the same `send` round-trip as `Timers.tsx`'s Delete, so the built-in guard and a servers.json changed by hand since Settings last read it both surface here rather than vanishing silently. */
                     <button
@@ -173,10 +173,10 @@ function AddServerForm({ onDone }: { onDone: () => void }): ReactNode {
     };
 
     return (
-        <form onSubmit={submit} className="mt-2 flex flex-col gap-2 border-t border-edge-dark pt-2">
+        <form onSubmit={submit} className="flex flex-col gap-2">
             <Field id={`${id}-name`} label="Name" value={draft.name} onChange={name => change({ name })} />
             <Field id={`${id}-url`} label="Address" value={draft.url} onChange={url => change({ url })} />
-            <Field id={`${id}-revision`} label="Revision" value={draft.revision} onChange={revision => change({ revision })} placeholder="Leave blank if unknown" />
+            <Field id={`${id}-revision`} label="Revision" value={draft.revision} onChange={revision => change({ revision })} placeholder="Optional" />
             <Field id={`${id}-wiki`} label="Wiki" value={draft.wikiHome} onChange={wikiHome => change({ wikiHome })} />
             <Field id={`${id}-notes`} label="Notes" value={draft.notes} onChange={notes => change({ notes })} />
 
@@ -209,7 +209,6 @@ export default function Servers({ view }: { view: ServersView }): ReactNode {
                 ))}
                 {adding && (
                     <li className="px-2 py-1.5">
-                        <span className="text-[12px] text-dim">Add a server</span>
                         <AddServerForm onDone={() => setAdding(false)} />
                     </li>
                 )}

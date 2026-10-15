@@ -12,7 +12,7 @@ const STATUS: Record<HomeServerView['status'], string> = {
     stopped: 'Stopped',
     missing: 'Not downloaded yet',
     downloading: 'Downloading',
-    preparing: 'Getting the world ready',
+    preparing: 'Getting ready',
     starting: 'Starting',
     ready: 'Running',
     stopping: 'Stopping',
@@ -21,26 +21,25 @@ const STATUS: Record<HomeServerView['status'], string> = {
 
 /**
  * The pane width below which the sections stack what they otherwise set side
- * by side: World puts a switch's note under its button, Characters the name
- * box above its buttons, and Friends its note under Share with friends and
- * its Cancel under what it cancels. The lists in Characters, Commands and
- * Builds also give their rows 4px sides rather than 8. The row of sections
- * becomes one tab that opens a menu of them, and under it the section scrolls
- * as one page rather than each list scrolling inside it (homeserver/fill.ts).
+ * by side: Characters puts the name box above its buttons, and Sharing its
+ * Cancel under what it cancels. The lists in Characters, Commands and Builds
+ * also give their rows 4px sides rather than 8. The row of sections becomes
+ * one tab that opens a menu of them, and under it the section scrolls as one
+ * page rather than each list scrolling inside it (homeserver/fill.ts). A note
+ * on one button, a World switch's or Share's, sits under it at every width.
  *
- * Friends is the first to run out. Beside Share with friends, 165px, its note
- * has the pane less 193px: three lines here, four at 280, and nine at 240.
- * The name box beside Rename, the widest of its buttons, and Cancel holds
- * "Character name" whole from 273, and a switch's note has 120px beside
- * Members off at 280 with World's scrollbar showing. A pane knows its own
- * width, so the shape is read from it, as Worlds' is.
+ * The name box beside Duplicate, the widest of its buttons, and Cancel holds
+ * "Character name" whole from about 284: it was 273 beside Rename, and
+ * Duplicate is 11px wider in the pixel face at 13px. The width was set while Share's note sat
+ * beside it, where it ran out first, at three lines here and nine at 240. A
+ * pane knows its own width, so the shape is read from it, as Worlds' is.
  */
 const WIDE_ENOUGH = 300;
 
 /**
  * The Home server tool. What the world is doing sits above the sections, since it is true of all of them,
- * and so does a live share's warning: Friends says it too, and nothing else would while another section is open.
- * Which section is open belongs to this pane and is not kept. Friends is offered only when main sends a share.
+ * and so does a live share's warning: Sharing says it too, and nothing else would while another section is open.
+ * Which section is open belongs to this pane and is not kept. Sharing is offered only when main sends a share.
  */
 export default function HomeServer({ view, share, width }: { view: HomeServerView; share: ShareView | null; width: number }): ReactNode {
     const wide = width >= WIDE_ENOUGH;
@@ -95,7 +94,7 @@ export default function HomeServer({ view, share, width }: { view: HomeServerVie
                     {view.status === 'failed' && view.reason && <span className="block text-[12px] break-words text-dim">{view.reason}</span>}
                 </p>
                 {line && <p className="text-[12px] text-dim">{lineTitle(line)}</p>}
-                {share?.status === 'live' && open !== 'friends' && <p className="text-[12px] text-warn">Shared with a link: anyone who has it can log in as any character, yours included.</p>}
+                {share?.status === 'live' && open !== 'friends' && <p className="text-[12px] text-warn">Shared: anyone with the link can log in as anyone.</p>}
             </div>
 
             {wide && failed}

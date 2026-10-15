@@ -150,7 +150,7 @@ export const DEFAULT_SERVERS: readonly ServerDef[] = [
         wiki: LOSTHQ,
         map: 'https://tools.losthq.rs/map',
         hosts: ['127.0.0.1', '2004.losthq.rs', 'tools.losthq.rs'],
-        notes: 'Runs on this computer. No account needed.',
+        notes: 'Runs on this computer.',
         worlds: null,
         // The reference links are offered on the two live servers people play
         // on and nowhere else. A development world is not one of them, and a

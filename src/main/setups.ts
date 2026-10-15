@@ -95,8 +95,8 @@ export function builtInSetups(opts: { tools: readonly ToolId[]; gameHeight: numb
 /**
  * What new windows of a server open with: a built-in, or a saved setup by
  * its name in that server's setups folder. Stored per server in `state.json`
- * (`AppState.newWindowSetup`), and chosen from the Setups menu's Open New
- * Windows With. A server with none opens its window's default: Game, Chat and
+ * (`AppState.newWindowSetup`), and chosen from the Setups menu's Use for New
+ * Windows. A server with none opens its window's default: Game, Chat and
  * Home server where the window offers that, Game and Chat everywhere else.
  *
  * A file is a name, never a path. It is looked up in the folder's own

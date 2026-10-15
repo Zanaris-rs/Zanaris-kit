@@ -1041,7 +1041,7 @@ test('a nick the server will not take ends the attempt with a goodbye, and nothi
     assert.deepEqual(f.sent, ['QUIT :Zanaris Kit'], 'registration is not left to time out');
     assert.equal(f.closes, 1);
     assert.equal(service.view().status, 'offline');
-    assert.match(service.view().error ?? '', /won't take the nick mage\..*chat's Settings tab/);
+    assert.match(service.view().error ?? '', /won't take the nick mage\. Pick another\./);
     assert.deepEqual(retries(f), []);
     assert.deepEqual(watching(f), [], 'and nothing is watching a socket that is gone');
 });
@@ -1054,7 +1054,7 @@ test('taken nicks past the last underscore end the attempt; Connect starts again
     assert.equal(service.view().status, 'registering', 'still trying');
     f.line(':irc.swiftirc.net 433 * mage___ :Nickname is already in use');
     assert.equal(service.view().status, 'offline');
-    assert.equal(service.view().error, "The nick mage is taken. Pick another in chat's Settings tab.");
+    assert.equal(service.view().error, 'The nick mage is taken. Pick another.');
     assert.deepEqual(retries(f), []);
 
     service.connect();

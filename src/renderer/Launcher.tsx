@@ -175,8 +175,6 @@ export default function Launcher({
                     })}
                 </ul>
             ))}
-
-            <p className="shrink-0 text-[12px] text-dim">Add pane, at the top right, opens more beside this. Links off these sites open in your browser.</p>
         </div>
     );
 }

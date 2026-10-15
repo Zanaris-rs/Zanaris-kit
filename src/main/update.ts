@@ -324,17 +324,21 @@ export type UpdateState =
     | { kind: 'ready'; version: string }
     | { kind: 'failed'; version: string; reason: string; release: Release | null };
 
-/** The tab bar's button, or null while there is nothing to say. */
+/**
+ * The tab bar's button, or null while there is nothing to say. Only a ready
+ * or failed update has a tooltip: the label of one that is out or
+ * downloading already says all there is.
+ */
 export function updateButton(state: UpdateState): UpdateButton | null {
     switch (state.kind) {
         case 'idle':
             return null;
         case 'available':
-            return { label: `Update ${state.release.version}`, title: `Zanaris Kit ${state.release.version} is out` };
+            return { label: `Update ${state.release.version}` };
         case 'downloading':
-            return { label: `Updating ${state.percent}%`, title: `Downloading Zanaris Kit ${state.release.version}` };
+            return { label: `Updating ${state.percent}%` };
         case 'ready':
-            return { label: 'Restart to Update', title: `Zanaris Kit ${state.version} is downloaded, and installs when you quit` };
+            return { label: 'Restart to Update', title: 'Installs when you quit' };
         case 'failed':
             return { label: 'Update failed', title: `Zanaris Kit couldn't update to ${state.version}` };
     }
@@ -387,7 +391,7 @@ export function updateQuestion(state: UpdateState, worldRunning: boolean): Updat
             }
             return {
                 message,
-                detail: `It's a ${size(release.asset.size)} download. Once it's done, it installs the next time you quit, or straight away if you restart.`,
+                detail: `${size(release.asset.size)}. Installs when you quit or restart.`,
                 buttons: [
                     { label: 'Download', action: 'download' },
                     { label: 'Release Notes', action: 'page' },
@@ -411,7 +415,7 @@ export function updateQuestion(state: UpdateState, worldRunning: boolean): Updat
         case 'ready':
             return {
                 message: `Restart to update to Zanaris Kit ${state.version}?`,
-                detail: `Zanaris Kit closes and opens again by itself, and the first start of a new version can take a little while. Every game is logged out${worldRunning ? ', and your home server stops, saving as it does' : ''}. Choose Later and it installs by itself the next time you quit.`,
+                detail: `Every game is logged out${worldRunning ? ' and your home server stops' : ''}. Later installs it when you quit.`,
                 buttons: [
                     { label: 'Restart', action: 'restart' },
                     { label: 'Later', action: 'later' }

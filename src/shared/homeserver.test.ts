@@ -38,7 +38,7 @@ const summary = { version: 6, combatLevel: 3, totalLevel: 32, playtimeTicks: 0 }
 
 test('characterMenu offers each change, then Delete apart from them', () => {
     const items = characterMenu({ summary }, [289]);
-    assert.deepEqual(labels(items), ['Rename…', 'Copy as…', 'Copy to rev 289', 'Export…', '—', 'Delete']);
+    assert.deepEqual(labels(items), ['Rename…', 'Duplicate…', 'Copy to rev 289', 'Export…', '—', 'Delete']);
     assert.ok(items.every(item => item.kind === 'separator' || item.enabled));
     assert.deepEqual(
         items.flatMap(item => (item.kind === 'item' ? [item.action] : [])),
@@ -48,15 +48,15 @@ test('characterMenu offers each change, then Delete apart from them', () => {
 
 test('characterMenu copies to each other revision, and to none where there is none', () => {
     assert.deepEqual(labels(characterMenu({ summary }, [289, 317])).filter(label => label.startsWith('Copy to')), ['Copy to rev 289', 'Copy to rev 317']);
-    assert.deepEqual(labels(characterMenu({ summary }, [])), ['Rename…', 'Copy as…', 'Export…', '—', 'Delete']);
+    assert.deepEqual(labels(characterMenu({ summary }, [])), ['Rename…', 'Duplicate…', 'Export…', '—', 'Delete']);
 });
 
 test('characterMenu greys what main refuses for a damaged save, and keeps Export and Delete', () => {
     const enabled = characterMenu({ summary: null }, [289]).flatMap(item => (item.kind === 'item' ? [`${item.label} ${item.enabled}`] : []));
-    assert.deepEqual(enabled, ['Rename… false', 'Copy as… false', 'Copy to rev 289 false', 'Export… true', 'Delete true']);
+    assert.deepEqual(enabled, ['Rename… false', 'Duplicate… false', 'Copy to rev 289 false', 'Export… true', 'Delete true']);
 });
 
-test('sectionsOffered lists Friends only where there is a share', () => {
+test('sectionsOffered lists Sharing only where there is a share', () => {
     assert.deepEqual(sectionsOffered(true).map(s => s.id), ['world', 'characters', 'commands', 'builds', 'friends']);
     assert.deepEqual(sectionsOffered(false).map(s => s.id), ['world', 'characters', 'commands', 'builds']);
     for (const id of ['world', 'friends']) assert.equal(isSection(id), true, id);

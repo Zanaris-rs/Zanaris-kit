@@ -188,12 +188,10 @@ export default function Worlds({ view, width }: { view: WorldsView; width: numbe
                     {view.error ? (
                         <span className="text-warn">{view.error}</span>
                     ) : (
-                        <span className="text-dim">{age(view.fetchedAt, now) || (loading ? 'Loading the list' : '')}</span>
+                        <span className="text-dim">{age(view.fetchedAt, now)}</span>
                     )}
                 </p>
             </div>
-
-            <p className="text-[12px] text-dim">Switching reloads the game and logs you out.</p>
         </div>
     );
 }

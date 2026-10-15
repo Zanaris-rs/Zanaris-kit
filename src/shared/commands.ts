@@ -76,16 +76,17 @@ export const ENGINE_COMMANDS: readonly CommandRef[] = [
 export type CommandFilter = 'cheats' | 'engine' | 'scripts' | 'all';
 
 export const COMMAND_FILTERS: readonly { id: CommandFilter; label: string }[] = [
-    { id: 'cheats', label: 'Cheats' },
-    { id: 'engine', label: 'Engine' },
-    { id: 'scripts', label: 'Test scripts' },
+    { id: 'cheats', label: 'Common' },
+    { id: 'engine', label: 'Built-in' },
+    { id: 'scripts', label: 'Testing' },
     { id: 'all', label: 'All' }
 ];
 
 /**
- * Which list a command is in. Cheats is the content's cheats folder, the
- * procs a player actually wants; Engine is the `::` commands; Test scripts is
- * every other debug proc, most there to exercise one piece of content.
+ * Which list a command is in. Common is the content's cheats folder, the
+ * procs a player actually wants; Built-in is the engine's `::` commands;
+ * Testing is every other debug proc, most there to exercise one piece of
+ * content.
  */
 export function inFilter(ref: CommandRef, filter: CommandFilter): boolean {
     switch (filter) {
