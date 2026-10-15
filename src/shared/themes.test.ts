@@ -13,6 +13,7 @@ import {
     contrastRatio,
     contrastWarnings,
     deriveTheme,
+    draftOf,
     isThemeId,
     newCustomId,
     pictureUrl,
@@ -257,4 +258,17 @@ test('readThemeDraft takes what the editor sends: a new theme has no id yet, and
     assert.equal(readThemeDraft({ ...draft, background: { picture: '../x', fit: 'cover', show: 0 } }), null);
     assert.equal(readThemeDraft({ ...draft, name: '  ' }), null);
     assert.equal(readThemeDraft('Night'), null);
+});
+
+test('a built-in opens in the editor as a copy, named as one, with no picture', () => {
+    const stone = themeById('stone');
+    assert.deepEqual(draftOf(stone, false), { id: null, name: '2004 stone (copy)', colors: stone.colors, background: null });
+});
+
+test("a player's own opens in the editor as it is, picture and all, copied", () => {
+    const own: Theme = { id: 'custom-0a0b0c0d', name: 'Mine', colors: themeById('zanaris').colors, background: { picture: `${'a'.repeat(64)}.png`, fit: 'tile', show: 0.3 } };
+    const draft = draftOf(own, true);
+    assert.deepEqual(draft, { id: own.id, name: 'Mine', colors: own.colors, background: own.background });
+    assert.notEqual(draft.colors, own.colors);
+    assert.notEqual(draft.background, own.background);
 });

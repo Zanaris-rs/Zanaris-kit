@@ -389,6 +389,18 @@ export function uniqueName(name: string, taken: readonly string[]): string {
     }
 }
 
+/**
+ * What the editor opens on: a built-in as a copy, named as one and with no
+ * picture; one of the player's own as it is. Copied either way, so the draft
+ * is the editor's own. A card's Customise or Edit opens this, and so does a
+ * game window's Theme menu.
+ */
+export function draftOf(theme: Theme, custom: boolean): ThemeDraft {
+    return custom
+        ? { id: theme.id, name: theme.name, colors: { ...theme.colors }, background: theme.background ? { ...theme.background } : null }
+        : { id: null, name: `${theme.name} (copy)`, colors: { ...theme.colors }, background: null };
+}
+
 // ── contrast ──────────────────────────────────────────────────────────────
 
 /** The era's chat set, one fixed palette in every theme: `renderer/tools/nickColour.ts` deals names into it. */
