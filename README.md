@@ -482,7 +482,7 @@ between is left as a plain number.
 described here, and five places in the 2004 world — Zanaris, the Wilderness,
 Al Kharid, Morytania and Lumbridge. Theme, in every window's tab bar between
 Setups and Add pane, lists them — on macOS each beside a swatch of its stone —
-with the one the window wears ticked. A pick sets the app's theme, which Settings and
+with the one the window's server is set to wear ticked. A pick sets the app's theme, which Settings and
 every server wear. Just for, in the same menu, gives the window's server a
 theme of its own instead, and while it is ticked a pick is that server's
 alone; unticked, the server follows the app again. Settings > Appearance sets

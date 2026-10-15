@@ -56,7 +56,7 @@ test("a dropdown loses the system's look, so the well and the text are what draw
     assert.match(rule, /-webkit-appearance: none !important/);
 });
 
-test("only the strip's own dropdowns change height, so a page the kit does not know keeps its lines", () => {
+test("only the strip's own dropdowns are given a height, so a page the kit does not know gets no taller", () => {
     const css = clientPageCss(look);
     const generic = /(?:^|\n)html select \{([^}]*)\}/.exec(css)?.[1] ?? '';
     assert.doesNotMatch(generic, /line-height|height|padding:|padding-top|padding-bottom/);

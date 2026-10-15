@@ -110,7 +110,8 @@ agrees.
 The rules are pure, in `appearance.ts`, beside `lookFor`: `themeMenu` answers
 the entries — label, ticked, enabled, swatch colours and the action each one
 takes — and `themeChoice` answers what a pick or the tick writes. The swatch
-is `swatch.ts`: a BGRA bitmap from a theme's colours, also pure. Main pops
+is `swatch.ts`: an RGBA PNG from a theme's colours, also pure, since
+`createFromBitmap`'s byte order is the platform's. Main pops
 the menu from the `tab-theme-menu` handler, as the app menu's ≡ is popped,
 turning entries into menu items and the bitmap into a `nativeImage`.
 
@@ -140,14 +141,19 @@ Settings is a page of its own, and may not exist yet when Customise is
 chosen, so main holds the request — a section and, for Customise, the draft
 and the server — until Settings takes it.
 
-- Settings asks for it with `settings.takeShow()` once it has its first state,
-  and again whenever main pings it (`settings.onShow`), which main does when a
+- Settings asks for it with `settings.takeShow()` as its page starts, and
+  again whenever main pings it (`settings.onShow`), which main does when a
   request is made with Settings already loaded.
 - Main answers only once Settings' page has finished loading, and clears it
-  as it answers. So a request is taken exactly once, never by a page that
-  then reloads, and never before `onPageReset` — which ends any draft when
-  the page finishes loading, the first load included — could end the draft
-  the request just opened.
+  as it answers. So a request is taken exactly once, and never before the
+  first load's `onPageReset` — which ends any draft when the page finishes
+  loading — could end the draft the request just opened. A page that loads
+  again (a reload in development, or after a crash) can still take one before
+  its own reset; that reset then ends main's draft under an open editor until
+  its next change.
+- Settings applies a request it took even from an effect cleaned up since:
+  main has let it go. React's StrictMode cleans up and remounts every effect
+  once in development, and the first take is the one that gets it.
 
 ### Where Save goes
 
@@ -163,14 +169,16 @@ does `AppearanceView.savesTo`, which is all the editor reads for its line.
 
 ### What changes
 
-On a client page — the template every server serves — the theme sheet sets:
+On a client page — Lost City's template; the other servers' and your home
+server's pages are older and lack some of it, as the next paragraph says —
+the theme sheet sets:
 
 | Part | Wears |
 |---|---|
 | The page's ground (`html`, `body`, and full screen) | `window` |
 | `#controls`, the strip | `stone`, bevelled `edge-lit` above-left and `edge-dark` below-right, by inset shadow |
 | Its words | `cream`, with the kit's hard black glyph shadow |
-| `select` | `well`, recessed by inset shadow, `cream` text and a `cream` arrow in place of the green one |
+| `select` | `well`, recessed by inset shadow, `cream` text and a `cream` arrow in place of the green one, drawn without the system's look and with its arrow placed by the sheet, since older pages leave both to the system |
 | `.icon-control` and `.green` | `cream`; a link `gold` under the pointer |
 
 A server whose page has no `#controls` gets the rest: the ground, the
@@ -210,7 +218,7 @@ sets the variables.
   `url(`, `@import` or `<`; no `border`, `margin`, `padding`, `height` or
   `line-height` on `#controls`; a variable for every token in the kit sheet.
 - `swatch.test.ts`: the face, the lit edge and the dark edge at the pixels
-  they belong to, in BGRA order.
+  they belong to, RGBA, and a PNG that decodes to them.
 - `npm run capture`: the game page shot under the override step's
   Wilderness (`theme-override-<id>-game`); the menu's choices driven through
   the same function the menu calls, read back from the state; Customise from

@@ -77,14 +77,20 @@ function useReportEditing(editing: ThemeEditing | null): void {
  * loading, so the two can never both open it. A request for the editor opens
  * it on the draft main sent, unless an editor is already open: that one
  * keeps its draft, and only the section changes.
+ *
+ * A request taken is always applied, even by an effect cleaned up since it
+ * asked: main has already let it go, so dropping it would lose it. That is
+ * what React's StrictMode does in development, mounting this effect, cleaning
+ * it up and mounting it again at once, and the first take is the one that
+ * gets the request. The setters are the component's own and stay the same
+ * across that, so applying it lands where the second mount reads.
  */
 function useShowRequests(setSection: (section: Section) => void, setEditing: Dispatch<SetStateAction<ThemeEditing | null>>): void {
     useEffect(() => {
-        let alive = true;
         const take = (): void => {
             void window.zanaris.settings.takeShow().then(
                 request => {
-                    if (!alive || !request) return;
+                    if (!request) return;
                     setSection(request.section);
                     const edit = request.edit;
                     if (edit) setEditing(e => e ?? { initial: edit.draft, draft: edit.draft, forServer: edit.forServer });
@@ -95,10 +101,7 @@ function useShowRequests(setSection: (section: Section) => void, setEditing: Dis
         };
         const unsubscribe = window.zanaris.settings.onShow(take);
         take();
-        return () => {
-            alive = false;
-            unsubscribe();
-        };
+        return unsubscribe;
     }, [setSection, setEditing]);
 }
 

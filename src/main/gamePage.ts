@@ -36,9 +36,10 @@ const SHADOW = '1px 1px 0 rgba(0, 0, 0, 0.78)';
  * natively it stays light under the theme's cream text. Its arrow, two
  * small gradients, is placed and sized here, since only Lost City's page
  * places it: left to a page that does not, the gradients fill the whole box.
- * Only the strip's own dropdowns change height, where the strut is known to
- * hold the line; a page the kit does not know keeps its lines as they were,
- * and its dropdowns change only their width.
+ * Only the strip's own dropdowns are given a height, where the strut is
+ * known to hold the line. On a page the kit does not know, its dropdowns
+ * change their width and lose whatever height the system's look gave them,
+ * which makes a line shorter, never taller.
  */
 export function clientPageCss(look: ThemeLook): string {
     const c = look.colors;
