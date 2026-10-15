@@ -3398,7 +3398,14 @@ app.on('before-quit', event => {
             await world?.stop();
         })().finally(() => {
             worldStoppedForQuit = true;
-            app.quit();
+            // Asked again on the next turn, never inside this one. A stop with
+            // nothing to wait for — a Home server window whose build was never
+            // downloaded — resolves in microtasks, which run before Electron
+            // has finished the quit this handler cancelled. A quit asked from
+            // there closed every window, and then Electron finished the first,
+            // cancelled one: no will-quit followed, and on macOS the kit stayed
+            // running with no windows until a second quit.
+            setImmediate(() => app.quit());
         });
     }
 });
