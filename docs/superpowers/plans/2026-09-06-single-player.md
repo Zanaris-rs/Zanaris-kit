@@ -13,7 +13,6 @@
 ## Global Constraints
 
 - `$KIT` stands for the absolute path of the swiftkit checkout; `$ENGINE` for the engine checkout beside it (`$KIT/../engine`). Set both once per shell: `KIT=$(git -C <swiftkit> rev-parse --show-toplevel); ENGINE=$KIT/../engine`. The shell's working directory resets between calls, so every command starts with `cd $KIT && ...` or `cd $ENGINE && ...`.
-- Commits are made under the pseudonymous identity the folder's gitconfig applies. Before the first commit in each repository run `git config user.email` there and confirm `325498240+Zanaris274@users.noreply.github.com`. Never write a real name, personal email, former GitHub handle, former org name, hosting domain or an absolute home path into any file or commit message.
 - Every commit message ends with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - Kit work is on branch `singleplayer` (from `main` at `f1c810b`). Engine work is on branch `274-singleplayer` (from `274-memory` at `c5c45f88`), merged into `274-memory` and pushed in Task 1 so `engine.lock.json` can pin it; nothing else is pushed.
 - `npm test`, `npm run typecheck` and `npm run build` pass in the kit after every task; `npm test` and `npm run typecheck` pass in the engine after Task 1.

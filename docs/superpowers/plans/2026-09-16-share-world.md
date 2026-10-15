@@ -48,5 +48,4 @@ mechanical.
 10. **Verify** — `npm test`, `npm run typecheck`, `npm run build`; a live run
     of relay and tunnel in front of the staged engine, the link opened in a
     browser; an app run with the owner's go-ahead.
-11. **Ship** — push `share-world`, open the PR as Zanaris274, check its author
-    and CI.
+11. **Ship** — push `share-world`, open the PR, check its CI.

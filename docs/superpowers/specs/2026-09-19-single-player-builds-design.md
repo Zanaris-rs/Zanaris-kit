@@ -215,9 +215,6 @@ A pin moves in one pull request:
    digest for that tag from the API and writes them into `artifact`.
 4. Merge.
 
-Anything that talks to GitHub runs under `GH_TOKEN=$(gh auth token -u
-Zanaris274)`, as CLAUDE.md requires.
-
 ### The kit's list
 
 The kit bundles `engines/*.json` at build time and reads each through the

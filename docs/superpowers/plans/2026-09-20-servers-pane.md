@@ -38,7 +38,6 @@ Half the work is already written and unreachable: `createServer` (`catalog.ts:22
 - **A comment describing behaviour the code does not have is a defect.** Re-read comments around anything you change.
 - **Style (unenforced — there is no prettier or eslint; CI runs only `typecheck`, `test`, `build`):** 4 spaces, single quotes, semicolons, ~200-col lines, no trailing commas, no parens on single-param arrows, `/** … */` docstrings that explain *why*.
 - **`noUncheckedIndexedAccess` is on** — index access needs `!`. Import specifiers carry the `.ts` extension.
-- Identity: commits are **Zanaris274**. `gh` needs `GH_TOKEN=$(gh auth token -u Zanaris274)`.
 
 ### Two traps the exploration surfaced
 

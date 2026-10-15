@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /*
- * CLAUDE.md's Identity section: nothing pushed may carry the owner's real
- * name. An absolute path to a home directory carries its owner's user name,
- * and three plans once named the repository that way. A doc names a path from
- * the repository root, and a test gives a home a placeholder.
+ * CLAUDE.md's Paths section. An absolute path to a home directory carries the
+ * user name of whoever wrote it into the repository, and three plans once
+ * named the repository that way. A doc names a path from the repository root,
+ * and a test gives a home a placeholder.
  */
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
