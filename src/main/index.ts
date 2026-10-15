@@ -2250,8 +2250,9 @@ async function captureAndExit(dir: string): Promise<void> {
         for (const id of Object.keys(appState.appearance().servers)) appState.setServerTheme(id, null);
         for (const theme of appState.appearance().custom) appState.deleteCustomTheme(theme.id);
         prunePictures();
-        // Every window a capture opens is Game and Chat unless a step below
-        // says otherwise, whatever a run that died mid-step left chosen.
+        // Every window a capture opens is its default — Game, Chat and Home
+        // server for your home server's, Game and Chat for the rest — unless a
+        // step below says otherwise, whatever a run that died mid-step left chosen.
         for (const server of catalog.list()) appState.setNewWindowSetup(server.id, null);
         // Home server needs its build on disk. Where there is none the entry is
         // dropped rather than left to wait on a download — so a capture wants the

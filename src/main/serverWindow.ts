@@ -157,7 +157,7 @@ export interface ServerWindowDeps {
     place: Place | null;
     /** 32px from the focused or last-opened game window, for when there is no place to go back to; null when none is open. */
     cascade: { x: number; y: number } | null;
-    /** What new windows of this server open with, as stored, or null for Game and Chat. A getter: the Setups menu reads it again each time it opens. */
+    /** What new windows of this server open with, as stored, or null for the window's default (`setups.openingSetup`). A getter: the Setups menu reads it again each time it opens. */
     newWindowSetup: () => NewWindowSetup | null;
     /** Stores what new windows of this server open with: the Setups menu's Open New Windows With. */
     setNewWindowSetup: (choice: NewWindowSetup) => void;
@@ -465,7 +465,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /*
      * What the window opens with and where, both decided before it exists
      * (`setups.openingSetup`, `windowPlace.openingFrame`): the setup chosen for
-     * this server's new windows, or Game and Chat, at the place this window's
+     * this server's new windows, or the window's default, at the place this window's
      * number last closed at if its tab bar can still be reached. So the window
      * is built at its size and place rather than opened and then moved, and
      * opening it is not one of the things that resize a window; one that
@@ -1336,8 +1336,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * Open New Windows With: the built-ins, then the saved setups, with the
      * one the next window of this server would open with ticked. The tick is
      * `openingSetup`'s answer, the one a window opening now would act on, so a
-     * choice that can no longer be used ticks Game and Chat, which is what
-     * would open instead. A saved setup that cannot be a new window's — no
+     * choice that can no longer be used ticks the window's default, which is
+     * what would open instead. A saved setup that cannot be a new window's — no
      * game in it, or not a setup — is greyed. Checkboxes rather than radios,
      * for the reason the View menu's Server Theme gives: the separator makes
      * two radio groups, and Electron ticks the first of a group with none.

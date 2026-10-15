@@ -852,9 +852,13 @@ menu bar now sits, is moved down onto the display. A capture neither reads nor w
 **Setups**, in the tab bar just before Add pane, is a set of panes in a
 shape, one click away. Whatever you pick replaces the panes of the tab in front:
 
-- **Game**, **Game and Chat** and **Game, Chat and Tools** are the kit's own.
-  Game is the game alone; Game and Chat is the game over chat, which a new
-  window opens with unless another is chosen; Game, Chat and Tools adds a 320px column down the right holding every
+- **Game**, **Game and Chat**, **Game, Chat and Home server** and **Game,
+  Chat and Tools** are the kit's own. Game is the game alone; Game and Chat is
+  the game over chat, which a new window opens with unless another is chosen.
+  Game, Chat and Home server, offered only in your home server's window, adds
+  the Home server tool alone in a 320px column down the right, and is what
+  that window opens with unless another is chosen, so its settings are in view
+  from the start. Game, Chat and Tools adds a 320px column down the right holding every
   other tool the window offers — Worlds, Hiscores, Timers, and Home server in
   its own window — sharing the column's height evenly. A built-in leaves out a
   tool the window does not offer rather than showing an empty pane.
@@ -871,8 +875,8 @@ shape, one click away. Whatever you pick replaces the panes of the tab in front:
   any of the kit's own, or a saved setup holding the game. A saved setup
   without the game is greyed, since a game window opens onto its game. The
   tick is what the next window will open with: a choice whose file has since
-  gone, or no longer holds the game, ticks Game and Chat, which is what opens
-  instead. The file is read as each window opens, so editing it changes the
+  gone, or no longer holds the game, ticks the window's own default, which is
+  what opens instead. The file is read as each window opens, so editing it changes the
   next window. Choosing changes nothing already open.
 
 A setup opens around the game. The game keeps the pixels it has — or, with no
