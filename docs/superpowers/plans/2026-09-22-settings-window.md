@@ -21,7 +21,7 @@
 - **The renderer sends ids and the add form's five fields, never a `ServerDef` or a path.** `createServer` in main is the one authority on whether a server is valid.
 - **Style, unenforced (no prettier, no eslint):** 4 spaces, single quotes, semicolons, ~200-column lines, no trailing commas, no parens on single-parameter arrows, `/** … */` docstrings that explain *why*. `noUncheckedIndexedAccess` is on. Match each file's own import-extension habit.
 - **Tests:** `import { test } from 'node:test'`, `import assert from 'node:assert/strict'`, no `describe`, lower-case prose names.
-- **Identity:** commits are Zanaris274. End every commit body with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
+- **Commits:** end every commit body with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 - **Runtime:** subagents cannot run the app (no display). Say so rather than claim runtime verification.
 
 ## Decisions taken while planning

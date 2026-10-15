@@ -4,32 +4,11 @@
 the other half: what to know before changing it. Where the two overlap, the
 README wins on description and this file wins on process.
 
-## Identity — the one that bites first
+## Paths
 
-Everything under `~/Projects/2004scape/` belongs to the pseudonymous GitHub
-account **Zanaris274** and its org **Zanaris-rs**. The point is that this work is
-unattributable to the owner's real name.
-
-`git` is already correct: an `includeIf` in `~/.gitconfig` sets the user and pins
-`core.sshCommand` to `~/.ssh/zanaris_ed25519` for this directory tree.
-
-**`gh` is not.** Its active account is the real-name one, so a plain `gh pr create`
-or `gh api` opens work under the wrong identity on a repo whose whole purpose is
-not to carry it. Anything touching `Zanaris-rs` needs:
-
-```sh
-GH_TOKEN=$(gh auth token -u Zanaris274) gh pr create ...
-```
-
-Check the result afterwards — `gh pr view <n> --json author` — rather than assuming.
-Never add repo-local user or credential overrides, and never let a retired handle,
-the old org, the owner's company or its domain into anything pushed.
-
-A home directory's absolute path carries the owner's real name too, and three
-plans once named the repository that way. Write a path from the repository root,
-and give a test's home a placeholder: `src/shared/identity.test.ts` fails on any
-other home in `docs/`, `src/`, `scripts/`, the README or this file. It cannot
-catch the name itself, since the test would then have to contain it.
+Write a path from the repository root, never from a home directory, and give
+a test's home a placeholder. `src/shared/identity.test.ts` fails on any other
+home in `docs/`, `src/`, `scripts/`, the README or this file.
 
 ## The layout invariant
 

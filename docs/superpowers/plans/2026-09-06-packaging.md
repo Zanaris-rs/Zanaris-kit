@@ -14,7 +14,6 @@
 
 - `$KIT` stands for the absolute path of this checkout; set it once per shell (`KIT=$(git rev-parse --show-toplevel)`).
 - Node 24 everywhere: the kit's scripts, CI, and the engine (`engines.node >= 24`).
-- Commits are made under the pseudonymous identity that the folder's gitconfig applies automatically. Before the first commit run `git config user.email` inside `swiftkit/` and confirm it prints `325498240+Zanaris274@users.noreply.github.com`. Never add repo-local user or credential overrides. Never write any real name, personal email, former GitHub handle, former org name or the retired hosting domain into any file or commit message.
 - Every commit message ends with the trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - The working directory resets to `Server/` between shell calls: run every command as `cd $KIT && ...`. A commit made from `Server/` lands in the wrong repository.
 - Work on branch `packaging` of the swiftkit repository. Nothing in this plan pushes; the owner pushes and dispatches the workflows.
@@ -249,7 +248,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 Run: `cd $KIT/../engine && git ls-remote origin refs/heads/274-memory`
 Expected: a line ending in `refs/heads/274-memory` whose SHA is `c5c45f88c048f1ca50610de895dff87e0ca7b9cd`.
 
-If the line is missing or the SHA differs, the branch has not been pushed. Run `cd $KIT/../engine && git push origin 274-memory` (the folder's gitconfig pins the pseudonymous key), then repeat the check. CI clones by commit from the public repository, so an unpushed pin cannot build.
+If the line is missing or the SHA differs, the branch has not been pushed. Run `cd $KIT/../engine && git push origin 274-memory`, then repeat the check. CI clones by commit from the public repository, so an unpushed pin cannot build.
 
 - [ ] **Step 2: Write the pin file**
 

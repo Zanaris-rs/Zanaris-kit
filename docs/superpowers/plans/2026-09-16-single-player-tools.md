@@ -84,9 +84,8 @@ These override the design text wherever the two disagree.
 - **Gold marks a section's one main action.** Other actions are quiet (`QuietButton`: dim label on stone). A setting shows its current value the way the cheats switch already does: on is gold (red for cheats), off is dim.
 - **Digits are drawn in the sans face** (the body default), never the pixel face.
 - **Never let the Write tool emit control characters.** Build them with `String.fromCharCode(...)` and never write `\u0000`-style escapes in file content. After writing a file that needs one, scan it for chars below 0x20 other than tab and newline.
-- **Commits** use a conventional prefix and a lower-case summary, and end with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`. Git identity is already correct for this tree; never add repo-local user config.
+- **Commits** use a conventional prefix and a lower-case summary, and end with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 - **Docs committed to the repo must not contain absolute home paths.**
-- **`gh` needs the pseudonymous account's token.** Anything touching GitHub is `GH_TOKEN=$(gh auth token -u Zanaris274) gh …`. Check `gh pr view <n> --json author` afterwards.
 - **`npm run dev` writes the owner's real `~/Library/Application Support/zanaris-kit/state.json`.** Back it up first and restore it after. The owner may have their own `electron-vite dev` running on that profile; leave it alone. After main or preload edits a running dev app needs a restart, because only the renderer hot-reloads.
 - **Only the controller** runs `npm run stage:engine`, `npm run dev` and `npm run capture`.
 - **A dev run can collide with the owner's app.** A dev run from the worktree uses the same profile, and so the same single-instance lock, as the owner's app (`index.ts` exits at once when the lock is held). Native dialogs cannot be clicked from an agent session: Screen Recording is not granted. So the in-app checkpoints are run only when the owner's app is closed and a separate profile can be used. Otherwise they are left for the owner, and the report says so.
@@ -4043,7 +4042,7 @@ Run: `git log --oneline origin/main..HEAD` — 12 commits. Then `git diff origin
 
 ```bash
 git push -u origin single-player-tools
-GH_TOKEN=$(gh auth token -u Zanaris274) gh pr create --base main --head single-player-tools \
+gh pr create --base main --head single-player-tools \
   --title "Single player: world settings, characters, and a command reference" \
   --body-file <(printf '%s\n' \
     "The Single player tool now has three sections: World (cheats, XP rate, members), Characters (a list of saves with import, export, rename, copy and delete), and Commands (the debug procs and engine commands, and how each is typed)." \
@@ -4055,9 +4054,8 @@ GH_TOKEN=$(gh auth token -u Zanaris274) gh pr create --base main --head single-p
     "- The design, with the owner's decisions of 2026-09-16, is in docs/superpowers/specs/2026-09-16-single-player-tools-design.md." \
     "" \
     "🤖 Generated with [Claude Code](https://claude.com/claude-code)")
-GH_TOKEN=$(gh auth token -u Zanaris274) gh pr view --json number,author,url
+gh pr view --json number,url
 ```
-Expected: `author.login` is `Zanaris274`.
 
 ---
 

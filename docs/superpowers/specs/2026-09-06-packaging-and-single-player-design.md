@@ -56,9 +56,7 @@ What the engine needs and does not need:
   and the level is at least 4. Production also changes login rate limits,
   script-error handling (logout on error), Prometheus stats and the dev-op
   debug names, so it is not the lever for a cheats toggle.
-- Engine, content and the web client are MIT (Lost City). The kit repository
-  history is clean: every commit is authored by the pseudonymous account, and
-  no revision contains a real name, email or home path.
+- Engine, content and the web client are MIT (Lost City).
 
 ## Part 1: Packaging
 
@@ -187,7 +185,7 @@ the dry run: same build, artifacts on the workflow run, no release.
 
 ### Going public
 
-- `LICENSE`: MIT, copyright "Zanaris Kit contributors". No legal name.
+- `LICENSE`: MIT, copyright "Zanaris Kit contributors".
 - README gains a Download section linking the latest release, and a
   first-launch guide: macOS, open once via System Settings > Privacy &
   Security > Open Anyway (the right-click Open shortcut is gone since macOS
@@ -524,9 +522,7 @@ on a routable address, and stops it with `POST /shutdown` rather than a signal.
 
 Settled on 2026-09-06:
 
-1. **Unsigned for now.** Signing carries a verified legal name, in the Apple
-   Developer ID or a Windows certificate, and the project is pseudonymous.
-   macOS builds are ad-hoc signed so they launch; players use Open Anyway.
+1. **Unsigned for now.** macOS builds are ad-hoc signed so they launch; players use Open Anyway.
    Revisited when there is an entity to sign under; auto-update waits for it.
 2. **Three platforms** from the first release: macOS universal DMG, Windows
    NSIS x64, Linux AppImage x64.

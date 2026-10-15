@@ -98,4 +98,4 @@
 - [ ] The capture pass, as in the spec.
 - [ ] Update the README and CLAUDE.md.
 - [ ] Run `npm test`, typecheck and build, then `caffeinate -d npm run capture` and open the PNGs.
-- [ ] Get an independent review, fix what it finds, and open the PR as Zanaris274.
+- [ ] Get an independent review, fix what it finds, and open the PR.

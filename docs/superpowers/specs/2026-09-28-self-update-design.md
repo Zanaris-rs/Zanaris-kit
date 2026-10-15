@@ -86,8 +86,7 @@ x64 only; any other `process.arch` there has no download.
 The digest comes from the same place as the file. It catches a broken or
 cut-off download and a proxy's mistake, not somebody who controls the
 repository — no weaker than a download by hand, and without a signing
-identity nothing stronger is available. A signing identity carries a legal
-name, which is the attribution this project exists to avoid.
+identity nothing stronger is available.
 
 The Mac download is unpacked with `ditto -x -k` and must then pass
 `codesign --verify --deep --strict` and read back `CFBundleIdentifier`

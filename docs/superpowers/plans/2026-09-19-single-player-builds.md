@@ -33,7 +33,6 @@ Actions with `gh`.
 - The kit runs nothing whose sha-256 it did not ship with. The only exception
   is the developer's own `engine-dist/` in an unpackaged run.
 - Saves are never touched by an install, a remove, a switch or preparing.
-- Anything that talks to GitHub runs under `GH_TOKEN=$(gh auth token -u Zanaris274)`.
 - `node.debug` stays false and every bind stays loopback. `worldJson` does not
   change.
 - Commits end with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
@@ -415,7 +414,7 @@ the spec (status line, file names)
 ### Task 10: PR
 
 - [ ] `npm test`, `npm run typecheck` and `npm run build` are green.
-- [ ] Push the branch and open the PR with `GH_TOKEN=$(gh auth token -u Zanaris274)`.
+- [ ] Push the branch and open the PR.
   Check the author with `gh pr view --json author`.
 - [ ] The PR body says what merging leaves to do: dispatch `engines.yml` for each
   recipe, run `pin:engine`, and open a pin PR. It also says that until then a

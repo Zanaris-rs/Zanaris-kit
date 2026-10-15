@@ -5,8 +5,9 @@
 // recipe whose pin moved after the build was published finds no release.
 // The size and digest are GitHub's own, from the release asset API.
 //
-// Run it as the project's account:
-//   GH_TOKEN=$(gh auth token -u Zanaris274) npm run pin:engine -- lostcity-274
+// The release is public, so no token is needed; GH_TOKEN, when set, is sent
+// and only raises GitHub's rate limit:
+//   npm run pin:engine -- lostcity-274
 // Spec: docs/superpowers/specs/2026-09-19-single-player-builds-design.md.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

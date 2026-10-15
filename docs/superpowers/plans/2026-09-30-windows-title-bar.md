@@ -20,7 +20,6 @@
 - IPC channels are `zanaris:<area>-<verb>`; the new one is `tabAppMenu: 'zanaris:tab-app-menu'`.
 - Files under `src/main` import their neighbours without an extension, except `windowFrame.ts`, which `node --test` loads directly and so imports with `.ts`.
 - No absolute home-directory path in any file (`src/shared/identity.test.ts`).
-- `gh` against `Zanaris-rs` only as `GH_TOKEN=$(gh auth token -u Zanaris274) gh …`.
 - Commits end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ---
@@ -722,11 +721,11 @@ Dispatch a reviewer (superpowers:requesting-code-review) over `main..HEAD` again
 
 ```bash
 git push -u origin claude/windows-information-overload-9719de
-GH_TOKEN=$(gh auth token -u Zanaris274) gh workflow run release.yml --repo Zanaris-rs/Zanaris-kit --ref claude/windows-information-overload-9719de
+gh workflow run release.yml --repo Zanaris-rs/Zanaris-kit --ref claude/windows-information-overload-9719de
 ```
 
 The run's `zanaris-kit-windows-latest` artifact holds `Zanaris-Kit-Setup-0.9.1.exe`. Do not poll it.
 
 - [ ] **Step 5: Open the PR**
 
-`GH_TOKEN=$(gh auth token -u Zanaris274) gh pr create --repo Zanaris-rs/Zanaris-kit --base main …` with the spec's Windows checklist in the body, then `gh pr view <n> --json author` shows `Zanaris274`.
+`gh pr create --repo Zanaris-rs/Zanaris-kit --base main …` with the spec's Windows checklist in the body.

@@ -96,8 +96,7 @@ files split between two drafts and withdrawn, and the first release is 0.9.1.
 ## Moving a build
 
 A build line moves in one pull request, and reaches players in the next
-release. Run anything that talks to GitHub as the project's account:
-`GH_TOKEN=$(gh auth token -u Zanaris274)`.
+release.
 
 1. In `engines/<id>.json`, set both commits to the upstream heads to ship — the
    head of that revision's branch in `LostCityRS/Engine-TS` and
