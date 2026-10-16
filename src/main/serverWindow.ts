@@ -560,7 +560,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * inserts the new sheet and then removes the one before it, and a swap a
      * newer one overtook removes its own, so a colour dragged in the editor
      * leaves one sheet rather than a pile. A navigation takes the sheet with
-     * its document, which `dom-ready` answers by forgetting the key.
+     * its document, which `dom-ready` answers by removing whatever the key
+     * still names in the new one, and forgetting it.
      */
     let pageSheet: string | null = null;
     let pageSheetTurn = 0;
@@ -1840,7 +1841,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // through `loadGame`'s `loadURL` on this same view, so they re-fire `dom-ready` and
         // re-inject too — nothing server-specific is needed here.
         wc.on('dom-ready', () => {
-            // The document before took its theme sheet with it.
+            // The document before took its theme sheet with it — unless a swap issued
+            // around the navigation landed in this one before it was ready, which the
+            // key would then still name, and which would stay on this page for good:
+            // a client sheet left on the kit's offline page pins its ground to an old
+            // look. Removing a key this document never had changes nothing.
+            if (pageSheet) void wc.removeInsertedCSS(pageSheet).catch(() => undefined);
             pageSheet = null;
             // The kit's own offline and starting pages are already sized to fit; the layout sheet is for the client.
             if (!wc.getURL().startsWith('file:')) void wc.insertCSS(GAME_PAGE_CSS);
