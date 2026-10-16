@@ -487,7 +487,10 @@ every server wear. Just for, in the same menu, gives the window's server a
 theme of its own instead, and while it is ticked a pick is that server's
 alone; unticked, the server follows the app again. Settings > Appearance sets
 the same two things, and so does View > Server Theme for the window in front.
-A change restyles every window it touches at once and reloads nothing.
+A change restyles every window it touches at once and reloads nothing. While
+the theme editor holds a draft, which every window wears, the menu's themes
+and Just for are greyed, since a pick would change nothing on screen, and
+Back to Editing brings the editor forward.
 
 The game pane's page wears the theme too: its ground around the canvas, and
 the controls strip under the canvas as a band of the theme's stone, its

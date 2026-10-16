@@ -100,6 +100,11 @@ Theme ▾
   removed, and a pick there sets the app theme.
 - **Customise… / Edit…** opens the editor (section 2).
 - **All Themes…** opens Settings beside this window, on Appearance.
+- **While the editor holds a draft**, every window wears the draft over
+  what it is set to wear, so a pick would change nothing on screen. The
+  themes and Just for are greyed, ticks and all, and Customise becomes
+  **Back to Editing \<name\>…**, which brings the editor forward. Decided
+  on 2026-10-16, after the review found a pick then looked like nothing.
 
 Every change goes through `appearanceChanged`: every window restyles,
 Settings is pushed, and the app menu is rebuilt so View > Server Theme

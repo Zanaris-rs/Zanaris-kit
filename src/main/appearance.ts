@@ -191,16 +191,22 @@ const SEPARATOR: ThemeMenuEntry = { kind: 'separator' };
  * the editor moves no tick, as View > Server Theme behaves. `listed` is false
  * for a window whose server Settings has removed: Just for is greyed there,
  * and a pick sets the app theme (`themeChoice`).
+ *
+ * `drafting` is the name of the theme Settings' editor holds, or null. Every
+ * window wears a draft over whatever it is set to wear, so a pick then would
+ * change nothing on screen: the picks and Just for are greyed, ticks and all,
+ * and Customise becomes Back to Editing, which brings the editor forward.
  */
-export function themeMenu(opts: { appearance: Appearance; server: { id: string; name: string }; listed: boolean; isMac: boolean }): ThemeMenuEntry[] {
-    const { appearance, server, listed, isMac } = opts;
+export function themeMenu(opts: { appearance: Appearance; server: { id: string; name: string }; listed: boolean; isMac: boolean; drafting: string | null }): ThemeMenuEntry[] {
+    const { appearance, server, listed, isMac, drafting } = opts;
+    const free = drafting === null;
     const own = listed ? serverOverride(appearance, server.id) : null;
     const worn = themeFor(appearance, server.id);
     const wear = (theme: Theme): ThemeMenuEntry => ({
         kind: 'item',
         label: themeLabel(theme, isMac),
         checked: theme.id === worn.id,
-        enabled: true,
+        enabled: free,
         swatch: isMac ? theme.colors : null,
         action: { kind: 'wear', theme: theme.id }
     });
@@ -210,9 +216,9 @@ export function themeMenu(opts: { appearance: Appearance; server: { id: string; 
         ...THEMES.map(wear),
         ...(appearance.custom.length > 0 ? [SEPARATOR, ...appearance.custom.map(wear)] : []),
         SEPARATOR,
-        { kind: 'item', label: `Just for ${menuText(server.name, isMac)}`, checked: own !== null, enabled: listed, swatch: null, action: { kind: 'own', on: own === null } },
+        { kind: 'item', label: `Just for ${menuText(server.name, isMac)}`, checked: own !== null, enabled: listed && free, swatch: null, action: { kind: 'own', on: own === null } },
         SEPARATOR,
-        plain(`${custom ? 'Edit' : 'Customise'} ${themeLabel(worn, isMac)}…`, { kind: 'customise' }),
+        plain(drafting !== null ? `Back to Editing ${menuText(drafting, isMac)}…` : `${custom ? 'Edit' : 'Customise'} ${themeLabel(worn, isMac)}…`, { kind: 'customise' }),
         plain('All Themes…', { kind: 'all' })
     ];
 }

@@ -68,7 +68,7 @@ import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversView, startupServers } from './servers';
-import { appearanceView, closeQuestion, deleteQuestion, editFromWindow, lookFor, readEditing, savesTo, themeChoice, themeMenu, type Editing, type ThemeMenuAction } from './appearance';
+import { appearanceView, closeQuestion, deleteQuestion, editFromWindow, lookFor, readEditing, savesTo, themeChoice, themeMenu, type Editing, type ThemeMenuAction, type ThemeMenuEntry } from './appearance';
 import { swatchPng } from './swatch';
 import { APP_ID, APP_NAME, aboutOptions, devBranding } from './branding';
 import { reportUrl } from './report';
@@ -780,14 +780,29 @@ function showInSettings(anchor: ServerWindow, request: SettingsShow): void {
 }
 
 /**
- * Customise or Edit, from a window's Theme menu: the editor open on what the
- * window's server wears, saving for that server while it keeps its own theme
- * (`appearance.editFromWindow`). An editor already open keeps its draft:
- * Settings comes forward on Appearance with it as it is.
+ * Customise or Edit, from a window's Theme menu — Back to Editing while a
+ * draft is open: the editor open on what the window's server wears, saving
+ * for that server while it keeps its own theme (`appearance.editFromWindow`).
+ * The draft goes with every request. Settings keeps an editor it already has
+ * (`useShowRequests`) and comes forward on Appearance with it as it is, so
+ * nothing here asks main's `editing`, which trails the editor by a report: a
+ * Cancel still on its way would otherwise have Customise open no editor.
  */
 function customiseFrom(sw: ServerWindow): void {
     const id = sw.state().server.id;
-    showInSettings(sw, { section: 'appearance', edit: editing ? null : editFromWindow(appState.appearance(), id, catalog.get(id) !== undefined) });
+    showInSettings(sw, { section: 'appearance', edit: editFromWindow(appState.appearance(), id, catalog.get(id) !== undefined) });
+}
+
+/** What a window's Theme menu lists now: `appearance.themeMenu` given this window's server and the draft open in Settings, if any. */
+function themeMenuFor(sw: ServerWindow): ThemeMenuEntry[] {
+    const { server } = sw.state();
+    return themeMenu({
+        appearance: appState.appearance(),
+        server: { id: server.id, name: server.name },
+        listed: catalog.get(server.id) !== undefined,
+        isMac: process.platform === 'darwin',
+        drafting: editing?.name ?? null
+    });
 }
 
 /** A choice in a window's Theme menu. Nothing for a window gone since the menu opened. */
@@ -1513,9 +1528,7 @@ ipcMain.handle(IPC.tabThemeMenu, (event, x: unknown, y: unknown) => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     const sw = windowFor(event.sender);
     if (!sw || sw.window.isDestroyed()) return;
-    const { server } = sw.state();
-    const entries = themeMenu({ appearance: appState.appearance(), server: { id: server.id, name: server.name }, listed: catalog.get(server.id) !== undefined, isMac: process.platform === 'darwin' });
-    const template = entries.map(
+    const template = themeMenuFor(sw).map(
         (entry): MenuItemConstructorOptions =>
             entry.kind === 'separator'
                 ? { type: 'separator' }
@@ -3042,6 +3055,23 @@ async function captureAndExit(dir: string): Promise<void> {
                 await wait(500);
                 await shootShell('settings-editor-from-window', settingsWindow);
                 log(`[capture] customise from ${own}: editor on ${String(name)}, "${line ?? 'no line'}"`);
+
+                // With the draft open, the window's menu greys its picks and
+                // offers the editor back; and Customise again, with the server
+                // now in another theme, keeps the draft that is open rather
+                // than opening one on the new theme.
+                const during = themeMenuFor(first);
+                const picksOpen = during.filter(e => e.kind === 'item' && e.action.kind === 'wear' && e.enabled).length;
+                const back = during.find(e => e.kind === 'item' && e.action.kind === 'customise');
+                const backLabel = back?.kind === 'item' ? back.label : 'no editor item';
+                if (picksOpen > 0 || !backLabel.startsWith('Back to Editing')) fault(`theme-menu-draft: with the editor open, ${picksOpen} pick(s) still open and "${backLabel}"`);
+                appState.setServerTheme(own, 'lumbridge');
+                appearanceChanged();
+                themeMenuChose(first, { kind: 'customise' });
+                await wait(800);
+                const kept = await contents.executeJavaScript(`document.querySelector('input')?.value ?? null`);
+                if (kept !== name) fault(`theme-menu-draft: Customise again replaced the open draft ${String(name)} with ${String(kept)}`);
+                log(`[capture] theme menu with a draft: ${picksOpen} picks open, "${backLabel}"; Customise again kept ${String(kept)}`);
                 settingsWindow.window.close();
                 await wait(800);
             }

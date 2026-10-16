@@ -155,7 +155,7 @@ test('a built-in is named in Title Case in a native menu, a player\'s own as typ
 });
 
 test('the Theme menu lists every built-in, ticks what the server wears, and offers the tick and the editor', () => {
-    const entries = themeMenu({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, server: lostCity, listed: true, isMac: true });
+    const entries = themeMenu({ appearance: { theme: 'zanaris', servers: {}, custom: [] }, server: lostCity, listed: true, isMac: true, drafting: null });
     assert.deepEqual(
         items(entries).map(e => e.label),
         ['2004 Stone', 'Zanaris', 'Wilderness', 'Al Kharid', 'Morytania', 'Lumbridge', 'Just for Lost City', 'Customise Zanaris…', 'All Themes…']
@@ -177,7 +177,7 @@ test('the Theme menu lists every built-in, ticks what the server wears, and offe
 });
 
 test("a server with its own theme has it ticked and Just for ticked; the player's own follow a separator, and one of theirs is Edit", () => {
-    const entries = themeMenu({ appearance: { theme: 'stone', servers: { lostcity: rock.id }, custom: [rock] }, server: lostCity, listed: true, isMac: false });
+    const entries = themeMenu({ appearance: { theme: 'stone', servers: { lostcity: rock.id }, custom: [rock] }, server: lostCity, listed: true, isMac: false, drafting: null });
     assert.deepEqual(
         items(entries)
             .filter(e => e.checked)
@@ -191,7 +191,7 @@ test("a server with its own theme has it ticked and Just for ticked; the player'
 });
 
 test('a window whose server was removed from the list greys Just for', () => {
-    const entries = themeMenu({ appearance: { theme: 'stone', servers: {}, custom: [] }, server: lostCity, listed: false, isMac: true });
+    const entries = themeMenu({ appearance: { theme: 'stone', servers: {}, custom: [] }, server: lostCity, listed: false, isMac: true, drafting: null });
     assert.equal(items(entries).find(e => e.label === 'Just for Lost City')?.enabled, false);
     assert.ok(items(entries).filter(e => e.label !== 'Just for Lost City').every(e => e.enabled));
 });
@@ -259,7 +259,7 @@ test('the view says where Save goes', () => {
 });
 
 test('off macOS the Theme menu carries no swatches, so nothing can stand in for its ticks', () => {
-    const entries = themeMenu({ appearance: { theme: 'stone', servers: {}, custom: [rock] }, server: lostCity, listed: true, isMac: false });
+    const entries = themeMenu({ appearance: { theme: 'stone', servers: {}, custom: [rock] }, server: lostCity, listed: true, isMac: false, drafting: null });
     assert.ok(items(entries).every(e => e.swatch === null));
     assert.deepEqual(
         items(entries)
@@ -267,4 +267,26 @@ test('off macOS the Theme menu carries no swatches, so nothing can stand in for 
             .map(e => e.label),
         ['2004 Stone']
     );
+});
+
+test('while a draft is open the picks and Just for are greyed, and Customise goes back to the editor', () => {
+    const entries = themeMenu({ appearance: { theme: 'stone', servers: {}, custom: [rock] }, server: lostCity, listed: true, isMac: true, drafting: 'Zanaris (copy)' });
+    const picks = items(entries).filter(e => e.action.kind === 'wear');
+    assert.equal(picks.length, THEMES.length + 1);
+    assert.ok(picks.every(e => !e.enabled));
+    // The tick still says what the server is set to wear, as it does while greyed.
+    assert.deepEqual(
+        picks.filter(e => e.checked).map(e => e.label),
+        ['2004 Stone']
+    );
+    assert.equal(items(entries).find(e => e.action.kind === 'own')?.enabled, false);
+    const editor = items(entries).find(e => e.action.kind === 'customise');
+    assert.equal(editor?.label, 'Back to Editing Zanaris (copy)…');
+    assert.equal(editor?.enabled, true);
+    assert.equal(items(entries).find(e => e.action.kind === 'all')?.enabled, true);
+});
+
+test("Back to Editing names the draft as typed, with an & doubled off macOS", () => {
+    const entries = themeMenu({ appearance: { theme: 'stone', servers: {}, custom: [] }, server: lostCity, listed: true, isMac: false, drafting: 'Rock & roll' });
+    assert.equal(items(entries).find(e => e.action.kind === 'customise')?.label, 'Back to Editing Rock && roll…');
 });
