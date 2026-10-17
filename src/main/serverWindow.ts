@@ -414,6 +414,12 @@ export interface ServerWindow extends ServerWindowHandle {
     /** Page content of one view, for capture mode. A window's own webContents holds nothing. */
     captureShell(): Promise<NativeImage>;
     captureGame(): Promise<NativeImage>;
+    /**
+     * Capture mode only: whether the game's view is on screen, as the window
+     * last placed it. False while a drag hides every native view, and with no
+     * game in the tab in front.
+     */
+    gameShown(): boolean;
     /** Capture mode only: kills a view's renderer, as a crash would, to show what the window does about it. */
     crashForCapture(what: 'game' | 'shell' | 'page'): void;
     /**
@@ -2253,6 +2259,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         settle: () => paintsFrames(shellView.webContents),
         captureShell: () => shellView.webContents.capturePage(),
         captureGame: () => gameView?.webContents.capturePage() ?? Promise.reject(new Error('no game view')),
+        gameShown: () => gameView !== null && !gameView.webContents.isDestroyed() && gameView.getVisible(),
         crashForCapture: what => {
             const view = what === 'game' ? gameView : what === 'shell' ? shellView : host.pageWebContents();
             if (view && !view.webContents.isDestroyed()) view.webContents.forcefullyCrashRenderer();

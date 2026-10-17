@@ -7,6 +7,7 @@ import { SERVER_LOG, type ChatLine, type ChatSight, type ChatView } from '../sha
 import { userActions, type UserAction } from '../shared/chatInput';
 import { isNick, passwordProblem, readIgnore, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
 import { linkTarget } from '../shared/chatText';
+import { sameName } from '../shared/ircNames';
 import { normaliseName } from '../shared/hiscores';
 import { IPC, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
 import { NAME_INPUT_MAX } from '../shared/names';
@@ -47,6 +48,7 @@ import { installMenu, type MenuActions, type MenuWindowState } from './menu';
 import { HttpStatusError, WorldsService } from './worlds/service';
 import { HiscoresService } from './hiscores/service';
 import { ChatService, offlineChat, tlsConnect, type SettingsChange } from './chat/service';
+import { scriptedChat, type ScriptedRoom } from './chat/scripted';
 import { canSeal, open as openSecret, seal } from './chat/secret';
 import { probeLatency } from './worlds/probe';
 import { switchWarning, type SwitchIntent } from './worlds/warning';
@@ -213,6 +215,53 @@ if (CAPTURE_DIR) app.commandLine.appendSwitch('disable-backgrounding-occluded-wi
  * without reading or writing the profile's own.
  */
 let capturePlace: Place | null = null;
+
+/** The nick capture's chat steps give chat, which only capture's scripted server ever hears. */
+const CAPTURE_NICK = 'capture';
+/**
+ * What capture's scripted chat server answers a join with: the rooms of the
+ * default auto-join list, so the shots are chat as a player first finds it.
+ * Everyone in them and everything said is made up, and each topic says so.
+ */
+const CAPTURE_ROOMS: ScriptedRoom[] = [
+    {
+        name: '#2004scape',
+        topic: 'Scripted for capture: talk about 2004scape',
+        users: ['@Bronze_Hal', '+Lumby_Lad', 'Iron_Fen', 'Rune_Ada'],
+        lines: [
+            { nick: 'Lumby_Lad', text: 'anyone up for a Barbarian Village run?' },
+            { nick: 'Iron_Fen', text: 'give me five, banking my fish' },
+            { nick: 'Bronze_Hal', text: 'the world list is on the site if yours is full' }
+        ]
+    },
+    {
+        name: '#LostHQ',
+        topic: 'Scripted for capture: Lost City news and help',
+        users: ['@Wizard_Mira', 'Pie_Dish', 'Goblin_Tam'],
+        lines: [
+            { nick: 'Wizard_Mira', text: 'world 2 is back up' },
+            { nick: 'Pie_Dish', text: 'thanks, I was stuck on the login screen' },
+            { nick: 'Goblin_Tam', text: 'is the fishing guild open on this revision?' },
+            { nick: 'Wizard_Mira', text: 'it is, members only though' }
+        ]
+    },
+    {
+        name: '#Zanaris',
+        topic: 'Scripted for capture: Zanaris Kit',
+        users: ['+Fairy_Ring', 'Shed_Door'],
+        lines: [
+            { nick: 'Fairy_Ring', text: 'a room can have a pane of its own now' },
+            { nick: 'Shed_Door', text: 'nice, I wanted chat beside the game' }
+        ]
+    }
+];
+/**
+ * Capture's chat server: a script in this process (`chat/scripted.ts`),
+ * never a network. In capture mode chat is built with its `connect` in place
+ * of `tlsConnect`, so a capture opens no socket to an IRC server whatever
+ * nick its steps give chat, and no stranger's channel hears a test.
+ */
+const captureChat = CAPTURE_DIR ? scriptedChat({ rooms: CAPTURE_ROOMS, defer: fn => setImmediate(fn) }) : null;
 
 let quitting = false;
 // The entry for your home server names the revision of the line the world runs. Before
@@ -2538,12 +2587,14 @@ async function captureAndExit(dir: string): Promise<void> {
         }
 
         // Chat: this profile has no nick — see the chat block in
-        // app.whenReady, above — so chat never opens a socket here, and every
-        // shot below lands on the Settings tab rather than a conversation.
-        // That is the correct thing to capture, not a bug to paper over: log
-        // it plainly so nobody later mistakes offline chat for broken chat,
-        // and never fake a connection just to get a prettier screenshot.
-        log('[capture] chat: no nick in this profile, so chat captures its Settings tab, not a conversation');
+        // app.whenReady, below — so chat does not connect, and every shot
+        // from here to the room panels near the end lands on the Settings tab
+        // rather than a conversation. That is chat as a player first finds
+        // it, not a bug to paper over: logged plainly so nobody later mistakes
+        // offline chat for broken chat. The room panels give chat a nick, and
+        // connect it to capture's scripted server, after every shot that
+        // shows chat without one.
+        log('[capture] chat: no nick in this profile, so chat captures its Settings tab until the room panels near the end give it one');
 
         // A seam dragged without a pointer: the same clamp `paneSetSeam`
         // applies, driven directly the way this whole function drives
@@ -3180,6 +3231,163 @@ async function captureAndExit(dir: string): Promise<void> {
             }
         }
 
+        // Room panels. Every shot above is of chat with no nick, and stays
+        // so: this comes after all of them. Here chat is given a nick and
+        // connected, to capture's scripted server (`captureChat`) — the only
+        // server chat is given in a capture — and a room comes out of the
+        // chat pane's row into a panel of its own. On a window of its own,
+        // destroyed after, which opens on the game over chat. Driven on the
+        // window, as everything here is: the drag and the menus that reach
+        // these calls are the shell's, and nothing here can press them. Each
+        // step logs every pane's `chat` view, with how many lines it carries
+        // rather than the lines.
+        {
+            const service = chat;
+            const scripted = captureChat;
+            const server = first.state().server;
+            const roomName = (room: string | null): string => (room === null ? 'none' : room === SERVER_LOG ? 'Status' : room);
+            const chatViews = (sw: ServerWindow): string =>
+                sw
+                    .state()
+                    .panes.flatMap(p =>
+                        p.chat === null
+                            ? []
+                            : [`${p.paneId} ${p.chat.panel ? 'room panel' : 'chat pane'} on ${p.chat.page}, room ${roomName(p.chat.room)}, row [${p.chat.row.map(roomName).join(', ')}], ${p.chat.lines.length} line(s)${p.chat.newFrom === null ? '' : `, New from line ${p.chat.newFrom}`}`]
+                    )
+                    .join('; ');
+            const chatOf = (sw: ServerWindow, paneId: string): ShellState['panes'][number]['chat'] => sw.state().panes.find(p => p.paneId === paneId)?.chat ?? null;
+            const panelFor = (sw: ServerWindow, room: string): ShellState['panes'][number] | undefined =>
+                sw.state().panes.find(p => p.chat?.panel === true && p.chat.room !== null && sameName(p.chat.room, room));
+            const until = async (done: () => boolean, ms: number): Promise<boolean> => {
+                const end = Date.now() + ms;
+                while (!done() && Date.now() < end) await wait(100);
+                return done();
+            };
+            const rooms = async (talker: ServerWindow): Promise<void> => {
+                const title = talker.state().title;
+                const chatPane = talker.state().panes.find(isChatPane)?.paneId;
+                if (!chatPane) return fault(`room panels: ${title} opened with no chat pane`);
+
+                // A nick saved and Connect pressed, as the chat pane's
+                // Settings page does both — the nick only for this run, since
+                // `applySettings` writes nothing to the profile, so the next
+                // capture starts with no nick again.
+                const autoJoin = CAPTURE_ROOMS.map(room => room.name);
+                service!.applySettings({ nick: CAPTURE_NICK, autoJoin });
+                service!.connect();
+                const heard = (): boolean => {
+                    const view = service!.view();
+                    return (
+                        view.status === 'online' &&
+                        CAPTURE_ROOMS.every(
+                            room =>
+                                view.channels.some(c => sameName(c.name, room.name) && c.users.length > 0) &&
+                                service!.log(room.name).lines.filter(line => line.kind === 'say').length >= room.lines.length
+                        )
+                    );
+                };
+                const online = await until(heard, 10_000);
+                const view = service!.view();
+                log(`[capture] chat: ${view.status} as ${view.nick ?? 'nobody'} on capture's scripted server, in ${view.channels.map(c => `${roomName(c.name)} (${c.users.length} user(s), ${service!.log(c.name).lines.length} line(s))`).join(', ')}`);
+                if (!online) return fault(`room panels: chat never had ${autoJoin.join(', ')} joined and heard on the scripted server (status ${view.status})`);
+
+                // Connect on the Settings page shows the conversation, and a
+                // click on #LostHQ's tab puts the pane on it.
+                talker.showChatPage(chatPane, 'chat');
+                talker.showChatRoom(chatPane, '#LostHQ');
+                await wait(800);
+                log(`[capture] ${title}: chat with rooms — ${chatViews(talker)}`);
+                const before = chatOf(talker, chatPane);
+                if (before?.page !== 'chat' || before.room !== '#LostHQ' || before.lines.length === 0) fault(`room panels: the chat pane is on ${before?.page} in ${roomName(before?.room ?? null)} with ${before?.lines.length ?? 0} line(s), not on #LostHQ's lines`);
+                if (!autoJoin.every(room => before?.row.includes(room))) fault(`room panels: the chat pane's row is [${before?.row.map(roomName).join(', ')}], not every room joined`);
+                await shoot(`${server.id}-chat-rooms`, talker);
+
+                // Open Right on #LostHQ's tab: a panel for it beside the chat
+                // pane, whose row loses it and which steps aside to the room
+                // after it.
+                const width = talker.window.getContentBounds().width;
+                talker.openRoom(chatPane, '#LostHQ', 'right');
+                await wait(800);
+                log(`[capture] ${title}: #LostHQ opened right, window ${width} → ${talker.window.getContentBounds().width} wide — ${chatViews(talker)}`);
+                const panel = panelFor(talker, '#LostHQ');
+                const aside = chatOf(talker, chatPane);
+                if (!panel) fault('room panels: Open Right on #LostHQ made no panel for it');
+                else if ((panel.chat?.lines.length ?? 0) === 0) fault('room panels: the #LostHQ panel has none of its lines');
+                if (aside?.row.some(room => sameName(room, '#LostHQ'))) fault('room panels: #LostHQ is still in the chat pane\'s row, though it has a panel');
+                if (aside?.room !== '#Zanaris') fault(`room panels: the chat pane stepped aside to ${roomName(aside?.room ?? null)}, not #Zanaris, the room after #LostHQ`);
+                await shoot(`${server.id}-room-panel`, talker);
+
+                // Per window: another window's chat pane still lists #LostHQ.
+                const other = openServer(server);
+                try {
+                    log(`[capture] ${other.state().title}: ${await loaded(other)}`);
+                    await wait(Math.min(settleMs, 8_000));
+                    log(`[capture] ${other.state().title}: beside the panel in ${title} — ${chatViews(other)}`);
+                    const row = other.state().panes.find(isChatPane)?.chat?.row ?? [];
+                    if (!row.some(room => sameName(room, '#LostHQ'))) fault(`room panels: ${other.state().title}'s chat pane lost #LostHQ from its row [${row.map(roomName).join(', ')}], though its panel is in ${title}`);
+                    await shoot(`${server.id}-room-other-window`, other);
+                } finally {
+                    other.window.destroy();
+                    await wait(1_000);
+                }
+
+                // #Zanaris's tab dragged out and let go of anywhere but an
+                // edge: the drag hides the game, as a header drag does, and
+                // ending it must show the game again.
+                const targets = talker.beginRoomDrag('#Zanaris');
+                const hidden = !talker.gameShown();
+                talker.endPaneDrag();
+                await wait(300);
+                const shown = talker.gameShown();
+                log(`[capture] ${title}: #Zanaris dragged and let go — ${targets === null ? 'refused' : `${Object.keys(targets).length} pane(s) to drop on`}, the game ${hidden ? 'hidden' : 'shown'} during the drag and ${shown ? 'shown' : 'hidden'} after; ${chatViews(talker)}`);
+                if (targets === null) fault('room drag: #Zanaris could not be dragged out of the row');
+                else if (!hidden) fault('room drag: the game stayed on screen through the drag, where nothing can be drawn over it');
+                if (!shown) fault('room drag: the game was left hidden after the drag ended');
+                if (panelFor(talker, '#Zanaris')) fault('room drag: a drag let go of off every edge made a panel for #Zanaris');
+
+                // A panel for a room chat is not in, as a stranger's setup
+                // could hold: it offers Join, and never joins on its own.
+                talker.splitPaneWith(chatPane, 'y', { kind: 'tool', tool: 'chat', room: '#notjoined' });
+                await wait(800);
+                log(`[capture] ${title}: a panel for #notjoined below chat — ${chatViews(talker)}`);
+                if (!panelFor(talker, '#notjoined')) fault('room panels: no panel for #notjoined was made');
+                if (scripted!.joins().some(room => sameName(room, '#notjoined'))) fault('room panels: the #notjoined panel sent a JOIN for it on its own');
+                if (service!.view().channels.some(c => sameName(c.name, '#notjoined'))) fault('room panels: chat has #notjoined as a room, though nothing joined it');
+                await shoot(`${server.id}-room-join`, talker);
+
+                // A line naming us in #Zanaris while nothing shows it: chat's
+                // pane goes to its Settings page, which shows no room and,
+                // though it still draws its row, counts as chat out of sight,
+                // and #Zanaris has no panel. Every other window's chat pane has
+                // been on Settings since before chat had a nick. The ping is in
+                // the game's header, in the tab in front.
+                talker.showChatPage(chatPane, 'settings');
+                await wait(500);
+                if (!talker.state().panes.some(p => p.content.kind === 'game')) fault(`ping: ${title} has no game in its tab in front, so no header to show a ping in`);
+                if (panelFor(talker, '#Zanaris')) fault('ping: #Zanaris has a panel on screen, so a line in it would be seen');
+                const text = `${CAPTURE_NICK}, have you tried dragging a room out of the row?`;
+                if (!scripted!.say('#Zanaris', 'Shed_Door', text)) fault('ping: the scripted server had no connection to say anything on');
+                const pinged = await until(() => talker.state().chat.ping?.line.text === text, 5_000);
+                const ping = talker.state().chat.ping;
+                log(`[capture] ${title}: a mention in #Zanaris with chat on its Settings page — ping ${ping ? `from ${ping.line.nick} in ${roomName(ping.line.channel)}, ${ping.more} more` : 'none'}; ${chatViews(talker)}`);
+                if (!pinged || !ping || !sameName(ping.line.channel, '#Zanaris')) fault(`ping: a mention in #Zanaris out of sight showed ${ping ? `a ping in ${roomName(ping.line.channel)}` : 'no ping'} in the game's header`);
+                await shoot(`${server.id}-room-ping`, talker);
+            };
+            if (service === null || scripted === null) {
+                fault('room panels: chat or its scripted server is missing, so no room was shot');
+            } else {
+                const talker = openServer(server);
+                try {
+                    log(`[capture] ${talker.state().title}: ${await loaded(talker)}`);
+                    await wait(Math.min(settleMs, 8_000));
+                    await rooms(talker);
+                } finally {
+                    talker.window.destroy();
+                    await wait(1_000);
+                }
+            }
+        }
+
         // The close question, and a quit while it is still on screen. This
         // must be the run's last act: nothing after it can shoot or log,
         // since the process is meant to exit with the sheet up. Settings
@@ -3313,9 +3521,11 @@ app.whenReady().then(async () => {
     // Asked without a request by some APIs — `Notification.permission`, a
     // permissions query — which a request handler alone never sees.
     pages.setPermissionCheckHandler((_contents, permission) => allowPermission(permission, 'page'));
-    // Offline until a nick is set, which is why a capture run — whose profile has
-    // none — never opens a socket. The password is opened here, after ready,
-    // because the OS store is not available before it.
+    // Offline until a nick is set: a capture's profile has none, so its chat
+    // shots are of the Settings page until its last steps give chat one. In
+    // capture mode the transport is capture's scripted server (`captureChat`)
+    // rather than TLS, so even then no socket opens. The password is opened
+    // here, after ready, because the OS store is not available before it.
     chat = new ChatService(
         {
             ...appState.chat(),
@@ -3337,7 +3547,7 @@ app.whenReady().then(async () => {
             }
         },
         {
-            connect: tlsConnect,
+            connect: captureChat ? captureChat.connect : tlsConnect,
             now: Date.now,
             setTimer: (fn, ms) => {
                 const timer = setTimeout(fn, ms);

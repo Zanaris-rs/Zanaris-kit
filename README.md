@@ -399,8 +399,9 @@ mean.
 
 The first time you open chat it opens on Chat settings, because there is nothing
 sensible to default a nick to, and a name others see should be chosen rather
-than assigned. Nothing connects until you pick one, which is also why an
-unattended capture run never opens a socket. Some commands are the kit's own,
+than assigned. Nothing connects until you pick one. A capture run gives chat
+one only at its end, and connects it to a scripted server inside the kit, never
+to a network. Some commands are the kit's own,
 because they change what it draws or take the channel you are looking at:
 `/me`, `/msg`, `/query`, `/notice`, `/nick`, `/join`, `/part`, `/close`,
 `/topic`, `/away`, `/back`, `/whois`, `/kick`, `/invite`, `/op`, `/deop`, `/voice`,
@@ -990,7 +991,11 @@ waits for the list, switches to another world and captures that, opens the
 Hiscores tool on each server that has one and looks a single name up there —
 one request per server and no retry, since Lost City rate-limits after a
 handful inside a minute — opens the Home server tool, then opens a second
-instance of that server. It reads the builds from the installed kit's
+instance of that server. Last, it gives chat a nick and connects it to a
+scripted server inside the kit (`src/main/chat/scripted.ts`), never a network,
+and shoots a room opened in a panel of its own, the same room still in another
+window's row, a panel offering Join, and a mention's ping in the game's header.
+It reads the builds from the installed kit's
 profile, as a development run does; a line that profile has not downloaded is
 skipped rather than left waiting. It keeps everything else in a profile of its
 own, `zanaris-kit-capture`, so a test switch never changes what the next real

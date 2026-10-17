@@ -362,6 +362,13 @@ nothing (`IrcClient.speak`).
 **Links in the log open only if `linkTarget` says http or https**, read again
 in main whatever the shell sent: a chat line is a stranger's writing.
 
+**A capture's chat never reaches a network.** In capture mode `ChatService`
+is built with the `connect` of a scripted server (`chat/scripted.ts`,
+`captureChat` in `index.ts`) in place of `tlsConnect`. Capture's last steps
+give chat a nick and shoot its rooms, and a capture that reached SwiftIRC
+would join strangers' channels under a test nick. The nick is given through
+`applySettings`, which saves nothing, so the next capture has none again.
+
 Chat connects to **SwiftIRC** (`irc.swiftirc.net:6697`, TLS, confirmed by
 handshake against its Let's Encrypt certificate), not Libera. That is where
 LostHQ's actual community is.
