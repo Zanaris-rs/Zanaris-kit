@@ -366,10 +366,10 @@ export class ChatService {
 
     /**
      * What every window shows of chat, together: which rooms are read, and
-     * whose pings are seen (`IrcClient.see`). Kept for a client made later. Says whether anything a window draws changed, and tells no
-     * subscriber: main calls this while it is telling the windows, and a push
-     * from in here would reach some of them with the view it is about to
-     * replace.
+     * whose pings are seen (`IrcClient.see`). Kept for a client made later.
+     * Says whether anything a window draws changed, and tells no subscriber:
+     * main calls this while it is telling the windows, and a push from in
+     * here would reach some of them with the view it is about to replace.
      */
     see(sight: ChatSight): boolean {
         this.sight = { reading: [...sight.reading], rowed: [...sight.rowed] };

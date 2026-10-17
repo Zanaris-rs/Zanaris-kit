@@ -419,8 +419,9 @@ export interface ServerWindow extends ServerWindowHandle {
     captureGame(): Promise<NativeImage>;
     /**
      * Capture mode only: whether the game's view is on screen, as the window
-     * last placed it. False while a drag hides every native view, and with no
-     * game in the tab in front.
+     * last placed it. False while a drag hides every native view, while the
+     * game has crashed or hung and its pane shows a notice in its place, with
+     * no game in the tab in front, and with no game view at all.
      */
     gameShown(): boolean;
     /** Capture mode only: kills a view's renderer, as a crash would, to show what the window does about it. */
