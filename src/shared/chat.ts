@@ -118,6 +118,32 @@ export interface ChatPing {
  */
 export type ChatPage = 'settings' | 'chat';
 
+/**
+ * What one window's front tab shows of chat, which the client counts rooms
+ * by. Each window reports its own, and chat takes the union of them.
+ *
+ * - `reading`: the rooms whose lines are on screen — each chat pane's room on
+ *   its conversation page, and each room panel's. A pane on its Settings page
+ *   shows no room and adds none.
+ * - `rowed`: every room in a row of tabs that is on screen, whether or not a
+ *   pane is showing it, so a ping in a room whose tab is in view is seen. The
+ *   whole row when any chat pane is on its conversation page, none otherwise.
+ */
+export interface ChatSight {
+    reading: string[];
+    rowed: string[];
+}
+
+/** One room's lines, and where its New divider goes: the part of the chat view that is a pane's rather than the connection's. */
+export interface ChatLog {
+    lines: ChatLine[];
+    /**
+     * The id of the first line that arrived in this room since it was last
+     * left, when anything counted as unread did. Null otherwise.
+     */
+    newFrom: number | null;
+}
+
 /** What the Chat panel draws. Lines are for the active channel only. */
 export interface ChatView {
     status: ChatStatus;
