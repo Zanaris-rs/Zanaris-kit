@@ -59,10 +59,11 @@ Seven properties in there are load-bearing and easy to break —
   the arrangement the player last left (`refit`), **not from the last frame**.
   Shrinking past the other panes' floors squeezes the game; fitted frame from
   frame, growing back would then hold it at the squeezed size for good.
-- A pane that is **added** — Add pane's column, Split Right, Split Down — is
-  **paid for by the window, not the game** (`makeRoom`): the window grows by
-  what the game would have lost, as far as its display allows, and the game
-  takes the growth back. The tree is recorded as arranged at the size the
+- A pane that is **added** — Add pane's column, Split Right, Split Down, and
+  a room opened beside a pane, by Open Right or Open Below on its tab or by
+  its tab dropped on a pane's edge — is **paid for by the window, not the
+  game** (`makeRoom`): the window grows by what the game would have lost, as
+  far as its display allows, and the game takes the growth back. The tree is recorded as arranged at the size the
   window is growing to (`arrangedAt`). Left to `refit`, it would be fitted from
   the last frame's size, the growth would read as a resize, and the game would
   be held at the size the new pane squeezed it to while the window grew around
@@ -102,13 +103,15 @@ Seven properties in there are load-bearing and easy to break —
   2026-10-08. A maximised or full-screen window is not resized; there the
   seams move as they always did (`resetGame`).
 
-Those four are the only things that resize the window — not a drop. Opening
-a window is not one of them either: a new window is built at the size of the
-setup its server's new windows open with and at the place its number last
-closed at, both decided before it exists (`setups.openingSetup`,
-`windowPlace.openingFrame`), never opened and then moved. One that closed
-maximised or full screen is made so again as it is shown, which puts back the
-player's own state rather than sizing the window. Only the place is recorded
+Those four are the only things that resize the window. A drop that moves a
+pane is not one of them: a pane dragged by its header to another place costs
+the window nothing. A room's tab dropped on a pane's edge is a pane added, and
+is paid for as one. Opening a window is not one of them either: a new window
+is built at the size of the setup its server's new windows open with and at
+the place its number last closed at, both decided before it exists
+(`setups.openingSetup`, `windowPlace.openingFrame`), never opened and then
+moved. One that closed maximised or full screen is made so again as it is
+shown, which puts back the player's own state rather than sizing the window. Only the place is recorded
 without being asked for; the size is always the setup's.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file
@@ -124,6 +127,13 @@ Home server outside its own window, which is meant to happen and costs only
 that pane. So an id, once shipped, is never removed or renamed: a kit that
 stopped knowing one would cost someone their whole saved arrangement, not just
 the pane that used it, the day they tried to open it here.
+
+The same is why a room panel is a field on chat's content, `room`, rather
+than a tool id of its own. A kit that does not know the field reads the leaf
+as chat and drops the field, so a setup holding a panel opens in 0.9.3 with a
+chat pane where the panel was; a new id would have sunk the whole file there.
+`readContent` judges the field with `readRoom`, and a room that is there and
+wrong sinks the file like any other bad field.
 
 > The old invariant said the opposite: opening chrome must never resize the
 > game, because resizing cost the login. The second half was never true —
@@ -252,7 +262,9 @@ connection's; the form shows the first.
 again on every Connect. Closing a tab or typing `/join` lasts for the session and
 never writes the list. The old always-joined lobby and the per-window
 `#LostCity` rule (`chat/channels.ts`, `setServers`) were removed on the owner's
-call on 2026-09-15; don't bring back rooms that follow windows.
+call on 2026-09-15; don't bring back rooms that follow windows. A room panel
+never joins its room either: one from a setup, or left after a `/part`, offers
+Join and waits for the click.
 
 `#Zanaris` is in the defaults because the owner asked for it. The kit used to
 avoid guessing a Zanaris room, since on a large public network the name could
@@ -277,47 +289,71 @@ reply lands in Status.
 **A conversation with one person is a tab named by their nick.** A PRIVMSG to
 us opens one, up to `MAX_CONVERSATIONS`, past which it lands in Status; a notice never does, and neither does `/msg`, so NickServ's
 answers stay in Status. A conversation is never in the auto-join list, is not
-reopened on reconnect, and follows its person through a NICK. Anything said
+reopened on reconnect, and follows its person through a NICK, and so does
+every pane and panel showing it: `ChatStart.onRenamed` is told inside the
+line that renamed it, before chat pushes anything, so no pane steps aside
+from the old name first. Anything said
 to NickServ, in a conversation or by `/msg`, is echoed with its secret words
 hidden (`hideSecret`).
 
-**A ping shows in the game's header while chat is out of sight.** A line
-that names you or is said to you alone, arriving while no window's front
-tab holds a chat pane showing the conversation, stays after the game's
-read-out until one does anywhere (`IrcClient.seePings`). Main counts
-pings seen before any window reads chat's view — when a window sends its
-state with the conversation in front (`chatShown`), and when chat changes
-(`chatOnScreen`) — so no header ever shows one chat is already showing. A
-click opens chat on the ping's room through `showChat`, which adds the pane
-through `showTool`, as the Sharing button opens Home server, and puts it on
-the conversation. The system notification is separate, and is still
-only for a kit in the background.
+**A ping shows in the game's header while its room is out of sight.** A
+line that names you or is said to you alone, arriving in a room that no
+window's front tab has on screen — no panel for it, no chat pane showing it,
+and no chat pane on its conversation page whose row lists its tab — stays
+after the game's read-out until one does, anywhere. Each room keeps its own
+mark of what has been seen, raised by `IrcClient.see` for every room in what
+the windows show together (`ChatSight`'s `reading` and `rowed`). Main tells
+chat that before any window reads chat's view — as each window's state goes
+out (`ServerWindowDeps.chatSight`), and as chat changes, before the push —
+so no header ever shows a ping for a room already on screen. A click on it
+goes through `serverWindow.showChat(room, 'chat')`: the room's panel when
+the window has one, its tab brought to the front and the panel focused;
+otherwise chat's pane, added through `showTool` as the Sharing button opens
+Home server, and put on the room and its conversation. A click on the system
+notification does the same in the window it brings back. The notification
+is still only for a kit in the background, and never raised in a capture.
 
-**The open room is read only while a chat pane shows the conversation.**
-Out of sight — no chat pane in any window's front tab, or only ones on their
-Settings page, which shows no room — it counts what arrives, and keeps its
-gold, as any other room does, so the rail and the New divider point at what
-nobody saw. Each chat pane's page is main's, not the shell's
-(`serverWindow.currentChatPages`, reconciled with the tabs by
-`tabs.chatPages`), and `tabs.readsChat` says whether a tab shows the
-conversation; the shell only asks for a page (`chat.showPage`). Picking a
-room from Settings selects first and then shows the page, so the room that
-was open is not read on the way. A window sending its state without the
-conversation in front, or closing, tells main (`chatHidden`), and when no
-window shows it the client is told so (`IrcClient.lookAway`), which leaves
-the open room as opening another would. `seePings` is the way back, and reads
-the open room as opening it would. A `select` while out of sight only changes
-which room is open, so a click on a ping or a notification, which selects its
-room, leaves the gold where it was when chat is out of sight. The client
-starts out of sight: nothing has been seen before a pane shows it. Main keeps
-which windows last said they show the conversation (`chatInFront`) rather
-than asking its map of windows, because a new window says so from its first
-layout, before it is in the map. A ping clicked puts the chat pane it shows
-on the conversation, whichever page it was on. Otherwise a pane stays on the
-page it was left on, through a tab switch and a shell reload, on the owner's
-call on 2026-10-07. Picking the page again on every redraw was an accident
-of React remounting the pane, and with Settings counting as out of sight it
-would have moved a pane off Settings that nobody had moved.
+**A room is read only while a pane shows it.** Which room is open is not
+the client's: each chat pane has its own, beside its page, and a room
+panel's is in its content. A room is read while some window's front tab
+holds a panel for it or a chat pane on its conversation page showing it
+(`ChatSight.reading`). Out of sight — nothing in any window's front tab
+showing it, or only chat panes on their Settings page, which shows no
+room — it counts what arrives, and keeps its gold, as any other room does,
+so the rail and the New divider point at what nobody saw. Each chat pane's
+page and room are main's, not the shell's (`serverWindow.currentChatPanes`,
+reconciled with the tabs and chat's rooms by `chatPanes.chatPanes`), and
+`chatPanes.chatSight` says what a tab shows; the shell only asks
+(`chat.showPage`, `chat.showRoom`). Picking a tab puts its pane on the room
+and on its conversation in one step, so no other room is read on the way. A
+pane whose room leaves its row — closed, parted, or given a panel in that
+window — steps aside to another (`chatPanes.chatPanes`). Main keeps what each
+window last said it shows (`chatSights`) rather than asking its map of
+windows, because a new window says so from its first layout, before it is in
+the map; a window closing takes its entry with it. Their union goes to the
+client (`IrcClient.see`), which reads a room coming on screen and leaves one
+going off it. When that changes anything a window draws, main pushes the
+other windows, whose reports change nothing, so the push ends; nothing on
+that path calls a window's `state()`. The client starts with nothing on
+screen: nothing has been seen before a pane shows it. A ping clicked puts
+the chat pane it shows on the room and its conversation, whichever page it
+was on. Otherwise a pane stays on the page and the room it was left on,
+through a tab switch and a shell reload — the page on the owner's call on
+2026-10-07. Picking the page again on every redraw was an accident of React
+remounting the pane, and with Settings counting as out of sight it would
+have moved a pane off Settings that nobody had moved.
+
+**A room can come out of the row into a panel of its own**, by dragging its
+tab onto a pane's edge or from its tab's menu. A panel is per window: it
+takes the room's tab out of that window's chat panes only (`chatPanes.rowOf`,
+`panelledRooms`), and closing it puts the tab back without leaving the room.
+A room named from outside main — a setup, the shell's `paneSetContent`,
+`chat.showRoom` and the rest — is judged by `readRoom`, since `isChannel`
+reads only the first character and `JOIN #a,0` leaves every channel on many
+servers. A line typed in a pane goes to the room main says the pane shows,
+never one the shell names, and only where `chatPanes.maySend` lets it: a
+channel we are not in, or were kicked from, takes a `/join` and nothing else,
+so nothing typed becomes a PRIVMSG into a room we are not in.
 
 **Links in the log open only if `linkTarget` says http or https**, read again
 in main whatever the shell sent: a chat line is a stranger's writing.

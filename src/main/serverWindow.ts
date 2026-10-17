@@ -3,12 +3,12 @@ import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'n
 import { basename, join } from 'node:path';
 import { IPC, type ShellState, type ToolId, type UpdateButton } from '../shared/ipc';
 import { CHAT_PREFERRED_HEIGHT, GAME_PREFERRED_HEIGHT, GAME_PREFERRED_WIDTH, LOSTCITY_GAME_PREFERRED_HEIGHT, PANE_HEADER_HEIGHT, PANE_MIN_HEIGHT, PANE_MIN_WIDTH, SEAM, TAB_BAR_HEIGHT } from '../shared/layout';
-import type { ChatPage, ChatView } from '../shared/chat';
-import { firstPage } from '../shared/chatSettings';
+import type { ChatLog, ChatPage, ChatSight, ChatView } from '../shared/chat';
+import { firstPage, readRoom } from '../shared/chatSettings';
 import type { Detail, RememberedWorld, WorldsView } from '../shared/worlds';
 import { lineTitle, type HomeServerView } from '../shared/homeserver';
 import type { ShareView } from '../shared/share';
-import type { DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
+import type { ChatPaneView, DropTargets, DropZone, PaneView, SeamView } from '../shared/panes';
 import { alertTitle, type TimerDef } from '../shared/timers';
 import type { ThemeLook } from '../shared/themes';
 import type { PaneTrouble } from '../shared/paneNotice';
@@ -21,7 +21,8 @@ import { addPaneItems, paneDropdown, paneHolding, paneMenuItems, splitMenus, typ
 import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, type Edge, type PaneContent, type Rect, type Size } from './paneTree';
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, overlayFor, windowFrame } from './windowFrame';
-import { chatPages, holdsGame, openWindowTabs, readsChat, replaceDropsGame, sharingWithoutPane } from './tabs';
+import { holdsGame, openWindowTabs, replaceDropsGame, sharingWithoutPane } from './tabs';
+import { chatPanes, chatSight, freshRoom, panelFor, panelledRooms, renamePaneRooms, roomOf, rowOf, rowRoom, type ChatPaneState } from './chatPanes';
 import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, openingSetup, opensWindow, sameSetup, type BuiltInSetupId, type NewWindowSetup } from './setups';
 import { openingFrame, placeOf, type Place } from './windowPlace';
@@ -168,28 +169,28 @@ export interface ServerWindowDeps {
     /** The server's shared hiscores lookup, or null when it offers none — which is what keeps the tool out of the menus of a window running your home server. */
     hiscores: HiscoresService | null;
     /**
-     * The one conversation, which is the app's rather than this window's: every
-     * window shows the same one. A getter rather than the service itself, since
-     * the window only ever reads it — main pushes when it changes.
+     * The one connection, which is the app's rather than this window's: every
+     * window lists the same rooms. Which room each of its chat panes shows is
+     * the window's own (`chatPanes`). A getter rather than the service itself,
+     * since the window only ever reads it — main pushes when it changes.
      */
     chat: () => ChatView;
     /**
-     * Told as this window's state goes out with a chat pane showing the
-     * conversation in its front tab, before `chat` is read: whatever pinged
-     * you has been seen, so no game header, here or in another window, should
-     * still show it, and the room chat has open is being read. Told from the
-     * window's first layout on, which runs before main has the window in its
-     * map.
+     * Told what this window's front tab shows of chat (`chatPanes.chatSight`)
+     * as each state goes out, before the state is built: chat reads the rooms
+     * every window has on screen, and sees the pings in them and in every row
+     * of tabs on screen, so no game header here or in another window still
+     * shows one. Told from the window's first layout on, which runs before
+     * main has the window in its map. Worked out from the tab and the chat
+     * panes alone, never through `state()`.
      */
-    chatShown: () => void;
-    /**
-     * Told as this window's state goes out with no chat pane showing the
-     * conversation in its front tab: none at all, or only ones on their
-     * Settings page. If no other window shows it either, the room chat has
-     * open is no longer being read, and counts what arrives as any other room
-     * does.
-     */
-    chatHidden: () => void;
+    chatSight: (sight: ChatSight) => void;
+    /** One room's lines and its New divider, for a pane in the tab in front that shows it. */
+    chatLog: (room: string) => ChatLog;
+    /** The room last picked in a chat pane, in any window: a new chat pane starts on it when its row has it (`chatPanes.freshRoom`). Null until one is. */
+    chatLast: () => string | null;
+    /** A chat pane was put on a room, by a click on its tab or by a line that opened it, and that is now the room last picked. */
+    chatPicked: (room: string) => void;
     /**
      * Whether a window opened now should float above other apps, as the last
      * choice anywhere left it.
@@ -267,13 +268,55 @@ export interface ServerWindow extends ServerWindowHandle {
      */
     showHomeServer(): void;
     /**
-     * The game header's ping, clicked: chat's pane, added as `addPane` adds
-     * one, or in a new tab of its own when the active tab has no room for a
-     * column, and on the conversation whichever page it was on.
+     * Chat, shown on a room: for the game header's ping, a notification's
+     * click, and a room a line opened. The room's panel when this window has
+     * one, its tab brought to the front and the panel focused. Otherwise
+     * chat's pane, added as `addPane` adds one, or in a new tab of its own
+     * when the active tab has no room for a column, put on `page` and on the
+     * room when its row lists it. A null room leaves the pane on the room it
+     * was on, as a room panel's Settings button wants.
      */
-    showChat(): void;
-    /** A chat pane's gear, a room in its tabs, or Connect on its Settings: that pane shows Settings or the conversation. Nothing for a pane that holds no chat. */
+    showChat(room: string | null, page: ChatPage): void;
+    /** A chat pane's gear, or Connect on its Settings: that pane shows Settings or the conversation. Nothing for a pane that is not a chat pane. */
     showChatPage(paneId: string, page: ChatPage): void;
+    /**
+     * A tab in a chat pane's row, clicked: that pane on the room and on its
+     * conversation in one step, so no other room is read on the way. Nothing
+     * for a room its row does not list.
+     */
+    showChatRoom(paneId: string, room: string): void;
+    /** Where a line typed in a pane goes: a room panel's room, or the room a chat pane shows. Null for any other pane, and for a chat pane whose row is empty. */
+    chatRoomOf(paneId: string): string | null;
+    /**
+     * A line typed in a pane opened a room — a `/join`, a `/query`, Message
+     * in the user menu. A chat pane is put on it. A room panel, or a room
+     * with a panel in this window, goes as `showChat` goes, since something
+     * was asked to open and something does.
+     */
+    chatOpened(paneId: string, room: string): void;
+    /**
+     * A room out of a chat pane's row into a room panel of its own: beside
+     * the pane, as Split Right and Split Down put a pane and paid for as they
+     * are, or in a new tab. Nothing for a room the row does not list.
+     */
+    openRoom(paneId: string, room: string, where: 'right' | 'below' | 'tab'): void;
+    /** Raises a room tab's menu — Open Right, Open Below and Open in New Tab — at a point in the window. Resolves when it closes. */
+    showRoomMenu(paneId: string, room: string, x: number, y: number): Promise<void>;
+    /**
+     * Starts a drag of a room's tab out of the row: hides every native view,
+     * as `beginPaneDrag` does, and answers where a panel for the room would
+     * land on each pane's edges. Null, with nothing hidden, for a room the
+     * row does not list.
+     */
+    beginRoomDrag(room: string): DropTargets | null;
+    /** Puts a panel for a dragged room on a pane's edge and ends the drag. The window grows for it as for Split Right. A drop that is refused changes nothing but ends the drag. */
+    dropRoom(room: string, to: string, zone: DropZone): void;
+    /**
+     * A conversation followed its person to a new nick, and every chat pane
+     * and room panel on it follows too. Lays nothing out and pushes nothing:
+     * chat pushes every window as it tells of the rename.
+     */
+    chatRenamed(from: string, to: string): void;
     /** Raises the tab bar's Add pane menu at a point in the window. */
     showAddPaneMenu(x: number, y: number): void;
     /** Raises the tab bar's Setups menu at a point in the window. */
@@ -306,7 +349,7 @@ export interface ServerWindow extends ServerWindowHandle {
     beginPaneDrag(from: string): DropTargets | null;
     /** Drops a dragged pane on another and ends the drag. The centre swaps the two; an edge moves the dragged pane beside the other, splitting it. */
     dropPane(from: string, to: string, zone: DropZone): void;
-    /** Ends a drag without dropping. */
+    /** Ends a drag without dropping, a pane's or a room's. */
     endPaneDrag(): void;
     /** Raises the pane menu at a point in the window. */
     showPaneMenu(paneId: string, x: number, y: number): void;
@@ -588,17 +631,45 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     gameView = makeGameView();
 
     /**
-     * Each chat pane's page, Settings or the conversation, in every tab: the
-     * shell shows it, and a pane on Settings is chat out of sight. Read only
-     * through `currentChatPages`, which brings it up to date with the tabs
-     * first (`tabs.chatPages`), so a chat pane new since starts on chat's
-     * `firstPage` and one gone drops out.
+     * Each chat pane's page and room, in every tab: the shell shows them, and
+     * what is on screen of them is what chat reads (`chatPanes.chatSight`).
+     * Read only through `currentChatPanes`, which first brings it up to date
+     * with the tabs and chat's rooms (`chatPanes.chatPanes`): a chat pane new
+     * since starts on chat's `firstPage` and on `freshRoom`, one gone drops
+     * out, and one whose room has left its row steps aside. A room panel's
+     * room is in its content, and is not kept here.
      */
-    let chatPageOf = new Map<string, ChatPage>();
+    let chatPaneOf = new Map<string, ChatPaneState>();
 
-    function currentChatPages(): ReadonlyMap<string, ChatPage> {
-        chatPageOf = chatPages(host.trees(), chatPageOf, () => firstPage(deps.chat()));
-        return chatPageOf;
+    function currentChatPanes(view: ChatView = deps.chat()): ReadonlyMap<string, ChatPaneState> {
+        const channels = view.channels.map(channel => channel.name);
+        const panelled = panelledRooms(host.trees());
+        const row = rowOf(channels, panelled);
+        chatPaneOf = chatPanes(host.trees(), chatPaneOf, channels, panelled, () => ({ page: firstPage(view), room: freshRoom(row, deps.chatLast()) }));
+        return chatPaneOf;
+    }
+
+    /** The tabs this window's chat panes list: every room chat has, less the ones with a panel in any of this window's tabs. */
+    function chatRow(view: ChatView = deps.chat()): string[] {
+        return rowOf(
+            view.channels.map(channel => channel.name),
+            panelledRooms(host.trees())
+        );
+    }
+
+    /**
+     * What a pane in the tab in front shows of chat: a room panel, its room;
+     * a chat pane, its page, its room and its row. Each with its room's log,
+     * which is all of the log a window is sent.
+     */
+    function chatPaneView(paneId: string): ChatPaneView | null {
+        const panelRoom = roomOf(contentOf(host.tree(), paneId));
+        if (panelRoom !== null) return { panel: true, page: 'chat', room: panelRoom, row: [], ...deps.chatLog(panelRoom) };
+        const view = deps.chat();
+        const pane = currentChatPanes(view).get(paneId);
+        if (pane === undefined) return null;
+        const log: ChatLog = pane.room === null ? { lines: [], newFrom: null } : deps.chatLog(pane.room);
+        return { panel: false, page: pane.page, room: pane.room, row: chatRow(view), ...log };
     }
 
     /**
@@ -621,7 +692,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState(),
         background: () => deps.theme().colors.window,
-        chatPage: paneId => currentChatPages().get(paneId) ?? null
+        chat: paneId => chatPaneView(paneId)
     });
 
     // ── labels ───────────────────────────────────────────────────────────
@@ -679,8 +750,13 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     function pushState(): void {
         if (shellView.webContents.isDestroyed()) return;
-        if (readsChat(host.tree(), currentChatPages())) deps.chatShown();
-        else deps.chatHidden();
+        // Before the state is built, so the rooms this window draws are read
+        // and their pings seen by the time it reads chat. From the tab and the
+        // chat panes alone: main pushes the other windows from inside this,
+        // and a call that went through `state()` from there once recursed
+        // (`windowCounts`, 2026-09-20).
+        const view = deps.chat();
+        deps.chatSight(chatSight(host.tree(), currentChatPanes(view), chatRow(view)));
         try {
             shellView.webContents.send(IPC.shellState, state());
         } catch (err) {
@@ -822,8 +898,9 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /**
      * Split Right and Split Down, from the menus and the keyboard alike, with
      * `content` in the new half: empty, showing the launcher, unless a split's
-     * list gave it something. The new pane's id, or null when there was no
-     * such pane in the tab in front to split.
+     * list gave it something, or a room's Open Right or Open Below gave it a
+     * panel. The new pane's id, or null when there was no such pane in the
+     * tab in front to split.
      */
     function split(paneId: string, axis: 'x' | 'y', content: PaneContent = { kind: 'empty' }): string | null {
         const made = host.split(paneId, axis, roomToGrow(), content);
@@ -883,17 +960,147 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (single) showTool('singleplayer');
     }
 
-    function showChat(): void {
+    function showChat(room: string | null, page: ChatPage): void {
+        showChatOn(room, page);
+    }
+
+    /**
+     * `showChat`, answering the room it put a chat pane on: null when it
+     * focused a panel instead, left the pane's room as it was, or had no
+     * chat pane to show.
+     *
+     * A room with a panel here is not in this window's row, so it could
+     * never be put on a chat pane: its panel is looked for first.
+     */
+    function showChatOn(room: string | null, page: ChatPage): string | null {
+        if (room !== null && page === 'chat') {
+            const tabs = host.tabs().flatMap(tab => {
+                const tree = host.treeOf(tab.id);
+                return tree === null ? [] : [{ id: tab.id, tree }];
+            });
+            const panel = panelFor(tabs, room);
+            if (panel !== null) {
+                host.selectTab(panel.tabId);
+                host.focus(panel.paneId);
+                return null;
+            }
+        }
         showTool('chat');
         const shown = paneHolding(host.tree(), { kind: 'tool', tool: 'chat' });
-        if (shown !== null) showChatPage(shown, 'chat');
+        if (shown === null) return null;
+        const view = deps.chat();
+        const was = currentChatPanes(view).get(shown);
+        if (was === undefined) return null;
+        const onRoom = room === null ? null : rowRoom(chatRow(view), room);
+        chatPaneOf.set(shown, { page, room: onRoom ?? was.room });
+        pushState();
+        return onRoom;
     }
 
     function showChatPage(paneId: string, page: ChatPage): void {
-        const pages = currentChatPages();
-        if (!pages.has(paneId) || pages.get(paneId) === page) return;
-        chatPageOf.set(paneId, page);
+        const was = currentChatPanes().get(paneId);
+        if (was === undefined || was.page === page) return;
+        chatPaneOf.set(paneId, { page, room: was.room });
         pushState();
+    }
+
+    function showChatRoom(paneId: string, room: string): void {
+        if (readRoom(room) === null) return;
+        const view = deps.chat();
+        const onRoom = rowRoom(chatRow(view), room);
+        if (onRoom === null || !currentChatPanes(view).has(paneId)) return;
+        putChat(paneId, onRoom);
+    }
+
+    /** A chat pane on its conversation and on a room its row lists, and that room the one last picked. */
+    function putChat(paneId: string, room: string): void {
+        deps.chatPicked(room);
+        const was = chatPaneOf.get(paneId);
+        if (was?.page === 'chat' && was.room === room) return;
+        chatPaneOf.set(paneId, { page: 'chat', room });
+        pushState();
+    }
+
+    function chatRoomOf(paneId: string): string | null {
+        for (const tree of host.trees()) {
+            const content = contentOf(tree, paneId);
+            if (content !== null) return roomOf(content) ?? currentChatPanes().get(paneId)?.room ?? null;
+        }
+        return null;
+    }
+
+    function chatOpened(paneId: string, room: string): void {
+        if (readRoom(room) === null) return;
+        const view = deps.chat();
+        const onRoom = rowRoom(chatRow(view), room);
+        if (onRoom !== null && currentChatPanes(view).has(paneId)) {
+            putChat(paneId, onRoom);
+            return;
+        }
+        const put = showChatOn(room, 'chat');
+        if (put !== null) deps.chatPicked(put);
+    }
+
+    function openRoom(paneId: string, room: string, where: 'right' | 'below' | 'tab'): void {
+        if (readRoom(room) === null) return;
+        const view = deps.chat();
+        const onRoom = rowRoom(chatRow(view), room);
+        if (onRoom === null || !currentChatPanes(view).has(paneId)) return;
+        const content: PaneContent = { kind: 'tool', tool: 'chat', room: onRoom };
+        if (where === 'tab') {
+            // As `showTool` opens a tool with no room for a column.
+            host.newTab();
+            host.setContent(host.focusedPaneId(), content);
+            return;
+        }
+        split(paneId, where === 'right' ? 'x' : 'y', content);
+    }
+
+    /**
+     * The menu a right-click on a room's tab raises. Native and built here
+     * for the reason the pane menus are: a menu the shell drew would open
+     * under the game beside it. Open Right and Open Below are Split Right
+     * and Split Down with the room in the new half, so they are greyed
+     * where those would be (`paneMenu.paneMenuItems`).
+     */
+    function showRoomMenu(paneId: string, room: string, x: number, y: number): Promise<void> {
+        if (win.isDestroyed() || readRoom(room) === null) return Promise.resolve();
+        const view = deps.chat();
+        const onRoom = rowRoom(chatRow(view), room);
+        const rect = host.rectOf(paneId);
+        if (onRoom === null || rect === null || !currentChatPanes(view).has(paneId)) return Promise.resolve();
+        const splits = paneMenuItems(host.tree(), paneId, rect, gameSizes());
+        const can = (id: 'split-x' | 'split-y'): boolean => splits.find(item => item.id === id)?.enabled ?? false;
+        return new Promise(resolve => {
+            Menu.buildFromTemplate([
+                { label: 'Open Right', enabled: can('split-x'), click: () => openRoom(paneId, onRoom, 'right') },
+                { label: 'Open Below', enabled: can('split-y'), click: () => openRoom(paneId, onRoom, 'below') },
+                { label: 'Open in New Tab', click: () => openRoom(paneId, onRoom, 'tab') }
+            ]).popup({ window: win, x: Math.round(x), y: Math.round(y), callback: () => resolve() });
+        });
+    }
+
+    function beginRoomDrag(room: string): DropTargets | null {
+        if (readRoom(room) === null) return null;
+        const onRoom = rowRoom(chatRow(), room);
+        return onRoom === null ? null : host.beginInsertDrag({ kind: 'tool', tool: 'chat', room: onRoom });
+    }
+
+    function dropRoom(room: string, to: string, zone: DropZone): void {
+        const onRoom = readRoom(room) === null ? null : rowRoom(chatRow(), room);
+        if (onRoom === null) {
+            host.endDrag();
+            return;
+        }
+        // An added pane, as Split Right adds one: the window pays for it
+        // where the game would have (`paneTree.makeRoom`).
+        const made = host.dropInsert({ kind: 'tool', tool: 'chat', room: onRoom }, to, zone, roomToGrow());
+        growWindow(made.grown);
+    }
+
+    function chatRenamed(from: string, to: string): void {
+        chatPaneOf = renamePaneRooms(chatPaneOf, from, to);
+        host.renameRoom(from, to);
     }
 
     /**
@@ -1938,6 +2145,14 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         showHomeServer,
         showChat,
         showChatPage,
+        showChatRoom,
+        chatRoomOf,
+        chatOpened,
+        openRoom,
+        showRoomMenu,
+        beginRoomDrag,
+        dropRoom,
+        chatRenamed,
         showAddPaneMenu,
         // Asked of the window rather than answered from a flag kept alongside
         // it. The window is where the state actually lives, so a copy here
