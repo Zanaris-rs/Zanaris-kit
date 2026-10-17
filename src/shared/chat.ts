@@ -123,9 +123,11 @@ export interface ChatPing {
 
 /**
  * What one chat pane shows: its Settings page or the conversation. Each
- * pane's own, and kept in main. A pane on Settings shows no room and lists
- * no row, so it adds nothing to what its window shows of chat (`ChatSight`).
- * A room panel is always on its conversation.
+ * pane's own, and kept in main. A pane on Settings shows no room, and though
+ * it still draws its row of tabs, it adds nothing to what its window shows
+ * of chat (`ChatSight`): Settings counts as chat out of sight, so a ping in a
+ * room whose tab is only in that row still shows in the game's header. A
+ * room panel is always on its conversation.
  */
 export type ChatPage = 'settings' | 'chat';
 
@@ -136,9 +138,11 @@ export type ChatPage = 'settings' | 'chat';
  * - `reading`: the rooms whose lines are on screen — each chat pane's room on
  *   its conversation page, and each room panel's. A pane on its Settings page
  *   shows no room and adds none.
- * - `rowed`: every room in a row of tabs that is on screen, whether or not a
- *   pane is showing it, so a ping in a room whose tab is in view is seen. The
- *   whole row when any chat pane is on its conversation page, none otherwise.
+ * - `rowed`: every room in the row of a chat pane on its conversation page,
+ *   whether or not a pane is showing it, so a ping in a room whose tab is in
+ *   view beside a conversation is seen. The whole row when any chat pane is
+ *   on its conversation page, none otherwise: a pane on Settings draws its
+ *   row too, but counts as out of sight.
  */
 export interface ChatSight {
     reading: string[];
