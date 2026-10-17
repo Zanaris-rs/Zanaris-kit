@@ -78,7 +78,7 @@ make 0.9.3's `readContent` refuse the whole file (see `CLAUDE.md` on
   `room` on any other tool. `isChannel` alone is not enough: it reads only
   the first character. A stranger's setup naming `#a,0` would then get a
   Join that sends `JOIN #a,0`, and on many servers the `0` leaves every
-  channel. One function, `readRoom` in `src/shared/chat.ts`, decides this.
+  channel. One function, `readRoom` in `src/shared/chatSettings.ts` beside `channelProblem`, decides this.
   The `paneSetContent` handler, and every new handler that takes a room,
   use it too. Today `paneSetContent` checks only `kind`.
 - `paneMenu.sameContent` compares `room` (absent equals absent). Add pane's
