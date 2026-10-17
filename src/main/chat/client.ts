@@ -802,9 +802,12 @@ export class IrcClient {
      * open, both are kept rather than one log swallowed into the other.
      *
      * One being read stays read under its new name, so its next line is not
-     * counted, and whoever shows it is told (`onRenamed`) so its pane or
-     * panel can follow it. That is last, once the conversation is all there
-     * under the new name, the line saying so included.
+     * counted. One that was not, arriving at a name something already shows
+     * — a panel kept for `zed_` before `zed` became it — is read as it
+     * arrives, as a room coming on screen is. Whoever shows it is told
+     * (`onRenamed`) so its pane or panel can follow it. That is last, once
+     * the conversation is all there under the new name, the line saying so
+     * included.
      */
     private renameQuery(from: string, to: string): void {
         const query = this.chans.get(key(from));
@@ -820,6 +823,7 @@ export class IrcClient {
         query.name = to;
         for (const line of query.lines) line.channel = to;
         if (this.shown.delete(key(was))) this.shown.add(key(to));
+        else if (this.shown.has(key(to))) this.read(query);
         this.push(to, 'system', null, `${from} is now known as ${to}`);
         this.opts.onRenamed?.(was, to);
     }

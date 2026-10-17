@@ -1460,6 +1460,23 @@ test('a conversation renamed tells onRenamed and stays read', () => {
     assert.equal(told.length, 1, 'nobody is told of a rename with no conversation in it');
 });
 
+test('a conversation renamed to a name a panel already shows is read as it arrives there', () => {
+    const f = online();
+    f.client.receive(':zed!z@h PRIVMSG mage :hi');
+    f.client.receive(':zed!z@h PRIVMSG mage :you there?');
+    assert.equal(f.channel('zed').unread, 2);
+    // A panel kept for zed_ is on screen, and nothing shows the conversation with zed.
+    f.client.see({ reading: ['zed_'], rowed: [] });
+    f.client.receive(':zed!z@h NICK zed_');
+    assert.equal(f.channel('zed_').unread, 0, 'read, as a room coming on screen is, not carried over unread');
+    assert.equal(f.channel('zed_').highlights, 0);
+    assert.equal(f.newFrom('zed_'), f.lines('zed_')[0]!.id, 'the New divider marks what nobody saw');
+    assert.equal(f.client.snapshot().ping, null, 'nor is it a ping, being on screen');
+
+    f.client.receive(':zed_!z@h PRIVMSG mage :still me');
+    assert.equal(f.channel('zed_').unread, 0, 'and its next line is read as it arrives');
+});
+
 test('someone quitting says so in the conversation with them', () => {
     const f = online();
     f.input('/query bob');
