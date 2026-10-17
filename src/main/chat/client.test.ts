@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { backoffDelay, IrcClient, MAX_CONVERSATIONS, type ClientOpts } from './client.ts';
-import { SERVER_LOG, type ChatChannel } from '../../shared/chat.ts';
+import { SERVER_LOG, type ChatChannel, type ChatLine } from '../../shared/chat.ts';
 import { COMMAND_HELP } from '../../shared/chatInput.ts';
 
 const CTCP = '\u0001'; // the CTCP delimiter, written as an escape so it survives a copy-paste
@@ -10,8 +10,28 @@ interface Fake {
     client: IrcClient;
     sent: string[];
     clock: { now: number };
-    /** The lines of whichever channel is active, since that is all a snapshot carries. */
-    lines: () => ReturnType<IrcClient['snapshot']>['lines'];
+    /**
+     * The room the test is looking at, as one chat pane would be: where
+     * `input` types, and whose log `lines` and `newFrom` read when no room is
+     * named. The first channel the client was given, or Status with none,
+     * until `show` moves it.
+     */
+    room: string;
+    lines: (room?: string) => ChatLine[];
+    newFrom: (room?: string) => number | null;
+    /** A line typed in `room`. */
+    input: (text: string) => { open: string | null };
+    /**
+     * What main tells the client when one chat pane is on screen, on its
+     * conversation page, showing `room`, with a row listing every room the
+     * client has: `room` is read, and every room's pings are seen. `room`
+     * becomes the room the test is looking at.
+     */
+    show: (room?: string) => boolean;
+    /** What main tells the client when no window shows chat at all. */
+    away: () => boolean;
+    /** Every room the client has, in its order, as a row lists them. */
+    rooms: () => string[];
     channel: (name: string) => ChatChannel;
     /** Who is in a channel, as the panel lists them: the rank symbols, then the nick. */
     who: (name: string) => string[];
@@ -27,13 +47,21 @@ function fake(opts: Partial<ClientOpts> = {}): Fake {
         send: line => sent.push(line),
         ...opts
     });
-    // A chat pane on screen, as every test here assumes unless it says otherwise.
-    client.seePings();
-    return {
+    const rooms = (): string[] => client.snapshot().channels.map(c => c.name);
+    const f: Fake = {
         client,
         sent,
         clock,
-        lines: () => client.snapshot().lines,
+        room: (opts.channels ?? ['#04scape'])[0] ?? SERVER_LOG,
+        lines: (room = f.room) => client.log(room).lines,
+        newFrom: (room = f.room) => client.log(room).newFrom,
+        input: text => client.input(text, f.room),
+        show: (room = f.room) => {
+            f.room = room;
+            return client.see({ reading: [room], rowed: rooms() });
+        },
+        away: () => client.see({ reading: [], rowed: [] }),
+        rooms,
         channel: name => {
             const found = client.snapshot().channels.find(c => c.name === name);
             assert.ok(found, `no channel ${name}`);
@@ -45,6 +73,9 @@ function fake(opts: Partial<ClientOpts> = {}): Fake {
             return found.users.map(u => `${u.prefixes}${u.nick}`);
         }
     };
+    // A chat pane on screen, on the first channel, as every test here assumes unless it says otherwise.
+    f.show();
+    return f;
 }
 
 /** Takes a fresh client all the way to online, leaving `sent` empty for the assertions that follow. */
@@ -156,9 +187,9 @@ test('a private message opens a conversation with whoever sent it, and always hi
     const f = online();
     f.client.receive(':bob!~b@host PRIVMSG mage :psst, over here');
     assert.equal(f.channel('bob').unread, 1, 'a tab of its own, badged');
-    assert.equal(f.client.snapshot().active, '#04scape', 'it does not take the open tab away');
-    f.client.select('bob');
-    const line = f.lines().at(-1);
+    f.client.receive(':carl!c@host PRIVMSG #04scape :still here');
+    assert.equal(f.channel('#04scape').unread, 0, 'the room on screen is still the one being read');
+    const line = f.lines('bob').at(-1);
     assert.equal(line?.kind, 'say', 'the tab says it is private, so the line need not');
     assert.equal(line?.nick, 'bob');
     assert.equal(line?.text, 'psst, over here');
@@ -168,8 +199,7 @@ test('a private message opens a conversation with whoever sent it, and always hi
 test('a notice is a system line', () => {
     const f = online();
     f.client.receive(':NickServ!s@services. NOTICE mage :This nickname is registered.');
-    f.client.select(SERVER_LOG);
-    const line = f.lines().at(-1);
+    const line = f.lines(SERVER_LOG).at(-1);
     assert.equal(line?.kind, 'system');
     assert.equal(line?.nick, null);
     assert.match(line?.text ?? '', /NickServ.*registered/);
@@ -180,9 +210,8 @@ test('a command that is not a numeric and not handled is ignored quietly', () =>
     const before = f.client.snapshot().channels.map(c => c.name).length;
     f.client.receive(':irc.libera.chat CAP mage ACK :multi-prefix');
     f.client.receive(':bob!b@h WALLOPS :nothing for us');
-    f.client.select(SERVER_LOG);
     assert.deepEqual(
-        f.lines().map(l => l.text),
+        f.lines(SERVER_LOG).map(l => l.text),
         ['Welcome to Libera.Chat, mage'],
         'only the welcome, which the handshake already put there'
     );
@@ -264,9 +293,9 @@ test('a line naming you is highlighted and counted', () => {
     assert.equal(f.channel('#04scape').highlights, 1);
 });
 
-test('unread counts only what arrives away from the active channel, and select clears it', () => {
+test('unread counts only what arrives in a room nobody is reading, and reading it clears it', () => {
     const f = online({ channels: ['#04scape', '#swiftkit'] });
-    f.client.receive(':bob!b@h PRIVMSG #04scape :in the active channel');
+    f.client.receive(':bob!b@h PRIVMSG #04scape :in the room on screen');
     assert.equal(f.channel('#04scape').unread, 0);
 
     f.client.receive(':bob!b@h PRIVMSG #swiftkit :over here');
@@ -274,8 +303,7 @@ test('unread counts only what arrives away from the active channel, and select c
     assert.equal(f.channel('#swiftkit').unread, 2);
     assert.equal(f.channel('#swiftkit').highlights, 1);
 
-    f.client.select('#swiftkit');
-    assert.equal(f.client.snapshot().active, '#swiftkit');
+    f.show('#swiftkit');
     assert.equal(f.channel('#swiftkit').unread, 0);
     assert.equal(f.channel('#swiftkit').highlights, 0);
 });
@@ -287,10 +315,10 @@ test('joins and parts do not badge the rail', () => {
     assert.equal(f.channel('#swiftkit').unread, 0);
 });
 
-test('a mention seen while its tab was open does not colour the tab once it is left', () => {
+test('a mention seen while its room was on screen does not colour the tab once the room is left', () => {
     const f = online({ channels: ['#04scape', '#other'] });
     f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
-    f.client.select('#other');
+    f.show('#other');
     f.client.receive(':bob!b@h PRIVMSG #04scape :plain');
     assert.equal(f.channel('#04scape').unread, 1);
     assert.equal(f.channel('#04scape').highlights, 0);
@@ -332,36 +360,41 @@ test('a private message past the most conversations is still private, though it 
     assert.equal(ping?.private, true);
 });
 
-test('seeing chat on screen reads every ping, in every room, and says whether there was one', () => {
+test('a row on screen sees every ping in its rooms, and see says whether that changed anything', () => {
     const f = online({ channels: ['#04scape', '#swiftkit'] });
     f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
     f.client.receive(':carol!c@h PRIVMSG #swiftkit :mage: and here');
-    assert.equal(f.client.seePings(), true);
+    assert.equal(f.show(), true);
     assert.equal(f.client.snapshot().ping, null);
-    assert.equal(f.client.seePings(), false, 'nothing new since');
-    assert.equal(f.channel('#swiftkit').highlights, 1, "the room's own count is chat's, and is read when the room is opened");
+    assert.equal(f.show(), false, 'nothing new since');
+    assert.equal(f.channel('#swiftkit').highlights, 1, "the room's own count is chat's, and is read when the room is");
 });
 
-test('a ping after chat was on screen is the only one waiting', () => {
+test('a ping after the row was on screen is the only one waiting', () => {
     const f = online();
     f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
-    f.client.seePings();
+    f.show();
     f.client.receive(':bob!b@h PRIVMSG #04scape :mage: again');
     const ping = f.client.snapshot().ping;
     assert.equal(ping?.line.text, 'mage: again');
-    assert.equal(ping?.more, 0, 'the first was seen, though the room open in chat still counts it until it is left');
+    assert.equal(ping?.more, 0, 'the first was seen, though the room on screen still counts it until it is left');
 });
 
-test('opening the room a ping came in does not read it until chat is on screen', () => {
+test('a ping in a room a row on screen lists is seen, and the room is read only when a pane shows it', () => {
     const f = online({ channels: ['#04scape', '#swiftkit'] });
-    f.client.lookAway();
+    f.away();
     f.client.receive(':carol!c@h PRIVMSG #swiftkit :mage: over here');
-    f.client.select('#swiftkit');
-    assert.notEqual(f.client.snapshot().ping, null, 'a click opens chat on its room before chat is shown');
+    assert.notEqual(f.client.snapshot().ping, null);
     assert.equal(f.channel('#swiftkit').unread, 1);
     assert.equal(f.channel('#swiftkit').highlights, 1);
-    f.client.seePings();
-    assert.equal(f.client.snapshot().ping, null);
+
+    f.show('#04scape');
+    assert.equal(f.client.snapshot().ping, null, 'its tab is on screen');
+    assert.equal(f.channel('#swiftkit').unread, 1, 'but nobody has read it');
+    assert.equal(f.channel('#swiftkit').highlights, 1);
+
+    f.show('#swiftkit');
+    assert.equal(f.channel('#swiftkit').unread, 0);
     assert.equal(f.channel('#swiftkit').highlights, 0);
 });
 
@@ -372,7 +405,7 @@ test('closing the room a ping came in takes the ping with it', () => {
     assert.equal(f.client.snapshot().ping, null);
 });
 
-// ── chat out of sight ─────────────────────────────────────────────────────
+// ── off screen ────────────────────────────────────────────────────────────
 
 test('a new client has seen nothing until a chat pane is on screen', () => {
     const client = new IrcClient({ nick: 'mage', channels: ['#04scape'], now: () => 0, send: () => {} });
@@ -383,130 +416,210 @@ test('a new client has seen nothing until a chat pane is on screen', () => {
     assert.equal(client.snapshot().channels.find(c => c.name === '#04scape')?.unread, 1);
 });
 
-test('while chat is out of sight the open room counts what arrives, and chat on screen marks where it begins', () => {
+test('while nothing is on screen a room counts what arrives, and coming back marks where it begins', () => {
     const f = online();
     f.client.receive(':bob!b@h PRIVMSG #04scape :read on screen');
-    f.client.lookAway();
+    f.away();
     f.client.receive(':bob!b@h PRIVMSG #04scape :while nobody looked');
     f.client.receive(':bob!b@h PRIVMSG #04scape :and again');
     assert.equal(f.channel('#04scape').unread, 2);
 
-    f.client.seePings();
+    f.show();
     assert.equal(f.channel('#04scape').unread, 0, 'read by being on screen');
-    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'while nobody looked')?.id);
+    assert.equal(f.newFrom(), f.lines().find(l => l.text === 'while nobody looked')?.id);
 });
 
-test('a mention in the open room while chat is out of sight is still counted after a ping elsewhere opens chat', () => {
+test('a mention while nothing is on screen is still counted after a ping in another room is shown', () => {
     const f = online({ channels: ['#LostHQ'] });
-    f.client.lookAway();
+    f.away();
     f.client.receive(':bob!b@h PRIVMSG #LostHQ :mage: are you there?');
     f.client.receive(':Zezima!z@h PRIVMSG mage :psst');
     assert.equal(f.client.snapshot().ping?.more, 1);
 
-    // The ping clicked: main opens chat on Zezima's conversation, then shows it.
-    f.client.select('Zezima');
-    f.client.seePings();
+    // The ping clicked: main puts a chat pane on Zezima's conversation, and it is on screen.
+    f.show('Zezima');
     assert.equal(f.channel('Zezima').unread, 0);
-    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'psst')?.id);
+    assert.equal(f.newFrom('Zezima'), f.lines('Zezima').find(l => l.text === 'psst')?.id);
     assert.equal(f.channel('#LostHQ').unread, 1);
     assert.equal(f.channel('#LostHQ').highlights, 1, 'gold on the rail');
 
-    f.client.select('#LostHQ');
-    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'mage: are you there?')?.id);
+    f.show('#LostHQ');
+    assert.equal(f.newFrom('#LostHQ'), f.lines('#LostHQ').find(l => l.text === 'mage: are you there?')?.id);
 });
 
-test('a room opened while chat is out of sight is read only once chat is on screen', () => {
+test('a room nothing shows is read only once a window shows it', () => {
     const f = online({ channels: ['#04scape', '#other'] });
-    f.client.lookAway();
+    f.away();
     f.client.receive(':bob!b@h PRIVMSG #other :mage: over here');
-    f.client.select('#other');
     f.client.receive(':bob!b@h PRIVMSG #other :still here');
     assert.equal(f.channel('#other').unread, 2);
     assert.equal(f.channel('#other').highlights, 1);
 
-    f.client.seePings();
+    f.show('#other');
     assert.equal(f.channel('#other').unread, 0);
     assert.equal(f.channel('#other').highlights, 0);
-    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'mage: over here')?.id);
+    assert.equal(f.newFrom('#other'), f.lines('#other').find(l => l.text === 'mage: over here')?.id);
 });
 
-test('chat looking away again changes nothing about where the open room was left', () => {
+test('nothing on screen, told again, changes nothing about where a room was left', () => {
     const f = online();
-    f.client.lookAway();
+    f.away();
     f.client.receive(':bob!b@h PRIVMSG #04scape :first while away');
-    f.client.lookAway();
+    assert.equal(f.away(), false);
     f.client.receive(':bob!b@h PRIVMSG #04scape :second');
-    f.client.seePings();
-    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'first while away')?.id);
+    f.show();
+    assert.equal(f.newFrom(), f.lines().find(l => l.text === 'first while away')?.id);
 });
 
-test('chat seen again while already on screen leaves the divider where it was', () => {
+test('a room shown again while it is on screen keeps its divider where it was', () => {
     const f = online({ channels: ['#04scape', '#other'] });
     f.client.receive(':bob!b@h PRIVMSG #other :while you were away');
-    f.client.select('#other');
-    const divider = f.client.snapshot().newFrom;
+    f.show('#other');
+    const divider = f.newFrom();
     assert.notEqual(divider, null);
     f.client.receive(':bob!b@h PRIVMSG #other :and now');
-    f.client.seePings();
-    assert.equal(f.client.snapshot().newFrom, divider);
+    f.show('#other');
+    assert.equal(f.newFrom(), divider);
 });
 
-test('chat out of sight and back with nothing new draws no divider, as leaving a room and coming back does', () => {
+test('off screen and back with nothing new draws no divider, as leaving a room and coming back does', () => {
     const f = online({ channels: ['#04scape', '#other'] });
     f.client.receive(':bob!b@h PRIVMSG #other :hi');
-    f.client.select('#other');
-    assert.notEqual(f.client.snapshot().newFrom, null);
-    f.client.lookAway();
-    f.client.seePings();
-    assert.equal(f.client.snapshot().newFrom, null);
+    f.show('#other');
+    assert.notEqual(f.newFrom(), null);
+    f.away();
+    f.show();
+    assert.equal(f.newFrom(), null);
 });
 
-test('a mention read in the open room is not counted once chat is out of sight', () => {
+test('a mention read in a room on screen is not counted once nothing is', () => {
     const f = online({ channels: ['#04scape', '#other'] });
     f.client.receive(':bob!b@h PRIVMSG #04scape :mage: look');
-    f.client.lookAway();
-    f.client.select('#other');
+    f.away();
     assert.equal(f.channel('#04scape').unread, 0);
     assert.equal(f.channel('#04scape').highlights, 0);
 });
 
-test('a conversation open while chat is out of sight keeps its count through a rename', () => {
+test('a conversation left off screen keeps its count through a rename', () => {
     const f = online();
     f.client.receive(':bob!b@h PRIVMSG mage :hi');
-    f.client.select('bob');
-    f.client.lookAway();
+    f.show('bob');
+    f.away();
     f.client.receive(':bob!b@h PRIVMSG mage :still there?');
     f.client.receive(':bob!b@h NICK robert');
-    assert.equal(f.client.snapshot().active, 'robert');
     assert.equal(f.channel('robert').unread, 1);
 
-    f.client.seePings();
-    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text === 'still there?')?.id);
+    f.show('robert');
+    assert.equal(f.newFrom(), f.lines().find(l => l.text === 'still there?')?.id);
 });
 
-test("the kit's own word in Status counts while chat is out of sight, though Status is open", () => {
+test("the kit's own word in Status counts while nothing shows Status", () => {
     const f = fake({ channels: [] });
-    f.client.lookAway();
+    f.away();
     f.client.connecting();
     f.client.opened();
     f.client.receive(':irc.libera.chat 432 * mage :Erroneous Nickname');
-    assert.equal(f.client.snapshot().active, SERVER_LOG);
     assert.equal(f.channel(SERVER_LOG).unread, 1);
 });
 
-test('a room taken away while chat is out of sight hands over to Status without reading it', () => {
+test('a room taken away moves nobody, and Status is read only once a window shows it', () => {
     const f = online({ channels: ['#04scape', '#other'] });
-    f.client.select(SERVER_LOG);
-    f.client.select('#04scape');
-    f.client.lookAway();
+    f.show(SERVER_LOG);
+    f.show('#04scape');
+    f.away();
     f.client.receive(':irc.libera.chat NOTICE mage :maintenance at noon');
     f.client.receive(':mage!m@h PART #04scape');
-    assert.equal(f.client.snapshot().active, SERVER_LOG);
+    assert.equal(f.rooms().includes('#04scape'), false);
     assert.equal(f.channel(SERVER_LOG).unread, 1);
 
-    f.client.seePings();
+    // Main steps the pane aside onto Status, and it is on screen again.
+    f.show(SERVER_LOG);
     assert.equal(f.channel(SERVER_LOG).unread, 0);
-    assert.equal(f.client.snapshot().newFrom, f.lines().find(l => l.text.includes('maintenance at noon'))?.id);
+    assert.equal(f.newFrom(SERVER_LOG), f.lines(SERVER_LOG).find(l => l.text.includes('maintenance at noon'))?.id);
+});
+
+// ── rooms on screen ───────────────────────────────────────────────────────
+//
+// Main tells the client what every window shows, together (`see`): the rooms
+// whose lines are on screen, and the rooms a row of tabs on screen lists.
+
+test('two rooms on screen are both read', () => {
+    const f = online({ channels: ['#a', '#b'] });
+    // A chat pane on #a, and a room panel for #b, which the row no longer lists.
+    const sight = { reading: ['#a', '#b'], rowed: [SERVER_LOG, '#a'] };
+    f.client.see(sight);
+    f.client.receive(':bob!b@h PRIVMSG #a :in the pane');
+    f.client.receive(':bob!b@h PRIVMSG #b :mage: in the panel');
+    assert.equal(f.channel('#a').unread, 0);
+    assert.equal(f.channel('#b').unread, 0);
+    f.client.see(sight);
+    assert.equal(f.client.snapshot().ping, null, "a panel's room has its pings seen, though no row lists it");
+});
+
+test('a room leaving the screen counts again, and is marked when it comes back', () => {
+    const f = online({ channels: ['#a', '#b'] });
+    f.client.see({ reading: ['#a', '#b'], rowed: f.rooms() });
+    f.client.see({ reading: ['#b'], rowed: f.rooms() });
+    f.client.receive(':bob!b@h PRIVMSG #a :while it was off screen');
+    assert.equal(f.channel('#a').unread, 1);
+
+    f.client.see({ reading: ['#a', '#b'], rowed: f.rooms() });
+    assert.equal(f.channel('#a').unread, 0);
+    assert.equal(f.client.log('#a').newFrom, f.lines('#a').find(l => l.text === 'while it was off screen')?.id);
+});
+
+test('a ping in a room with no tab or panel on screen stays', () => {
+    const f = online({ channels: ['#a', '#b'] });
+    f.client.receive(':bob!b@h PRIVMSG #b :mage: over here');
+    // #b has a panel in a tab behind, so this window's row leaves it out.
+    f.client.see({ reading: ['#a'], rowed: [SERVER_LOG, '#a'] });
+    assert.equal(f.client.snapshot().ping?.line.text, 'mage: over here');
+
+    f.client.see({ reading: ['#a'], rowed: [SERVER_LOG, '#a', '#b'] });
+    assert.equal(f.client.snapshot().ping, null);
+    assert.equal(f.channel('#b').highlights, 1, 'seen in the row, but not read');
+});
+
+test("a ping seen in one room does not see another room's", () => {
+    const f = online({ channels: ['#a', '#b'] });
+    f.away();
+    f.client.receive(':bob!b@h PRIVMSG #a :mage: here');
+    f.client.receive(':bob!b@h PRIVMSG #b :mage: and here');
+    // A chat pane on Status, whose row lists #a: #b has a panel in a tab behind.
+    f.client.see({ reading: [SERVER_LOG], rowed: [SERVER_LOG, '#a'] });
+    const ping = f.client.snapshot().ping;
+    assert.equal(ping?.line.channel, '#b');
+    assert.equal(ping?.line.text, 'mage: and here');
+    assert.equal(ping?.more, 0);
+});
+
+test('see reports a change only when there is one', () => {
+    const f = online({ channels: ['#a', '#b'] });
+    f.client.receive(':bob!b@h PRIVMSG #b :hi');
+    const sight = { reading: ['#b'], rowed: f.rooms() };
+    assert.equal(f.client.see(sight), true, "#b's count read and its divider drawn");
+    assert.equal(f.client.see(sight), false);
+
+    f.client.receive(':bob!b@h PRIVMSG #a :mage: look');
+    assert.equal(f.client.see(sight), true, 'a ping seen, though no count changed');
+    assert.equal(f.client.see(sight), false);
+});
+
+test('a room shown before the client has it is read from the moment it appears', () => {
+    const f = online();
+    // A panel for a conversation that is not open, and one for a channel not joined yet.
+    f.client.see({ reading: ['#04scape', 'zed', '#later'], rowed: f.rooms() });
+    f.client.receive(':zed!z@h PRIVMSG mage :hi');
+    assert.equal(f.channel('zed').unread, 0);
+    f.input('/join #later');
+    f.client.receive(':mage!m@h JOIN #later');
+    f.client.receive(':bob!b@h PRIVMSG #later :welcome');
+    assert.equal(f.channel('#later').unread, 0);
+});
+
+test('the log of a room the client does not have is empty', () => {
+    const f = online();
+    assert.deepEqual(f.client.log('#nowhere'), { lines: [], newFrom: null });
 });
 
 // ── churn and the New divider ─────────────────────────────────────────────
@@ -527,36 +640,36 @@ test('churn in a channel is marked as presence, and a kick or a private quit is 
     assert.ok(!('presence' in f.lines().at(-1)!), 'absent, not undefined');
 
     f.client.receive(':dave!d@h PRIVMSG mage :hi');
-    f.client.select('dave');
+    f.show('dave');
     f.client.receive(':dave!d@h QUIT :gone');
     assert.equal(f.lines().at(-1)?.text, 'dave quit (gone)');
     assert.ok(!('presence' in f.lines().at(-1)!), 'the one person you are talking to leaving is news');
 });
 
-test('coming back to a tab marks where what arrived while it was left begins', () => {
+test('coming back to a room marks where what arrived while it was left begins', () => {
     const f = online({ channels: ['#04scape', '#other'] });
     f.client.receive(':bob!b@h PRIVMSG #04scape :before');
-    f.client.select('#other');
-    assert.equal(f.client.snapshot().newFrom, null, 'nothing unread in #other');
+    f.show('#other');
+    assert.equal(f.newFrom(), null, 'nothing unread in #other');
     f.client.receive(':bob!b@h JOIN #04scape');
-    f.client.select('#04scape');
-    assert.equal(f.client.snapshot().newFrom, null, 'churn alone draws no divider');
+    f.show('#04scape');
+    assert.equal(f.newFrom(), null, 'churn alone draws no divider');
 
-    f.client.select('#other');
+    f.show('#other');
     f.client.receive(':carl!c@h JOIN #04scape');
     f.client.receive(':bob!b@h PRIVMSG #04scape :while you were away');
-    f.client.select('#04scape');
+    f.show('#04scape');
     const joined = f.lines().at(-2)!;
     assert.equal(joined.text, 'carl joined');
-    assert.equal(f.client.snapshot().newFrom, joined.id, 'above the first line of any kind since the tab was left');
+    assert.equal(f.newFrom(), joined.id, 'above the first line of any kind since the room was left');
 
     f.client.receive(':bob!b@h PRIVMSG #04scape :and now');
-    f.client.select('#04scape');
-    assert.equal(f.client.snapshot().newFrom, joined.id, 'it stays while you stay, reselecting included');
+    f.show('#04scape');
+    assert.equal(f.newFrom(), joined.id, 'it stays while the room stays on screen, shown again included');
 
-    f.client.select('#other');
-    f.client.select('#04scape');
-    assert.equal(f.client.snapshot().newFrom, null, 'leaving clears it, and nothing arrived since');
+    f.show('#other');
+    f.show('#04scape');
+    assert.equal(f.newFrom(), null, 'leaving clears it, and nothing arrived since');
 });
 
 test('our own rename is news, not churn', () => {
@@ -568,33 +681,37 @@ test('our own rename is news, not churn', () => {
     assert.ok(!('presence' in f.lines().at(-1)!), 'a services rename to a guest nick must not fold away');
 });
 
-test('closing the open tab opens Status as selecting it would, so its count is read', () => {
+test('closing the room on screen reads nothing, and Status shown in its place is read as any room is', () => {
     const f = online({ channels: ['#04scape', '#other'] });
-    f.client.select(SERVER_LOG);
-    f.client.select('#04scape');
+    f.show(SERVER_LOG);
+    f.show('#04scape');
     f.client.receive(':irc.libera.chat NOTICE mage :maintenance at noon');
     assert.equal(f.channel(SERVER_LOG).unread, 1);
 
     f.client.close('#04scape');
-    assert.equal(f.client.snapshot().active, SERVER_LOG);
-    assert.equal(f.channel(SERVER_LOG).unread, 0, 'read by being open');
-    const notice = f.lines().find(l => l.text.includes('maintenance at noon'));
-    assert.equal(f.client.snapshot().newFrom, notice?.id, 'what arrived while it was left is marked');
+    assert.equal(f.channel(SERVER_LOG).unread, 1, "closing a room moves nobody: which room a pane shows is main's");
 
-    f.client.select('#other');
+    // Main steps the pane aside onto Status.
+    f.show(SERVER_LOG);
+    assert.equal(f.channel(SERVER_LOG).unread, 0, 'read by being on screen');
+    const notice = f.lines(SERVER_LOG).find(l => l.text.includes('maintenance at noon'));
+    assert.equal(f.newFrom(SERVER_LOG), notice?.id, 'what arrived while it was left is marked');
+
+    f.show('#other');
     f.client.receive(':mage!m@h MODE mage :+i');
-    f.client.select(SERVER_LOG);
-    assert.equal(f.client.snapshot().newFrom, null, 'no stale count to draw a divider over a line that never counted');
+    f.show(SERVER_LOG);
+    assert.equal(f.newFrom(SERVER_LOG), null, 'no stale count to draw a divider over a line that never counted');
 });
 
-test('a tab closed while open hands over to Status with no divider', () => {
+test('a room closed while on screen has no log, and Status shown in its place has no divider', () => {
     const f = online({ channels: ['#04scape', '#other'] });
     f.client.receive(':bob!b@h PRIVMSG #other :hi');
-    f.client.select('#other');
-    assert.notEqual(f.client.snapshot().newFrom, null);
+    f.show('#other');
+    assert.notEqual(f.newFrom(), null);
     f.client.close('#other');
-    assert.equal(f.client.snapshot().active, SERVER_LOG);
-    assert.equal(f.client.snapshot().newFrom, null);
+    assert.deepEqual(f.client.log('#other'), { lines: [], newFrom: null });
+    f.show(SERVER_LOG);
+    assert.equal(f.newFrom(SERVER_LOG), null);
 });
 
 // ── nick collisions ───────────────────────────────────────────────────────
@@ -610,8 +727,7 @@ test('433 tries again with an underscore, and gives up rather than looping', () 
     }
     assert.deepEqual(f.sent, ['NICK mage_', 'NICK mage__', 'NICK mage___'], 'three tries, then it stops asking');
 
-    f.client.select(SERVER_LOG);
-    assert.match(f.lines().at(-1)?.text ?? '', /nick/i, 'the panel is told why the nick is not the one asked for');
+    assert.match(f.lines(SERVER_LOG).at(-1)?.text ?? '', /nick/i, 'the panel is told why the nick is not the one asked for');
 });
 
 test('433s past the last underscore end the attempt, naming the nick asked for', () => {
@@ -652,8 +768,7 @@ test('437, a nick held for a while, is tried again with an underscore as a taken
     const g = online();
     g.client.receive(':irc.swiftirc.net 437 mage #held :Nick/channel is temporarily unavailable');
     assert.equal(g.client.turnedAway(), null);
-    g.client.select(SERVER_LOG);
-    assert.equal(g.lines().at(-1)?.text, 'cannot join #held: it is temporarily unavailable');
+    assert.equal(g.lines(SERVER_LOG).at(-1)?.text, 'cannot join #held: it is temporarily unavailable');
 });
 
 test('432 during registration ends the attempt at once, with the server\'s reason in Status', () => {
@@ -667,9 +782,8 @@ test('432 during registration ends the attempt at once, with the server\'s reaso
     assert.match(f.client.turnedAway() ?? '', /won't take the nick averyveryverylongnickname\. Pick another\./);
     assert.equal(f.channel(SERVER_LOG).unread, 1, 'badged');
     assert.deepEqual(seen, [], 'but not a mention, though it names our nick');
-    f.client.select(SERVER_LOG);
-    assert.match(f.lines().at(-1)?.text ?? '', /averyveryverylongnickname \(Erroneous Nickname\)/);
-    assert.equal(f.lines().at(-1)?.highlight, false);
+    assert.match(f.lines(SERVER_LOG).at(-1)?.text ?? '', /averyveryverylongnickname \(Erroneous Nickname\)/);
+    assert.equal(f.lines(SERVER_LOG).at(-1)?.highlight, false);
 });
 
 test('a 432 for an underscored try is the length it added: the nick asked for is still the taken one', () => {
@@ -700,8 +814,7 @@ test('432 and 437 answering a live rename are reported and leave the connection 
     assert.deepEqual(f.sent, []);
     assert.equal(f.client.turnedAway(), null);
     assert.equal(f.client.snapshot().status, 'online');
-    f.client.select(SERVER_LOG);
-    assert.deepEqual(f.lines().slice(1).map(l => l.text), [
+    assert.deepEqual(f.lines(SERVER_LOG).slice(1).map(l => l.text), [
         'the nick NickServ is not allowed (Invalid nickname: Reserved for services)',
         'the nick held is unavailable right now'
     ]);
@@ -730,7 +843,7 @@ test('every registration starts from the nick chosen, not the underscores or the
 
 test('a 433 answering a live rename reports the refusal and leaves the working nick and the cascade alone', () => {
     const f = online(); // registered as mage, sent cleared
-    f.client.input('/nick taken');
+    f.input('/nick taken');
     assert.deepEqual(f.sent, ['NICK taken']);
     f.sent.length = 0;
 
@@ -740,8 +853,7 @@ test('a 433 answering a live rename reports the refusal and leaves the working n
     assert.equal(f.client.snapshot().status, 'online');
     assert.equal(f.client.snapshot().error, null, 'the connection itself is fine');
 
-    f.client.select(SERVER_LOG);
-    assert.match(f.lines().at(-1)?.text ?? '', /taken/i, 'the refusal is reported');
+    assert.match(f.lines(SERVER_LOG).at(-1)?.text ?? '', /taken/i, 'the refusal is reported');
 
     // The cascade itself must still be live for a later registration: a drop
     // and reconnect starts the whole exchange over, cascade included.
@@ -763,9 +875,8 @@ test('a refused join says which channel and why', () => {
     f.client.receive(':irc.libera.chat 473 mage #invite :Cannot join channel (+i)');
     f.client.receive(':irc.libera.chat 474 mage #banned :Cannot join channel (+b)');
     f.client.receive(':irc.libera.chat 475 mage #keyed :Cannot join channel (+k)');
-    f.client.select(SERVER_LOG);
     // After the welcome, which the handshake already put in Status.
-    const texts = f.lines().slice(1).map(l => l.text);
+    const texts = f.lines(SERVER_LOG).slice(1).map(l => l.text);
     assert.equal(texts.length, 4);
     assert.match(texts[0] ?? '', /#nope/);
     assert.match(texts[1] ?? '', /#invite.*invite/i);
@@ -777,7 +888,7 @@ test('a refused join says which channel and why', () => {
 
 test('a typed message is sent and echoed, since IRC does not echo it back', () => {
     const f = online();
-    f.client.input('hello world');
+    f.input('hello world');
     assert.deepEqual(f.sent, ['PRIVMSG #04scape :hello world']);
     assert.deepEqual(
         f.lines().map(l => [l.kind, l.nick, l.text]),
@@ -787,7 +898,7 @@ test('a typed message is sent and echoed, since IRC does not echo it back', () =
 
 test('a typed action is sent as CTCP and echoed as an action', () => {
     const f = online();
-    f.client.input('/me waves');
+    f.input('/me waves');
     assert.deepEqual(f.sent, [`PRIVMSG #04scape :${CTCP}ACTION waves${CTCP}`]);
     assert.deepEqual(
         f.lines().map(l => [l.kind, l.text]),
@@ -797,12 +908,11 @@ test('a typed action is sent as CTCP and echoed as an action', () => {
 
 test('a typed private message is sent and echoed to the server log', () => {
     const f = online();
-    f.client.input('/msg bob hi there');
+    f.input('/msg bob hi there');
     assert.deepEqual(f.sent, ['PRIVMSG bob :hi there']);
     assert.deepEqual(f.lines(), [], 'not in the channel you were looking at');
-    f.client.select(SERVER_LOG);
     assert.deepEqual(
-        f.lines().slice(1).map(l => [l.kind, l.nick, l.text]),
+        f.lines(SERVER_LOG).slice(1).map(l => [l.kind, l.nick, l.text]),
         [['private', 'mage', 'hi there']],
         'after the welcome'
     );
@@ -810,16 +920,15 @@ test('a typed private message is sent and echoed to the server log', () => {
 
 test('typed joins and parts move the channel list and the wire together', () => {
     const f = online();
-    f.client.input('/join swiftkit');
+    f.input('/join swiftkit');
     assert.deepEqual(f.sent, ['JOIN #swiftkit']);
     assert.deepEqual(f.client.wanted(), ['#04scape', '#swiftkit']);
 
     f.sent.length = 0;
-    f.client.select('#swiftkit');
-    f.client.input('/part');
-    assert.deepEqual(f.sent, ['PART #swiftkit'], 'no channel named means the active one');
+    f.client.input('/part', '#swiftkit');
+    assert.deepEqual(f.sent, ['PART #swiftkit'], 'no channel named means the room it was typed in');
     assert.deepEqual(f.client.wanted(), ['#04scape']);
-    assert.equal(f.client.snapshot().active, SERVER_LOG);
+    assert.equal(f.rooms().includes('#swiftkit'), false);
 });
 
 test('a channel wanted while offline is joined on the next 001', () => {
@@ -835,15 +944,15 @@ test('a channel wanted while offline is joined on the next 001', () => {
 
 test('a command this client does not read itself goes to the server as typed, uppercased', () => {
     const f = online();
-    f.client.input('/mode #04scape +m');
-    f.client.input('/who #04scape');
+    f.input('/mode #04scape +m');
+    f.input('/who #04scape');
     assert.deepEqual(f.sent, ['MODE #04scape +m', 'WHO #04scape']);
     assert.deepEqual(f.lines(), [], 'the server answers in Status; the client does not echo what it does not understand');
 });
 
 test('a passed-through command while not connected says so instead of being dropped silently', () => {
     const f = fake();
-    f.client.input('/mode #04scape +m');
+    f.input('/mode #04scape +m');
     assert.deepEqual(f.sent, []);
     assert.equal(f.lines().at(-1)?.kind, 'system');
     assert.match(f.lines().at(-1)?.text ?? '', /not connected/);
@@ -851,7 +960,7 @@ test('a passed-through command while not connected says so instead of being drop
 
 test('a slash that names no command is answered in the log, not on the wire', () => {
     const f = online();
-    f.client.input('/123 go');
+    f.input('/123 go');
     assert.deepEqual(f.sent, []);
     assert.match(f.lines().at(-1)?.text ?? '', /123/);
     assert.equal(f.lines().at(-1)?.kind, 'system');
@@ -859,14 +968,14 @@ test('a slash that names no command is answered in the log, not on the wire', ()
 
 test('talking while offline says so instead of dropping the message', () => {
     const f = fake();
-    f.client.input('hello?');
+    f.input('hello?');
     assert.deepEqual(f.sent, []);
     assert.equal(f.lines().at(-1)?.kind, 'system');
 });
 
 test('a typed nick change waits for the server to confirm it', () => {
     const f = online();
-    f.client.input('/nick archmage');
+    f.input('/nick archmage');
     assert.deepEqual(f.sent, ['NICK archmage']);
     assert.equal(f.client.snapshot().nick, 'mage', 'still the old nick until the server says otherwise');
     f.client.receive(':mage!m@h NICK archmage');
@@ -902,10 +1011,7 @@ test('a password identifies to NickServ on the welcome, before any join, and nev
     f.client.receive(':irc.swiftirc.net 001 mage :Welcome to SwiftIRC, mage');
     assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY mage hunter2 with spaces', 'JOIN #04scape'], 'named, so the spaces stay in the password');
 
-    const everyLine = f.client.snapshot().channels.flatMap(c => {
-        f.client.select(c.name);
-        return f.lines().map(l => l.text);
-    });
+    const everyLine = f.rooms().flatMap(room => f.lines(room).map(l => l.text));
     assert.ok(!everyLine.some(text => text.includes('hunter2')), 'no log line anywhere carries it');
 });
 
@@ -996,8 +1102,7 @@ test('our own user modes are said in Status', () => {
     const f = online();
     f.client.receive(':mage MODE mage :+ixz');
     f.client.receive(':irc.swiftirc.net 221 mage +ixz');
-    f.client.select(SERVER_LOG);
-    assert.deepEqual(f.lines().slice(-2).map(l => l.text), ['mage sets mode +ixz on mage', 'your modes are +ixz']);
+    assert.deepEqual(f.lines(SERVER_LOG).slice(-2).map(l => l.text), ['mage sets mode +ixz on mage', 'your modes are +ixz']);
 });
 
 // ── topics ────────────────────────────────────────────────────────────────
@@ -1057,8 +1162,7 @@ test('kicked ourselves, the tab stays to say why, empty, and a reconnect does no
 
     assert.deepEqual(f.channel('#swiftkit').users, []);
     assert.equal(f.channel('#swiftkit').highlights, 1, 'being kicked is worth a badge');
-    f.client.select('#swiftkit');
-    assert.equal(f.lines().at(-1)?.text, 'you were kicked by op (bye)');
+    assert.equal(f.lines('#swiftkit').at(-1)?.text, 'you were kicked by op (bye)');
     assert.deepEqual(f.client.wanted(), ['#04scape']);
 
     f.client.closed('', true);
@@ -1076,6 +1180,16 @@ test('closing the tab of a channel we were kicked from forgets it without a PART
     f.client.part('#swiftkit');
     assert.deepEqual(f.sent, []);
     assert.equal(f.client.snapshot().channels.some(c => c.name === '#swiftkit'), false);
+});
+
+test('a kicked channel says so', () => {
+    const f = online({ channels: ['#a', '#b'] });
+    f.client.receive(':op!o@h KICK #a mage :bye');
+    assert.equal(f.channel('#a').kicked, true);
+    assert.equal(f.channel('#b').kicked, false);
+    f.input('/join #a');
+    f.client.receive(':mage!m@h JOIN #a');
+    assert.equal(f.channel('#a').kicked, false, 'rejoined');
 });
 
 // ── Status ────────────────────────────────────────────────────────────────
@@ -1097,9 +1211,8 @@ test('the welcome, the MOTD and other numerics are read out in Status without ba
         f.client.receive(line);
     }
     assert.equal(f.channel(SERVER_LOG).unread, 0);
-    f.client.select(SERVER_LOG);
     assert.deepEqual(
-        f.lines().map(l => l.text),
+        f.lines(SERVER_LOG).map(l => l.text),
         [
             'Welcome to the SwiftIRC IRC Network mage!m@host',
             'Your host is irc.swiftirc.net',
@@ -1141,13 +1254,13 @@ test('rename does nothing on a live connection, where the server has to agree to
 test('quit says goodbye only to a server that is listening, with the reason given or the kit\'s own', () => {
     const offline = fake();
     offline.client.quit();
-    offline.client.input('/quit bye');
+    offline.input('/quit bye');
     assert.deepEqual(offline.sent, []);
 
     const f = online();
     f.client.quit();
     f.client.quit('gone fishing');
-    f.client.input('/quit bye');
+    f.input('/quit bye');
     assert.deepEqual(f.sent, ['QUIT :Zanaris Kit', 'QUIT :gone fishing', 'QUIT bye']);
 });
 
@@ -1205,7 +1318,7 @@ test('closing a channel the server put us in, unasked, still parts it', () => {
 test('rejoining a channel we were kicked from makes its close a real PART again', () => {
     const f = online({ channels: ['#04scape', '#swiftkit'] });
     f.client.receive(':op!o@h KICK #swiftkit mage :bye');
-    f.client.input('/join #swiftkit');
+    f.input('/join #swiftkit');
     f.client.receive(':mage!m@h JOIN #swiftkit');
     f.sent.length = 0;
     f.client.part('#swiftkit');
@@ -1214,13 +1327,12 @@ test('rejoining a channel we were kicked from makes its close a real PART again'
 
 test('a typed IDENTIFY to NickServ is sent whole but echoed without the password', () => {
     const f = online();
-    f.client.input('/msg NickServ IDENTIFY mage hunter2');
-    f.client.input('/msg nickserv register hunter2 me@example.com');
-    f.client.input('/msg NickServ SET PASSWORD hunter3');
-    f.client.input('/msg NickServ HELP');
+    f.input('/msg NickServ IDENTIFY mage hunter2');
+    f.input('/msg nickserv register hunter2 me@example.com');
+    f.input('/msg NickServ SET PASSWORD hunter3');
+    f.input('/msg NickServ HELP');
     assert.deepEqual(f.sent, ['PRIVMSG NickServ :IDENTIFY mage hunter2', 'PRIVMSG nickserv :register hunter2 me@example.com', 'PRIVMSG NickServ :SET PASSWORD hunter3', 'PRIVMSG NickServ HELP']);
-    f.client.select(SERVER_LOG);
-    const echoed = f.lines().slice(1).map(l => l.text);
+    const echoed = f.lines(SERVER_LOG).slice(1).map(l => l.text);
     assert.deepEqual(echoed, ['IDENTIFY (hidden)', 'register (hidden)', 'SET PASSWORD (hidden)', 'HELP']);
 });
 
@@ -1232,14 +1344,16 @@ test('an invite badges Status, since it is addressed to you', () => {
 
 // ── private conversations ─────────────────────────────────────────────────
 
-test('/query opens a conversation and shows it, and lines typed there go to that person', () => {
+test('/query opens a conversation and names it to open, and lines typed there go to that person', () => {
     const f = online();
-    f.client.input('/query bob');
-    assert.equal(f.client.snapshot().active, 'bob');
+    assert.deepEqual(f.input('/query bob'), { open: 'bob' });
+    assert.ok(f.rooms().includes('bob'));
     assert.deepEqual(f.sent, [], 'a conversation is ours alone until something is said');
 
-    f.client.input('hello bob');
-    f.client.input('/me waves');
+    // Main puts the pane the line was typed in on the conversation.
+    f.show('bob');
+    f.input('hello bob');
+    f.input('/me waves');
     assert.deepEqual(f.sent, ['PRIVMSG bob :hello bob', `PRIVMSG bob :${CTCP}ACTION waves${CTCP}`]);
     assert.deepEqual(
         f.lines().map(l => [l.kind, l.nick, l.text]),
@@ -1252,86 +1366,119 @@ test('/query opens a conversation and shows it, and lines typed there go to that
 
 test('/query with text says it at once; a name that is no nick opens nothing', () => {
     const f = online();
-    f.client.input('/query bob are you there?');
+    f.input('/query bob are you there?');
     assert.deepEqual(f.sent, ['PRIVMSG bob :are you there?']);
-    f.client.input('/query bob,alice');
+    assert.deepEqual(f.lines('bob').map(l => l.text), ['are you there?']);
+    f.input('/query bob,alice');
     assert.equal(f.client.snapshot().channels.some(c => c.name === 'bob,alice'), false);
-    assert.match(f.lines().at(-1)?.text ?? '', /not a nick/);
+    assert.match(f.lines().at(-1)?.text ?? '', /not a nick/, 'said in the room it was typed in');
 });
 
 test('a /msg to someone with a conversation open is echoed there; to NickServ it stays in Status and hides the password', () => {
     const f = online();
-    f.client.input('/query bob');
-    f.client.input('/msg bob from afar');
-    assert.equal(f.lines().at(-1)?.text, 'from afar');
-    f.client.input('/msg NickServ IDENTIFY mage hunter2');
+    f.input('/query bob');
+    f.input('/msg bob from afar');
+    assert.equal(f.lines('bob').at(-1)?.text, 'from afar');
+    f.input('/msg NickServ IDENTIFY mage hunter2');
     assert.equal(f.client.snapshot().channels.some(c => c.name === 'NickServ'), false, 'services get no tab of their own');
-    f.client.select(SERVER_LOG);
-    assert.equal(f.lines().at(-1)?.text, 'IDENTIFY (hidden)');
+    assert.equal(f.lines(SERVER_LOG).at(-1)?.text, 'IDENTIFY (hidden)');
 });
 
 test('a password typed into a conversation with NickServ is not written into it', () => {
     const f = online();
-    f.client.input('/query NickServ');
-    f.client.input('identify mage hunter2');
+    f.input('/query NickServ');
+    f.client.input('identify mage hunter2', 'NickServ');
     assert.deepEqual(f.sent, ['PRIVMSG NickServ :identify mage hunter2']);
-    assert.equal(f.lines().at(-1)?.text, 'identify (hidden)');
+    assert.equal(f.lines('NickServ').at(-1)?.text, 'identify (hidden)');
 });
 
 test('a notice goes to the conversation with its sender when one is open, and never opens one', () => {
     const f = online();
     f.client.receive(':NickServ!s@services. NOTICE mage :You are now identified.');
     assert.equal(f.client.snapshot().channels.some(c => c.name === 'NickServ'), false);
-    f.client.input('/query bob');
+    f.input('/query bob');
     f.client.receive(':bob!b@h NOTICE mage :psst');
-    assert.equal(f.lines().at(-1)?.text, '-bob- psst');
+    assert.equal(f.lines('bob').at(-1)?.text, '-bob- psst');
 });
 
 test('a conversation follows its person to a new name, in the same place in the row', () => {
     const f = online();
     f.client.receive(':bob!b@h PRIVMSG mage :hi');
     f.client.receive(':alice!a@h PRIVMSG mage :hey');
-    f.client.select('bob');
+    f.show('bob');
     f.client.receive(':bob!b@h NICK :robert');
     assert.deepEqual(
         f.client.snapshot().channels.map(c => c.name),
         [SERVER_LOG, '#04scape', 'robert', 'alice']
     );
-    assert.equal(f.client.snapshot().active, 'robert');
     assert.deepEqual(
-        f.lines().map(l => l.text),
+        f.lines('robert').map(l => l.text),
         ['hi', 'bob is now known as robert']
     );
-    f.client.input('still there?');
+    assert.deepEqual(f.lines('bob'), [], 'nothing is left under the old name');
+    f.client.input('still there?', 'robert');
     assert.equal(f.sent.at(-1), 'PRIVMSG robert :still there?');
+});
+
+test('a conversation renamed tells onRenamed and stays read', () => {
+    const told: string[] = [];
+    const f = online({ onRenamed: (from, to) => told.push(`${from} -> ${to}: ${f.lines(to).at(-1)?.text}`) });
+    f.client.receive(':zed!z@h PRIVMSG mage :hi');
+    f.show('zed');
+    f.client.receive(':zed!z@h NICK zed_');
+    assert.deepEqual(told, ['zed -> zed_: zed is now known as zed_'], 'told after the line saying so');
+
+    f.client.receive(':zed_!z@h PRIVMSG mage :still me');
+    assert.equal(f.channel('zed_').unread, 0, 'still being read, under its new name');
+
+    f.client.receive(':bob!b@h NICK robert');
+    assert.equal(told.length, 1, 'nobody is told of a rename with no conversation in it');
 });
 
 test('someone quitting says so in the conversation with them', () => {
     const f = online();
-    f.client.input('/query bob');
+    f.input('/query bob');
     f.client.receive(':bob!b@h QUIT :bye');
-    assert.equal(f.lines().at(-1)?.text, 'bob quit (bye)');
+    assert.equal(f.lines('bob').at(-1)?.text, 'bob quit (bye)');
 });
 
 test('/close ends a conversation and parts a channel; Status stays', () => {
     const f = online();
-    f.client.input('/query bob');
-    f.client.input('/close');
+    f.input('/query bob');
+    f.client.input('/close', 'bob');
     assert.equal(f.client.snapshot().channels.some(c => c.name === 'bob'), false);
     assert.deepEqual(f.sent, [], 'the server never knew the conversation was open');
 
-    f.client.select('#04scape');
-    f.client.input('/close');
+    f.client.input('/close', '#04scape');
     assert.deepEqual(f.sent, ['PART #04scape']);
 
-    f.client.input('/close');
-    assert.match(f.lines().at(-1)?.text ?? '', /Status cannot be closed/);
+    f.client.input('/close', SERVER_LOG);
+    assert.match(f.lines(SERVER_LOG).at(-1)?.text ?? '', /Status cannot be closed/);
 });
 
-test('a typed /join shows the channel it joins', () => {
+test('/close closes the room it was typed in', () => {
+    const f = online({ channels: ['#a', '#b'] });
+    f.client.input('/close', '#b');
+    assert.deepEqual(f.sent, ['PART #b']);
+    assert.deepEqual(f.rooms(), [SERVER_LOG, '#a']);
+});
+
+test('a line goes to the room it was typed in', () => {
+    const f = online({ channels: ['#a', '#b'] });
+    f.client.input('hello there', '#b');
+    assert.deepEqual(f.sent, ['PRIVMSG #b :hello there']);
+    assert.deepEqual(f.lines('#b').map(l => [l.nick, l.text]), [['mage', 'hello there']]);
+    assert.deepEqual(f.lines('#a'), [], 'not the first channel, which is all an open room once was');
+});
+
+test('/join and /query name the room to open', () => {
     const f = online();
-    f.client.input('/join #LostHQ');
-    assert.equal(f.client.snapshot().active, '#LostHQ');
+    assert.deepEqual(f.input('/join #new'), { open: '#new' });
+    assert.deepEqual(f.input('/join #04SCAPE'), { open: '#04scape' }, 'as chat spells it');
+    assert.deepEqual(f.input('/query zed'), { open: 'zed' });
+    assert.ok(f.rooms().includes('zed'), 'a tab for the conversation, though nothing was said in it');
+    assert.deepEqual(f.input('hello'), { open: null });
+    assert.deepEqual(f.input('/query bob,alice'), { open: null }, 'no nick, nothing to open');
 });
 
 // ── ignoring ──────────────────────────────────────────────────────────────
@@ -1345,9 +1492,8 @@ test('an ignored nick\'s messages, notices, actions and invites are dropped, wha
     f.client.receive(':spammer!s@h INVITE mage #gold');
     assert.deepEqual(f.lines(), []);
     assert.equal(f.client.snapshot().channels.some(c => c.name === 'spammer'), false);
-    f.client.select(SERVER_LOG);
     assert.deepEqual(
-        f.lines().map(l => l.text),
+        f.lines(SERVER_LOG).map(l => l.text),
         ['Welcome to Libera.Chat, mage']
     );
 });
@@ -1355,14 +1501,14 @@ test('an ignored nick\'s messages, notices, actions and invites are dropped, wha
 test('/ignore and /unignore change the list and report it; /ignore alone lists it', () => {
     const changes: string[][] = [];
     const f = online({ onIgnoreChanged: list => changes.push(list) });
-    f.client.input('/ignore');
+    f.input('/ignore');
     assert.equal(f.lines().at(-1)?.text, 'you are not ignoring anyone');
-    f.client.input('/ignore bob');
-    f.client.input('/ignore BOB');
+    f.input('/ignore bob');
+    f.input('/ignore BOB');
     assert.match(f.lines().at(-1)?.text ?? '', /already ignoring/);
     f.client.receive(':bob!b@h PRIVMSG #04scape :hi');
     assert.equal(f.lines().some(l => l.text === 'hi'), false);
-    f.client.input('/unignore Bob');
+    f.input('/unignore Bob');
     f.client.receive(':bob!b@h PRIVMSG #04scape :hi again');
     assert.equal(f.lines().at(-1)?.text, 'hi again');
     assert.deepEqual(changes, [['bob'], []]);
@@ -1371,61 +1517,58 @@ test('/ignore and /unignore change the list and report it; /ignore alone lists i
 
 // ── the commands the kit reads ────────────────────────────────────────────
 
-test('/topic with text sets the active channel\'s; alone it shows what the join said', () => {
+test('/topic with text sets the topic of the channel it was typed in; alone it shows what the join said', () => {
     const f = online();
-    f.client.select('#04scape');
-    f.client.input('/topic');
+    f.input('/topic');
     assert.equal(f.lines().at(-1)?.text, '#04scape has no topic');
     f.client.receive(':irc 332 mage #04scape :Welcome to 2004scape');
     f.client.receive(':irc 333 mage #04scape alice!a@h 1700000000');
-    f.client.input('/topic');
+    f.input('/topic');
     assert.equal(f.lines().at(-1)?.text, 'topic of #04scape: Welcome to 2004scape (set by alice)');
-    f.client.input('/topic A new topic');
+    f.input('/topic A new topic');
     assert.deepEqual(f.sent, ['TOPIC #04scape :A new topic']);
 });
 
-test('/kick, /invite and /op take the channel you are looking at', () => {
-    const f = online();
-    f.client.select('#04scape');
-    f.client.input('/kick bob spamming links');
-    f.client.input('/invite alice');
-    f.client.input('/op a b c d');
-    f.client.input('/devoice e');
-    assert.deepEqual(f.sent, ['KICK #04scape bob :spamming links', 'INVITE alice #04scape', 'MODE #04scape +ooo a b c', 'MODE #04scape +o d', 'MODE #04scape -v e']);
+test('/kick, /invite and /op take the channel they were typed in', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
+    f.client.input('/kick bob spamming links', '#other');
+    f.client.input('/invite alice', '#other');
+    f.client.input('/op a b c d', '#other');
+    f.client.input('/devoice e', '#other');
+    assert.deepEqual(f.sent, ['KICK #other bob :spamming links', 'INVITE alice #other', 'MODE #other +ooo a b c', 'MODE #other +o d', 'MODE #other -v e']);
 });
 
 test('channel commands in Status say there is no channel rather than sending', () => {
     const f = online();
-    f.client.select(SERVER_LOG);
-    f.client.input('/kick bob');
-    f.client.input('/op bob');
+    f.client.input('/kick bob', SERVER_LOG);
+    f.client.input('/op bob', SERVER_LOG);
     assert.deepEqual(f.sent, []);
-    assert.match(f.lines().at(-1)?.text ?? '', /no channel/);
+    assert.match(f.lines(SERVER_LOG).at(-1)?.text ?? '', /no channel/);
 });
 
 test('/away with a reason marks you away, and alone marks you back', () => {
     const f = online();
-    f.client.input('/away gone fishing');
-    f.client.input('/away');
+    f.input('/away gone fishing');
+    f.input('/away');
     assert.deepEqual(f.sent, ['AWAY :gone fishing', 'AWAY']);
 });
 
-test('/clear empties the tab here only, and /help lists the commands', () => {
+test('/clear empties the room here only, and /help lists the commands', () => {
     const f = online();
     f.client.receive(':bob!b@h PRIVMSG #04scape :hi');
-    f.client.input('/clear');
+    f.input('/clear');
     assert.deepEqual(f.lines(), []);
-    f.client.input('/help');
+    f.input('/help');
     const help = f.lines().map(l => l.text);
     for (const command of COMMAND_HELP) assert.ok(help.some(t => t.startsWith(`/${command.name} `)), `/help names /${command.name}`);
     assert.deepEqual(f.sent, []);
 });
 
-test('a whois answer is read into sentences in the tab it was asked from', () => {
-    const f = online();
+test('a whois answer is read into sentences in the room it was asked from', () => {
+    const f = online({ channels: ['#04scape', '#other'] });
     f.clock.now = 1_700_010_000_000;
-    f.client.select('#04scape');
-    f.client.input('/whois bob');
+    f.show('#other');
+    f.input('/whois bob');
     assert.deepEqual(f.sent, ['WHOIS bob']);
     f.client.receive(':irc 311 mage bob ~b host.example * :Bob Smith');
     f.client.receive(':irc 319 mage bob :@#04scape #LostHQ');
@@ -1453,8 +1596,9 @@ test('a whois answer is read into sentences in the tab it was asked from', () =>
 
 test('someone not online says so where you were talking to them', () => {
     const f = online();
-    f.client.input('/query ghost');
-    f.client.input('boo');
+    f.input('/query ghost');
+    f.show('ghost');
+    f.input('boo');
     f.client.receive(':irc 401 mage ghost :No such nick/channel');
     assert.equal(f.lines().at(-1)?.text, 'ghost is not online');
 });
@@ -1464,9 +1608,8 @@ test('a full, registered-only or overfull join is refused in words', () => {
     f.client.receive(':irc 471 mage #full :Cannot join channel (+l)');
     f.client.receive(':irc 477 mage #regonly :Cannot join channel (+R)');
     f.client.receive(':irc 405 mage #more :You have joined too many channels');
-    f.client.select(SERVER_LOG);
     assert.deepEqual(
-        f.lines().slice(1).map(l => l.text),
+        f.lines(SERVER_LOG).slice(1).map(l => l.text),
         ['cannot join #full: the channel is full', 'cannot join #regonly: you need to be identified with NickServ', 'cannot join #more: you are in too many channels']
     );
 });
@@ -1503,8 +1646,7 @@ test('a G-line\'s ERROR ends the attempt, with the operator\'s reason in words a
     );
     f.client.closed('the chat server closed the connection', false);
     assert.equal(f.client.snapshot().error, f.client.turnedAway(), 'the ban outlasts the close it caused');
-    f.client.select(SERVER_LOG);
-    assert.ok(f.lines().some(l => l.text === 'Closing link: (~mage@203.0.113.9) [G-lined: Spamming links in #2004scape]'));
+    assert.ok(f.lines(SERVER_LOG).some(l => l.text === 'Closing link: (~mage@203.0.113.9) [G-lined: Spamming links in #2004scape]'));
 });
 
 test('a 465 ends the attempt on its own, and the ERROR after it gives the reason when it has one', () => {
@@ -1545,8 +1687,7 @@ test('an ERROR that is not a ban only goes to Status: a timeout, a flood, a thro
         const f = online();
         f.client.receive(`ERROR :${text}`);
         assert.equal(f.client.turnedAway(), null, text);
-        f.client.select(SERVER_LOG);
-        assert.equal(f.lines().at(-1)?.text, text);
+        assert.equal(f.lines(SERVER_LOG).at(-1)?.text, text);
     }
 });
 
@@ -1562,8 +1703,7 @@ test('past the cap, someone new lands in Status, said once, and closing a conver
     f.client.receive(':latecomer!l@h PRIVMSG mage :hello?');
     f.client.receive(':another!a@h PRIVMSG mage :me too');
     assert.equal(conversations().length, MAX_CONVERSATIONS, 'no tab past the cap');
-    f.client.select(SERVER_LOG);
-    const status = f.lines().slice(1);
+    const status = f.lines(SERVER_LOG).slice(1);
     assert.deepEqual(
         status.map(l => [l.kind, l.nick, l.text]),
         [
@@ -1582,35 +1722,34 @@ test('past the cap, someone new lands in Status, said once, and closing a conver
     f.client.receive(':latecomer!l@h PRIVMSG mage :now?');
     assert.ok(conversations().includes('latecomer'), 'a free slot opens a tab again');
     f.client.receive(':third!t@h PRIVMSG mage :and me');
-    f.client.select(SERVER_LOG);
-    assert.equal(f.lines().filter(l => l.kind === 'system' && /conversations are open/.test(l.text)).length, 2, 'running out again is news again');
+    assert.equal(f.lines(SERVER_LOG).filter(l => l.kind === 'system' && /conversations are open/.test(l.text)).length, 2, 'running out again is news again');
 });
 
 test('a /query past the cap still opens: the cap is on strangers, not on you', () => {
     const f = online();
     for (let n = 0; n < MAX_CONVERSATIONS; n++) f.client.receive(`:spam${n}!s@h PRIVMSG mage :hi`);
-    f.client.input('/query friend');
-    assert.equal(f.client.snapshot().active, 'friend');
+    assert.deepEqual(f.input('/query friend'), { open: 'friend' });
+    assert.ok(f.rooms().includes('friend'));
 });
 
 // ── the line limit ────────────────────────────────────────────────────────
 
 test('a message is measured in bytes as the others receive it, and one too long is refused, not cut', () => {
     const f = online();
-    f.client.input('a'.repeat(400));
+    f.input('a'.repeat(400));
     assert.equal(f.sent.length, 1, 'the box\'s 400 characters fit, in plain letters');
 
     f.sent.length = 0;
-    f.client.input('é'.repeat(250));
+    f.input('é'.repeat(250));
     assert.deepEqual(f.sent, [], '250 characters, but 500 bytes: the server would cut it');
     assert.equal(f.lines().at(-1)?.kind, 'system');
     assert.match(f.lines().at(-1)?.text ?? '', /too long/);
     assert.equal(f.lines().filter(l => l.nick === 'mage').length, 1, 'no echo of what was never sent, only of the 400 letters');
 
-    f.client.input('😀'.repeat(110));
+    f.input('😀'.repeat(110));
     assert.deepEqual(f.sent, [], '220 UTF-16 units under the box\'s cap, but 440 bytes');
 
-    f.client.input('é'.repeat(200));
+    f.input('é'.repeat(200));
     assert.equal(f.sent.length, 1, '400 bytes fit');
 });
 
@@ -1618,17 +1757,17 @@ test('the budget counts the command, the target and the prefix the server adds',
     const f = online();
     const room = `#${'r'.repeat(49)}`;
     f.client.join(room);
-    f.client.select(room);
+    f.show(room);
     f.sent.length = 0;
     // ":mage!~uuuuuuuuuu@<64 bytes> PRIVMSG #rrr… :", CRLF after: 512 - 83 - 60 - 2 leaves 367 bytes.
-    f.client.input(`${'a'.repeat(365)} b`);
+    f.input(`${'a'.repeat(365)} b`);
     assert.equal(f.sent.length, 1);
-    f.client.input(`${'a'.repeat(366)} b`);
+    f.input(`${'a'.repeat(366)} b`);
     assert.equal(f.sent.length, 1, 'one byte over is refused');
 
     f.sent.length = 0;
-    f.client.input(`/msg bob ${'é'.repeat(250)}`);
-    f.client.input(`/notice bob ${'é'.repeat(250)}`);
-    f.client.input(`/me ${'é'.repeat(250)}`);
+    f.input(`/msg bob ${'é'.repeat(250)}`);
+    f.input(`/notice bob ${'é'.repeat(250)}`);
+    f.input(`/me ${'é'.repeat(250)}`);
     assert.deepEqual(f.sent, [], '/msg, /notice and /me are measured too');
 });

@@ -1,6 +1,6 @@
 import { COMMAND_HELP } from '../../shared/chatInput.ts';
 import { isNick } from '../../shared/chatSettings.ts';
-import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatPing, type ChatStatus, type ChatTopic, type ChatUser, type ChatView, type Presence } from '../../shared/chat.ts';
+import { SERVER_LOG, type ChatChannel, type ChatLine, type ChatLog, type ChatPing, type ChatSight, type ChatStatus, type ChatTopic, type ChatUser, type ChatView, type Presence } from '../../shared/chat.ts';
 import {
     banReason,
     DEFAULT_ISUPPORT,
@@ -15,6 +15,7 @@ import {
     readIsupport,
     sameName as same,
     stripFormatting,
+    type Input,
     type Isupport
 } from './protocol.ts';
 
@@ -80,6 +81,12 @@ export interface ClientOpts {
     onIgnoreChanged?(ignore: string[]): void;
     /** Told each line that names you or is said to you alone, as it arrives. */
     onHighlight?(line: ChatLine): void;
+    /**
+     * Told a conversation's old name and its new one when it follows its
+     * person through a NICK, after the line saying so is in it, so whatever
+     * shows the conversation by name can follow it too.
+     */
+    onRenamed?(from: string, to: string): void;
 }
 
 /**
@@ -101,14 +108,16 @@ interface Chan {
     flags: string[];
     /** Null until a 324 has said, so "no flags" and "not told yet" stay different. */
     flagsKnown: boolean;
-    /** We were kicked and have not rejoined, so the tab is only there to say why. */
+    /** We were kicked and have not rejoined, so the room is only listed to say why. */
     kicked: boolean;
     createdAt: number | null;
     lines: ChatLine[];
-    /** The latest line id when this tab was last left, so coming back knows which lines arrived while it was. */
+    /** The latest line id when this room last went off screen, so coming back knows which lines arrived while it was. */
     seen: number;
-    /** Where the New divider goes while this tab is open: see `ChatView.newFrom`. */
+    /** Where the New divider goes while this room is on screen: see `ChatLog.newFrom`. */
     newFrom: number | null;
+    /** The latest line id when this room was last on screen in any window (`see`). No line up to it is a ping. */
+    pingsSeen: number;
 }
 
 /** A nick refusal: in use, not a nick the server will take (too long, or reserved), or held for a while by services or a nick delay. */
@@ -198,7 +207,6 @@ export class IrcClient {
     private password: string | null;
     /** A CAP REQ is waiting on its answer, and registration with it. */
     private capPending = false;
-    private activeName: string;
     private error: string | null = null;
     /**
      * Why the server will not have us as we are — a ban, or a nick refused
@@ -208,16 +216,14 @@ export class IrcClient {
      */
     private refusal: string | null = null;
     private lastId = 0;
-    /** The latest line id when chat was last on screen. No line up to it is a ping. */
-    private pingsSeen = 0;
     /**
-     * Chat is on screen: a chat pane shows the conversation in some window's
-     * front tab. One on its Settings page shows no room, and main does not
-     * count it. Only then is the open room being read; out of sight, it
-     * counts what arrives as any other room does. False until main says
-     * otherwise, since nobody has seen anything before a pane shows it.
+     * The rooms whose lines are on screen in some window, by folded name, as
+     * main last said (`see`): only these are being read, and every other
+     * room counts what arrives. Empty until main says otherwise, since nobody
+     * has seen anything before a pane shows it. A room the client does not
+     * have stays in it, so it is read from the moment it appears.
      */
-    private onScreen = false;
+    private shown = new Set<string>();
     private nickTries = 0;
     /** The nick a registration's underscores were added to, so giving up names the one that was asked for. */
     private triedFrom: string | null = null;
@@ -225,7 +231,7 @@ export class IrcClient {
     private crowded = false;
     private support: Isupport = DEFAULT_ISUPPORT;
     private ignoring: string[];
-    /** Whose /whois is on its way, and the tab it was asked from, which is where the answer goes. */
+    /** Whose /whois is on its way, and the room it was asked from, which is where the answer goes. */
     private readonly whoisTo = new Map<string, string>();
 
     constructor(opts: ClientOpts) {
@@ -234,10 +240,8 @@ export class IrcClient {
         this.account = opts.nick;
         this.password = opts.password === '' ? null : (opts.password ?? null);
         this.ignoring = [...(opts.ignore ?? [])];
-        this.activeName = SERVER_LOG;
         this.chan(SERVER_LOG); // first in the map, so first in the rail
         for (const channel of opts.channels) this.join(channel);
-        this.activeName = this.want[0] ?? SERVER_LOG;
     }
 
     // ── the connection, driven from outside ───────────────────────────────
@@ -796,6 +800,11 @@ export class IrcClient {
      * A conversation follows the person it is with to their new name, in the
      * same place in the row. When a conversation under the new name is already
      * open, both are kept rather than one log swallowed into the other.
+     *
+     * One being read stays read under its new name, so its next line is not
+     * counted, and whoever shows it is told (`onRenamed`) so its pane or
+     * panel can follow it. That is last, once the conversation is all there
+     * under the new name, the line saying so included.
      */
     private renameQuery(from: string, to: string): void {
         const query = this.chans.get(key(from));
@@ -804,13 +813,15 @@ export class IrcClient {
             this.push(query.name, 'system', null, `${from} is now known as ${to}`);
             return;
         }
+        const was = query.name;
         const entries = [...this.chans.entries()].map(([k, c]): [string, Chan] => (c === query ? [key(to), c] : [k, c]));
         this.chans.clear();
         for (const [k, c] of entries) this.chans.set(k, c);
         query.name = to;
         for (const line of query.lines) line.channel = to;
-        if (same(this.activeName, from)) this.activeName = to;
+        if (this.shown.delete(key(was))) this.shown.add(key(to));
         this.push(to, 'system', null, `${from} is now known as ${to}`);
+        this.opts.onRenamed?.(was, to);
     }
 
     /**
@@ -927,181 +938,215 @@ export class IrcClient {
 
     // ── what the user does ───────────────────────────────────────────────
 
-    input(text: string): void {
+    /**
+     * One typed line, and `at`, the room it was typed in. A line of text is
+     * said there, and a command that leaves out a channel — /topic, /kick,
+     * /part and the rest — means that one; whatever the kit has to say back
+     * is said there too.
+     *
+     * Answers the room the line means to open: the channel /join named, or
+     * the conversation /query opened, in the spelling chat has it under.
+     * Nothing else opens anything, so every other line answers null.
+     */
+    input(text: string, at: string): { open: string | null } {
         const typed = parseInput(text);
-        if (typed === null) return;
+        return { open: typed === null ? null : this.run(typed, at) };
+    }
+
+    private run(typed: Input, at: string): string | null {
         switch (typed.kind) {
             case 'say':
             case 'action':
-                this.speak(typed.kind, typed.text);
-                return;
+                this.speak(typed.kind, typed.text, at);
+                return null;
             case 'msg': {
-                if (!this.online(SERVER_LOG)) return;
-                if (!this.fits('PRIVMSG', [typed.target, typed.text])) return;
+                if (!this.online(SERVER_LOG)) return null;
+                if (!this.fits('PRIVMSG', [typed.target, typed.text], at)) return null;
                 this.opts.send(formatCommand('PRIVMSG', [typed.target, typed.text]));
                 // Echoed where the conversation already is, or in Status: a /msg to NickServ must not open a tab of its own.
                 const open = this.chans.has(key(typed.target));
                 this.push(open ? typed.target : SERVER_LOG, open ? 'say' : 'private', this.nickName, hideSecret(typed.target, typed.text));
-                return;
+                return null;
             }
-            case 'query':
+            case 'query': {
                 // The tab's name is where every line typed in it is sent, so it has to be one person.
-                if (!isNick(typed.target)) return this.note(`${typed.target} is not a nick`);
-                this.select(typed.target);
-                if (typed.text !== '') this.speak('say', typed.text);
-                return;
+                if (!isNick(typed.target)) {
+                    this.note(at, `${typed.target} is not a nick`);
+                    return null;
+                }
+                // Made here, since opening it is main's: without this the conversation has no tab until someone speaks.
+                const query = this.chan(typed.target);
+                if (typed.text !== '') this.speak('say', typed.text, query.name);
+                return query.name;
+            }
             case 'notice': {
-                if (!this.online(this.activeName)) return;
-                if (!this.fits('NOTICE', [typed.target, typed.text])) return;
+                if (!this.online(at)) return null;
+                if (!this.fits('NOTICE', [typed.target, typed.text], at)) return null;
                 this.opts.send(formatCommand('NOTICE', [typed.target, typed.text]));
                 const open = this.chans.has(key(typed.target));
                 this.push(open ? typed.target : SERVER_LOG, 'system', null, `-> -${typed.target}- ${typed.text}`);
-                return;
+                return null;
             }
             case 'topic': {
-                const channel = typed.channel === '' ? this.activeName : typed.channel;
-                if (!isChannel(channel)) return this.note('no channel to show the topic of');
+                const channel = typed.channel === '' ? at : typed.channel;
+                if (!isChannel(channel)) {
+                    this.note(at, 'no channel to show the topic of');
+                    return null;
+                }
                 if (typed.text === null) {
                     // Read from what the join already told us, rather than asked again for an answer that lands in the bar.
                     const topic = this.chans.get(key(channel))?.topic ?? null;
                     const setBy = topic?.setBy ? ` (set by ${topic.setBy})` : '';
-                    return this.note(topic === null ? `${channel} has no topic` : `topic of ${channel}: ${topic.text}${setBy}`);
+                    this.note(at, topic === null ? `${channel} has no topic` : `topic of ${channel}: ${topic.text}${setBy}`);
+                    return null;
                 }
-                if (!this.online(this.activeName)) return;
+                if (!this.online(at)) return null;
                 this.opts.send(formatCommand('TOPIC', [channel, typed.text]));
-                return;
+                return null;
             }
             case 'away':
-                if (!this.online(this.activeName)) return;
+                if (!this.online(at)) return null;
                 this.opts.send(typed.reason === '' ? 'AWAY' : formatCommand('AWAY', [typed.reason]));
-                return;
+                return null;
             case 'whois':
-                if (!this.online(this.activeName)) return;
-                this.whoisTo.set(key(typed.nick), this.activeName);
+                if (!this.online(at)) return null;
+                this.whoisTo.set(key(typed.nick), at);
                 this.opts.send(formatCommand('WHOIS', [typed.nick]));
-                return;
+                return null;
             case 'kick': {
-                const channel = typed.channel === '' ? this.activeName : typed.channel;
-                if (!isChannel(channel)) return this.note('no channel to kick from');
-                if (!this.online(this.activeName)) return;
+                const channel = typed.channel === '' ? at : typed.channel;
+                if (!isChannel(channel)) {
+                    this.note(at, 'no channel to kick from');
+                    return null;
+                }
+                if (!this.online(at)) return null;
                 this.opts.send(formatCommand('KICK', typed.reason === '' ? [channel, typed.nick] : [channel, typed.nick, typed.reason]));
-                return;
+                return null;
             }
             case 'invite': {
-                const channel = typed.channel === '' ? this.activeName : typed.channel;
-                if (!isChannel(channel)) return this.note('no channel to invite to');
-                if (!this.online(this.activeName)) return;
+                const channel = typed.channel === '' ? at : typed.channel;
+                if (!isChannel(channel)) {
+                    this.note(at, 'no channel to invite to');
+                    return null;
+                }
+                if (!this.online(at)) return null;
                 this.opts.send(formatCommand('INVITE', [typed.nick, channel]));
-                return;
+                return null;
             }
             case 'rank': {
-                const channel = this.activeName;
-                if (!isChannel(channel)) return this.note('no channel to do that in');
-                if (!this.online(channel)) return;
-                const [sign, letter] = typed.mode;
-                for (let at = 0; at < typed.nicks.length; at += MODES_PER_LINE) {
-                    const nicks = typed.nicks.slice(at, at + MODES_PER_LINE);
-                    this.opts.send(formatCommand('MODE', [channel, `${sign}${letter!.repeat(nicks.length)}`, ...nicks]));
+                if (!isChannel(at)) {
+                    this.note(at, 'no channel to do that in');
+                    return null;
                 }
-                return;
+                if (!this.online(at)) return null;
+                const [sign, letter] = typed.mode;
+                for (let from = 0; from < typed.nicks.length; from += MODES_PER_LINE) {
+                    const nicks = typed.nicks.slice(from, from + MODES_PER_LINE);
+                    this.opts.send(formatCommand('MODE', [at, `${sign}${letter!.repeat(nicks.length)}`, ...nicks]));
+                }
+                return null;
             }
             case 'ignore':
                 if (typed.nick === '') {
-                    this.note(this.ignoring.length === 0 ? 'you are not ignoring anyone' : `ignoring ${this.ignoring.join(', ')}`);
-                    return;
+                    this.note(at, this.ignoring.length === 0 ? 'you are not ignoring anyone' : `ignoring ${this.ignoring.join(', ')}`);
+                    return null;
                 }
-                if (this.ignored(typed.nick)) return this.note(`already ignoring ${typed.nick}`);
+                if (this.ignored(typed.nick)) {
+                    this.note(at, `already ignoring ${typed.nick}`);
+                    return null;
+                }
                 this.ignoring = [...this.ignoring, typed.nick];
                 this.opts.onIgnoreChanged?.([...this.ignoring]);
-                this.note(`ignoring ${typed.nick} — /unignore ${typed.nick} to stop`);
-                return;
+                this.note(at, `ignoring ${typed.nick} — /unignore ${typed.nick} to stop`);
+                return null;
             case 'unignore':
-                if (!this.ignored(typed.nick)) return this.note(`not ignoring ${typed.nick}`);
+                if (!this.ignored(typed.nick)) {
+                    this.note(at, `not ignoring ${typed.nick}`);
+                    return null;
+                }
                 this.ignoring = this.ignoring.filter(n => !same(n, typed.nick));
                 this.opts.onIgnoreChanged?.([...this.ignoring]);
-                this.note(`no longer ignoring ${typed.nick}`);
-                return;
+                this.note(at, `no longer ignoring ${typed.nick}`);
+                return null;
             case 'clear': {
-                const chan = this.chans.get(key(this.activeName));
+                const chan = this.chans.get(key(at));
                 if (chan !== undefined) chan.lines = [];
-                return;
+                return null;
             }
             case 'close':
-                if (this.activeName === SERVER_LOG) return this.note('Status cannot be closed');
-                this.close(this.activeName);
-                return;
+                if (at === SERVER_LOG) this.note(at, 'Status cannot be closed');
+                else this.close(at);
+                return null;
             case 'help':
-                for (const line of HELP) this.note(line);
-                return;
+                for (const line of HELP) this.note(at, line);
+                return null;
             case 'nick':
                 // Allowed while registering too, which is how a taken nick is fixed.
                 if (this.status !== 'online' && this.status !== 'registering') {
-                    this.push(this.activeName, 'system', null, 'not connected');
-                    return;
+                    this.note(at, 'not connected');
+                    return null;
                 }
                 this.opts.send(formatCommand('NICK', [typed.nick]));
-                return; // the nick is ours only once the server echoes it back
+                return null; // the nick is ours only once the server echoes it back
             case 'join':
                 this.join(typed.channel);
-                // Typed, it is where you mean to be next; a join from the list or a reconnect leaves the open tab alone.
-                this.select(typed.channel);
-                return;
+                // Typed, it is where you mean to be next; a join from the list or a reconnect opens nothing.
+                return this.chans.get(key(typed.channel))?.name ?? null;
             case 'part': {
-                const channel = typed.channel === '' ? this.activeName : typed.channel;
+                const channel = typed.channel === '' ? at : typed.channel;
                 if (!isChannel(channel)) {
-                    this.push(this.activeName, 'system', null, 'no channel to leave');
-                    return;
+                    this.note(at, 'no channel to leave');
+                    return null;
                 }
                 this.part(channel);
-                return;
+                return null;
             }
             case 'quit':
                 // Only the goodbye: ChatService reads /quit before it gets here and
                 // disconnects around it, which is what stops the reconnect.
                 this.quit(typed.reason);
-                return;
+                return null;
             case 'raw':
                 // Not echoed: this client does not know what the command meant, so
                 // it has nothing to say about it that the server's own answer does
                 // not say better — and a password typed into one is never written
                 // into the log by the way out.
-                if (!this.online(this.activeName)) return;
+                if (!this.online(at)) return null;
                 this.opts.send(typed.args === '' ? typed.command.toUpperCase() : `${typed.command.toUpperCase()} ${typed.args}`);
-                return;
+                return null;
             case 'unknown':
-                this.push(this.activeName, 'system', null, `unknown command: /${typed.command}`);
-                return;
+                this.note(at, `unknown command: /${typed.command}`);
+                return null;
         }
     }
 
-    private speak(kind: 'say' | 'action', text: string): void {
-        const target = this.activeName;
+    private speak(kind: 'say' | 'action', text: string, target: string): void {
         if (target === SERVER_LOG) {
-            this.push(target, 'system', null, 'join a channel first');
+            this.note(target, 'join a channel first');
             return;
         }
         if (!this.online(target)) return;
         const params = [target, kind === 'action' ? `${CTCP}ACTION ${text}${CTCP}` : text];
-        if (!this.fits('PRIVMSG', params)) return;
+        if (!this.fits('PRIVMSG', params, target)) return;
         this.opts.send(formatCommand('PRIVMSG', params));
         // IRC never sends our own PRIVMSG back, so the echo is ours to make — and a conversation with NickServ is still no place for a password.
         this.push(target, kind, this.nickName, kind === 'say' ? hideSecret(target, text) : text);
     }
 
     /**
-     * Whether a message reaches the others whole, and a note saying it is too
-     * long when not. Refused rather than sent: the server would cut it where
-     * everyone else reads it, while the echo here showed all of it.
+     * Whether a message reaches the others whole, and a note in `at` saying
+     * it is too long when not. Refused rather than sent: the server would cut
+     * it where everyone else reads it, while the echo here showed all of it.
      */
-    private fits(command: 'PRIVMSG' | 'NOTICE', params: string[]): boolean {
+    private fits(command: 'PRIVMSG' | 'NOTICE', params: string[], at: string): boolean {
         if (fitsRelayed(this.nickName ?? this.opts.nick, command, params)) return true;
-        this.note('too long to send in one message — press Up to get it back and shorten it');
+        this.note(at, 'too long to send in one message — press Up to get it back and shorten it');
         return false;
     }
 
-    /** A line from the kit itself, in the tab being looked at. */
-    private note(text: string): void {
-        this.push(this.activeName, 'system', null, text);
+    /** A line from the kit itself, in the room something was typed in. */
+    private note(at: string, text: string): void {
+        this.push(at, 'system', null, text);
     }
 
     private ignored(nick: string): boolean {
@@ -1110,7 +1155,7 @@ export class IrcClient {
 
     private online(complainIn: string): boolean {
         if (this.status === 'online') return true;
-        this.push(complainIn, 'system', null, 'not connected');
+        this.note(complainIn, 'not connected');
         return false;
     }
 
@@ -1139,69 +1184,60 @@ export class IrcClient {
     }
 
     /**
-     * Opens a tab. With chat on screen, the one being left is left (`leave`)
-     * and the one being opened is read (`read`). Opening the tab already open
-     * changes nothing.
+     * What every window shows of chat, together (`ChatSight`): `reading`, the
+     * rooms whose lines are on screen, and `rowed`, the rooms a row of tabs on
+     * screen lists.
      *
-     * With chat out of sight, neither is being read, so only which one is
-     * open changes. The one left keeps what it counted, and the one opened is
-     * read when chat is next on screen (`seePings`). That is how a
-     * click on a ping or on a notification, each of which selects its room,
-     * leaves the gold on the room that was open when chat is out of sight.
-     */
-    select(channel: string): void {
-        const chan = this.chan(channel);
-        const left = this.chans.get(key(this.activeName));
-        this.activeName = chan.name;
-        if (!this.onScreen || left === chan) return;
-        if (left !== undefined) this.leave(left);
-        this.read(chan);
-    }
-
-    /**
-     * Chat is on screen (`onScreen`): every line for you so far has been seen,
-     * whichever room it came in. No room's count is cleared, as opening one
-     * clears it: a pane shows one room, and the rail's gold is how it points
+     * A room coming into `reading` is read (`read`), so the New divider marks
+     * what arrived while nobody looked, and one going out of it is left
+     * (`leave`), so what arrives from now on is counted. Rooms are left first
+     * and read second. A room that stays in it is untouched, divider and
+     * all. A room the client does not have is kept in it all the same: a
+     * panel can show a conversation not open, or a channel not yet joined, and
+     * one that appears while shown is read as its lines arrive.
+     *
+     * Then every room in either list has its pings seen, up to the newest
+     * line: a line for you stops being a ping once its room is on screen, its
+     * tab in a row included. Its count is not cleared, as reading the room
+     * clears it: a row shows one room's lines, and its gold is how it points
      * at the rest.
      *
-     * The room that one pane shows is the exception, when chat was out of
-     * sight until now. It is read as opening it reads it, so the New divider
-     * marks what arrived while nobody looked.
-     *
-     * Says whether a ping was waiting. That is all a window not showing chat
-     * can see change.
+     * Says whether anything a window draws changed — a room's count or its
+     * divider, or the ping — so main knows whether the other windows need
+     * telling.
      */
-    seePings(): boolean {
-        const waiting = this.pings().length > 0;
-        this.pingsSeen = this.lastId;
-        if (!this.onScreen) {
-            this.onScreen = true;
-            const open = this.chans.get(key(this.activeName));
-            if (open !== undefined) this.read(open);
+    see(sight: ChatSight): boolean {
+        const before = this.drawn();
+        const next = new Set(sight.reading.map(name => key(name)));
+        for (const name of this.shown) {
+            const chan = this.chans.get(name);
+            if (!next.has(name) && chan !== undefined) this.leave(chan);
         }
-        return waiting;
+        for (const name of next) {
+            const chan = this.chans.get(name);
+            if (!this.shown.has(name) && chan !== undefined) this.read(chan);
+        }
+        this.shown = next;
+        for (const name of [...sight.reading, ...sight.rowed]) {
+            const chan = this.chans.get(key(name));
+            if (chan !== undefined) chan.pingsSeen = this.lastId;
+        }
+        return this.drawn() !== before;
     }
 
-    /**
-     * Chat is out of sight: no window shows the conversation. The open room is
-     * left as opening another leaves it, so what arrives from now on is
-     * counted and is marked when chat is back. Told again while chat is
-     * already out of sight, nothing changes, so where the room was left
-     * stays put.
-     */
-    lookAway(): void {
-        if (!this.onScreen) return;
-        this.onScreen = false;
-        const open = this.chans.get(key(this.activeName));
-        if (open !== undefined) this.leave(open);
+    /** Everything `see` can change that a window draws: each room's counts and divider, and the ping. */
+    private drawn(): string {
+        const rooms = [...this.chans].map(([name, c]) => `${name} ${c.unread} ${c.highlights} ${c.newFrom}`);
+        const ping = this.ping();
+        return [...rooms, ping === null ? '' : `${ping.line.id} ${ping.more}`].join('\n');
     }
 
-    /** A line arriving here is read as it arrives: its room is open, and chat is on screen. */
+    /** A line arriving here is read as it arrives: some window has this room's lines on screen (`see`). */
     private reading(chan: Chan): boolean {
-        return this.onScreen && same(chan.name, this.activeName);
+        return this.shown.has(key(chan.name));
     }
 
-    /** A room stops being read: it remembers where, and forgets what it had counted, a mention read while it was open included. */
+    /** A room stops being read: it remembers where, and forgets what it had counted, a mention read while it was on screen included. */
     private leave(chan: Chan): void {
         chan.seen = this.lastId;
         chan.newFrom = null;
@@ -1221,7 +1257,6 @@ export class IrcClient {
     }
 
     snapshot(): ClientSnapshot {
-        const active = this.chans.get(key(this.activeName));
         const channels: ChatChannel[] = [...this.chans.values()].map(c => ({
             name: c.name,
             users: c.users.map(u => ({ ...u })),
@@ -1229,32 +1264,38 @@ export class IrcClient {
             highlights: c.highlights,
             topic: c.topic === null ? null : { ...c.topic },
             modes: c.flagsKnown ? `+${c.flags.join('')}` : null,
-            createdAt: c.createdAt
+            createdAt: c.createdAt,
+            kicked: c.kicked
         }));
         return {
             status: this.status,
             nick: this.nickName,
             channels,
-            active: this.activeName,
-            lines: (active?.lines ?? []).map(l => ({ ...l })),
-            newFrom: active?.newFrom ?? null,
             ping: this.ping(),
             error: this.error
         };
     }
 
+    /** One room's lines and its New divider, which a pane showing it draws. Empty for a room the client does not have. */
+    log(room: string): ChatLog {
+        const chan = this.chans.get(key(room));
+        if (chan === undefined) return { lines: [], newFrom: null };
+        return { lines: chan.lines.map(l => ({ ...l })), newFrom: chan.newFrom };
+    }
+
     /**
      * The lines a ping is made of, oldest first. In each room, the ones its
      * count still holds — its last `highlights` highlighted lines, since the
-     * count goes up by one for each and back to nothing when the room is
-     * opened or left — that arrived since chat was last on screen.
+     * count goes up by one for each and back to nothing when the room comes
+     * on screen or goes off it — that arrived since the room was last on
+     * screen in any window (`pingsSeen`).
      */
     private pings(): ChatLine[] {
         const found: ChatLine[] = [];
         for (const chan of this.chans.values()) {
             if (chan.highlights === 0) continue;
             const counted = chan.lines.filter(l => l.highlight).slice(-chan.highlights);
-            found.push(...counted.filter(l => l.id > this.pingsSeen));
+            found.push(...counted.filter(l => l.id > chan.pingsSeen));
         }
         return found.sort((a, b) => a.id - b.id);
     }
@@ -1272,7 +1313,7 @@ export class IrcClient {
     private chan(name: string): Chan {
         const existing = this.chans.get(key(name));
         if (existing !== undefined) return existing;
-        const chan: Chan = { name, users: [], unread: 0, highlights: 0, pending: null, topic: null, flags: [], flagsKnown: false, kicked: false, createdAt: null, lines: [], seen: 0, newFrom: null };
+        const chan: Chan = { name, users: [], unread: 0, highlights: 0, pending: null, topic: null, flags: [], flagsKnown: false, kicked: false, createdAt: null, lines: [], seen: 0, newFrom: null, pingsSeen: 0 };
         this.chans.set(key(name), chan);
         return chan;
     }
@@ -1284,10 +1325,14 @@ export class IrcClient {
         if (chan !== undefined) fn(chan);
     }
 
+    /**
+     * Takes a room away. Nobody is moved off it: which room a pane shows is
+     * main's, and a pane on a room that has gone steps aside (`chatPanes`).
+     * It stays in `shown` for as long as main says something shows it, so if
+     * it comes back, it is read.
+     */
     private forget(channel: string): void {
         this.chans.delete(key(channel));
-        // Status is opened as a select would open it: with chat on screen, what it counted is read and what arrived while it was left is marked; out of sight, that waits for chat to be shown.
-        if (same(this.activeName, channel)) this.select(SERVER_LOG);
         // A conversation closed is a slot free: the next time they run out is news again.
         if (isQuery(channel)) this.crowded = false;
     }
@@ -1307,8 +1352,7 @@ export class IrcClient {
      * A line from the server, which is the only kind that badges the rail.
      * Membership churn goes through push() instead: a badge should promise
      * something worth reading, not that someone reconnected. It counts in
-     * every room but the one being read, and none is while chat is out of
-     * sight.
+     * every room that no window has on screen (`see`).
      */
     private incoming(channel: string, kind: ChatLine['kind'], nick: string | null, text: string, always = false): void {
         const highlight = always || (this.nickName !== null && mentions(text, this.nickName));

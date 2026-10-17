@@ -268,22 +268,22 @@ export type Input =
     /** Opens a private conversation with someone, and says the text in it when there is some. */
     | { kind: 'query'; target: string; text: string }
     | { kind: 'notice'; target: string; text: string }
-    /** An empty channel means the active one. Null text asks what the topic is; a string sets it. */
+    /** An empty channel means the room it was typed in. Null text asks what the topic is; a string sets it. */
     | { kind: 'topic'; channel: string; text: string | null }
     /** An empty reason is back. */
     | { kind: 'away'; reason: string }
     | { kind: 'whois'; nick: string }
-    /** An empty channel means the active one. */
+    /** An empty channel means the room it was typed in. */
     | { kind: 'kick'; channel: string; nick: string; reason: string }
     | { kind: 'invite'; nick: string; channel: string }
-    /** /op, /deop, /voice and /devoice: one rank given or taken, for everyone named, in the active channel. */
+    /** /op, /deop, /voice and /devoice: one rank given or taken, for everyone named, in the channel it was typed in. */
     | { kind: 'rank'; mode: '+o' | '-o' | '+v' | '-v'; nicks: string[] }
     /** An empty nick lists who is ignored. */
     | { kind: 'ignore'; nick: string }
     | { kind: 'unignore'; nick: string }
-    /** Empties the active tab's log, here only. */
+    /** Empties the log of the room it was typed in, here only. */
     | { kind: 'clear' }
-    /** Closes the active tab: parts a channel, or ends a private conversation. */
+    /** Closes the room it was typed in: parts a channel, or ends a private conversation. */
     | { kind: 'close' }
     | { kind: 'help' }
     /** Leave the network. ChatService reads it as Disconnect, so the kit does not reconnect behind it. */
@@ -330,7 +330,7 @@ export function parseInput(text: string): Input | null {
         case 'j':
             return first === '' ? null : { kind: 'join', channel: asChannel(first) };
         case 'part':
-            // No channel means the active one, which only the client knows.
+            // No channel means the room it was typed in, which only the client is told.
             return { kind: 'part', channel: first === '' ? '' : asChannel(first) };
         case 'quit':
             return { kind: 'quit', reason: uncolon(args) };
@@ -383,8 +383,8 @@ export function parseInput(text: string): Input | null {
              * Everything else is the server's. The commands above are here
              * because the client has to know what they did — a join opens a tab,
              * a part closes one, /me is a message, a quit is a disconnect — or
-             * because the active tab fills in what the command leaves out, as
-             * /topic, /kick and /op take the channel you are looking at. MODE,
+             * because the room it was typed in fills in what the command leaves
+             * out, as /topic, /kick and /op take that channel. MODE,
              * WHO, LIST and the rest change nothing this client tracks, so
              * passing them on is both less code and more commands than a list
              * could hold: the answer comes back from the server and lands in
