@@ -153,7 +153,17 @@ function readNode(x: unknown, depth: number, pane: (content: PaneContent) => boo
     return { kind: 'split', axis, children: read, fractions: (fractions as number[]).map(f => f / total) };
 }
 
-function readContent(x: unknown): PaneContent | null {
+/**
+ * One pane's content, read off a file or off the wire: the four kinds, a
+ * page that names something, a tool `TOOL_IDS` has, and a room only on chat,
+ * judged by `readRoom`. Null for anything else. What comes back is built
+ * here, so a field it does not know is not carried along.
+ *
+ * Also what the shell's `paneSetContent` is read by, since a renderer is no
+ * more to be trusted with a room than a stranger's file is. What the window
+ * then allows — this server's links, the tools it offers — is the window's.
+ */
+export function readContent(x: unknown): PaneContent | null {
     if (typeof x !== 'object' || x === null) return null;
     const content = x as Record<string, unknown>;
     if (content.kind === 'empty' || content.kind === 'game') return { kind: content.kind };

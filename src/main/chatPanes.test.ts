@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chatPanes, chatSight, freshRoom, panelFor, panelledRooms, renameRoom, roomOf, rowOf, type ChatPaneState } from './chatPanes.ts';
-import { leaf, split, type PaneContent } from './paneTree.ts';
+import { chatPanes, chatSight, freshRoom, maySend, panelFor, panelledRooms, renamePaneRooms, renameRoom, renameRoomIn, renameSight, renamedFit, renamedRoom, roomOf, rowOf, rowRoom, unionSight, type ChatPaneState } from './chatPanes.ts';
+import { arrangedAt, contentOf, leaf, refit, split, type PaneContent } from './paneTree.ts';
 import type { TabSet } from './tabs.ts';
 
 const CHAT: PaneContent = { kind: 'tool', tool: 'chat' };
@@ -357,4 +357,132 @@ test('a rename of a room no panel is for returns the set it was handed', () => {
 test('a rename to the name a panel already has changes nothing', () => {
     const set = twoTabs();
     assert.equal(renameRoom(set, 'zed', 'zed'), set);
+});
+
+// ── a conversation's panes following it to a new nick ────────────────────
+
+test('a room renamed is the new name, matched however the old one is cased, and any other room is itself', () => {
+    assert.equal(renamedRoom('zed', 'ZED', 'zed_'), 'zed_');
+    assert.equal(renamedRoom('#a', 'zed', 'zed_'), '#a');
+    assert.equal(renamedRoom('zed', 'zed', 'Zed'), 'Zed', 'a rename that only changes the case is still one');
+});
+
+test('a chat pane on a conversation follows the person to their new nick, on the page it was on', () => {
+    const panes = new Map<string, ChatPaneState>([
+        ['p1', ON_CHAT('Zed')],
+        ['p2', { page: 'settings', room: 'zed' }],
+        ['p3', ON_CHAT('#a')],
+        ['p4', ON_CHAT(null)]
+    ]);
+    const renamed = renamePaneRooms(panes, 'zed', 'zed_');
+    assert.deepEqual([...renamed], [
+        ['p1', ON_CHAT('zed_')],
+        ['p2', { page: 'settings', room: 'zed_' }],
+        ['p3', ON_CHAT('#a')],
+        ['p4', ON_CHAT(null)]
+    ]);
+    assert.deepEqual(panes.get('p1'), ON_CHAT('Zed'), 'the map it was handed is left as it was');
+});
+
+test('a pane renamed onto the conversation stays on it, rather than stepping aside, once chat has the new name', () => {
+    const known = renamePaneRooms(new Map([['p1', ON_CHAT('zed')]]), 'zed', 'zed_');
+    const panes = chatPanes([leaf('p1', CHAT)], known, ['*', '#a', 'zed_'], [], FRESH);
+    assert.deepEqual(panes.get('p1'), ON_CHAT('zed_'));
+});
+
+test('what a window shows of chat follows a rename, in what it reads and in its row', () => {
+    const renamed = renameSight({ reading: ['#a', 'ZED'], rowed: ['*', '#a', 'zed'] }, 'zed', 'zed_');
+    assert.deepEqual(renamed, { reading: ['#a', 'zed_'], rowed: ['*', '#a', 'zed_'] });
+});
+
+// ── the row's spelling of a room ─────────────────────────────────────────
+
+test('a room is found in the row however it is cased, and answered as the row spells it', () => {
+    assert.equal(rowRoom(['*', '#LostHQ'], '#losthq'), '#LostHQ');
+    assert.equal(rowRoom(['*', '#a'], '*'), '*');
+});
+
+test('a room the row does not list, because it has a panel or chat lacks it, is not found', () => {
+    assert.equal(rowRoom(['*', '#a'], '#b'), null);
+    assert.equal(rowRoom([], '*'), null);
+});
+
+// ── what every window shows of chat, together ────────────────────────────
+
+test('the windows together read and list each room once, in the order first met, however it is cased', () => {
+    const union = unionSight([
+        { reading: ['#a'], rowed: ['*', '#a', '#b'] },
+        { reading: ['#B', 'zed'], rowed: [] },
+        { reading: ['#A'], rowed: ['*', '#B', 'zed'] }
+    ]);
+    assert.deepEqual(union, { reading: ['#a', '#B', 'zed'], rowed: ['*', '#a', '#b', 'zed'] });
+});
+
+test('no window shows anything of chat when there are none, or none shows chat', () => {
+    assert.deepEqual(unionSight([]), { reading: [], rowed: [] });
+    assert.deepEqual(unionSight([{ reading: [], rowed: [] }]), { reading: [], rowed: [] });
+});
+
+// ── where a typed line may go ────────────────────────────────────────────
+
+const ROOMS = [
+    { name: '*', kicked: false },
+    { name: '#a', kicked: false },
+    { name: '#gone', kicked: true },
+    { name: 'bob', kicked: false }
+];
+
+test('Status, a room chat has and a conversation take any line', () => {
+    assert.equal(maySend('*', '/whois bob', ROOMS), true);
+    assert.equal(maySend('#a', 'hello', ROOMS), true);
+    assert.equal(maySend('#A', 'hello', ROOMS), true, 'matched however it is cased');
+    assert.equal(maySend('bob', 'hello', ROOMS), true);
+});
+
+test('a conversation chat has closed takes a line, which opens it again', () => {
+    assert.equal(maySend('carol', 'are you there', ROOMS), true);
+});
+
+test('a channel chat is not in, or was kicked from, takes a join and nothing else', () => {
+    for (const at of ['#notjoined', '#gone']) {
+        assert.equal(maySend(at, `/join ${at}`, ROOMS), true, `a join from ${at}`);
+        assert.equal(maySend(at, `/j ${at}`, ROOMS), true, `the short form, from ${at}`);
+        assert.equal(maySend(at, 'hello', ROOMS), false, `a line said in ${at} would be a PRIVMSG into a room we are not in`);
+        assert.equal(maySend(at, '/me waves', ROOMS), false);
+        assert.equal(maySend(at, '/whois bob', ROOMS), false, 'its answer would land in a room we are not in');
+        assert.equal(maySend(at, '/join', ROOMS), false, 'a join that names nothing joins nothing');
+    }
+});
+
+test('a room no room can be is refused whatever is typed', () => {
+    assert.equal(maySend('not a nick', 'hello', ROOMS), false);
+    assert.equal(maySend('', '/join #a', ROOMS), false);
+});
+
+// ── a rename and the arrangement a resize is fitted from ─────────────────
+
+test('a tree is renamed by its panels for the room, and with none for it is the tree it was', () => {
+    const tree = split('s', 'x', [leaf('p1', CHAT), leaf('p2', panel('#a'))], [0.5, 0.5]);
+    assert.equal(renameRoomIn(tree, 'zed', 'zed_'), tree);
+    assert.deepEqual(contentOf(renameRoomIn(leaf('p1', panel('Zed')), 'zed', 'zed_'), 'p1'), panel('zed_'));
+});
+
+test('a rename is chat\'s, not a gesture: a resize after it is still fitted from the arrangement the player left', () => {
+    const base = split('s', 'x', [leaf('p1', { kind: 'game' }), leaf('p2', panel('zed'))], [0.7, 0.3]);
+    // The window shrank, so the tree on screen is `base` fitted smaller.
+    const shrunk = refit(arrangedAt(base, { width: 1000, height: 600 }), base, { width: 800, height: 600 });
+    const now = renameRoomIn(shrunk.shown, 'zed', 'zed_');
+    const carried = renamedFit(shrunk, shrunk.shown, now, 'zed', 'zed_');
+    assert.equal(carried.shown, now, 'the renamed tree is the one the fit showed');
+    assert.deepEqual(carried.base, renameRoomIn(base, 'zed', 'zed_'));
+    assert.deepEqual(carried.from, { width: 1000, height: 600 });
+    const grown = refit(carried, now, { width: 1000, height: 600 });
+    assert.equal(grown.base, carried.base, 'growing back fits from the arrangement, not from the squeezed frame');
+});
+
+test('a fit the rename did not touch, or that showed another tree, is left as it was', () => {
+    const tree = leaf('p1', panel('zed'));
+    const fit = arrangedAt(tree, { width: 800, height: 600 });
+    assert.equal(renamedFit(fit, tree, tree, 'nobody', 'somebody'), fit);
+    assert.equal(renamedFit(fit, leaf('p9', CHAT), renameRoomIn(tree, 'zed', 'zed_'), 'zed', 'zed_'), fit, 'a gesture since, which the next layout fits as one');
 });

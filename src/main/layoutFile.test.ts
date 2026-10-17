@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, leaf, paneIds, split, type PaneNode } from './paneTree.ts';
-import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
+import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readContent, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
 const LINKS = [
@@ -78,6 +78,20 @@ test('a room the reader cannot trust sinks the file', () => {
 
 test('room on a tool other than chat sinks the file', () => {
     assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'tool', tool: 'worlds', room: '#x' } })), null);
+});
+
+test('a pane\'s content off the wire is read as a file\'s is, and comes back with nothing it did not know', () => {
+    assert.deepEqual(readContent({ kind: 'tool', tool: 'chat', room: '#LostHQ', extra: 1 }), { kind: 'tool', tool: 'chat', room: '#LostHQ' });
+    assert.deepEqual(readContent({ kind: 'tool', tool: 'chat' }), { kind: 'tool', tool: 'chat' }, 'a chat pane');
+    assert.deepEqual(readContent({ kind: 'page', bookmark: 'https://2004.losthq.rs/' }), { kind: 'page', bookmark: 'https://2004.losthq.rs/' });
+    assert.deepEqual(readContent({ kind: 'game', room: '#x' }), { kind: 'game' });
+    assert.equal(readContent({ kind: 'tool', tool: 'chat', room: '#a,0' }), null, 'a room readRoom refuses');
+    assert.equal(readContent({ kind: 'tool', tool: 'chat', room: null }), null);
+    assert.equal(readContent({ kind: 'tool', tool: 'timers', room: '#a' }), null, 'a room on another tool');
+    assert.equal(readContent({ kind: 'tool', tool: 'guides' }), null, 'a tool TOOL_IDS does not have');
+    assert.equal(readContent({ kind: 'window' }), null);
+    assert.equal(readContent('chat'), null);
+    assert.equal(readContent(null), null);
 });
 
 test('a second game is refused — the window has one game view', () => {

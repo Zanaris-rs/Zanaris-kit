@@ -1,12 +1,15 @@
-import { SERVER_LOG, type ChatPage, type ChatSight } from '../shared/chat.ts';
-import { foldName, sameName } from '../shared/ircNames.ts';
-import { contentOf, paneIds, setContent, type PaneContent, type PaneNode } from './paneTree.ts';
+import { SERVER_LOG, type ChatChannel, type ChatPage, type ChatSight } from '../shared/chat.ts';
+import { isNick } from '../shared/chatSettings.ts';
+import { foldName, isChannel, sameName } from '../shared/ircNames.ts';
+import { parseInput } from './chat/protocol.ts';
+import { contentOf, paneIds, setContent, type Fitted, type PaneContent, type PaneNode } from './paneTree.ts';
 import type { TabSet } from './tabs.ts';
 
 /**
- * The rules for chat panes, which `serverWindow` asks and `paneHost` never
- * does: which rooms a chat pane lists, which one it shows, where it steps
- * aside to, and what a window's front tab shows of chat.
+ * The rules for chat panes and room panels, which `serverWindow`, `paneHost`
+ * and `index.ts` ask: which rooms a chat pane lists, which one it shows,
+ * where it steps aside to, what a window's front tab shows of chat, where a
+ * typed line may go, and how all of it follows a conversation to a new nick.
  *
  * Two kinds of pane hold the chat tool. A **chat pane** has a row of tabs, one
  * for each room chat has, and shows one of them, or its Settings page. A
@@ -15,7 +18,7 @@ import type { TabSet } from './tabs.ts';
  * (`ircNames`) and nothing here changes how a name is spelled.
  *
  * Pure, like `tabs` and `paneTree`: the corners here are the ones a person
- * finds, and `serverWindow` has no tests to find them with.
+ * finds, and none of the three has tests to find them with.
  */
 
 /** What main keeps for each chat pane: the page it is on, and the room it shows on its conversation. */
@@ -62,6 +65,16 @@ export function panelledRooms(trees: readonly PaneNode[]): string[] {
 export function rowOf(channels: readonly string[], panelled: readonly string[]): string[] {
     const taken = new Set(panelled.map(foldName));
     return channels.filter(channel => !taken.has(foldName(channel)));
+}
+
+/**
+ * The row's spelling of a room, found however it is cased, or null when the
+ * row does not list it: chat lacks it, or it has a panel in this window. A
+ * room put on a chat pane is first looked up here, so the pane holds chat's
+ * spelling and never a room its row cannot show.
+ */
+export function rowRoom(row: readonly string[], room: string): string | null {
+    return row.find(listed => sameName(listed, room)) ?? null;
 }
 
 /**
@@ -203,16 +216,111 @@ export function panelFor(tabs: readonly { id: string; tree: PaneNode }[], room: 
 export function renameRoom(set: TabSet, from: string, to: string): TabSet {
     let moved = false;
     const tabs = set.tabs.map(tab => {
-        let tree = tab.tree;
-        for (const paneId of paneIds(tab.tree)) {
-            const content = contentOf(tab.tree, paneId);
-            const room = roomOf(content);
-            if (!holdsChat(content) || room === null || room === to || !sameName(room, from)) continue;
-            tree = setContent(tree, paneId, { ...content, room: to });
-        }
+        const tree = renameRoomIn(tab.tree, from, to);
         if (tree === tab.tree) return tab;
         moved = true;
         return { ...tab, tree };
     });
     return moved ? { ...set, tabs } : set;
+}
+
+/** One tree with every room panel for `from` now for `to`: `renameRoom`'s rule for one tab. The tree itself when nothing changed. */
+export function renameRoomIn(tree: PaneNode, from: string, to: string): PaneNode {
+    let renamed = tree;
+    for (const paneId of paneIds(tree)) {
+        const content = contentOf(tree, paneId);
+        const room = roomOf(content);
+        if (!holdsChat(content) || room === null || room === to || !sameName(room, from)) continue;
+        renamed = setContent(renamed, paneId, { ...content, room: to });
+    }
+    return renamed;
+}
+
+/**
+ * A tab's fit (`paneTree.refit`) carried across a rename that turned the
+ * tab's tree `was` into `now`.
+ *
+ * A rename is chat's, not a gesture of the player's. Left to `refit`, the
+ * renamed tree would read as a gesture made on the tree on screen, and become
+ * the arrangement a resize is fitted from, so a window shrunk past the
+ * panes' floors would keep the game at the size it was squeezed to. So the
+ * arrangement is renamed too, and `now` is what the fit showed. A fit that
+ * did not show `was` is handed back as it was: the next layout fits whatever
+ * changed since as the gesture it was.
+ */
+export function renamedFit(fit: Fitted, was: PaneNode, now: PaneNode, from: string, to: string): Fitted {
+    if (now === was || fit.shown !== was) return fit;
+    return { ...fit, base: renameRoomIn(fit.base, from, to), shown: now };
+}
+
+/** `to` when `room` is `from`, however either is cased, and `room` otherwise: one name, after a conversation follows its person to a new nick. */
+export function renamedRoom(room: string, from: string, to: string): string {
+    return sameName(room, from) ? to : room;
+}
+
+/**
+ * Every chat pane on the conversation `from` now on `to`, each on the page
+ * it was on: the chat panes' half of a conversation following its person to
+ * a new nick, as `renameRoom` is the room panels'. Applied when chat says
+ * so, before the panes are next reconciled against chat's rooms, so a pane
+ * on the conversation stays on it rather than stepping aside from a name
+ * chat no longer has. A new map: the one handed in is left alone.
+ */
+export function renamePaneRooms(panes: ReadonlyMap<string, ChatPaneState>, from: string, to: string): Map<string, ChatPaneState> {
+    const renamed = new Map<string, ChatPaneState>();
+    for (const [id, state] of panes) {
+        const room = state.room === null ? null : renamedRoom(state.room, from, to);
+        renamed.set(id, room === state.room ? state : { page: state.page, room });
+    }
+    return renamed;
+}
+
+/**
+ * What a window last showed of chat, with the conversation `from` named `to`.
+ * Main keeps each window's last sight, and chat is told the union of them
+ * again before any window has sent a new one: under the old name, the
+ * conversation would read as gone from the screen, and lose its place.
+ */
+export function renameSight(sight: ChatSight, from: string, to: string): ChatSight {
+    return { reading: sight.reading.map(room => renamedRoom(room, from, to)), rowed: sight.rowed.map(room => renamedRoom(room, from, to)) };
+}
+
+/**
+ * What every window shows of chat, together, which is what chat counts rooms
+ * by: each room once in `reading` and once in `rowed`, as the first window to
+ * name it spells it, in the order they are first met.
+ */
+export function unionSight(sights: Iterable<ChatSight>): ChatSight {
+    const all = [...sights];
+    return { reading: eachOnce(all.flatMap(sight => sight.reading)), rowed: eachOnce(all.flatMap(sight => sight.rowed)) };
+}
+
+/** Each name once, however it is cased, as it is first spelled, in the order first met. */
+function eachOnce(rooms: readonly string[]): string[] {
+    const seen = new Set<string>();
+    return rooms.filter(room => {
+        const key = foldName(room);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+/**
+ * Whether a line typed in a pane on `at` goes to chat as typed there.
+ *
+ * Status, and any room chat has that we were not kicked from, take any
+ * line, and so does a nick: a conversation that was closed opens again with
+ * the first line said in it. A channel chat does not have, or one we were
+ * kicked from, takes a `/join` and nothing else. That is all its panel's Join sends, and anything else
+ * would be a PRIVMSG into a room we are not in, which opens a tab for it
+ * besides, or a command whose answer lands there. Anything that is not a
+ * room at all takes nothing.
+ */
+export function maySend(at: string, text: string, channels: readonly Pick<ChatChannel, 'name' | 'kicked'>[]): boolean {
+    if (at === SERVER_LOG) return true;
+    const had = channels.find(channel => sameName(channel.name, at));
+    if (had !== undefined && !had.kicked) return true;
+    if (isChannel(at)) return parseInput(text)?.kind === 'join';
+    return isNick(at);
 }
