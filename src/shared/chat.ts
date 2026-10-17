@@ -11,6 +11,11 @@ export type ChatStatus = 'offline' | 'connecting' | 'registering' | 'online' | '
 /** Where server notices and errors go, since they belong to no channel. The pane calls it Status. */
 export const SERVER_LOG = '*';
 
+/** What the shell calls a room on its tab, and on its tab while it is dragged out: Status for `SERVER_LOG`, and its own name for the rest. */
+export function roomLabel(room: string): string {
+    return room === SERVER_LOG ? 'Status' : room;
+}
+
 /** Someone else joining, leaving, quitting or changing name in a channel. */
 export type Presence = 'join' | 'part' | 'quit' | 'nick';
 

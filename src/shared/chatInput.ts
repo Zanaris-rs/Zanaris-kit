@@ -31,7 +31,7 @@ export const COMMAND_HELP: readonly CommandHelp[] = [
     { name: 'away', args: '[reason]', about: 'mark yourself away; with no reason, back', bare: true, aliases: [] },
     /* Its own entry rather than away's alias: it takes no reason, and away's usage line would promise one. */
     { name: 'back', args: '', about: 'mark yourself back', bare: true, aliases: [] },
-    { name: 'clear', args: '', about: 'empty this tab', bare: true, aliases: [] },
+    { name: 'clear', args: '', about: "empty this room's log", bare: true, aliases: [] },
     { name: 'close', args: '', about: 'leave this channel, or end this conversation', bare: true, aliases: [] },
     { name: 'deop', args: 'nick', about: "take away someone's operator rank", bare: false, aliases: [] },
     { name: 'devoice', args: 'nick', about: "take away someone's voice", bare: false, aliases: [] },

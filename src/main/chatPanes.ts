@@ -100,9 +100,9 @@ export function freshRoom(row: readonly string[], last: string | null): string |
  * - A room chat no longer has, because it was closed or parted, lands on
  *   Status, or on the row's first room when Status has a panel. A rename is
  *   the one other way a room leaves `view.channels`, and the renderer moves a
- *   draft along with a pane whose old room has gone and whose new room is not
- *   Status (`Conversation`). So a closed room lands on Status, which leaves
- *   its draft behind, whenever Status is in the row to land on.
+ *   draft along with a pane whose old room has gone and whose new room chat
+ *   did not have when the pane last drew (`Conversation`). Either place a
+ *   closed room lands is one chat already had, so its draft stays behind.
  * - A room chat still has but a panel took lands on the next room after it
  *   in chat's order that the row has, or failing that the nearest one before.
  *

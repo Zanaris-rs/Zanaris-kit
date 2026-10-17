@@ -22,7 +22,20 @@ const RANK_NAME: Record<string, string> = { '~': 'owner', '&': 'admin', '@': 'op
  * the nick in the colour the log gives it, so a person found here is the same
  * shape when you look back at the conversation.
  */
-export default function ChatUsers({ channel, self, mention, className = '' }: { channel: ViewChannel; self: string | null; mention: (nick: string) => void; className?: string }): ReactNode {
+export default function ChatUsers({
+    channel,
+    self,
+    paneId,
+    mention,
+    className = ''
+}: {
+    channel: ViewChannel;
+    self: string | null;
+    /** The pane the list is in, which a choice from someone's menu is made from. */
+    paneId: string;
+    mention: (nick: string) => void;
+    className?: string;
+}): ReactNode {
     const count = channel.users.length;
     return (
         <section aria-label={`${count === 1 ? '1 person' : `${count} people`} in ${channel.name}`} className={`sunk flex min-h-0 flex-col ${className}`}>
@@ -39,7 +52,7 @@ export default function ChatUsers({ channel, self, mention, className = '' }: { 
                                 <button
                                     type="button"
                                     title={ranks.length > 0 ? `${user.nick}, ${ranks.join(' and ')}` : user.nick}
-                                    onClick={event => openUserMenu(user.nick, event, mention)}
+                                    onClick={event => openUserMenu(paneId, user.nick, event, mention)}
                                     className="flex w-full min-w-0 items-baseline px-1.5 py-px text-left hover:bg-stone-lit/40"
                                 >
                                     <span aria-hidden="true" className={`w-[12px] shrink-0 text-center ${TONE_CLASS[rankTone(top)]}`}>
