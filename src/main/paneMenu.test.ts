@@ -264,6 +264,10 @@ test('Add pane finds chat, not a room panel', () => {
     assert.equal(paneHolding(both, { kind: 'tool', tool: 'chat' }), 'c');
     assert.equal(paneHolding(both, panel), 'r', 'and the panel is found by its room');
     assert.equal(paneHolding(both, { kind: 'tool', tool: 'chat', room: '#Other' }), null);
+    assert.equal(paneHolding(both, { kind: 'tool', tool: 'chat', room: '#losthq' }), 'r', 'IRC names are compared folded, and only stored as written');
+    assert.equal(paneHolding(leaf('r', panel), { kind: 'tool', tool: 'chat', room: '#LOSTHQ' }), 'r');
+    assert.equal(paneHolding(leaf('r', { kind: 'tool', tool: 'chat', room: 'Zed' }), { kind: 'tool', tool: 'chat', room: 'zed' }), 'r', 'a nick too');
+    assert.equal(paneHolding(leaf('c', { kind: 'tool', tool: 'chat' }), { kind: 'tool', tool: 'chat', room: '#LostHQ' }), null, 'a chat pane is not a panel for any room');
     assert.equal(named(adds({ tree: leaf('r', panel) }), 'Chat').openIn, null, "Add pane's Chat adds a chat pane rather than going to the panel");
     assert.equal(named(adds({ tree: both }), 'Chat').openIn, 'c');
 });

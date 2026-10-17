@@ -1,4 +1,5 @@
 import { SERVER_LOG } from '../shared/chat.ts';
+import { sameName } from '../shared/ircNames.ts';
 import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, resetGame, resetMoves, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
@@ -175,7 +176,12 @@ function sameContent(a: PaneContent, b: PaneContent): boolean {
     if (a.kind === 'page' && b.kind === 'page') return a.bookmark === b.bookmark;
     // A room panel is not the chat pane, so Add pane's Chat and `paneHolding`
     // find chat panes and never room panels; and not another room's panel.
-    if (a.kind === 'tool' && b.kind === 'tool') return a.tool === b.tool && (a.room ?? null) === (b.room ?? null);
+    // Rooms are IRC names, so two spellings of one are the same room: compared
+    // folded, and stored as written.
+    if (a.kind === 'tool' && b.kind === 'tool') {
+        if (a.tool !== b.tool) return false;
+        return a.room === undefined || b.room === undefined ? a.room === b.room : sameName(a.room, b.room);
+    }
     return true;
 }
 

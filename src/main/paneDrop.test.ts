@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canDrop, canInsert, dropPane, dropTargets, insertTargets } from './paneDrop.ts';
 import { halvable, insertPane, layoutTree, leaf, movePane, split, swapPanes, type PaneContent, type Rect } from './paneTree.ts';
-import { PANE_MIN_WIDTH } from '../shared/layout.ts';
+import { PANE_MIN_WIDTH, SEAM } from '../shared/layout.ts';
 
 const empty = { kind: 'empty' } as const;
 
@@ -88,7 +88,7 @@ test('a pane too small to halve refuses a room on that axis', () => {
     assert.notEqual(targets.bottom, null);
     assert.equal(canInsert(lone, rect, 'a', 'left'), false);
     assert.equal(canInsert(lone, rect, 'a', 'right'), false);
-    assert.equal(canInsert(lone, { ...rect, width: PANE_MIN_WIDTH * 2 + 4 }, 'a', 'left'), true, 'two floors and a seam is enough');
+    assert.equal(canInsert(lone, { ...rect, width: PANE_MIN_WIDTH * 2 + SEAM }, 'a', 'left'), true, 'two floors and a seam is enough');
 });
 
 test('a room is measured against the target as it is, since no pane leaves first', () => {
