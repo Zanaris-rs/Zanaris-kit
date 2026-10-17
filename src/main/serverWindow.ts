@@ -22,7 +22,7 @@ import { arrangeForGame, canAppendColumn, contentOf, paneIds, parentSplitOf, typ
 import { grownFrame, roomFor, shrunkFrame, sizedBy } from './windowRoom';
 import { frameOptions, overlayFor, windowFrame } from './windowFrame';
 import { holdsGame, openWindowTabs, replaceDropsGame, sharingWithoutPane } from './tabs';
-import { chatPanes, chatSight, freshRoom, panelFor, panelledRooms, renamePaneRooms, roomOf, rowOf, rowRoom, type ChatPaneState } from './chatPanes';
+import { chatPanes, chatSight, chatTarget, freshRoom, panelledRooms, renamePaneRooms, roomOf, rowOf, rowRoom, type ChatPaneState } from './chatPanes';
 import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readSetup, writeLayout, type StoredNode } from './layoutFile';
 import { builtInSetups, openingSetup, opensWindow, sameSetup, type BuiltInSetupId, type NewWindowSetup } from './setups';
 import { openingFrame, placeOf, type Place } from './windowPlace';
@@ -269,12 +269,13 @@ export interface ServerWindow extends ServerWindowHandle {
     showHomeServer(): void;
     /**
      * Chat, shown on a room: for the game header's ping, a notification's
-     * click, and a room a line opened. The room's panel when this window has
-     * one, its tab brought to the front and the panel focused. Otherwise
-     * chat's pane, added as `addPane` adds one, or in a new tab of its own
-     * when the active tab has no room for a column, put on `page` and on the
-     * room when its row lists it. A null room leaves the pane on the room it
-     * was on, as a room panel's Settings button wants.
+     * click, and a room panel's button that opens chat's Settings. The room's
+     * panel when this window has one, its tab brought to the front and the
+     * panel focused. Otherwise the chat pane in the tab in front, or one
+     * added as `addPane` adds one, or in a new tab of its own when the active
+     * tab has no room for a column, on `page` and on the room when its row
+     * lists it; an added one starts there. A null room leaves the pane on the
+     * room it was on. Where it goes is `chatPanes.chatTarget`'s.
      */
     showChat(room: string | null, page: ChatPage): void;
     /** A chat pane's gear, or Connect on its Settings: that pane shows Settings or the conversation. Nothing for a pane that is not a chat pane. */
@@ -289,9 +290,11 @@ export interface ServerWindow extends ServerWindowHandle {
     chatRoomOf(paneId: string): string | null;
     /**
      * A line typed in a pane opened a room — a `/join`, a `/query`, Message
-     * in the user menu. A chat pane is put on it. A room panel, or a room
-     * with a panel in this window, goes as `showChat` goes, since something
-     * was asked to open and something does.
+     * in the user menu. A chat pane whose row lists the room is put on it.
+     * From a room panel, or for a room with a panel in this window, it goes
+     * as `showChat` goes, since something was asked to open and something
+     * does. Either way a chat pane put on the room makes it the room last
+     * picked.
      */
     chatOpened(paneId: string, room: string): void;
     /**
@@ -641,17 +644,26 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
      * what is on screen of them is what chat reads (`chatPanes.chatSight`).
      * Read only through `currentChatPanes`, which first brings it up to date
      * with the tabs and chat's rooms (`chatPanes.chatPanes`): a chat pane new
-     * since starts on chat's `firstPage` and on `freshRoom`, one gone drops
-     * out, and one whose room has left its row steps aside. A room panel's
-     * room is in its content, and is not kept here.
+     * since starts on chat's `firstPage` and on `freshRoom`, or on
+     * `chatOpening` while `showChatOn` adds it, one gone drops out, and one
+     * whose room has left its row steps aside. A room panel's room is in its
+     * content, and is not kept here.
      */
     let chatPaneOf = new Map<string, ChatPaneState>();
+
+    /**
+     * The page and room of the chat pane `showChatOn` is adding, which it
+     * starts on in place of `freshRoom`'s (`chatPanes.chatTarget`), and null
+     * at every other time. Set across `showTool` alone: adding the pane lays
+     * the window out and pushes its state, and that state already shows it.
+     */
+    let chatOpening: ChatPaneState | null = null;
 
     function currentChatPanes(view: ChatView = deps.chat()): ReadonlyMap<string, ChatPaneState> {
         const channels = view.channels.map(channel => channel.name);
         const panelled = panelledRooms(host.trees());
         const row = rowOf(channels, panelled);
-        chatPaneOf = chatPanes(host.trees(), chatPaneOf, channels, panelled, () => ({ page: firstPage(view), room: freshRoom(row, deps.chatLast()) }));
+        chatPaneOf = chatPanes(host.trees(), chatPaneOf, channels, panelled, () => chatOpening ?? { page: firstPage(view), room: freshRoom(row, deps.chatLast()) });
         return chatPaneOf;
     }
 
@@ -976,40 +988,46 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     function showChat(room: string | null, page: ChatPage): void {
-        showChatOn(room, page);
+        showChatOn(room, page, null);
     }
 
     /**
-     * `showChat`, answering the room it put a chat pane on: null when it
-     * focused a panel instead, left the pane's room as it was, or had no
-     * chat pane to show.
+     * `showChat`, and a room a line typed in `typedIn` opened, answering the
+     * room it put a chat pane on: null when it focused a panel instead, left
+     * the pane's room as it was, or had no chat pane to show. Where it goes is
+     * `chatPanes.chatTarget`'s; this only does it.
      *
-     * A room with a panel here is not in this window's row, so it could
-     * never be put on a chat pane: its panel is looked for first.
+     * A chat pane it adds starts on the room (`chatOpening`), so the state that
+     * adding it pushes already shows that room and reads no other.
      */
-    function showChatOn(room: string | null, page: ChatPage): string | null {
-        if (room !== null && page === 'chat') {
-            const tabs = host.tabs().flatMap(tab => {
-                const tree = host.treeOf(tab.id);
-                return tree === null ? [] : [{ id: tab.id, tree }];
-            });
-            const panel = panelFor(tabs, room);
-            if (panel !== null) {
-                host.selectTab(panel.tabId);
-                host.focus(panel.paneId);
-                return null;
-            }
-        }
-        showTool('chat');
-        const shown = paneHolding(host.tree(), { kind: 'tool', tool: 'chat' });
-        if (shown === null) return null;
+    function showChatOn(room: string | null, page: ChatPage, typedIn: string | null): string | null {
         const view = deps.chat();
-        const was = currentChatPanes(view).get(shown);
-        if (was === undefined) return null;
-        const onRoom = room === null ? null : rowRoom(chatRow(view), room);
-        chatPaneOf.set(shown, { page, room: onRoom ?? was.room });
-        pushState();
-        return onRoom;
+        const tabs = host.tabs().flatMap(tab => {
+            const tree = host.treeOf(tab.id);
+            return tree === null ? [] : [{ id: tab.id, tree }];
+        });
+        const target = chatTarget({ room, page, typedIn, tabs, front: host.tree(), panes: currentChatPanes(view), row: chatRow(view), last: deps.chatLast() });
+        if (target.kind === 'panel') {
+            host.selectTab(target.tabId);
+            host.focus(target.paneId);
+            return null;
+        }
+        if (target.kind === 'pane') {
+            chatPaneOf.set(target.paneId, target.state);
+            host.focus(target.paneId);
+            pushState();
+            return target.picked;
+        }
+        chatOpening = target.state;
+        try {
+            showTool('chat');
+            // Taken in while `chatOpening` holds, even where adding it
+            // pushed nothing, as a window whose shell has gone does not.
+            currentChatPanes();
+        } finally {
+            chatOpening = null;
+        }
+        return paneHolding(host.tree(), { kind: 'tool', tool: 'chat' }) === null ? null : target.picked;
     }
 
     function showChatPage(paneId: string, page: ChatPage): void {
@@ -1046,13 +1064,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
 
     function chatOpened(paneId: string, room: string): void {
         if (readRoom(room) === null) return;
-        const view = deps.chat();
-        const onRoom = rowRoom(chatRow(view), room);
-        if (onRoom !== null && currentChatPanes(view).has(paneId)) {
-            putChat(paneId, onRoom);
-            return;
-        }
-        const put = showChatOn(room, 'chat');
+        const put = showChatOn(room, 'chat', paneId);
         if (put !== null) deps.chatPicked(put);
     }
 

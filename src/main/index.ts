@@ -1651,9 +1651,10 @@ ipcMain.handle(IPC.chatSend, (event, paneId: unknown, text: unknown) => {
 
 /**
  * The ping in the game's header, clicked: the room the ping came in, in its
- * panel when this window has one, or in chat's pane beside the game or in a
- * tab of its own. The room is read here rather than taken from the shell, so
- * a click only ever opens one that chat already has.
+ * panel when this window has one, or in the chat pane in the tab in front,
+ * or in one added beside the game or in a tab of its own (`showChat`). The
+ * room is read here rather than taken from the shell, so a click only ever
+ * opens one that chat already has.
  */
 ipcMain.handle(IPC.chatOpenPing, event => {
     windowFor(event.sender)?.showChat(chat?.view().ping?.line.channel ?? null, 'chat');
@@ -3372,6 +3373,37 @@ async function captureAndExit(dir: string): Promise<void> {
                 log(`[capture] ${title}: a mention in #Zanaris with chat on its Settings page — ping ${ping ? `from ${ping.line.nick} in ${roomName(ping.line.channel)}, ${ping.more} more` : 'none'}; ${chatViews(talker)}`);
                 if (!pinged || !ping || !sameName(ping.line.channel, '#Zanaris')) fault(`ping: a mention in #Zanaris out of sight showed ${ping ? `a ping in ${roomName(ping.line.channel)}` : 'no ping'} in the game's header`);
                 await shoot(`${server.id}-room-ping`, talker);
+
+                // The ping clicked with no chat pane in the tab in front, so
+                // the click adds one (`chatPanes.chatTarget`). #2004scape is
+                // where a new pane starts here (`freshRoom`: #LostHQ, the room
+                // last picked, has a panel), and has lines nobody has seen.
+                // The added pane must start on #Zanaris, where the mention
+                // is: had it started on #2004scape and been moved after,
+                // #2004scape would be read on the way, and lose its count and
+                // its New divider without ever being on screen.
+                await talker.closePane(chatPane);
+                await wait(500);
+                if (talker.state().panes.some(isChatPane)) fault(`ping click: ${title}'s chat pane did not close`);
+                const unread = (room: string): number => service!.view().channels.find(c => sameName(c.name, room))?.unread ?? 0;
+                const missed = unread('#2004scape');
+                if (!scripted!.say('#2004scape', 'Iron_Fen', 'fish banked, heading over') || !scripted!.say('#2004scape', 'Lumby_Lad', 'see you at the bridge')) fault('ping click: the scripted server had no connection to say anything on');
+                if (!(await until(() => unread('#2004scape') >= missed + 2, 5_000))) fault(`ping click: #2004scape counted ${unread('#2004scape') - missed} of the 2 lines said in it out of sight`);
+                const waiting = unread('#2004scape');
+                const again = `${CAPTURE_NICK}: the ping opens chat on the room it came from`;
+                if (!scripted!.say('#Zanaris', 'Fairy_Ring', again)) fault('ping click: the scripted server had no connection to say anything on');
+                if (!(await until(() => talker.state().chat.ping?.line.text === again, 5_000))) fault('ping click: a second mention in #Zanaris showed no ping in the game\'s header');
+                // What the ping's click calls (`IPC.chatOpenPing`).
+                const pingRoom = service!.view().ping?.line.channel ?? null;
+                talker.showChat(pingRoom, 'chat');
+                await wait(800);
+                const added = talker.state().panes.find(isChatPane)?.chat ?? null;
+                const left = unread('#2004scape');
+                log(`[capture] ${title}: the ping in ${roomName(pingRoom)} clicked with no chat pane in front — #2004scape ${waiting} unread before, ${left} after; ${chatViews(talker)}`);
+                if (left === 0 || left < waiting) fault(`ping click: #2004scape went from ${waiting} unread to ${left}, read on the way by the chat pane the click added`);
+                if (added === null) fault('ping click: no chat pane was added');
+                else if (added.page !== 'chat' || added.room === null || !sameName(added.room, '#Zanaris')) fault(`ping click: the chat pane opened on ${added.page} in ${roomName(added.room)}, not on #Zanaris's conversation`);
+                await shoot(`${server.id}-room-ping-opened`, talker);
             };
             if (service === null || scripted === null) {
                 fault('room panels: chat or its scripted server is missing, so no room was shot');

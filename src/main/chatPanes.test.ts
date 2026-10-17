@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chatPanes, chatSight, freshRoom, maySend, panelFor, panelledRooms, renamePaneRooms, renameRoom, renameRoomIn, renameSight, renamedFit, renamedRoom, roomOf, rowOf, rowRoom, unionSight, type ChatPaneState } from './chatPanes.ts';
+import { chatPanes, chatSight, chatTarget, freshRoom, maySend, panelFor, panelledRooms, renamePaneRooms, renameRoom, renameRoomIn, renameSight, renamedFit, renamedRoom, roomOf, rowOf, rowRoom, unionSight, type ChatPaneState } from './chatPanes.ts';
 import { arrangedAt, contentOf, leaf, refit, split, type PaneContent } from './paneTree.ts';
 import type { TabSet } from './tabs.ts';
 
@@ -325,6 +325,75 @@ test('the first panel in tab order is the one found when a room has two', () => 
         { id: 'c', tree: leaf('p3', panel('#a')) }
     ];
     assert.deepEqual(panelFor(tabs, '#a'), { tabId: 'b', paneId: 'p2' });
+});
+
+// ── where chat opens on a room ───────────────────────────────────────────
+
+/** A window: the game over a chat pane in front, and a tab behind with a panel for #b. */
+function opening(over: Partial<Parameters<typeof chatTarget>[0]> = {}): Parameters<typeof chatTarget>[0] {
+    const front = split('s1', 'y', [leaf('p1', { kind: 'game' }), leaf('p2', CHAT)], [0.7, 0.3]);
+    const behind = split('s2', 'x', [leaf('p3', CHAT), leaf('p4', panel('#b'))], [0.5, 0.5]);
+    return {
+        room: '#c',
+        page: 'chat',
+        typedIn: null,
+        tabs: [
+            { id: 'a', tree: front },
+            { id: 'b', tree: behind }
+        ],
+        front,
+        panes: new Map([
+            ['p2', { page: 'settings', room: '#a' }],
+            ['p3', ON_CHAT('#a')]
+        ]),
+        row: rowOf(CHANNELS, ['#b']),
+        last: '#a',
+        ...over
+    };
+}
+
+test('a room with a panel opens in its panel, in whichever tab it is, before any chat pane', () => {
+    assert.deepEqual(chatTarget(opening({ room: '#B' })), { kind: 'panel', tabId: 'b', paneId: 'p4' });
+});
+
+test('a room opens in the chat pane in front, on its conversation, whichever page it was on', () => {
+    assert.deepEqual(chatTarget(opening()), { kind: 'pane', paneId: 'p2', state: ON_CHAT('#c'), picked: '#c' });
+    assert.deepEqual(chatTarget(opening({ room: '#C' })), { kind: 'pane', paneId: 'p2', state: ON_CHAT('#c'), picked: '#c' }, 'in the row\'s spelling');
+});
+
+test('a chat pane asked for a room its row lacks keeps the room it was on', () => {
+    assert.deepEqual(chatTarget(opening({ room: '#gone' })), { kind: 'pane', paneId: 'p2', state: ON_CHAT('#a'), picked: null });
+    assert.deepEqual(chatTarget(opening({ room: null, page: 'settings' })), { kind: 'pane', paneId: 'p2', state: { page: 'settings', room: '#a' }, picked: null }, 'nor is a panel looked for with no room');
+});
+
+test('Settings asked for is not a panel, even for a room with one', () => {
+    assert.deepEqual(chatTarget(opening({ room: '#b', page: 'settings' })), { kind: 'pane', paneId: 'p2', state: { page: 'settings', room: '#a' }, picked: null });
+});
+
+test('a room a line opened goes to the chat pane it was typed in, before the first one in the tab', () => {
+    const front = split('s1', 'x', [leaf('p1', CHAT), leaf('p2', CHAT)], [0.5, 0.5]);
+    const ask = opening({ front, tabs: [{ id: 'a', tree: front }], panes: new Map([['p1', ON_CHAT('#a')], ['p2', ON_CHAT('*')]]), typedIn: 'p2' });
+    assert.deepEqual(chatTarget(ask), { kind: 'pane', paneId: 'p2', state: ON_CHAT('#c'), picked: '#c' });
+});
+
+test('a room a line in a room panel opened goes where a ping would', () => {
+    const front = split('s1', 'x', [leaf('p1', CHAT), leaf('p5', panel('zed'))], [0.5, 0.5]);
+    const ask = opening({ front, tabs: [{ id: 'a', tree: front }], panes: new Map([['p1', ON_CHAT('#a')]]), typedIn: 'p5' });
+    assert.deepEqual(chatTarget(ask), { kind: 'pane', paneId: 'p1', state: ON_CHAT('#c'), picked: '#c' });
+    assert.deepEqual(chatTarget({ ...ask, room: '#b', row: rowOf(CHANNELS, ['zed']), typedIn: 'p1' }), { kind: 'pane', paneId: 'p1', state: ON_CHAT('#b'), picked: '#b' });
+});
+
+test('with no chat pane in front, the one to add starts on the room asked for, not on the room a new pane would', () => {
+    const front = leaf('p1', { kind: 'game' });
+    const ask = opening({ front, tabs: [{ id: 'a', tree: front }, opening().tabs[1]!] });
+    assert.deepEqual(chatTarget(ask), { kind: 'add', state: ON_CHAT('#c'), picked: '#c' }, 'a chat pane in a tab behind is not the one in front');
+    assert.deepEqual(chatTarget({ ...ask, room: '#gone' }), { kind: 'add', state: ON_CHAT(freshRoom(ask.row, '#a')), picked: null }, 'a room the row lacks starts it where a new pane starts');
+    assert.deepEqual(chatTarget({ ...ask, room: null, page: 'settings' }), { kind: 'add', state: { page: 'settings', room: '#a' }, picked: null });
+});
+
+test('a room panel in front is not a chat pane to open a room in', () => {
+    const front = split('s1', 'x', [leaf('p1', { kind: 'game' }), leaf('p5', panel('zed'))], [0.5, 0.5]);
+    assert.equal(chatTarget(opening({ front, tabs: [{ id: 'a', tree: front }] })).kind, 'add');
 });
 
 test('a panel for a conversation follows the person to their new nick, in a tab behind', () => {

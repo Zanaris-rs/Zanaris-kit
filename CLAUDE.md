@@ -309,9 +309,15 @@ out (`ServerWindowDeps.chatSight`), and as chat changes, before the push —
 so no header ever shows a ping for a room already on screen. A click on it
 goes through `serverWindow.showChat(room, 'chat')`: the room's panel when
 the window has one, its tab brought to the front and the panel focused;
-otherwise chat's pane, added through `showTool` as the Sharing button opens
-Home server, and put on the room and its conversation. A click on the system
-notification does the same in the window it brings back. The notification
+otherwise the chat pane in the tab in front, or one added through
+`showTool` as the Sharing button opens Home server, on the room and its
+conversation. Which of them is `chatPanes.chatTarget`'s, pure and tested,
+and so is a room a line typed in a room panel opens. An added pane starts
+on the room (`serverWindow`'s `chatOpening`) rather than being put there
+once it is in: the state that adding it pushes would otherwise read the
+room a new pane starts on, which would lose its count and its New divider
+unseen. A click on the system notification does the same in the window it
+brings back. The notification
 is still only for a kit in the background, and never raised in a capture.
 
 **A room is read only while a pane shows it.** Which room is open is not

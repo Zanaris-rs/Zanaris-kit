@@ -8,8 +8,9 @@ import type { TabSet } from './tabs.ts';
 /**
  * The rules for chat panes and room panels, which `serverWindow`, `paneHost`
  * and `index.ts` ask: which rooms a chat pane lists, which one it shows,
- * where it steps aside to, what a window's front tab shows of chat, where a
- * typed line may go, and how all of it follows a conversation to a new nick.
+ * where it steps aside to, what a window's front tab shows of chat, where
+ * chat opens on a room, where a typed line may go, and how all of it follows
+ * a conversation to a new nick.
  *
  * Two kinds of pane hold the chat tool. A **chat pane** has a row of tabs, one
  * for each room chat has, and shows one of them, or its Settings page. A
@@ -130,8 +131,9 @@ function stepAside(room: string, channels: readonly string[], row: readonly stri
  * A pane that is no longer a chat pane drops out, whether it holds another
  * tool now or has become a room panel, so chat put back in it starts afresh.
  * A pane's id survives a drag (`paneTree.movePane`), so its state goes with
- * it. Room panels never appear: their room is in their content. `channels` is chat's whole list in its order and `panelled` is
- * this window's (`panelledRooms`).
+ * it. Room panels never appear: their room is in their content. `channels`
+ * is chat's whole list in its order and `panelled` is this window's
+ * (`panelledRooms`).
  */
 export function chatPanes(
     trees: readonly PaneNode[],
@@ -205,6 +207,75 @@ export function panelFor(tabs: readonly { id: string; tree: PaneNode }[], room: 
         }
     }
     return null;
+}
+
+/**
+ * Where chat opens in one window, and on what (`chatTarget`).
+ *
+ * - `panel`: the room's panel, its tab to be brought to the front and the
+ *   panel focused.
+ * - `pane`: a chat pane already there, put on `state`.
+ * - `add`: a chat pane to add, which starts on `state`.
+ *
+ * `picked` is the row's spelling of the room asked for, when the chat pane
+ * is put on it, and null when the pane keeps the room it was on or starts on
+ * one nobody asked for.
+ */
+export type ChatTarget =
+    | { kind: 'panel'; tabId: string; paneId: string }
+    | { kind: 'pane'; paneId: string; state: ChatPaneState; picked: string | null }
+    | { kind: 'add'; state: ChatPaneState; picked: string | null };
+
+/**
+ * Where chat opens on `room` and `page` in one window: for the game header's
+ * ping, a click on a notification, a room panel's button that opens chat's
+ * Settings, and a room a line typed in a pane opened (`/join`, `/query`,
+ * Message in the user menu). Asked in this order:
+ *
+ * 1. `typedIn`, the pane the line was typed in, when it is a chat pane whose
+ *    row lists the room: that pane, on the room.
+ * 2. For the conversation page, the room's panel in any of the window's
+ *    tabs, the first in tab order (`panelFor`). A room with a panel here is
+ *    not in this window's row, so no chat pane could show it.
+ * 3. The first chat pane in the tab in front: on `page`, and on the room
+ *    when its row lists it. Otherwise it keeps the room it was on, which is
+ *    what a null `room` asks for.
+ * 4. Otherwise a chat pane to add, on `page` and on the room when the row
+ *    lists it, or on `freshRoom`'s when not. It starts there rather than
+ *    being put there once it is in: the first state it went out in would
+ *    otherwise show the room a new pane starts on, read it, and leave it at
+ *    the next, so that room would lose its count and its New divider
+ *    without ever being on screen.
+ *
+ * `panes` is every chat pane's state, just brought up to date
+ * (`chatPanes`), and `row` this window's (`rowOf`).
+ */
+export function chatTarget(ask: {
+    room: string | null;
+    page: ChatPage;
+    typedIn: string | null;
+    tabs: readonly { id: string; tree: PaneNode }[];
+    front: PaneNode;
+    panes: ReadonlyMap<string, ChatPaneState>;
+    row: readonly string[];
+    last: string | null;
+}): ChatTarget {
+    const { room, page, typedIn, panes, row } = ask;
+    const picked = room === null ? null : rowRoom(row, room);
+    if (typedIn !== null && picked !== null && panes.has(typedIn)) return { kind: 'pane', paneId: typedIn, state: { page, room: picked }, picked };
+    if (room !== null && page === 'chat') {
+        const panel = panelFor(ask.tabs, room);
+        if (panel !== null) return { kind: 'panel', ...panel };
+    }
+    const shown = paneIds(ask.front).find(id => {
+        const content = contentOf(ask.front, id);
+        return holdsChat(content) && roomOf(content) === null;
+    });
+    if (shown !== undefined) {
+        const was = panes.get(shown)?.room ?? freshRoom(row, ask.last);
+        return { kind: 'pane', paneId: shown, state: { page, room: picked ?? was }, picked };
+    }
+    return { kind: 'add', state: { page, room: picked ?? freshRoom(row, ask.last) }, picked };
 }
 
 /**
