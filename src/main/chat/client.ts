@@ -1125,6 +1125,14 @@ export class IrcClient {
             this.note(target, 'join a channel first');
             return;
         }
+        // A tab kept to say we were kicked is not a room we are in: a PRIVMSG
+        // to it would only earn the server's 404, and an echo here would read
+        // as though it had been said.
+        const kicked = this.chans.get(key(target));
+        if (kicked?.kicked) {
+            this.note(kicked.name, `you were kicked from ${kicked.name} — /join ${kicked.name} to go back`);
+            return;
+        }
         if (!this.online(target)) return;
         const params = [target, kind === 'action' ? `${CTCP}ACTION ${text}${CTCP}` : text];
         if (!this.fits('PRIVMSG', params, target)) return;

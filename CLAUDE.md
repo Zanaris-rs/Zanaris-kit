@@ -63,11 +63,11 @@ Seven properties in there are load-bearing and easy to break —
   a room opened beside a pane, by Open Right or Open Below on its tab or by
   its tab dropped on a pane's edge — is **paid for by the window, not the
   game** (`makeRoom`): the window grows by what the game would have lost, as
-  far as its display allows, and the game takes the growth back. The tree is recorded as arranged at the size the
-  window is growing to (`arrangedAt`). Left to `refit`, it would be fitted from
-  the last frame's size, the growth would read as a resize, and the game would
-  be held at the size the new pane squeezed it to while the window grew around
-  it.
+  far as its display allows, and the game takes the growth back. The tree is
+  recorded as arranged at the size the window is growing to (`arrangedAt`).
+  Left to `refit`, it would be fitted from the last frame's size, the growth
+  would read as a resize, and the game would be held at the size the new pane
+  squeezed it to while the window grew around it.
 - A pane **closed** in the game's own row or column **gives its room back to
   the screen** (`closeGivingBack`): the window shrinks by the pane and its
   seam, from that pane's own side, as far as it may — not at all while it is
@@ -111,8 +111,9 @@ is built at the size of the setup its server's new windows open with and at
 the place its number last closed at, both decided before it exists
 (`setups.openingSetup`, `windowPlace.openingFrame`), never opened and then
 moved. One that closed maximised or full screen is made so again as it is
-shown, which puts back the player's own state rather than sizing the window. Only the place is recorded
-without being asked for; the size is always the setup's.
+shown, which puts back the player's own state rather than sizing the window.
+Only the place is recorded without being asked for; the size is always the
+setup's.
 
 `TOOL_IDS`, in `src/shared/ipc.ts`, is **append-only**. A saved setup file
 carries tool ids between people — that is the whole point of saving one — and
@@ -351,9 +352,12 @@ A room named from outside main — a setup, the shell's `paneSetContent`,
 `chat.showRoom` and the rest — is judged by `readRoom`, since `isChannel`
 reads only the first character and `JOIN #a,0` leaves every channel on many
 servers. A line typed in a pane goes to the room main says the pane shows,
-never one the shell names, and only where `chatPanes.maySend` lets it: a
-channel we are not in, or were kicked from, takes a `/join` and nothing else,
-so nothing typed becomes a PRIVMSG into a room we are not in.
+never one the shell names, and only where `chatPanes.maySend` lets it:
+nothing said aloud goes to a channel chat does not have, so nothing typed
+becomes a PRIVMSG into a room we are not in. A channel we were kicked from is
+one chat still has, listed to say why, so `/part` and `/close` close its tab
+there, and the client answers a line said in it with how to go back, sending
+nothing (`IrcClient.speak`).
 
 **Links in the log open only if `linkTarget` says http or https**, read again
 in main whatever the shell sent: a chat line is a stranger's writing.

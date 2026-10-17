@@ -99,8 +99,6 @@ export interface PaneHostDeps {
     contextMenu: (paneId: string, x: number, y: number) => void;
     /** The ground a page view shows before its page draws: the theme's `window`. A getter, since the theme can change while the window is open. */
     background: () => string;
-    /** What a chat pane or a room panel in the tab in front shows of chat, which the window keeps. Null for any other pane. */
-    chat: (paneId: string) => ChatPaneView | null;
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
@@ -482,7 +480,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             place();
         },
 
-        panes(): PaneView[] {
+        panes(chat: (paneId: string) => ChatPaneView | null): PaneView[] {
             const tree = active();
             const trees = set.tabs.map(tab => tab.tree);
             return paneIds(tree).map(paneId => {
@@ -495,7 +493,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                     focused: paneId === focused(),
                     closable: canClosePane(tree, paneId),
                     page: pageStates.get(paneId) ?? null,
-                    chat: deps.chat(paneId),
+                    chat: chat(paneId),
                     // Only the launcher draws a list; every other pane reaches
                     // the same one through its header, which main pops as a
                     // native menu and builds on the spot.
@@ -570,9 +568,10 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         rectOf: (paneId: string) => rects.get(paneId) ?? null,
 
-        newTab(): void {
-            set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`);
+        newTab(content: PaneContent = { kind: 'empty' }): void {
+            set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`, content);
             dragging = false;
+            syncViews();
             deps.changed();
         },
 
@@ -801,7 +800,8 @@ export interface PaneHost {
     treeOf: (tabId: string) => PaneNode | null;
     focusedPaneId: () => string;
     layout: (rect: Rect) => void;
-    panes: () => PaneView[];
+    /** The tab in front's panes as the shell draws them, each chat pane and room panel with what `chat` says it shows of chat, which the window keeps. */
+    panes: (chat: (paneId: string) => ChatPaneView | null) => PaneView[];
     tabs: () => TabView[];
     seams: () => SeamView[];
     focus: (paneId: string) => void;
@@ -833,7 +833,14 @@ export interface PaneHost {
     dropInsert: (content: PaneContent, to: string, zone: DropZone, room: Size) => { paneId: string | null; grown: Size };
     /** Where a pane was last drawn, for anything that needs its size — the context menu asks whether it can still be halved. */
     rectOf: (paneId: string) => Rect | null;
-    newTab: () => void;
+    /**
+     * A new tab in front, its one pane the launcher or `content`. Given here
+     * rather than set after, so the one layout and push the new tab costs
+     * already show it: an empty tab pushed first would take the room a panel
+     * is opened for off the screen, and its New divider with it, before the
+     * panel came.
+     */
+    newTab: (content?: PaneContent) => void;
     instantiate: (stored: StoredNode) => PaneNode;
     /** What opening a setup into a tab would do, the game above all — null when there is no such tab. Nothing changes until `replaceTab`. */
     loading: (tabId: string, tree: PaneNode) => { set: TabSet; dropsGame: boolean } | null;

@@ -596,10 +596,12 @@ const windows = new ServerWindows(
                 // A window closing may have been the last to show a room.
                 // First, since it needs nothing of `sw`: a window that threw
                 // after its first layout may have said what it showed, and is
-                // closed with no `sw` for the lines below to read.
+                // closed with no `sw` for the lines below to read. Out of the
+                // map before chat is told, so no push that follows reaches it
+                // and puts its sight back.
                 chatSights.delete(spec.id);
-                applySight(spec.id);
                 serverWindows.delete(spec.id);
+                applySight(spec.id);
                 byShell.delete(sw.shellContentsId);
                 log(`[main] closed ${spec.title}`);
                 onClosed();
@@ -1579,8 +1581,8 @@ ipcMain.handle(IPC.chatGet, (): ChatView => chatView());
 /**
  * A line typed in a pane. It goes to the room the pane shows, which is read
  * here from the sender's window rather than taken from the shell, and only
- * where `chatPanes.maySend` lets it: a channel we are not in takes a join
- * and nothing else. A line that opens a room — a /join, a /query — opens it
+ * where `chatPanes.maySend` lets it: nothing said aloud goes to a channel
+ * chat does not have. A line that opens a room — a /join, a /query — opens it
  * from that pane (`chatOpened`). What was typed is never logged: it can be a
  * password on its way to NickServ.
  */
@@ -1591,7 +1593,7 @@ ipcMain.handle(IPC.chatSend, (event, paneId: unknown, text: unknown) => {
     if (sw === undefined || service === null) return;
     const at = sw.chatRoomOf(paneId);
     if (at === null || !maySend(at, text, service.view().channels)) {
-        log(`[main] refused a line typed in ${at === null ? 'a pane showing no room' : `${at}, which takes only a join`}`);
+        log(`[main] refused a line typed in ${at === null ? 'a pane showing no room' : `${at}, which chat is not in`}`);
         return;
     }
     const { open } = service.send(text, at);
@@ -1675,12 +1677,13 @@ ipcMain.handle(IPC.chatOpenLink, (_event, text: unknown) => {
 /**
  * Someone's name clicked in the user list or the log: a native menu, since
  * a menu drawn by the shell would sit under the game beside it. What main can
- * do it does here, as though typed in the pane it was raised from, so a
- * whois answer lands in that pane's room and Message opens the conversation
- * from it (`chatOpened`). Typed where that pane could not take it, a channel
- * we are not in, it goes from Status instead. What belongs to the message
- * box — a mention — is handed back for the shell to do. Resolves to the
- * choice, or null when the menu was dismissed.
+ * do it does here, as though typed in the pane it was raised from and
+ * through the same gate (`chatPanes.maySend`), so a whois answer lands in
+ * that pane's room and Message opens the conversation from it
+ * (`chatOpened`). From a pane the gate refuses, or one showing no room, it
+ * is typed in Status instead. What belongs to the message box — a mention —
+ * is handed back for the shell to do. Resolves to the choice, or null when
+ * the menu was dismissed.
  */
 ipcMain.handle(IPC.chatUserMenu, (event, paneId: unknown, nick: unknown, x: unknown, y: unknown): Promise<UserAction | null> | null => {
     if (typeof paneId !== 'string' || typeof nick !== 'string' || !isNick(nick) || typeof x !== 'number' || typeof y !== 'number') return null;

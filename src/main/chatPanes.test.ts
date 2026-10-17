@@ -443,14 +443,18 @@ test('a conversation chat has closed takes a line, which opens it again', () => 
     assert.equal(maySend('carol', 'are you there', ROOMS), true);
 });
 
-test('a channel chat is not in, or was kicked from, takes a join and nothing else', () => {
-    for (const at of ['#notjoined', '#gone']) {
-        assert.equal(maySend(at, `/join ${at}`, ROOMS), true, `a join from ${at}`);
-        assert.equal(maySend(at, `/j ${at}`, ROOMS), true, `the short form, from ${at}`);
-        assert.equal(maySend(at, 'hello', ROOMS), false, `a line said in ${at} would be a PRIVMSG into a room we are not in`);
-        assert.equal(maySend(at, '/me waves', ROOMS), false);
-        assert.equal(maySend(at, '/whois bob', ROOMS), false, 'its answer would land in a room we are not in');
-        assert.equal(maySend(at, '/join', ROOMS), false, 'a join that names nothing joins nothing');
+test('a channel we were kicked from is still one chat has, so every line goes, for the client to answer', () => {
+    for (const text of ['hello', '/me waves', '/part', '/close', '/clear', '/help', '/join #gone']) {
+        assert.equal(maySend('#gone', text, ROOMS), true, text);
+    }
+});
+
+test('a channel chat does not have takes no line said aloud, and any command', () => {
+    assert.equal(maySend('#notjoined', 'hello', ROOMS), false, 'a PRIVMSG into a room we are not in');
+    assert.equal(maySend('#notjoined', '/me waves', ROOMS), false);
+    assert.equal(maySend('#notjoined', '//not a command', ROOMS), false, 'an escaped slash is said aloud too');
+    for (const text of ['/join #notjoined', '/j #notjoined', '/help', '/clear', '/close', '/whois bob', '/join']) {
+        assert.equal(maySend('#notjoined', text, ROOMS), true, text);
     }
 });
 

@@ -1192,6 +1192,31 @@ test('a kicked channel says so', () => {
     assert.equal(f.channel('#a').kicked, false, 'rejoined');
 });
 
+test('a line said in a channel we were kicked from goes nowhere, and the room says how to go back', () => {
+    const f = online({ channels: ['#04scape', '#kicked'] });
+    f.client.receive(':op!o@h KICK #kicked mage :bye');
+    f.sent.length = 0;
+    assert.deepEqual(f.client.input('hello?', '#kicked'), { open: null });
+    assert.deepEqual(f.client.input('/me waves', '#kicked'), { open: null });
+    assert.deepEqual(f.sent, [], 'no PRIVMSG for a room we are not in');
+    assert.deepEqual(
+        f.lines('#kicked').slice(-2).map(l => l.text),
+        ['you were kicked from #kicked — /join #kicked to go back', 'you were kicked from #kicked — /join #kicked to go back']
+    );
+    assert.equal(f.lines('#kicked').some(l => l.text === 'hello?'), false, 'nothing is echoed as though it were said');
+});
+
+test('a channel we were kicked from can still be parted or closed from its own tab, with no PART the server would refuse', () => {
+    for (const command of ['/part', '/close']) {
+        const f = online({ channels: ['#04scape', '#kicked'] });
+        f.client.receive(':op!o@h KICK #kicked mage :bye');
+        f.sent.length = 0;
+        f.client.input(command, '#kicked');
+        assert.deepEqual(f.sent, [], `${command} sends nothing`);
+        assert.equal(f.rooms().includes('#kicked'), false, `${command} closes the tab`);
+    }
+});
+
 // ── Status ────────────────────────────────────────────────────────────────
 
 test('the welcome, the MOTD and other numerics are read out in Status without badging it', () => {

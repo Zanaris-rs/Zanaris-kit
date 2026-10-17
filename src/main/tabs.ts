@@ -59,8 +59,13 @@ export function openWindowTabs(tree: PaneNode, saved: Size | null): { set: TabSe
     return { set: { tabs: [{ id: 'tab-1', tree: arranged.tree, focusedPaneId: focus }], activeId: 'tab-1' }, size: arranged.size };
 }
 
-export function newTab(set: TabSet, tabId: string, paneId: string): TabSet {
-    return { tabs: [...set.tabs, { id: tabId, tree: leaf(paneId, { kind: 'empty' }), focusedPaneId: paneId }], activeId: tabId };
+/**
+ * A tab of one pane, brought to the front: the launcher, or `content` when
+ * the tab is opened to show something, in one step, so the first layout of
+ * the tab already has it.
+ */
+export function newTab(set: TabSet, tabId: string, paneId: string, content: PaneContent = { kind: 'empty' }): TabSet {
+    return { tabs: [...set.tabs, { id: tabId, tree: leaf(paneId, content), focusedPaneId: paneId }], activeId: tabId };
 }
 
 export function selectTab(set: TabSet, tabId: string): TabSet {

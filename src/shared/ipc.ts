@@ -246,10 +246,11 @@ export interface ZanarisApi {
          * Sends a line typed in a pane, to the room that pane shows, which
          * main reads for itself. Text beginning with / is a command: the
          * kit's own are read in main (`COMMAND_HELP`), and anything else goes
-         * to the server as typed. A channel we are not in, or were kicked
-         * from, takes only a /join. A line that opens a room — /join, /query
-         * — opens it from that pane: a chat pane is put on it, and a room
-         * panel shows it as the ping does.
+         * to the server as typed. Nothing said aloud goes to a channel chat
+         * does not have; in one we were kicked from, chat answers it with how
+         * to go back and sends nothing. A line that opens a room — /join,
+         * /query — opens it from that pane: a chat pane is put on it, and a
+         * room panel shows it as the ping does.
          */
         send(paneId: string, text: string): Promise<void>;
         /** A tab in a chat pane's row, picked: that pane on the room and on its conversation, in one step. Main refuses a room the row does not list. */

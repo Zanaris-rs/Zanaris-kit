@@ -309,18 +309,19 @@ function eachOnce(rooms: readonly string[]): string[] {
 /**
  * Whether a line typed in a pane on `at` goes to chat as typed there.
  *
- * Status, and any room chat has that we were not kicked from, take any
- * line, and so does a nick: a conversation that was closed opens again with
- * the first line said in it. A channel chat does not have, or one we were
- * kicked from, takes a `/join` and nothing else. That is all its panel's Join sends, and anything else
- * would be a PRIVMSG into a room we are not in, which opens a tab for it
- * besides, or a command whose answer lands there. Anything that is not a
- * room at all takes nothing.
+ * Every line does, but one said aloud — a line of text, or `/me` — in a
+ * channel chat does not have at all: a room panel's for a room we never
+ * joined, or left. That would be a PRIVMSG into a room we are not in, and
+ * its echo would open a tab for it besides. A command goes, `/join` above
+ * all, which is what such a panel's Join sends. A channel we were kicked
+ * from is still one chat has, listed to say why, so everything goes there:
+ * `/part` and `/close` close its tab, and the client answers anything said
+ * there by saying how to go back (`IrcClient.speak`). Anything that is not
+ * a room at all takes nothing.
  */
-export function maySend(at: string, text: string, channels: readonly Pick<ChatChannel, 'name' | 'kicked'>[]): boolean {
-    if (at === SERVER_LOG) return true;
-    const had = channels.find(channel => sameName(channel.name, at));
-    if (had !== undefined && !had.kicked) return true;
-    if (isChannel(at)) return parseInput(text)?.kind === 'join';
-    return isNick(at);
+export function maySend(at: string, text: string, channels: readonly Pick<ChatChannel, 'name'>[]): boolean {
+    if (at === SERVER_LOG || channels.some(channel => sameName(channel.name, at))) return true;
+    if (!isChannel(at)) return isNick(at);
+    const kind = parseInput(text)?.kind;
+    return kind !== 'say' && kind !== 'action';
 }

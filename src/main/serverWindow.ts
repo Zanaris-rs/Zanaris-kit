@@ -658,18 +658,26 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
+     * Chat as this window has it at one moment: the connection's view, each
+     * chat pane's page and room, and the row. Built once for what one state
+     * or one sight needs, since building chat's view copies every room.
+     */
+    function chatNow(view: ChatView = deps.chat()): { view: ChatView; panes: ReadonlyMap<string, ChatPaneState>; row: string[] } {
+        return { view, panes: currentChatPanes(view), row: chatRow(view) };
+    }
+
+    /**
      * What a pane in the tab in front shows of chat: a room panel, its room;
      * a chat pane, its page, its room and its row. Each with its room's log,
      * which is all of the log a window is sent.
      */
-    function chatPaneView(paneId: string): ChatPaneView | null {
+    function chatPaneView(paneId: string, now: ReturnType<typeof chatNow>): ChatPaneView | null {
         const panelRoom = roomOf(contentOf(host.tree(), paneId));
         if (panelRoom !== null) return { panel: true, page: 'chat', room: panelRoom, row: [], ...deps.chatLog(panelRoom) };
-        const view = deps.chat();
-        const pane = currentChatPanes(view).get(paneId);
+        const pane = now.panes.get(paneId);
         if (pane === undefined) return null;
         const log: ChatLog = pane.room === null ? { lines: [], newFrom: null } : deps.chatLog(pane.room);
-        return { panel: false, page: pane.page, room: pane.room, row: chatRow(view), ...log };
+        return { panel: false, page: pane.page, room: pane.room, row: now.row, ...log };
     }
 
     /**
@@ -691,8 +699,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         changed: () => applyLayout(),
         contextMenu: (paneId, x, y) => showPaneMenu(paneId, x, y),
         touched: () => pushState(),
-        background: () => deps.theme().colors.window,
-        chat: paneId => chatPaneView(paneId)
+        background: () => deps.theme().colors.window
     });
 
     // ── labels ───────────────────────────────────────────────────────────
@@ -724,6 +731,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     function state(): ShellState {
+        const now = chatNow();
         return {
             windowId: spec.id,
             server,
@@ -733,12 +741,12 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             rects,
             frame: windowFrame(process.platform, !win.isDestroyed() && win.isFullScreen()),
             tabs: host.tabs(),
-            panes: host.panes(),
+            panes: host.panes(paneId => chatPaneView(paneId, now)),
             seams: host.seams(),
             tools,
             worlds: worldsView(),
             hiscores: deps.hiscores?.view() ?? null,
-            chat: deps.chat(),
+            chat: now.view,
             homeServer: single?.view() ?? null,
             share: shared?.view() ?? null,
             sharingWithoutPane: sharingWithoutPane(host.trees(), linkLive()),
@@ -754,9 +762,11 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // and their pings seen by the time it reads chat. From the tab and the
         // chat panes alone: main pushes the other windows from inside this,
         // and a call that went through `state()` from there once recursed
-        // (`windowCounts`, 2026-09-20).
-        const view = deps.chat();
-        deps.chatSight(chatSight(host.tree(), currentChatPanes(view), chatRow(view)));
+        // (`windowCounts`, 2026-09-20). Chat's view is built again for the
+        // state, once for every pane in it: being told this can read a room,
+        // which changes the counts the view carries.
+        const before = chatNow();
+        deps.chatSight(chatSight(host.tree(), before.panes, before.row));
         try {
             shellView.webContents.send(IPC.shellState, state());
         } catch (err) {
@@ -952,8 +962,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
             addPane(content);
             return;
         }
-        host.newTab();
-        host.setContent(host.focusedPaneId(), content);
+        host.newTab(content);
     }
 
     function showHomeServer(): void {
@@ -1048,9 +1057,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         if (onRoom === null || !currentChatPanes(view).has(paneId)) return;
         const content: PaneContent = { kind: 'tool', tool: 'chat', room: onRoom };
         if (where === 'tab') {
-            // As `showTool` opens a tool with no room for a column.
-            host.newTab();
-            host.setContent(host.focusedPaneId(), content);
+            // In one step, so the tab's first push already shows the panel:
+            // an empty tab pushed first would take the room off the screen,
+            // and its New divider with it (`IrcClient.see`).
+            host.newTab(content);
             return;
         }
         split(paneId, where === 'right' ? 'x' : 'y', content);

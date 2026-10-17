@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { arrangedAt, contentOf, layoutTree, leaf, paneIds, refit, split, type PaneNode } from './paneTree.ts';
+import { arrangedAt, contentOf, layoutTree, leaf, paneIds, refit, split, type PaneContent, type PaneNode } from './paneTree.ts';
 import { closeTab, closingTab, holdsTool, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, openTabs, openWindowTabs, replaceDropsGame, selectTab, sharingWithoutPane } from './tabs.ts';
 import { builtInSetups } from './setups.ts';
 import { instantiateLayout } from './layoutFile.ts';
@@ -97,6 +97,14 @@ test('a new tab holds one empty pane and comes to the front', () => {
     );
     assert.equal(next.activeId, 'tab-2');
     assert.deepEqual(next.tabs[1]!.tree, leaf('pane-2', { kind: 'empty' }));
+    assert.equal(next.tabs[1]!.focusedPaneId, 'pane-2');
+});
+
+test('a new tab can open holding something in its one pane, rather than the launcher', () => {
+    const room: PaneContent = { kind: 'tool', tool: 'chat', room: '#LostHQ' };
+    const next = newTab(openTabs('tab-1', 'pane-1', { kind: 'game' }), 'tab-2', 'pane-2', room);
+    assert.deepEqual(next.tabs[1]!.tree, leaf('pane-2', room));
+    assert.equal(next.activeId, 'tab-2');
     assert.equal(next.tabs[1]!.focusedPaneId, 'pane-2');
 });
 
