@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaf, split } from './paneTree.ts';
+import { SERVER_LOG } from '../shared/chat.ts';
 import { addPaneItems, canClosePane, paneContentItems, paneDropdown, paneHolding, paneMenuItems, paneName, showsClocks, splitContentItems, splitMenus } from './paneMenu.ts';
 
 const roomy = { width: 800, height: 600 };
@@ -141,6 +142,13 @@ test('a pane is named for what it holds', () => {
     assert.equal(paneName({ kind: 'page', bookmark: LINKS[1]!.url }, LINKS), 'World Map', "the catalog's curated name, not the page's own title");
 });
 
+test('a room panel is named after its room', () => {
+    assert.equal(paneName({ kind: 'tool', tool: 'chat', room: '#LostHQ' }), '#LostHQ');
+    assert.equal(paneName({ kind: 'tool', tool: 'chat', room: SERVER_LOG }), 'Status', 'not the asterisk it is stored as');
+    assert.equal(paneName({ kind: 'tool', tool: 'chat', room: 'zed' }), 'zed');
+    assert.equal(paneName({ kind: 'tool', tool: 'chat' }), 'Chat', 'a chat pane is still Chat');
+});
+
 test('a page whose link the server no longer offers is named for its url rather than blank', () => {
     assert.equal(paneName({ kind: 'page', bookmark: 'https://gone.example/' }, LINKS), 'https://gone.example/');
 });
@@ -247,6 +255,17 @@ test('the pane holding something is found anywhere in the tab, and nowhere else'
     assert.equal(paneHolding(tree, { kind: 'tool', tool: 'chat' }), 'c');
     assert.equal(paneHolding(tree, { kind: 'game' }), 'b');
     assert.equal(paneHolding(tree, { kind: 'tool', tool: 'worlds' }), null);
+});
+
+test('Add pane finds chat, not a room panel', () => {
+    const panel = { kind: 'tool', tool: 'chat', room: '#LostHQ' } as const;
+    assert.equal(paneHolding(leaf('r', panel), { kind: 'tool', tool: 'chat' }), null, 'a tree holding only a room panel has no chat pane');
+    const both = split('s1', 'x', [leaf('r', panel), leaf('c', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
+    assert.equal(paneHolding(both, { kind: 'tool', tool: 'chat' }), 'c');
+    assert.equal(paneHolding(both, panel), 'r', 'and the panel is found by its room');
+    assert.equal(paneHolding(both, { kind: 'tool', tool: 'chat', room: '#Other' }), null);
+    assert.equal(named(adds({ tree: leaf('r', panel) }), 'Chat').openIn, null, "Add pane's Chat adds a chat pane rather than going to the panel");
+    assert.equal(named(adds({ tree: both }), 'Chat').openIn, 'c');
 });
 
 test("the game's header shows the clocks while its tab has no Timers pane", () => {

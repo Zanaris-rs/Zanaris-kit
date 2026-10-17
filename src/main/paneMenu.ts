@@ -1,3 +1,4 @@
+import { SERVER_LOG } from '../shared/chat.ts';
 import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH } from '../shared/layout.ts';
 import type { ToolId } from '../shared/ipc.ts';
 import { canAppendColumn, contentOf, halvable, paneIds, parentSplitOf, resetGame, resetMoves, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
@@ -64,6 +65,10 @@ const TOOL_NAMES: Record<ToolId, string> = { chat: 'Chat', worlds: 'Worlds', his
 /**
  * What a pane's header calls it.
  *
+ * A room panel is named for its room, as the room's own tab is: `Status` for
+ * the server log, whose stored name is an asterisk, and a channel or a nick as
+ * written. The tab bar's label follows, being the first pane's name.
+ *
  * A page is named for the catalog's curated link rather than for the page's own
  * `<title>`: the name is the pane's identity, and a title that changes as you
  * click through a wiki is the pane's *content* moving under a name that should
@@ -77,6 +82,7 @@ export function paneName(content: PaneContent, links: readonly PaneLink[] = []):
         case 'game':
             return 'Game';
         case 'tool':
+            if (content.tool === 'chat' && content.room !== undefined) return content.room === SERVER_LOG ? 'Status' : content.room;
             return TOOL_NAMES[content.tool];
         case 'page':
             return links.find(link => link.url === content.bookmark)?.name ?? content.bookmark;
@@ -167,7 +173,9 @@ function labelFor(content: PaneContent, links: readonly PaneLink[], gameElsewher
 function sameContent(a: PaneContent, b: PaneContent): boolean {
     if (a.kind !== b.kind) return false;
     if (a.kind === 'page' && b.kind === 'page') return a.bookmark === b.bookmark;
-    if (a.kind === 'tool' && b.kind === 'tool') return a.tool === b.tool;
+    // A room panel is not the chat pane, so Add pane's Chat and `paneHolding`
+    // find chat panes and never room panels; and not another room's panel.
+    if (a.kind === 'tool' && b.kind === 'tool') return a.tool === b.tool && (a.room ?? null) === (b.room ?? null);
     return true;
 }
 

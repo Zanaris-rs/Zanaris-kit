@@ -56,6 +56,30 @@ test('contents the kit does not know are refused', () => {
     assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'window' } })), null);
 });
 
+test('a room panel survives a setup file', () => {
+    const tree = split('split-1', 'x', [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: 'chat', room: '#LostHQ' })], [0.7, 0.3]);
+    const read = readSetup(writeLayout(tree, 'lostcity'))?.tree;
+    assert.deepEqual(read, storeTree(tree));
+    const opened = instantiateLayout(read!, { tools: TOOLS, links: LINKS, ...counters() });
+    assert.deepEqual(contentOf(opened, 'pane-2'), { kind: 'tool', tool: 'chat', room: '#LostHQ' }, 'and opens as a room panel, not as a chat pane');
+    assert.deepEqual(contentOf(opened, 'pane-1'), { kind: 'game' });
+});
+
+test('a room the reader cannot trust sinks the file', () => {
+    const chat = (room: unknown): string => file({ kind: 'leaf', content: { kind: 'tool', tool: 'chat', room } });
+    assert.equal(readSetup(chat('#a,0')), null, 'a JOIN that would leave every channel');
+    assert.equal(readSetup(chat('two words')), null);
+    assert.equal(readSetup(chat('')), null);
+    assert.equal(readSetup(chat(7)), null);
+    assert.equal(readSetup(chat(null)), null, 'a room that is there and wrong is not the same as no room');
+    assert.notEqual(readSetup(chat('*')), null, 'Status');
+    assert.notEqual(readSetup(chat('zed')), null, 'a nick');
+});
+
+test('room on a tool other than chat sinks the file', () => {
+    assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'tool', tool: 'worlds', room: '#x' } })), null);
+});
+
 test('a second game is refused — the window has one game view', () => {
     const game: StoredNode = { kind: 'leaf', content: { kind: 'game' } };
     assert.equal(readSetup(file({ kind: 'split', axis: 'x', children: [game, game], fractions: [1, 1] })), null);

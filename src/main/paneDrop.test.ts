@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canDrop, dropPane, dropTargets } from './paneDrop.ts';
-import { halvable, layoutTree, leaf, movePane, split, swapPanes } from './paneTree.ts';
+import { canDrop, canInsert, dropPane, dropTargets, insertTargets } from './paneDrop.ts';
+import { halvable, insertPane, layoutTree, leaf, movePane, split, swapPanes, type PaneContent, type Rect } from './paneTree.ts';
+import { PANE_MIN_WIDTH } from '../shared/layout.ts';
 
 const empty = { kind: 'empty' } as const;
 
@@ -56,4 +57,53 @@ test('nothing can be dropped on itself or on a pane that is not there', () => {
 
 test('a lone pane has nowhere to go', () => {
     assert.deepEqual(dropTargets(leaf('a', { kind: 'game' }), { x: 0, y: 0, width: 800, height: 600 }, 'a'), {});
+});
+
+const room: PaneContent = { kind: 'tool', tool: 'chat', room: '#LostHQ' };
+
+test('a room can land on any edge, never the centre', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'tool', tool: 'chat' })], [0.5, 0.5]);
+    const rect = { x: 0, y: 0, width: 1004, height: 604 };
+    const targets = insertTargets(tree, rect, room);
+    assert.deepEqual(Object.keys(targets).sort(), ['a', 'b'], 'no pane is the dragged one, so every pane is a target');
+    for (const to of ['a', 'b']) {
+        assert.equal(targets[to]!.centre, null, `${to}: a room has nothing to swap with`);
+        for (const zone of ['left', 'right', 'top', 'bottom'] as const) {
+            const landed: Rect | undefined = layoutTree(insertPane(tree, to, zone, { paneId: 'new', splitId: 's-new' }, room), rect).panes.get('new');
+            assert.deepEqual(targets[to]![zone], landed, `${to} ${zone}: the half layoutTree gives`);
+        }
+    }
+    // Across the row's grain the new pane takes half the target's height and all its width.
+    assert.deepEqual(targets.a!.top, { x: 0, y: 0, width: 500, height: 300 });
+    assert.deepEqual(targets.b!.bottom, { x: 504, y: 304, width: 500, height: 300 });
+});
+
+test('a pane too small to halve refuses a room on that axis', () => {
+    const rect = { x: 0, y: 0, width: PANE_MIN_WIDTH * 2 - 1, height: 604 };
+    const lone = leaf('a', { kind: 'game' });
+    const targets = insertTargets(lone, rect, room).a!;
+    assert.equal(targets.left, null);
+    assert.equal(targets.right, null);
+    assert.notEqual(targets.top, null, 'the other axis is tall enough');
+    assert.notEqual(targets.bottom, null);
+    assert.equal(canInsert(lone, rect, 'a', 'left'), false);
+    assert.equal(canInsert(lone, rect, 'a', 'right'), false);
+    assert.equal(canInsert(lone, { ...rect, width: PANE_MIN_WIDTH * 2 + 4 }, 'a', 'left'), true, 'two floors and a seam is enough');
+});
+
+test('a room is measured against the target as it is, since no pane leaves first', () => {
+    // b is 200 wide: too narrow to halve, and a drag of a would free a share of its row for it (see canDrop). A room has no source pane to free any.
+    const tree = split('s1', 'x', [leaf('a', empty), leaf('b', empty), leaf('c', empty)], [0.4, 0.2, 0.4]);
+    const rect = { x: 0, y: 0, width: 1008, height: 600 };
+    assert.equal(canDrop(tree, rect, 'a', 'b', 'right'), true);
+    assert.equal(canInsert(tree, rect, 'b', 'right'), false);
+    assert.equal(insertTargets(tree, rect, room).b!.right, null);
+});
+
+test('a room cannot land in the centre, or beside a pane that is not there', () => {
+    const tree = split('s1', 'x', [leaf('a', empty), leaf('b', empty)], [0.5, 0.5]);
+    const rect = { x: 0, y: 0, width: 1004, height: 604 };
+    assert.equal(canInsert(tree, rect, 'a', 'centre'), false);
+    assert.equal(canInsert(tree, rect, 'gone', 'left'), false);
+    assert.deepEqual(insertTargets(leaf('a', empty), { x: 0, y: 0, width: 800, height: 600 }, room).a!.centre, null, 'even a lone pane takes a room on its edges');
 });

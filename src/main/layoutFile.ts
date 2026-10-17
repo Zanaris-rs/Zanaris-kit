@@ -1,6 +1,7 @@
 import { leaf, split, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
 import type { PaneLink } from './paneMenu.ts';
 import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
+import { readRoom } from '../shared/chatSettings.ts';
 
 /**
  * A saved setup: one tab's panes, as a file the player chose to write.
@@ -158,7 +159,15 @@ function readContent(x: unknown): PaneContent | null {
     if (content.kind === 'empty' || content.kind === 'game') return { kind: content.kind };
     if (content.kind === 'page') return typeof content.bookmark === 'string' && content.bookmark !== '' ? { kind: 'page', bookmark: content.bookmark } : null;
     if (content.kind !== 'tool') return null;
-    return (TOOL_IDS as readonly string[]).includes(content.tool as string) ? { kind: 'tool', tool: content.tool as ToolId } : null;
+    if (!(TOOL_IDS as readonly string[]).includes(content.tool as string)) return null;
+    const tool = content.tool as ToolId;
+    if (content.room === undefined) return { kind: 'tool', tool };
+    // A room panel. The room is a stranger's writing that ends up in a JOIN, so
+    // `readRoom` judges it, and a room that is there and wrong sinks the file
+    // like any other bad field rather than turning into a chat pane that was
+    // never asked for. Only chat has rooms.
+    const room = tool === 'chat' ? readRoom(content.room) : null;
+    return room === null ? null : { kind: 'tool', tool, room };
 }
 
 /**
