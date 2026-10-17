@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { draggedFar, zoneAt } from './dropZone.ts';
+import { draggedFar, pressEnded, zoneAt } from './dropZone.ts';
 
 // 400x200 at (100, 50), so a quarter is 100 across and 50 down.
 const rect = { x: 100, y: 50, width: 400, height: 200 };
@@ -40,4 +40,29 @@ test('a press becomes a drag only once the pointer has moved a few pixels', () =
     assert.equal(draggedFar({ x: 10, y: 10 }, { x: 12, y: 12 }), false, 'a click that wobbles is still a click');
     assert.equal(draggedFar({ x: 10, y: 10 }, { x: 14, y: 10 }), true);
     assert.equal(draggedFar({ x: 10, y: 10 }, { x: 13, y: 13 }), true, 'measured as a distance, not per axis');
+});
+
+test('a press ends on a move with no button down, a drag or not yet one, a header\'s or a tab\'s', () => {
+    const now = { layout: 'a', rows: ['#a'], buttons: 0 };
+    assert.equal(pressEnded({ room: null, dragging: false, layout: '' }, now), true, 'a header pressed, its release lost');
+    assert.equal(pressEnded({ room: '#a', dragging: false, layout: '' }, now), true, 'a tab pressed, its release lost');
+    assert.equal(pressEnded({ room: '#a', dragging: true, layout: 'a' }, now), true);
+    assert.equal(pressEnded({ room: null, dragging: true, layout: 'a' }, { ...now, buttons: 1 }), false, 'a button held is a press still going');
+    assert.equal(pressEnded({ room: null, dragging: false, layout: '' }, { ...now, buttons: null }), false, 'no event read, nothing said about buttons');
+});
+
+test('a room\'s press ends once no row lists its tab, whether or not it was dragging yet', () => {
+    const gone = { layout: 'a', rows: ['*', '#b'], buttons: null };
+    assert.equal(pressEnded({ room: '#a', dragging: false, layout: '' }, gone), true);
+    assert.equal(pressEnded({ room: '#a', dragging: true, layout: 'a' }, gone), true);
+    assert.equal(pressEnded({ room: '#b', dragging: false, layout: '' }, gone), false);
+    assert.equal(pressEnded({ room: null, dragging: false, layout: '' }, { ...gone, rows: [] }), false, 'a header has no tab to lose');
+});
+
+test('a drag ends when the layout it was aimed at changes, and a press not yet dragging does not', () => {
+    const moved = { layout: 'b', rows: ['#a'], buttons: null };
+    assert.equal(pressEnded({ room: null, dragging: true, layout: 'a' }, moved), true);
+    assert.equal(pressEnded({ room: '#a', dragging: true, layout: 'a' }, moved), true);
+    assert.equal(pressEnded({ room: null, dragging: false, layout: '' }, moved), false, 'its layout is taken when it starts dragging');
+    assert.equal(pressEnded({ room: null, dragging: true, layout: 'b' }, moved), false);
 });

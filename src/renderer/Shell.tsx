@@ -4,7 +4,7 @@ import { roomLabel, type ChatPing } from '../shared/chat';
 import { pingTitle, pingWords } from '../shared/chatPing';
 import { clockHint, clockTone, clockValueAt, formatClock, headerClocks, type TimersView } from '../shared/timers';
 import type { ChatPaneView, DropTargets, DropZone, PaneView, SeamView, TabView } from '../shared/panes';
-import { draggedFar, zoneAt } from '../shared/dropZone';
+import { draggedFar, pressEnded, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { AppMenu, Caret, Gear, Plus } from './icons';
 import { playAlert } from './alertSound';
@@ -338,6 +338,16 @@ function layoutKey(panes: PaneView[]): string {
     return panes.map(p => `${p.paneId}@${p.rect.x},${p.rect.y},${p.rect.width}x${p.rect.height}`).join(' ');
 }
 
+/** Every room tab on screen: the rows of the chat panes in the tab in front. */
+function rowsOf(panes: PaneView[]): string[] {
+    return panes.flatMap(p => p.chat?.row ?? []);
+}
+
+/** A held press, as `pressEnded` reads it. */
+function pressOf(grabbed: Held): { room: string | null; dragging: boolean; layout: string } {
+    return { room: grabbed.from.kind === 'room' ? grabbed.from.room : null, dragging: grabbed.dragging, layout: grabbed.layout };
+}
+
 /** A drag in progress. `targets` is main's answer to where each drop would land, and is null until it arrives. */
 interface Drag {
     from: DragFrom;
@@ -375,7 +385,11 @@ export default function Shell(): ReactNode {
      */
     const dragPressed = useRef(false);
 
-    /** Ends a drag without dropping. Reads nothing a render could leave stale, so the Escape listener can hold it. */
+    /**
+     * Ends a press without dropping, and tells main only when it had become a
+     * drag, since only a drag hid anything. Reads nothing a render could
+     * leave stale, so the Escape listener can hold it.
+     */
     const cancelDrag = (): void => {
         const grabbed = held.current;
         held.current = null;
@@ -398,18 +412,17 @@ export default function Shell(): ReactNode {
      * dragged header off screen, its pointer events go with it, and nothing
      * else would ever end the drag. Main ends it on its side too.
      *
-     * A room's drag also ends when no row on screen lists its tab any more —
-     * the room closed, or its person took a new name — because the tab held
-     * the pointer, and its events went with it.
+     * A press on a room's tab, a drag or not yet one, also ends when no row
+     * on screen lists the tab any more (`pressEnded`, which says why). A
+     * press whose release never reached the shell ends on the next move,
+     * in `grab`.
      */
     const layout = state ? layoutKey(state.panes) : '';
-    const rows = state ? state.panes.flatMap(p => p.chat?.row ?? []) : [];
+    const rows = state ? rowsOf(state.panes) : [];
     const rowsKey = rows.join('\n');
     useEffect(() => {
         const grabbed = held.current;
-        if (!grabbed?.dragging) return;
-        const tabGone = grabbed.from.kind === 'room' && !rows.includes(grabbed.from.room);
-        if (grabbed.layout !== layout || tabGone) cancelDrag();
+        if (grabbed && pressEnded(pressOf(grabbed), { layout, rows, buttons: null })) cancelDrag();
     }, [layout, rowsKey]);
 
     /* Escape puts everything back where it was, as it does for any drag. */
@@ -471,9 +484,13 @@ export default function Shell(): ReactNode {
 
     /**
      * The pointer handlers for one drag handle: a pane's header, or a room's
-     * tab. The two differ in three places — where a press may start, whether
-     * a lone pane can be dragged at all, and what main is asked — and end the
-     * same ways.
+     * tab. The two differ in where a press may start, whether a lone pane can
+     * be dragged at all, what main is asked as the drag begins and what a
+     * drop asks it (`release`), what a refusal does — a room's ends the drag
+     * where it is, since main hid nothing — and in the click a room's tab is
+     * sent after its drag, which is swallowed (`onClickCapture`). How far a
+     * press travels to become a drag, what it is aimed at, and every way it
+     * ends without a drop are the same for both.
      */
     const grab = (from: DragFrom): Grab => ({
         onPointerDown: event => {
@@ -493,11 +510,18 @@ export default function Shell(): ReactNode {
         onPointerMove: event => {
             const grabbed = held.current;
             if (!grabbed || event.pointerId !== grabbed.pointerId || !state) return;
+            // A press whose release never came here (`pressEnded`).
+            if (pressEnded(pressOf(grabbed), { layout: layoutKey(state.panes), rows: rowsOf(state.panes), buttons: event.buttons })) {
+                cancelDrag();
+                return;
+            }
             const at = { x: event.clientX, y: event.clientY };
             if (!grabbed.dragging) {
                 // A lone pane has nowhere to go, so pressing its header stays a
-                // click however far the pointer wanders. A room can always go
-                // beside the pane it is in.
+                // click however far the pointer wanders. A room's tab drags
+                // with one pane on screen, since its panel would go beside it;
+                // where no pane is large enough to halve, main offers no edge,
+                // and letting go anywhere drops nothing.
                 if ((grabbed.from.kind === 'pane' && state.panes.length < 2) || !draggedFar(grabbed.start, at)) return;
                 grabbed.dragging = true;
                 grabbed.layout = layoutKey(state.panes);
