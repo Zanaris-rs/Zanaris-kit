@@ -65,6 +65,34 @@ test('a room panel survives a setup file', () => {
     assert.deepEqual(contentOf(opened, 'pane-1'), { kind: 'game' });
 });
 
+test('a conversation\'s panel is saved as a chat pane, and a channel\'s and Status\'s as panels', () => {
+    const tree = split(
+        'split-1',
+        'x',
+        [leaf('pane-1', { kind: 'tool', tool: 'chat', room: 'zed' }), leaf('pane-2', { kind: 'tool', tool: 'chat', room: '#LostHQ' }), leaf('pane-3', { kind: 'tool', tool: 'chat', room: '*' }), leaf('pane-4', { kind: 'game' })],
+        [0.25, 0.25, 0.25, 0.25]
+    );
+    const text = writeLayout(tree, 'lostcity');
+    assert.doesNotMatch(text, /zed/, 'the nick is not in the file at all');
+    const stored = readSetup(text)?.tree;
+    assert.deepEqual(stored, {
+        kind: 'split',
+        axis: 'x',
+        fractions: [0.25, 0.25, 0.25, 0.25],
+        children: [
+            { kind: 'leaf', content: { kind: 'tool', tool: 'chat' } },
+            { kind: 'leaf', content: { kind: 'tool', tool: 'chat', room: '#LostHQ' } },
+            { kind: 'leaf', content: { kind: 'tool', tool: 'chat', room: '*' } },
+            { kind: 'leaf', content: { kind: 'game' } }
+        ]
+    });
+});
+
+test('a file that names a conversation\'s panel still opens it as one', () => {
+    const read = readSetup(file({ kind: 'leaf', content: { kind: 'tool', tool: 'chat', room: 'zed' } }))?.tree;
+    assert.deepEqual(read, { kind: 'leaf', content: { kind: 'tool', tool: 'chat', room: 'zed' } }, 'only saving changes it');
+});
+
 test('a room the reader cannot trust sinks the file', () => {
     const chat = (room: unknown): string => file({ kind: 'leaf', content: { kind: 'tool', tool: 'chat', room } });
     assert.equal(readSetup(chat('#a,0')), null, 'a JOIN that would leave every channel');

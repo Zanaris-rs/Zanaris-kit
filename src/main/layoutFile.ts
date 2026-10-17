@@ -2,6 +2,8 @@ import { leaf, split, type PaneContent, type PaneNode, type Size } from './paneT
 import type { PaneLink } from './paneMenu.ts';
 import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
 import { readRoom } from '../shared/chatSettings.ts';
+import { SERVER_LOG } from '../shared/chat.ts';
+import { isChannel } from '../shared/ircNames.ts';
 
 /**
  * A saved setup: one tab's panes, as a file the player chose to write.
@@ -34,9 +36,21 @@ export const LAYOUT_VERSION = 1;
  */
 export type StoredNode = { kind: 'leaf'; content: PaneContent } | { kind: 'split'; axis: 'x' | 'y'; fractions: number[]; children: StoredNode[] };
 
+/**
+ * A tree as a setup file stores it. A conversation's room panel — one whose
+ * room is a nick, neither a channel nor Status — is stored as a plain chat
+ * pane, while a channel's panel and Status's are stored as they are. Done
+ * here, on the way out, and never on the way in: a file that names a
+ * conversation still opens as one.
+ */
 export function storeTree(node: PaneNode): StoredNode {
-    if (node.kind === 'leaf') return { kind: 'leaf', content: node.content };
+    if (node.kind === 'leaf') return { kind: 'leaf', content: storedContent(node.content) };
     return { kind: 'split', axis: node.axis, fractions: [...node.fractions], children: node.children.map(storeTree) };
+}
+
+function storedContent(content: PaneContent): PaneContent {
+    if (content.kind !== 'tool' || content.room === undefined) return content;
+    return isChannel(content.room) || content.room === SERVER_LOG ? content : { kind: 'tool', tool: content.tool };
 }
 
 /**

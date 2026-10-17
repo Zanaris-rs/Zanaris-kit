@@ -81,6 +81,10 @@ make 0.9.3's `readContent` refuse the whole file (see `CLAUDE.md` on
   channel. One function, `readRoom` in `src/shared/chatSettings.ts` beside `channelProblem`, decides this.
   The `paneSetContent` handler, and every new handler that takes a room,
   use it too. Today `paneSetContent` checks only `kind`.
+- `layoutFile.storeTree` writes a conversation's panel, a `room` that is a
+  nick rather than a channel or `SERVER_LOG`, as a plain chat pane. A
+  channel's panel and Status's are written as they are. Only writing does
+  this: a file that names a conversation still reads as its panel.
 - `paneMenu.sameContent` compares `room` (absent equals absent). Add pane's
   Chat, `showTool('chat')` and `paneHolding` then find chat panes and never
   room panels.

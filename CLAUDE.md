@@ -134,7 +134,10 @@ than a tool id of its own. A kit that does not know the field reads the leaf
 as chat and drops the field, so a setup holding a panel opens in 0.9.3 with a
 chat pane where the panel was; a new id would have sunk the whole file there.
 `readContent` judges the field with `readRoom`, and a room that is there and
-wrong sinks the file like any other bad field.
+wrong sinks the file like any other bad field. A setup is written with a
+conversation's panel, one whose room is a nick, as a plain chat pane
+(`storeTree`); a channel's panel and Status's are written as they are, and
+only writing does this, so a file that names a conversation opens one.
 
 > The old invariant said the opposite: opening chrome must never resize the
 > game, because resizing cost the login. The second half was never true —
