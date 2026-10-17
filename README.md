@@ -292,15 +292,16 @@ detection; everything equivalent here is done from main or not at all.
 ## Chat
 
 Chat is one IRC connection for the whole app, not one per window: it stays up
-while you open and close game windows, and every window shows the same
-conversation. It connects to SwiftIRC over TLS, the network LostHQ's community
-actually uses, and joins the channels on its auto-join list:
-`#2004scape, #LostHQ, #Zanaris` until you change it.
+while you open and close game windows, and every window lists the same rooms.
+Which room a chat pane shows is that pane's own, so two chat panes, in one
+window or in two, can sit on two different rooms. It connects to SwiftIRC over
+TLS, the network LostHQ's community actually uses, and joins the channels on
+its auto-join list: `#2004scape, #LostHQ, #Zanaris` until you change it.
 
-Its tabs are **Chat settings**, drawn as a gear, **Status**, then one per channel
-or private conversation in the order they were opened. A tab's unread count is
-gold when a line in it is for you, naming you or said to you alone, and cream
-when none is:
+A chat pane's tabs are **Chat settings**, drawn as a gear, **Status**, then one
+per channel or private conversation in the order they were opened. A tab's
+unread count is gold when a line in it is for you, naming you or said to you
+alone, and cream when none is:
 
 - **Chat settings** can't be closed. It has the nickname, an optional NickServ
   password, the auto-join list, the ignore list, whether mentions raise a
@@ -347,13 +348,14 @@ log. Another channel, or a line you send, brings the log back.
 
 People coming and going is folded: a run of joins, parts, quits and renames is
 one faint line, "3 joined, 2 left", which opens to the lines on a click. Coming
-back to a tab where something arrived while you were away draws a gold **New**
-rule above the first line you missed, until you leave it again. Chat out of
-sight counts as away, even for the tab it had open: while no chat pane shows
-the conversation in any window — closed, behind another tab, or on its
-Chat settings page — what arrives there is counted like anywhere else, and the
-rule marks it once chat is back. What you have half-typed stays with the tab
-you typed it in.
+back to a room where something arrived while you were away draws a gold **New**
+rule above the first line you missed, until you leave it again. Reading is per
+room: a room is read while the tab in front of some window has a chat pane
+showing it or a panel holding it. Out of sight counts as away, even for the
+room a chat pane was left on. With that pane closed, behind another tab, or on
+its Chat settings page, the room counts what arrives like any other, and the
+rule marks it once the room is on screen again. What you have half-typed stays
+with the room you typed it in, and goes with it into a panel.
 
 Click a name, in the list or the log, for a menu: message them, mention them,
 look them up, or ignore them. Ignoring hides someone's messages, notices and
@@ -377,16 +379,40 @@ chat is the kit's own reason to be open instead of a browser tab, and a pane
 nobody knows is there is a pane nobody opens. Closed, chat comes back from
 **Add pane** in the tab bar, as a column down the tab's right edge.
 
-While no chat pane shows the conversation in any window — closed, in a tab
-behind the one you are looking at, or on its Chat settings page — a line that
-names you or a private message shows in the game pane's header, after the
-world: the newest one in gold, cut to fit, with how many more are waiting.
-Its tooltip has the whole line and the room. Clicking it opens chat on that
-room, as a column beside the game with the window growing to make room, as
-Add pane's does, or in a tab of its own when there is no room for one, and
-on the conversation if the pane was on Chat settings. It goes once chat is on
-screen again anywhere, and the rail still counts in gold whatever else was
-for you, in the room chat had open as in any other.
+**A room can have a pane of its own.** Drag its tab out of the row and drop it
+on any pane's edge, as a pane's header is dragged; the drop shows where the
+panel will land, and over a pane's middle it says to drop on an edge. Or
+right-click the tab for **Open Right**, **Open Below** or **Open in New Tab**.
+The window grows to make room for the panel, as it does for any pane you add.
+Any tab can come out: a channel, a private conversation, or Status. A room
+panel is just that room — its log, its people and its own message box, with no
+row of tabs. A channel's panel has a slim row across its top with the topic,
+cut to one line and whole in its tooltip, and People and **ⓘ** at its end. To
+see another room beside it, open another panel.
+
+While a room has a panel, its tab leaves this window's chat panes, and closing
+the panel puts the tab back; closing a panel never leaves the room. A panel is
+per window: another window's chat pane still lists the room. A panel never
+joins its room on its own. One for a channel you are not in — from a setup,
+after `/part`, or one you were kicked from — says so and offers **Join**, and
+waits for the click. Typing `/join` or `/query` in a panel, or picking Message
+from a name's menu in it, opens that room as clicking a ping does (below). With
+every room in a panel, a chat pane says so instead of showing a log. A setup
+you save keeps channel and Status panels as they are, and saves a
+conversation's panel as a plain chat pane.
+
+A line that names you, or a private message, arriving in a room no window has
+on screen — no panel for it, no chat pane showing it, and no chat pane on its
+conversation whose row lists its tab — shows in the game pane's header, after
+the world: the newest one in gold, cut to fit, with how many more are waiting.
+Its tooltip has the whole line and the room. Clicking it opens that room: in
+its panel when the window has one; otherwise in the chat pane in front, put on
+the room's conversation even if it was on Chat settings; otherwise in a new
+chat pane already on the room, as a column beside the game with the window
+growing to make room, as Add pane's does, or in a tab of its own when there is
+no room for one. A ping goes once its room is on screen in any window — its
+panel, or its tab in the row of a chat pane on its conversation rather than on
+Chat settings — and the tab keeps counting in gold until the room is read.
 
 It draws itself two ways, and picks between them by reading its own width
 rather than remembering a preference. A conversation is a column of short
@@ -400,20 +426,22 @@ mean.
 The first time you open chat it opens on Chat settings, because there is nothing
 sensible to default a nick to, and a name others see should be chosen rather
 than assigned. Nothing connects until you pick one. A capture run gives chat
-one only at its end, and connects it to a scripted server inside the kit, never
-to a network. Some commands are the kit's own,
-because they change what it draws or take the channel you are looking at:
-`/me`, `/msg`, `/query`, `/notice`, `/nick`, `/join`, `/part`, `/close`,
-`/topic`, `/away`, `/back`, `/whois`, `/kick`, `/invite`, `/op`, `/deop`, `/voice`,
-`/devoice`, `/ignore`, `/unignore`, `/clear`, `/help` and `/quit`. `/help`
-lists them, from the same table the slash menu reads. `/quit [reason]` is the Disconnect button, remembered the same
-way, rather than a dropped connection the kit would reconnect behind. A whois
-answer is written out as sentences in the tab you asked from. Every other
-slash command goes to the server as typed — `/mode`, `/who`, `/list` — in
-IRC's own argument order, colons and all. The answer comes back in Status,
-including the complaint when the command was a typo. A slash followed by
-something that is not a command at all, like `/123`, is still refused here
-rather than sent.
+one only near its end, and connects it to a scripted server inside the kit,
+never to a network.
+
+Some commands are the kit's own, because they change what it draws or take the
+room they are typed in: `/me`, `/msg`, `/query`, `/notice`, `/nick`, `/join`,
+`/part`, `/close`, `/topic`, `/away`, `/back`, `/whois`, `/kick`, `/invite`,
+`/op`, `/deop`, `/voice`, `/devoice`, `/ignore`, `/unignore`, `/clear`, `/help`
+and `/quit`. `/help` lists them, from the same table the slash menu reads.
+`/quit [reason]` is the Disconnect button, remembered the same way, rather than
+a dropped connection the kit would reconnect behind. What the kit says back
+about a command lands in the room it was typed in, and a whois answer is
+written out as sentences there. Every other slash command goes to the server as
+typed — `/mode`, `/who`, `/list` — in IRC's own argument order, colons and all.
+The answer comes back in Status, including the complaint when the command was
+a typo. A slash followed by something that is not a command at all, like
+`/123`, is still refused here rather than sent.
 
 The protocol layer is hand-written and tested rather than a dependency: a
 parser and serializer for the commands and numerics this needs, including the
@@ -660,9 +688,10 @@ with nothing beside the game to trade with. It used to only move seams, and in
 the window a launch opens, where the game spans the width alone, a window made
 wider left the game wider for good.
 
-Adding a pane leaves the game alone too. When Add pane's column or a split would
-take pixels from the game — Split Right or Split Down on the game's own pane, or
-a column beside a tab the game spans — the window grows by exactly what the game
+Adding a pane leaves the game alone too. When Add pane's column, a split or a
+chat room's panel (see Chat) would take pixels from the game — Split Right or
+Split Down on the game's own pane, or a column beside a tab the game spans — the
+window grows by exactly what the game
 would have lost, to the right or down, and the game keeps its size. The new pane
 arrives at the size it would have had anyway, and every other pane keeps what
 the gesture left it. A window that would run off its display moves back onto it,
@@ -991,11 +1020,12 @@ waits for the list, switches to another world and captures that, opens the
 Hiscores tool on each server that has one and looks a single name up there —
 one request per server and no retry, since Lost City rate-limits after a
 handful inside a minute — opens the Home server tool, then opens a second
-instance of that server. Last, it gives chat a nick and connects it to a
-scripted server inside the kit (`src/main/chat/scripted.ts`), never a network,
-and shoots a room opened in a panel of its own, the same room still in another
-window's row, a panel offering Join, and a mention's ping in the game's header.
-It reads the builds from the installed kit's
+instance of that server. Near the end, it gives chat a nick and connects it to
+a scripted server inside the kit (`src/main/chat/scripted.ts`), never a
+network, and shoots a room opened in a panel of its own, the same room still in
+another window's row, a panel offering Join, a mention's ping in the game's
+header, and the chat pane clicking a ping adds when there is none in front.
+Settings' close question comes last of all. It reads the builds from the installed kit's
 profile, as a development run does; a line that profile has not downloaded is
 skipped rather than left waiting. It keeps everything else in a profile of its
 own, `zanaris-kit-capture`, so a test switch never changes what the next real
