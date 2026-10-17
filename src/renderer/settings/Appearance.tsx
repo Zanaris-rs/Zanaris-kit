@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { AppearanceView, ServerThemeRow, ThemeCard } from '../../main/appearance.ts';
-import { NICK_COLOURS, themeVars, type ThemeDraft } from '../../shared/themes.ts';
+import { NICK_COLOURS, draftOf, themeVars } from '../../shared/themes.ts';
 import type { ThemeEditing } from '../Settings';
 import { QuietButton } from './Servers';
 import ThemeEditor from './ThemeEditor';
@@ -108,20 +108,13 @@ function ServerRow({ row, view }: { row: ServerThemeRow; view: AppearanceView })
     );
 }
 
-/** What the editor opens on: a copy of a built-in, or one of the player's own as it is. */
-function draftOf(theme: ThemeCard): ThemeDraft {
-    return theme.custom
-        ? { id: theme.id, name: theme.name, colors: { ...theme.colors }, background: theme.background ? { ...theme.background } : null }
-        : { id: null, name: `${theme.name} (copy)`, colors: { ...theme.colors }, background: null };
-}
-
 /**
  * Settings' Appearance section: the app theme as a card per theme, the
  * player's own after the built-ins, then a theme per server. The editor takes
  * the section's place while it is open, on the draft Settings holds. A change
  * applies at once to every window it touches and reloads nothing: the game
- * and the pages are never themed. While the editor is open, every window
- * wears the draft.
+ * page takes it as a stylesheet, and the reference pages are never themed.
+ * While the editor is open, every window wears the draft.
  */
 export default function Appearance({
     view,
@@ -141,6 +134,7 @@ export default function Appearance({
                 initial={editing.initial}
                 draft={editing.draft}
                 presets={view.presets}
+                savesTo={view.savesTo}
                 onChange={update => setEditing(e => (e ? { ...e, draft: update(e.draft) } : e))}
                 onClose={() => setEditing(null)}
             />
@@ -171,8 +165,8 @@ export default function Appearance({
                         theme={theme}
                         chosen={theme.id === view.theme}
                         onEdit={() => {
-                            const draft = draftOf(theme);
-                            setEditing({ initial: draft, draft });
+                            const draft = draftOf(theme, theme.custom);
+                            setEditing({ initial: draft, draft, forServer: null });
                         }}
                     />
                 ))}

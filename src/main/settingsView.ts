@@ -15,8 +15,16 @@ export interface SettingsWindow extends SettingsHandle {
     push(state: SettingsState): void;
     /** What Settings wears changed — the app theme, or the theme being edited: the window's own ground follows, as a game window's does in `themeChanged`, and on Windows so do its window buttons' glyphs. */
     setLook(look: ThemeLook): void;
-    /** Resolves once the page has loaded, for capture. */
+    /** Resolves once the page has loaded, for capture, and for a request held for Settings (`ping`). */
     readonly loaded: Promise<void>;
+    /**
+     * Whether the page has finished loading at least once. Set after
+     * `onPageReset` has run for that load, so a request Settings takes once
+     * this is true is never ended by the first load's reset.
+     */
+    hasLoaded(): boolean;
+    /** Tells the page there is a request to take (`settings.takeShow`). A no-op once the page is gone. */
+    ping(): void;
     /** Whether the page paints, as a server window's `settle` answers for its shell: a page that is not painting would hand capture its last frame. */
     settle(): Promise<boolean>;
     /** The page as it is drawn now, for capture. Named for the shot it takes, a shell shot, so capture can treat it as any other. */
@@ -134,12 +142,24 @@ export function createSettingsWindow(opts: {
     win.on('leave-full-screen', opts.onFrameChanged);
     // Read now: once the window closes its contents are destroyed and the id with them.
     const contentsId = win.webContents.id;
-    const loaded = new Promise<void>(resolve => win.webContents.once('did-finish-load', () => resolve()));
+    // Registered after `onPageReset`, above, so that runs first for the same load.
+    let hasLoaded = false;
+    const loaded = new Promise<void>(resolve =>
+        win.webContents.once('did-finish-load', () => {
+            hasLoaded = true;
+            resolve();
+        })
+    );
     loadShell(win.webContents, 'settings');
     return {
         window: win,
         contentsId,
         loaded,
+        hasLoaded: () => hasLoaded,
+        ping: () => {
+            if (win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
+            win.webContents.send(IPC.settingsShow);
+        },
         focus: () => {
             if (opts.headless) return;
             if (win.isMinimized()) win.restore();

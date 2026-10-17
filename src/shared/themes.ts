@@ -1,7 +1,8 @@
 /**
  * Themes for the kit's frame: the tab bar, pane headers, the launcher, the
- * tools and Settings. Never the game or a reference page — those are native
- * views the kit does not style, and nothing is injected into a game page.
+ * tools and Settings, and the game pane's page around the canvas — its ground
+ * and controls strip, by a stylesheet and nothing else (`main/gamePage.ts`).
+ * Never the canvas, which is the game's own art, and never a reference page.
  *
  * A theme is one value per token, and the renderer puts each on the page as
  * the `--color-*` variable `styles.css` and Tailwind's utilities already read.
@@ -387,6 +388,18 @@ export function uniqueName(name: string, taken: readonly string[]): string {
         const candidate = `${name.slice(0, THEME_NAME_MAX - suffix.length).trimEnd()}${suffix}`;
         if (!used.has(candidate.toLowerCase())) return candidate;
     }
+}
+
+/**
+ * What the editor opens on: a built-in as a copy, named as one and with no
+ * picture; one of the player's own as it is. Copied either way, so the draft
+ * is the editor's own. A card's Customise or Edit opens this, and so does a
+ * game window's Theme menu.
+ */
+export function draftOf(theme: Theme, custom: boolean): ThemeDraft {
+    return custom
+        ? { id: theme.id, name: theme.name, colors: { ...theme.colors }, background: theme.background ? { ...theme.background } : null }
+        : { id: null, name: `${theme.name} (copy)`, colors: { ...theme.colors }, background: null };
 }
 
 // ── contrast ──────────────────────────────────────────────────────────────

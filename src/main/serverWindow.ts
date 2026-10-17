@@ -15,6 +15,7 @@ import type { PaneTrouble } from '../shared/paneNotice';
 import type { ListedTimer } from './timers/defs';
 import { TimersRunner, isGameInput } from './timers/runner';
 import { showAlertBanner } from './timers/electron';
+import { clientPageCss, kitPageCss } from './gamePage';
 import { allowPermission, decideNavigation, isPress, mayOpenBrowser } from './guard';
 import { createPaneHost, type PaneHost } from './paneHost';
 import { addPaneItems, paneDropdown, paneHolding, paneMenuItems, splitMenus, type GameSizes, type PaneContentItem, type PaneMenuItem, type SplitMenu } from './paneMenu';
@@ -554,6 +555,45 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     }
 
     /**
+     * The theme sheet in the game page now, by the key `insertCSS` answered,
+     * and the number of the newest swap. A page wears one at a time: a swap
+     * inserts the new sheet and then removes the one before it, and a swap a
+     * newer one overtook removes its own, so a colour dragged in the editor
+     * leaves one sheet rather than a pile. A navigation takes the sheet with
+     * its document, which `dom-ready` answers by removing whatever the key
+     * still names in the new one, and forgetting it.
+     */
+    let pageSheet: string | null = null;
+    let pageSheetTurn = 0;
+
+    /**
+     * Puts the look this window wears on the page the game view shows: the
+     * client page's ground and controls strip (`gamePage.clientPageCss`), or
+     * the colours of the kit's own offline and starting pages
+     * (`gamePage.kitPageCss`). CSS alone; the canvas is the game's own art.
+     */
+    function dressGamePage(wc: WebContents): void {
+        if (wc.isDestroyed()) return;
+        const turn = ++pageSheetTurn;
+        const look = deps.theme();
+        const css = wc.getURL().startsWith('file:') ? kitPageCss(look) : clientPageCss(look);
+        wc.insertCSS(css).then(
+            key => {
+                if (wc.isDestroyed()) return;
+                if (turn !== pageSheetTurn) {
+                    void wc.removeInsertedCSS(key).catch(() => undefined);
+                    return;
+                }
+                const before = pageSheet;
+                pageSheet = key;
+                if (before) void wc.removeInsertedCSS(before).catch(() => undefined);
+            },
+            // A page gone mid-insert has nothing to wear it; the next page's `dom-ready` dresses that one.
+            () => undefined
+        );
+    }
+
+    /**
      * This window's clocks. The runner holds every rule; this end gives it a
      * clock and a timer, and turns its alerts into a banner and a sound. Each
      * window has its own, because each game is its own login with its own
@@ -691,8 +731,10 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
     /**
      * Repaints what main paints — the window, the shell view and every page
      * view, in the theme's ground, and on Windows the window buttons' glyphs,
-     * in its text colour — and sends the shell its palette. The game view
-     * keeps its black: that is the game's own ground, never themed.
+     * in its text colour — sends the shell its palette, and dresses the game
+     * page in it (`dressGamePage`). The game view's own ground stays black:
+     * it shows only before a page paints, and the stock page is black until
+     * its sheet lands. The canvas is never themed.
      */
     function themeChanged(): void {
         if (win.isDestroyed()) return;
@@ -703,6 +745,7 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         const overlay = overlayFor(process.platform, look);
         if (overlay) win.setTitleBarOverlay(overlay);
         host.repaintBackground();
+        if (gameView) dressGamePage(gameView.webContents);
         pushState();
     }
 
@@ -1782,6 +1825,8 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
                 query: { url: expected, name: server.name, reason: description }
             });
         });
+        // Two sheets go in: `GAME_PAGE_CSS`, for the client page's layout, and the theme
+        // (`dressGamePage`), which the kit's own pages take too.
         // `insertCSS` is per-document, so it must be re-applied on every navigation. `dom-ready`
         // (Chromium's DOMContentLoaded) is the earliest hook Electron exposes for that;
         // `did-finish-load` (below, used for the load waiter) waits for the 'load' event — every
@@ -1789,15 +1834,23 @@ export function createServerWindow(spec: WindowSpec, onClosed: () => void, deps:
         // the client's own game code is a deferred `type="module"` script, which delays
         // DOMContentLoaded until it has fetched and run, while Chromium can paint the
         // already-parsed, already-styled page before that finishes. So a brief flash is possible —
-        // but only at sizes where the page actually overflows its view (the bare-canvas floor, or
-        // the dock pushing content below it; the default size never overflows) — and it is still
+        // of scrollbars only at sizes where the page actually overflows its view (the bare-canvas
+        // floor, or the dock pushing content below it; the default size never overflows), and of
+        // the stock black and green while a page loads under any theme — and it is still
         // strictly earlier than did-finish-load. World hopping and detail switching both funnel
         // through `loadGame`'s `loadURL` on this same view, so they re-fire `dom-ready` and
         // re-inject too — nothing server-specific is needed here.
         wc.on('dom-ready', () => {
-            // The kit's own offline and starting pages are already sized to fit; this is for the client.
-            if (wc.getURL().startsWith('file:')) return;
-            void wc.insertCSS(GAME_PAGE_CSS);
+            // The document before took its theme sheet with it — unless a swap issued
+            // around the navigation landed in this one before it was ready, which the
+            // key would then still name, and which would stay on this page for good:
+            // a client sheet left on the kit's offline page pins its ground to an old
+            // look. Removing a key this document never had changes nothing.
+            if (pageSheet) void wc.removeInsertedCSS(pageSheet).catch(() => undefined);
+            pageSheet = null;
+            // The kit's own offline and starting pages are already sized to fit; the layout sheet is for the client.
+            if (!wc.getURL().startsWith('file:')) void wc.insertCSS(GAME_PAGE_CSS);
+            dressGamePage(wc);
         });
         wc.on('did-finish-load', () => {
             const url = wc.getURL();
