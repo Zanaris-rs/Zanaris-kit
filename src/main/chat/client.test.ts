@@ -958,6 +958,40 @@ test('a passed-through command while not connected says so instead of being drop
     assert.match(f.lines().at(-1)?.text ?? '', /not connected/);
 });
 
+test('a /msg while not connected says so in the room it was typed in', () => {
+    const f = fake();
+    f.input('/msg bob hi');
+    assert.deepEqual(f.sent, []);
+    assert.match(f.lines().at(-1)?.text ?? '', /not connected/);
+    assert.equal(f.lines(SERVER_LOG).some(l => /not connected/.test(l.text)), false, 'not in Status, where nobody typed it');
+});
+
+test('what the kit says about a line typed at a channel chat does not have goes to Status, and makes no tab of it', () => {
+    const f = online();
+    f.client.input('/help', '#notjoined');
+    f.client.input('/topic', '#notjoined');
+    f.client.input('/whois bob', '#notjoined');
+    f.client.receive(':irc 311 mage bob ~b host.example * :Bob Smith');
+    f.client.receive(':irc 318 mage bob :End of /WHOIS list.');
+    assert.equal(f.rooms().some(room => room === '#notjoined'), false, 'no tab for a room we are not in');
+    const status = f.lines(SERVER_LOG).map(l => l.text);
+    for (const command of COMMAND_HELP) assert.ok(status.some(t => t.startsWith(`/${command.name} `)), `/help's /${command.name} is in Status`);
+    assert.ok(status.includes('#notjoined has no topic'));
+    assert.ok(status.includes('bob is ~b@host.example (Bob Smith)'), 'and so is the whois asked from there');
+
+    const offline = fake();
+    offline.client.input('/away', '#notjoined');
+    assert.equal(offline.rooms().some(room => room === '#notjoined'), false);
+    assert.match(offline.lines(SERVER_LOG).at(-1)?.text ?? '', /not connected/);
+});
+
+test('what the kit says about a line typed in a conversation not open opens it, as the line would', () => {
+    const f = online();
+    f.client.input('/help', 'zed');
+    assert.ok(f.rooms().includes('zed'));
+    assert.ok(f.lines('zed').length > 0);
+});
+
 test('a slash that names no command is answered in the log, not on the wire', () => {
     const f = online();
     f.input('/123 go');

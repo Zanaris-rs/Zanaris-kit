@@ -360,7 +360,9 @@ reads only the first character and `JOIN #a,0` leaves every channel on many
 servers. A line typed in a pane goes to the room main says the pane shows,
 never one the shell names, and only where `chatPanes.maySend` lets it:
 nothing said aloud goes to a channel chat does not have, so nothing typed
-becomes a PRIVMSG into a room we are not in. A channel we were kicked from is
+becomes a PRIVMSG into a room we are not in. What the kit says back about a
+line typed there goes to Status (`IrcClient.note`), never into a new tab
+for that room. A channel we were kicked from is
 one chat still has, listed to say why, so `/part` and `/close` close its tab
 there, and the client answers a line said in it with how to go back, sending
 nothing (`IrcClient.speak`).

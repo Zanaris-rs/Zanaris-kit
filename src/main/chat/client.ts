@@ -945,8 +945,11 @@ export class IrcClient {
     /**
      * One typed line, and `at`, the room it was typed in. A line of text is
      * said there, and a command that leaves out a channel — /topic, /kick,
-     * /part and the rest — means that one; whatever the kit has to say back
-     * is said there too.
+     * /part and the rest — means that one. Whatever the kit has to say back
+     * — a complaint, a refusal, /help — is said there too, or in Status when
+     * `at` is a channel chat does not have (`note`). The one exception is
+     * `/query nick text`, whose text is said in the conversation it opens,
+     * along with anything the kit says about it.
      *
      * Answers the room the line means to open: the channel /join named, or
      * the conversation /query opened, in the spelling chat has it under.
@@ -964,7 +967,7 @@ export class IrcClient {
                 this.speak(typed.kind, typed.text, at);
                 return null;
             case 'msg': {
-                if (!this.online(SERVER_LOG)) return null;
+                if (!this.online(at)) return null;
                 if (!this.fits('PRIVMSG', [typed.target, typed.text], at)) return null;
                 this.opts.send(formatCommand('PRIVMSG', [typed.target, typed.text]));
                 // Echoed where the conversation already is, or in Status: a /msg to NickServ must not open a tab of its own.
@@ -1014,7 +1017,8 @@ export class IrcClient {
                 return null;
             case 'whois':
                 if (!this.online(at)) return null;
-                this.whoisTo.set(key(typed.nick), at);
+                // Where a note would go, for the reason a note goes there.
+                this.whoisTo.set(key(typed.nick), this.noteRoom(at));
                 this.opts.send(formatCommand('WHOIS', [typed.nick]));
                 return null;
             case 'kick': {
@@ -1156,15 +1160,27 @@ export class IrcClient {
         return false;
     }
 
-    /** A line from the kit itself, in the room something was typed in. */
+    /**
+     * A line from the kit itself, in the room something was typed in — or in
+     * Status, when that is a channel chat does not have, such as a panel's
+     * for a room never joined: a note pushed there would make a tab of a room
+     * we are not in. A conversation not open is made, as a line typed in it
+     * opens it again.
+     */
     private note(at: string, text: string): void {
-        this.push(at, 'system', null, text);
+        this.push(this.noteRoom(at), 'system', null, text);
+    }
+
+    /** Where `note` says something about a line typed in `at`. */
+    private noteRoom(at: string): string {
+        return isChannel(at) && !this.chans.has(key(at)) ? SERVER_LOG : at;
     }
 
     private ignored(nick: string): boolean {
         return this.ignoring.some(n => same(n, nick));
     }
 
+    /** Whether chat is online, and a note in `complainIn` saying so when not, through `note`. */
     private online(complainIn: string): boolean {
         if (this.status === 'online') return true;
         this.note(complainIn, 'not connected');
