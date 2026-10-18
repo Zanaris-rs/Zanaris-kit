@@ -12,7 +12,7 @@ import { nodeReachableIo, waitUntilReachable } from './reachable.ts';
 import { startRelay } from './relay.ts';
 import type { ShareDeps, ShareTransport, ShareTunnel } from './service.ts';
 import { ensureTor, TOR_BUNDLE_VERSION, torAssetFor, torExecutable, torInstalled, type TorAsset } from './tor.ts';
-import { startOnion, startTorClient, type TorIo } from './torProcess.ts';
+import { cacheLeases, checkThroughClient, startOnion, type TorCacheKind, type TorIo } from './torProcess.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +27,11 @@ function cloudflaredDir(): string {
     return join(app.getPath('userData'), 'cloudflared', CLOUDFLARED_VERSION);
 }
 
-/** One folder per pinned version, as cloudflared's is. The checked files sit in it; each run's folders sit in its `run/`. */
+/**
+ * One folder per pinned version, as cloudflared's is. The checked files sit
+ * in it; each run's folders sit in its `run/`, and the caches every run keeps
+ * in its `cache/`, out of the sweep's way.
+ */
 function torDir(): string {
     return join(app.getPath('userData'), 'tor', TOR_BUNDLE_VERSION);
 }
@@ -46,10 +50,11 @@ export function torFilesInstalled(): Promise<boolean> {
 }
 
 /**
- * Every cloudflared and Tor started and not yet gone, the probe client
+ * Every cloudflared and Tor started and not yet gone, the link checker
  * included. The service stops them on a normal quit; this is for the exits
  * that skip it, so no tunnel outlives the kit pointing at a relay that no
- * longer exists.
+ * longer exists. A crash or a kill runs no handler at all: Tor notices the
+ * kit has gone by itself (`__OwningControllerProcess`), cloudflared does not.
  */
 const running = new Set<TunnelProcess>();
 process.on('exit', () => {
@@ -93,9 +98,23 @@ async function makeRunFolder(prefix: string): Promise<string> {
 }
 
 async function removeRunFolder(path: string): Promise<void> {
-    await rm(path, { recursive: true, force: true });
+    // Windows can hold a just-exited Tor's files open for a moment longer.
+    await rm(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     runFolders.delete(path);
 }
+
+/**
+ * Each kind's kept cache, one Tor at a time across every share, the link
+ * checker's included: a share started while the last one's Tor is still
+ * stopping waits for it rather than being refused the folder.
+ */
+const leaseTorCache = cacheLeases(async (kind: TorCacheKind) => {
+    const dir = join(torDir(), 'cache', kind);
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    // Tor refuses a cache folder anyone else can read, and mkdir leaves one that already exists as it was.
+    await chmod(dir, 0o700);
+    return dir;
+});
 
 /** An empty file, which Tor reads as both its torrc and its defaults: Tor refuses `/dev/null` for either. */
 function emptyTorrc(): string {
@@ -137,6 +156,7 @@ function torIo(asset: TorAsset): TorIo {
     return {
         env: process.env,
         platform: process.platform,
+        pid: process.pid,
         spawn: spawnTracked,
         makeDataDir: async () => {
             const dir = await makeRunFolder('data-');
@@ -145,6 +165,7 @@ function torIo(asset: TorAsset): TorIo {
             return dir;
         },
         removeDir: removeRunFolder,
+        leaseCache: leaseTorCache,
         readHostname: async dataDir => {
             try {
                 return await readFile(join(dataDir, 'hs', 'hostname'), 'utf8');
@@ -205,12 +226,13 @@ function torTransport(asset: TorAsset, mode: TorMode, log: (msg: string) => void
                 return waitOnionReachable(nodeOnionIo(), { url: tunnel.url, socksPort: info.socksPort, probe, signal, log });
             }
             // A single-hop service cannot be a client, so a second Tor checks the link, and goes as soon as it has.
-            const client = await startTorClient(io, { checkedDir: info.checkedDir, empty: emptyTorrc(), signal });
-            try {
-                await waitOnionReachable(nodeOnionIo(), { url: tunnel.url, socksPort: client.socksPort, probe, signal, log });
-            } finally {
-                await client.stop().catch(err => log(`[share] stopping Tor's probe client: ${String(err)}`));
-            }
+            return checkThroughClient(io, {
+                checkedDir: info.checkedDir,
+                empty: emptyTorrc(),
+                signal,
+                log,
+                wait: (socksPort, checking) => waitOnionReachable(nodeOnionIo(), { url: tunnel.url, socksPort, probe, signal: checking, log })
+            });
         }
     };
 }

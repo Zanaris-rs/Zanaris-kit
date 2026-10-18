@@ -1,24 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnProcess, TunnelError, type TunnelSpawnSpec } from './quickTunnel.ts';
-import { buildTorArgs, createTorLogParser, startOnion, startTorClient, torEnv, type TorIo } from './torProcess.ts';
+import { buildTorArgs, cacheLeases, checkThroughClient, createTorLogParser, startOnion, startTorClient, torEnv, type TorCacheKind, type TorIo } from './torProcess.ts';
 
 const FAKE = fileURLToPath(new URL('./testdata/fake-tor.mjs', import.meta.url));
 const HOST = `${'b'.repeat(52)}7abc.onion`;
 const DATA = '/kit/run/tor data';
+const CACHE = '/kit/tor/cache/service';
 
-test('a full onion service reads no torrc, logs to stdout, takes a loopback SOCKS port and forwards port 80 to the relay', () => {
-    assert.deepEqual(buildTorArgs({ empty: '/kit/tor/empty', dataDir: DATA, mode: 'full', relayPort: 45678 }), [
+test('a full onion service reads no torrc, keeps its cache, goes with the kit, logs to stdout, takes a loopback SOCKS port and forwards port 80 to the relay', () => {
+    assert.deepEqual(buildTorArgs({ empty: '/kit/tor/empty', dataDir: DATA, cacheDir: CACHE, ownerPid: 4242, mode: 'full', relayPort: 45678 }), [
         '-f',
         '/kit/tor/empty',
         '--defaults-torrc',
         '/kit/tor/empty',
         '--DataDirectory',
         DATA,
+        '--CacheDirectory',
+        CACHE,
+        '__OwningControllerProcess',
+        '4242',
         '--Log',
         'notice stdout',
         '--SocksPort',
@@ -31,13 +36,17 @@ test('a full onion service reads no torrc, logs to stdout, takes a loopback SOCK
 });
 
 test('a single-hop service has no SOCKS port, as Tor requires, and says it is not anonymous', () => {
-    assert.deepEqual(buildTorArgs({ empty: '/e', dataDir: DATA, mode: 'single', relayPort: 1 }), [
+    assert.deepEqual(buildTorArgs({ empty: '/e', dataDir: DATA, cacheDir: CACHE, ownerPid: 4242, mode: 'single', relayPort: 1 }), [
         '-f',
         '/e',
         '--defaults-torrc',
         '/e',
         '--DataDirectory',
         DATA,
+        '--CacheDirectory',
+        CACHE,
+        '__OwningControllerProcess',
+        '4242',
         '--Log',
         'notice stdout',
         '--SocksPort',
@@ -54,13 +63,17 @@ test('a single-hop service has no SOCKS port, as Tor requires, and says it is no
 });
 
 test('a client has a SOCKS port and no service', () => {
-    assert.deepEqual(buildTorArgs({ empty: '/e', dataDir: DATA, mode: 'client' }), [
+    assert.deepEqual(buildTorArgs({ empty: '/e', dataDir: DATA, cacheDir: '/kit/tor/cache/client', ownerPid: 4242, mode: 'client' }), [
         '-f',
         '/e',
         '--defaults-torrc',
         '/e',
         '--DataDirectory',
         DATA,
+        '--CacheDirectory',
+        '/kit/tor/cache/client',
+        '__OwningControllerProcess',
+        '4242',
         '--Log',
         'notice stdout',
         '--SocksPort',
@@ -120,6 +133,11 @@ function fakeIo(): {
     const io: TorIo = {
         env: { PATH: '/bin', LD_PRELOAD: '/evil.so' },
         platform: 'linux',
+        pid: 4242,
+        leaseCache: async kind => {
+            trace.push(`leased ${kind}`);
+            return { dir: `/kit/tor/cache/${kind}`, release: () => void trace.push(`freed ${kind}`) };
+        },
         spawn: s => {
             spec = s;
             trace.push('started');
@@ -182,7 +200,7 @@ test('an onion is ready only once the address is written and Tor has bootstrappe
     assert.equal(onion.socksPort, 49731);
     assert.equal(onion.lastLine(), 'Bootstrapped 100% (done): Done', 'without the timestamp and level');
     await onion.stop();
-    assert.deepEqual(tor.trace, ['prepared', 'made', 'started', 'ended', 'removed /kit/run/data', 'released']);
+    assert.deepEqual(tor.trace, ['prepared', 'made', 'leased service', 'started', 'ended', 'removed /kit/run/data', 'freed service', 'released']);
 });
 
 test('an address written before bootstrap waits for bootstrap', async () => {
@@ -226,7 +244,7 @@ test('a Tor that exits before it is ready rejects with its last line and leaves 
     await assert.rejects(pending, (err: unknown) => {
         assert.ok(err instanceof TunnelError);
         assert.match(err.message, /^Tor exited \(code 1\) before it was ready: Could not bind to 127\.0\.0\.1:9050: Address already in use\.$/);
-        assert.deepEqual(tor.trace, ['prepared', 'made', 'started', 'ended', 'removed /kit/run/data', 'released']);
+        assert.deepEqual(tor.trace, ['prepared', 'made', 'leased service', 'started', 'ended', 'removed /kit/run/data', 'freed service', 'released']);
         return true;
     });
 });
@@ -253,18 +271,18 @@ test('a spawn that throws leaves no folders behind and is reported as a TunnelEr
         assert.match(err.message, /^Tor could not be started: .*null bytes$/);
         return true;
     });
-    assert.deepEqual(tor.trace, ['prepared', 'made', 'removed /kit/run/data', 'released']);
+    assert.deepEqual(tor.trace, ['prepared', 'made', 'leased service', 'removed /kit/run/data', 'freed service', 'released']);
 });
 
-test('a Tor that does not bootstrap in time is killed and its folders removed', async () => {
+test('a link checker that does not bootstrap in time is killed, its folders removed, and named as the checker', async () => {
     const tor = fakeIo();
     const pending = startTorClient(tor.io, { ...OPTS, signal: new AbortController().signal, bootTimeoutMs: 50 });
     await turns();
     tor.say('Bootstrapped 10% (conn_done): Connected to a relay');
     await assert.rejects(pending, (err: unknown) => {
         assert.ok(err instanceof TunnelError);
-        assert.match(err.message, /^Tor was not ready within 0 s: Bootstrapped 10% \(conn_done\): Connected to a relay$/);
-        assert.deepEqual(tor.trace, ['prepared', 'made', 'started', 'ended', 'removed /kit/run/data', 'released']);
+        assert.match(err.message, /^Tor's link checker was not ready within 0 s: Bootstrapped 10% \(conn_done\): Connected to a relay$/);
+        assert.deepEqual(tor.trace, ['prepared', 'made', 'leased client', 'started', 'ended', 'removed /kit/run/data', 'freed client', 'released']);
         return true;
     });
 });
@@ -278,7 +296,7 @@ test('cancelling a start kills Tor and removes its folders', async () => {
     await assert.rejects(pending, (err: unknown) => {
         assert.ok(err instanceof TunnelError);
         assert.equal(err.message, 'Sharing was cancelled');
-        assert.deepEqual(tor.trace, ['prepared', 'made', 'started', 'ended', 'removed /kit/run/data', 'released']);
+        assert.deepEqual(tor.trace, ['prepared', 'made', 'leased service', 'started', 'ended', 'removed /kit/run/data', 'freed service', 'released']);
         return true;
     });
 });
@@ -301,7 +319,135 @@ test('a client is ready with its SOCKS port once bootstrapped', async () => {
     const client = await pending;
     assert.equal(client.socksPort, 50111);
     await Promise.all([client.stop(), client.stop()]);
-    assert.deepEqual(tor.trace, ['prepared', 'made', 'started', 'ended', 'removed /kit/run/data', 'released']);
+    assert.deepEqual(tor.trace, ['prepared', 'made', 'leased client', 'started', 'ended', 'removed /kit/run/data', 'freed client', 'released']);
+});
+
+test('every Tor is given its kind\'s kept cache and the kit\'s pid, the service its own and the checker its own', async () => {
+    const service = fakeIo();
+    void startOnion(service.io, { ...OPTS, mode: 'full', relayPort: 1, signal: new AbortController().signal }).catch(() => {});
+    const checker = fakeIo();
+    void startTorClient(checker.io, { ...OPTS, signal: new AbortController().signal }).catch(() => {});
+    await turns();
+    const after = (args: string[], flag: string): string | undefined => args[args.indexOf(flag) + 1];
+    assert.equal(after(service.spec().args, '--CacheDirectory'), '/kit/tor/cache/service');
+    assert.equal(after(checker.spec().args, '--CacheDirectory'), '/kit/tor/cache/client');
+    assert.equal(after(service.spec().args, '__OwningControllerProcess'), '4242');
+    assert.equal(after(checker.spec().args, '__OwningControllerProcess'), '4242');
+    assert.notEqual(after(service.spec().args, '--DataDirectory'), '/kit/tor/cache/service', 'the keys never go in the kept cache');
+    service.exit(1);
+    checker.exit(1);
+});
+
+test('the link checker is given three minutes to bootstrap', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const tor = fakeIo();
+    let failed: unknown = null;
+    void startTorClient(tor.io, { ...OPTS, signal: new AbortController().signal }).catch(err => (failed = err));
+    await turns();
+    t.mock.timers.tick(179_999);
+    await turns();
+    assert.equal(failed, null);
+    t.mock.timers.tick(1);
+    await turns();
+    assert.match(String(failed), /Tor's link checker was not ready within 180 s/);
+});
+
+test('a cache is leased to one Tor at a time, and a wait given up on does not hold up the next', async () => {
+    const made: TorCacheKind[] = [];
+    const lease = cacheLeases(async kind => {
+        made.push(kind);
+        return `/cache/${kind}`;
+    });
+    const live = new AbortController().signal;
+    const first = await lease('client', live);
+    assert.equal(first.dir, '/cache/client');
+    const service = await lease('service', live);
+    assert.equal(service.dir, '/cache/service', 'the other kind is its own');
+    const giveUp = new AbortController();
+    const abandoned = lease('client', giveUp.signal);
+    const third: { dir: string | null } = { dir: null };
+    void lease('client', live).then(l => (third.dir = l.dir));
+    await turns();
+    assert.equal(third.dir, null, 'not while the first holds it');
+    giveUp.abort();
+    await assert.rejects(abandoned, /aborted/);
+    await turns();
+    assert.equal(third.dir, null, 'giving up a wait frees nothing the first still holds');
+    first.release();
+    first.release();
+    await turns();
+    assert.equal(third.dir, '/cache/client');
+    assert.deepEqual(made, ['client', 'service', 'client']);
+});
+
+test('a second link checker starts only once the first has gone, so two never share the cache', async () => {
+    const one = fakeIo();
+    const two = fakeIo();
+    const lease = cacheLeases(async kind => `/kit/tor/cache/${kind}`);
+    one.io.leaseCache = lease;
+    two.io.leaseCache = lease;
+    const pending = startTorClient(one.io, { ...OPTS, signal: new AbortController().signal });
+    await turns();
+    one.say('Opened Socks listener connection (ready) on 127.0.0.1:50111');
+    one.say('Bootstrapped 100% (done): Done');
+    const first = await pending;
+    void startTorClient(two.io, { ...OPTS, signal: new AbortController().signal }).catch(() => {});
+    await turns();
+    assert.deepEqual(two.trace, ['prepared', 'made'], 'waiting for the cache');
+    await first.stop();
+    await turns();
+    assert.deepEqual(two.trace, ['prepared', 'made', 'started']);
+    two.exit(1);
+});
+
+/** A link checker for `checkThroughClient`, bootstrapped as soon as it starts. */
+async function checking(wait: (socksPort: number, signal: AbortSignal) => Promise<void>, signal = new AbortController().signal) {
+    const tor = fakeIo();
+    const logged: string[] = [];
+    const check = checkThroughClient(tor.io, { ...OPTS, signal, wait, log: msg => void logged.push(msg) });
+    await turns();
+    tor.say('Opened Socks listener connection (ready) on 127.0.0.1:50111');
+    tor.say('Bootstrapped 100% (done): Done');
+    await turns();
+    return { tor, check, logged };
+}
+
+test('a link checked through the checker stops the checker as soon as the link works', async () => {
+    let port = 0;
+    const { tor, check } = await checking(async socksPort => {
+        port = socksPort;
+    });
+    await check;
+    assert.equal(port, 50111);
+    assert.deepEqual(tor.trace, ['prepared', 'made', 'leased client', 'started', 'ended', 'removed /kit/run/data', 'freed client', 'released']);
+});
+
+test('a checker that exits while the link is checked fails the check at once, with its last line and nothing else', async () => {
+    let seen: AbortSignal | null = null;
+    const { tor, check } = await checking((_port, signal) => {
+        seen = signal;
+        return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Sharing was cancelled'))));
+    });
+    tor.spec().onLine('Oct 18 19:36:20.000 [err] Directory authority refused us.');
+    tor.exit(1);
+    await assert.rejects(check, (err: unknown) => {
+        assert.ok(err instanceof TunnelError);
+        assert.equal(err.message, "Tor's link checker exited (code 1): Directory authority refused us.");
+        return true;
+    });
+    assert.equal(seen!.aborted, true, 'the wait is told to give up');
+    assert.deepEqual(tor.trace, ['prepared', 'made', 'leased client', 'started', 'ended', 'removed /kit/run/data', 'freed client', 'released']);
+});
+
+test('a share stopped while its link is checked cancels the wait and stops the checker', async () => {
+    const controller = new AbortController();
+    const { tor, check } = await checking(
+        (_port, signal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Sharing was cancelled')))),
+        controller.signal
+    );
+    controller.abort();
+    await assert.rejects(check, /Sharing was cancelled/);
+    assert.deepEqual(tor.trace, ['prepared', 'made', 'leased client', 'started', 'ended', 'removed /kit/run/data', 'freed client', 'released']);
 });
 
 /** The real `spawnProcess` running the fake Tor script, with real folders. */
@@ -313,6 +459,12 @@ function realIo(t: { after: (fn: () => void) => void }, mode: string): { io: Tor
     const io: TorIo = {
         env: { ...process.env, FAKE_TOR_MODE: mode },
         platform: process.platform,
+        pid: process.pid,
+        leaseCache: cacheLeases(async kind => {
+            const dir = join(root, 'cache', kind);
+            mkdirSync(dir, { recursive: true, mode: 0o700 });
+            return dir;
+        }),
         spawn: spec => spawnProcess({ ...spec, command: process.execPath, args: [FAKE, ...spec.args] }),
         makeDataDir: async () => {
             const dir = mkdtempSync(join(root, 'tor data '));
