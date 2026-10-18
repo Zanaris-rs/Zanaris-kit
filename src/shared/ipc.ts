@@ -36,6 +36,7 @@ export const IPC = {
     tabContextMenu: 'zanaris:tab-context-menu',
     tabAddPaneMenu: 'zanaris:tab-add-pane-menu',
     tabSetupsMenu: 'zanaris:tab-setups-menu',
+    tabThemeMenu: 'zanaris:tab-theme-menu',
     tabAppMenu: 'zanaris:tab-app-menu',
     tabShowHomeServer: 'zanaris:tab-show-home-server',
     paneOpenExternal: 'zanaris:pane-open-external',
@@ -94,6 +95,8 @@ export const IPC = {
     settingsState: 'zanaris:settings-state',
     settingsOpen: 'zanaris:settings-open',
     settingsEditServers: 'zanaris:settings-edit-servers',
+    settingsTakeShow: 'zanaris:settings-take-show',
+    settingsShow: 'zanaris:settings-show',
     appearanceTheme: 'zanaris:appearance-theme',
     appearanceServer: 'zanaris:appearance-server',
     appearanceSaveCustom: 'zanaris:appearance-save-custom',
@@ -217,6 +220,17 @@ export interface ShellState {
      * applies it.
      */
     theme: ThemeLook;
+}
+
+/**
+ * What a game window asks Settings to show: a section, and for Customise in
+ * its Theme menu, the editor open on a draft that saves for `forServer`
+ * (`appearance.editFromWindow`). Main holds it until Settings takes it, since
+ * Settings may not have loaded yet when it is asked for.
+ */
+export interface SettingsShow {
+    section: 'servers' | 'appearance';
+    edit: { draft: ThemeDraft; forServer: string | null } | null;
 }
 
 /**
@@ -381,6 +395,14 @@ export interface ZanarisApi {
          */
         setupsMenu(x: number, y: number): Promise<void>;
         /**
+         * Raises the tab bar's Theme menu: every theme, ticked where this
+         * window's server wears it, Just for the server, Customise and All
+         * Themes. A choice acts in main, as View > Server Theme's do — the
+         * shell never calls an appearance handler. Native and built in main
+         * like the pane menus. Coordinates are the window's.
+         */
+        themeMenu(x: number, y: number): Promise<void>;
+        /**
          * Raises the application menu — File, Edit, View, Window and Help —
          * from the ≡ that starts the tab bar where the window has no menu bar
          * of its own (`WindowFrame.menuButton`). The menu is the one the
@@ -492,6 +514,14 @@ export interface ZanarisApi {
         open(): Promise<void>;
         /** Opens `servers.json` in whatever the system opens it with. Safe with the kit running: it is re-read on focus. */
         editServers(): Promise<void>;
+        /**
+         * What a game window last asked Settings to show, taken: main answers
+         * it once and clears it, and answers null before the page has
+         * finished loading, or to anything but Settings.
+         */
+        takeShow(): Promise<SettingsShow | null>;
+        /** Main saying there is something to take. Returns an unsubscribe. */
+        onShow(cb: () => void): () => void;
     };
     appearance: {
         /** The app theme. Settings only: main ignores it from anywhere else. */

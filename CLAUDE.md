@@ -152,7 +152,15 @@ over them would sit underneath. It takes its state on its own channel,
 `settings.get` and `settings.onState`, never through `ShellState`. No game
 window's `state()` builds anything for it, which is how `windowCounts()` once
 came to recurse through `state()`. Only Settings may call the servers and
-appearance handlers.
+appearance handlers. A game window's Theme menu is no exception: it is
+main's native menu, as View > Server Theme is, and main acts on what is
+chosen there; the shell only asks for it to open.
+
+Settings may not exist yet when a game window asks it to show something —
+Customise opening the editor, All Themes opening Appearance — so main holds
+the request until Settings takes it (`settings.takeShow`), once, and only
+after its page has finished loading. Taken earlier, the first load's
+`onPageReset` would end the draft the request had just opened.
 
 A catalog entry the kit ships with cannot be removed from Settings,
 for a plain reason: `Catalog.load` never puts a missing built-in back. At file
@@ -554,6 +562,16 @@ small ones, and `csp.test.ts` fails on a `data:` image in the renderer while
 the CSP refuses them. Themes are checked on flat colours, so a change to a
 base, or to how a picture shows through the stone, is checked by
 `npm run capture`, not by a test.
+
+**The game page wears the theme by CSS alone.** `gamePage.ts` builds the
+sheets and `serverWindow.dressGamePage` swaps one into the game view's page
+whenever the look changes, the draft included. Nothing else goes in: no
+preload, and no code in the page's world. The canvas is the game's own art,
+and no theme reaches it. Nor does a theme's picture, since `zanaris-bg:` is
+not handled on the game partitions. The sheet sets no border, margin,
+padding or height that sets the page's height: the game pane's preferred
+sizes are measured off the stock page, Lost City's with a pixel or two of
+slack, so its bevels are inset shadows. `gamePage.test.ts` holds it to that.
 
 **The stone is flat.** A grain of noise drew over the shell's stone for one
 day, 2026-09-25 — the offline and starting pages, which have no CSP, had

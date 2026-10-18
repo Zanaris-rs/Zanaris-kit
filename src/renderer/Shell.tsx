@@ -486,9 +486,11 @@ export default function Shell(): ReactNode {
                  * The menu, where the window has no menu bar, then tabs and
                  * the control that makes one, then Sharing while a live link
                  * has no pane to mark, then the kit's own update while there
-                 * is one, then the two menus that act on the tab in front,
-                 * Setups and Add pane, side by side, and Settings alone in
-                 * the corner, and nothing else. The game's read-out used to
+                 * is one, then three menus side by side — Setups, Theme and
+                 * Add pane — and Settings alone in the corner, and nothing
+                 * else. Theme sits between the two that act on the tab in
+                 * front because it is a menu like them, worded so a player
+                 * finds the themes without guessing at the gear. The game's read-out used to
                  * sit at this bar's left on the grounds that it was the
                  * window's rather than any tab's — true, but it left the bar
                  * reading as two unrelated things, and a read-out about the
@@ -519,8 +521,8 @@ export default function Shell(): ReactNode {
                     </button>
                 )}
                 {/*
-                 * The tablist is its own box so Setups and Add pane, menu
-                 * buttons rather than tabs, sit outside it. `min-w-0` is
+                 * The tablist is its own box so Setups, Theme and Add pane,
+                 * menu buttons rather than tabs, sit outside it. `min-w-0` is
                  * what lets the tabs give way to them as they multiply,
                  * and `overflow-hidden` keeps what still does not fit
                  * inside the box: on a window narrower than the bar's
@@ -611,6 +613,27 @@ export default function Shell(): ReactNode {
                     className="btn shrink-0 gap-[3px]"
                 >
                     Setups
+                    <Caret />
+                </button>
+                {/*
+                 * Theme: every theme, ticked where this window's server
+                 * wears it, Just for the server, and the editor. Main's
+                 * menu, as Setups' is, and main acts on what is chosen, as
+                 * it does for View > Server Theme: no game window calls an
+                 * appearance handler.
+                 */}
+                <button
+                    type="button"
+                    title="Pick or customise a theme"
+                    aria-haspopup="menu"
+                    onClick={event => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        void window.zanaris.panes.themeMenu(box.left, box.bottom);
+                    }}
+                    style={ADD_PANE_BOX}
+                    className="btn shrink-0 gap-[3px]"
+                >
+                    Theme
                     <Caret />
                 </button>
                 {/*

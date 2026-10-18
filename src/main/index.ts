@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type MenuItemConstructorOptions, type MessageBoxOptions, type NativeImage, type WebContents } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, Notification, powerMonitor, protocol, safeStorage, screen, session, shell, webContents, type MenuItemConstructorOptions, type MessageBoxOptions, type NativeImage, type WebContents } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -8,7 +8,7 @@ import { userActions, type UserAction } from '../shared/chatInput';
 import { isNick, passwordProblem, readIgnore, readSettingsDraft, type SettingsSave } from '../shared/chatSettings';
 import { linkTarget } from '../shared/chatText';
 import { normaliseName } from '../shared/hiscores';
-import { IPC, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
+import { IPC, type SettingsShow, type SettingsState, type ShellState, type ToolId } from '../shared/ipc';
 import { NAME_INPUT_MAX } from '../shared/names';
 import { CUSTOM_TIMERS_MAX } from '../shared/timers';
 import {
@@ -68,7 +68,8 @@ import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversView, startupServers } from './servers';
-import { appearanceView, closeQuestion, deleteQuestion, lookFor, readEditing, type Editing } from './appearance';
+import { appearanceView, closeQuestion, deleteQuestion, editFromWindow, lookFor, readEditing, savesTo, themeChoice, themeMenu, type Editing, type ThemeMenuAction, type ThemeMenuEntry } from './appearance';
+import { swatchPng } from './swatch';
 import { APP_ID, APP_NAME, aboutOptions, devBranding } from './branding';
 import { reportUrl } from './report';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
@@ -679,6 +680,7 @@ const settings = new SettingsWindowSlot<SettingsWindow>((anchor, onClosed) =>
         anchor,
         onClosed: () => {
             onClosed();
+            settingsShow = null;
             endEditing();
         },
         onFrameChanged: pushSettings,
@@ -756,6 +758,70 @@ function openSettings(anchor: ServerWindow | undefined = focusedServerWindow()):
     const pinned = anchor ? anchor.alwaysOnTop() : appState.alwaysOnTop();
     const opened = settings.open(anchor && !anchor.window.isDestroyed() ? anchor.window.getBounds() : null);
     opened.window.setAlwaysOnTop(pinned);
+}
+
+/**
+ * What a game window last asked Settings to show, until Settings takes it
+ * (`settings.takeShow`). Cleared when Settings closes, so the gear never
+ * opens onto a request nobody took.
+ */
+let settingsShow: SettingsShow | null = null;
+
+/**
+ * Opens Settings beside `anchor`, as its gear does, on what `request` asks
+ * for: held for Settings to take, and Settings told so once its page has
+ * loaded — at once, when it already has.
+ */
+function showInSettings(anchor: ServerWindow, request: SettingsShow): void {
+    settingsShow = request;
+    openSettings(anchor);
+    const open = settings.current();
+    if (open) void open.loaded.then(() => open.ping());
+}
+
+/**
+ * Customise or Edit, from a window's Theme menu — Back to Editing while a
+ * draft is open: the editor open on what the window's server wears, saving
+ * for that server while it keeps its own theme (`appearance.editFromWindow`).
+ * The draft goes with every request. Settings keeps an editor it already has
+ * (`useShowRequests`) and comes forward on Appearance with it as it is, so
+ * nothing here asks main's `editing`, which trails the editor by a report: a
+ * Cancel still on its way would otherwise have Customise open no editor.
+ */
+function customiseFrom(sw: ServerWindow): void {
+    const id = sw.state().server.id;
+    showInSettings(sw, { section: 'appearance', edit: editFromWindow(appState.appearance(), id, catalog.get(id) !== undefined) });
+}
+
+/** What a window's Theme menu lists now: `appearance.themeMenu` given this window's server and the draft open in Settings, if any. */
+function themeMenuFor(sw: ServerWindow): ThemeMenuEntry[] {
+    const { server } = sw.state();
+    return themeMenu({
+        appearance: appState.appearance(),
+        server: { id: server.id, name: server.name },
+        listed: catalog.get(server.id) !== undefined,
+        isMac: process.platform === 'darwin',
+        drafting: editing?.name ?? null
+    });
+}
+
+/** A choice in a window's Theme menu. Nothing for a window gone since the menu opened. */
+function themeMenuChose(sw: ServerWindow, action: ThemeMenuAction): void {
+    if (sw.window.isDestroyed()) return;
+    if (action.kind === 'customise') {
+        customiseFrom(sw);
+        return;
+    }
+    if (action.kind === 'all') {
+        showInSettings(sw, { section: 'appearance', edit: null });
+        return;
+    }
+    const id = sw.state().server.id;
+    const change = themeChoice(appState.appearance(), id, catalog.get(id) !== undefined, action);
+    if (!change) return;
+    if ('server' in change) appState.setServerTheme(change.server, change.theme);
+    else appState.setTheme(change.theme);
+    appearanceChanged();
 }
 
 /** Whether an IPC call may manage the catalog: only the Settings window, the one page that has a servers UI. */
@@ -986,6 +1052,20 @@ ipcMain.handle(IPC.settingsOpen, event => {
 });
 
 /*
+ * Settings taking what a game window asked it to show (`showInSettings`):
+ * once, and only once its page has finished loading, so the first load's
+ * reset (`onPageReset`, which ends any draft) can never end the draft a
+ * request has just opened.
+ */
+ipcMain.handle(IPC.settingsTakeShow, (event): SettingsShow | null => {
+    const open = settings.current();
+    if (!open || !settings.isSender(event.sender.id) || !open.hasLoaded()) return null;
+    const request = settingsShow;
+    settingsShow = null;
+    return request;
+});
+
+/*
  * The file behind the server list, for the fields no form in Settings exposes.
  * Opened with the system's own editor, as File > Edit Server List… does. Only
  * Settings may ask: it hands out a path inside the profile, and a game window
@@ -1054,13 +1134,17 @@ function placeTheme(name: string, except: string | null): { id: string; name: st
  * cancelled, is pruned here. Save makes the theme the app theme and ends the
  * draft (Decision 2 of the 2026-09-26 spec). Every window has been wearing
  * it, and one that flipped back the moment it was kept would read as Save
- * undoing the work. A server with its own theme goes back to that one.
+ * undoing the work. A server with its own theme goes back to that one —
+ * unless the editor was opened from that server's window by its Theme menu,
+ * when Save makes the theme that server's own instead (`savesTo`), so the
+ * window it was made in keeps wearing it.
  *
- * Making it the app theme is a second write, after the theme is already
- * kept, so a failure there is only logged: answering that the save failed
- * would be untrue, and a second Save of a new theme would add a copy of it.
- * The app wears it for the rest of the session either way, since `setTheme`
- * takes the choice before it writes; only the next launch would not.
+ * Making it the app theme, or the server's, is a second write, after the
+ * theme is already kept, so a failure there is only logged: answering that
+ * the save failed would be untrue, and a second Save of a new theme would add
+ * a copy of it. The window wears it for the rest of the session either way,
+ * since `setTheme` and `setServerTheme` take the choice before they write;
+ * only the next launch would not.
  */
 ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } | { error: string } => {
     if (!settings.isSender(event.sender.id)) return { error: 'Only Settings saves themes.' };
@@ -1077,10 +1161,13 @@ ipcMain.handle(IPC.appearanceSaveCustom, (event, raw: unknown): { id: string } |
         log(`[main] could not save a theme: ${(err as Error).message}`);
         return { error: "Couldn't save the theme: the kit's settings file couldn't be written." };
     }
+    // Read before the draft ends: where Save goes is the draft's (`savesTo`).
+    const target = savesTo(appState.appearance(), catalog.list(), editing);
     try {
-        appState.setTheme(placed.id);
+        if (target) appState.setServerTheme(target.id, placed.id);
+        else appState.setTheme(placed.id);
     } catch (err) {
-        log(`[main] saved ${placed.id} but could not write it down as the app theme: ${(err as Error).message}`);
+        log(`[main] saved ${placed.id} but could not write it down as ${target ? `${target.id}'s theme` : 'the app theme'}: ${(err as Error).message}`);
     }
     editing = null;
     prunePictures();
@@ -1428,6 +1515,33 @@ ipcMain.handle(IPC.tabSetupsMenu, (event, x: unknown, y: unknown) => {
     if (typeof x !== 'number' || typeof y !== 'number') return;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     windowFor(event.sender)?.showSetupsMenu(x, y);
+});
+
+/**
+ * The tab bar's Theme menu, under the button. What it lists and what each
+ * item writes are `appearance.themeMenu` and `themeChoice`; this only turns
+ * the entries into menu items, each theme with its swatch (`swatch.ts`), and
+ * pops them on the window, as the ≡ below pops the app menu.
+ */
+ipcMain.handle(IPC.tabThemeMenu, (event, x: unknown, y: unknown) => {
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const sw = windowFor(event.sender);
+    if (!sw || sw.window.isDestroyed()) return;
+    const template = themeMenuFor(sw).map(
+        (entry): MenuItemConstructorOptions =>
+            entry.kind === 'separator'
+                ? { type: 'separator' }
+                : {
+                      label: entry.label,
+                      // Checkboxes rather than radios, as View > Server Theme's are and for its reason.
+                      ...(entry.checked === null ? {} : { type: 'checkbox' as const, checked: entry.checked }),
+                      enabled: entry.enabled,
+                      ...(entry.swatch ? { icon: nativeImage.createFromBuffer(swatchPng(entry.swatch, 2), { scaleFactor: 2 }) } : {}),
+                      click: () => themeMenuChose(sw, entry.action)
+                  }
+    );
+    Menu.buildFromTemplate(template).popup({ window: sw.window, x: Math.round(x), y: Math.round(y) });
 });
 
 /**
@@ -2834,10 +2948,18 @@ async function captureAndExit(dir: string): Promise<void> {
         }
 
         // Themes. Each as the app theme on the first window, with a tool
-        // opened beside what it already holds. Shell shots only: the game is
-        // never themed. The ledger flags a shot byte-identical to an earlier
-        // one, so a theme that failed to apply fails the run.
+        // opened beside what it already holds. Shell shots only here: the
+        // game page wearing a theme is shot once, in the override step below.
+        // The ledger flags a shot byte-identical to an earlier one, so a
+        // theme that failed to apply fails the run.
         showTool(first, 'timers');
+        // A native menu cannot be shot, so the Theme menu's swatches are
+        // written as pictures of their own, through the same `nativeImage`
+        // call the menu makes.
+        for (const theme of THEMES) await save(`swatch-${theme.id}`, async () => nativeImage.createFromBuffer(swatchPng(theme.colors, 2), { scaleFactor: 2 }));
+        // What the pass starts from: a server with a theme of its own here
+        // would wear it through every shot below, and they would all match.
+        log(`[capture] themes before the pass: app ${appState.appearance().theme}, servers ${JSON.stringify(appState.appearance().servers)}${editing ? `, a draft of ${editing.name}` : ''}`);
         for (const theme of THEMES) {
             appState.setTheme(theme.id);
             appearanceChanged();
@@ -2875,9 +2997,84 @@ async function captureAndExit(dir: string): Promise<void> {
             appearanceChanged();
             await wait(500);
             await shootShell(`theme-override-${own}`, second);
+            // The game page in the Wilderness: its ground and controls strip,
+            // on the first window, whose tab in front holds the game.
+            await save(`theme-override-${own}-game`, () => first.captureGame());
             const other = opened.find(sw => sw.state().server.id !== own);
-            if (other) await shootShell(`theme-override-${other.state().server.id}`, other);
+            if (other) {
+                await shootShell(`theme-override-${other.state().server.id}`, other);
+                // Its game page in the app's Morytania, at the game's own width.
+                await save(`theme-override-${other.state().server.id}-game`, () => other.captureGame());
+            }
             log(`[capture] override: ${own} wears stone ${second.state().theme.colors.stone}, ${other ? `${other.state().server.id} wears stone ${other.state().theme.colors.stone}` : 'no other server open'}`);
+            appState.setServerTheme(own, null);
+            appState.setTheme(DEFAULT_THEME);
+            appearanceChanged();
+        }
+
+        // The Theme menu's choices, through the function the menu calls,
+        // since a native menu cannot be clicked from here, each read back
+        // from the state: a pick sets the app theme while the server follows
+        // it; Just for gives the server the app's theme as its own; a pick
+        // then is the server's alone; unticked, it follows the app again.
+        // Then Customise from a window whose server keeps its own theme: the
+        // editor opens on a copy of that theme, and says where Save goes.
+        {
+            const own = first.state().server.id;
+            const read = (): string => `app ${appState.appearance().theme}, ${own} ${appState.appearance().servers[own] ?? 'follows'}`;
+            const expect = (step: string, wanted: string): void => {
+                if (read() !== wanted) fault(`theme-menu: after ${step}, ${read()} — expected ${wanted}`);
+            };
+            themeMenuChose(first, { kind: 'wear', theme: 'zanaris' });
+            expect('a pick', `app zanaris, ${own} follows`);
+            themeMenuChose(first, { kind: 'own', on: true });
+            expect('Just for', `app zanaris, ${own} zanaris`);
+            themeMenuChose(first, { kind: 'wear', theme: 'lumbridge' });
+            expect('a pick with Just for ticked', `app zanaris, ${own} lumbridge`);
+            if (first.state().theme.colors.stone !== themeById('lumbridge').colors.stone) fault(`theme-menu: ${own}'s window does not wear its own Lumbridge`);
+            themeMenuChose(first, { kind: 'own', on: false });
+            expect('Just for unticked', `app zanaris, ${own} follows`);
+            log(`[capture] theme menu: ${read()}`);
+
+            appState.setServerTheme(own, 'wilderness');
+            appearanceChanged();
+            themeMenuChose(first, { kind: 'customise' });
+            const settingsWindow = settings.current();
+            if (!settingsWindow) fault('settings-editor-from-window: Customise opened no Settings');
+            else {
+                await settingsWindow.loaded;
+                const contents = settingsWindow.window.webContents;
+                const heading = (): Promise<string[]> => contents.executeJavaScript(`[...document.querySelectorAll('h2')].map(h => h.textContent)`);
+                const saying = (): Promise<string | null> => contents.executeJavaScript(`[...document.querySelectorAll('p')].map(p => p.textContent).find(t => t.startsWith('Save makes this')) ?? null`);
+                for (let tries = 0; tries < 20 && !((await heading()).includes('New theme') && (await saying()) !== null); tries++) await wait(250);
+                if (!(await heading()).includes('New theme')) fault('settings-editor-from-window: Customise from a window did not open the editor');
+                const line = await saying();
+                if (line === null) fault('settings-editor-from-window: the editor does not say Save goes to the server');
+                const name = await contents.executeJavaScript(`document.querySelector('input')?.value ?? null`);
+                if (name !== `${themeById('wilderness').name} (copy)`) fault(`settings-editor-from-window: the editor opened on ${String(name)}, not a copy of the Wilderness`);
+                await wait(500);
+                await shootShell('settings-editor-from-window', settingsWindow);
+                log(`[capture] customise from ${own}: editor on ${String(name)}, "${line ?? 'no line'}"`);
+
+                // With the draft open, the window's menu greys its picks and
+                // offers the editor back; and Customise again, with the server
+                // now in another theme, keeps the draft that is open rather
+                // than opening one on the new theme.
+                const during = themeMenuFor(first);
+                const picksOpen = during.filter(e => e.kind === 'item' && e.action.kind === 'wear' && e.enabled).length;
+                const back = during.find(e => e.kind === 'item' && e.action.kind === 'customise');
+                const backLabel = back?.kind === 'item' ? back.label : 'no editor item';
+                if (picksOpen > 0 || !backLabel.startsWith('Back to Editing')) fault(`theme-menu-draft: with the editor open, ${picksOpen} pick(s) still open and "${backLabel}"`);
+                appState.setServerTheme(own, 'lumbridge');
+                appearanceChanged();
+                themeMenuChose(first, { kind: 'customise' });
+                await wait(800);
+                const kept = await contents.executeJavaScript(`document.querySelector('input')?.value ?? null`);
+                if (kept !== name) fault(`theme-menu-draft: Customise again replaced the open draft ${String(name)} with ${String(kept)}`);
+                log(`[capture] theme menu with a draft: ${picksOpen} picks open, "${backLabel}"; Customise again kept ${String(kept)}`);
+                settingsWindow.window.close();
+                await wait(800);
+            }
             appState.setServerTheme(own, null);
             appState.setTheme(DEFAULT_THEME);
             appearanceChanged();
