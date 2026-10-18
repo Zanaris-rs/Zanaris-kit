@@ -18,3 +18,11 @@ export interface ShareView {
     /** False on a platform Cloudflare publishes no cloudflared for. */
     available: boolean;
 }
+
+/**
+ * How a share over Tor runs its onion service: `full` hides the host behind
+ * three hops of its own, as Tor normally does; `single` is Tor's
+ * non-anonymous single-hop mode, which reaches friends sooner and hides
+ * nothing about where the host is.
+ */
+export type TorMode = 'full' | 'single';

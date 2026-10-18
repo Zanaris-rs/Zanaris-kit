@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { basename } from 'node:path';
 import { createInterface } from 'node:readline';
 
 /**
@@ -19,8 +20,10 @@ export interface TunnelSpawnSpec {
     command: string;
     args: string[];
     env: Record<string, string>;
-    /** One line of cloudflared's log. It writes all of it to stderr. */
+    /** One line of the program's log, read from `stream`. */
     onLine: (line: string) => void;
+    /** Where the program writes its log: stderr for cloudflared, the default; stdout for Tor. */
+    stream?: 'stdout' | 'stderr';
 }
 
 export interface QuickTunnelIo {
@@ -138,19 +141,23 @@ export function createLogParser(): { push(line: string): void; url(): string | n
     };
 }
 
-/** cloudflared as a child process, its stderr split into lines. */
+/** A child process, its log stream (stderr unless the spec says stdout) split into lines and the other ignored. */
 export function spawnProcess(spec: TunnelSpawnSpec): TunnelProcess {
-    const child = spawn(spec.command, spec.args, { env: spec.env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+    const stream = spec.stream ?? 'stderr';
+    const stdio: ['ignore', 'ignore' | 'pipe', 'ignore' | 'pipe'] = stream === 'stdout' ? ['ignore', 'pipe', 'ignore'] : ['ignore', 'ignore', 'pipe'];
+    const child = spawn(spec.command, spec.args, { env: spec.env, stdio, windowsHide: true });
+    const program = basename(spec.command).replace(/\.exe$/i, '');
     const exited = new Promise<number | null>(resolve => {
         child.once('error', err => {
-            spec.onLine(`[kit] could not run cloudflared: ${err.message}`);
+            spec.onLine(`[kit] could not run ${program}: ${err.message}`);
             resolve(null);
         });
-        // 'close' rather than 'exit': it comes after stderr is drained, so the
+        // 'close' rather than 'exit': it comes after the log is drained, so the
         // lines explaining an early exit are in the log before anyone reads it.
         child.once('close', code => resolve(code));
     });
-    if (child.stderr) createInterface({ input: child.stderr, crlfDelay: Infinity }).on('line', spec.onLine);
+    const log = stream === 'stdout' ? child.stdout : child.stderr;
+    if (log) createInterface({ input: log, crlfDelay: Infinity }).on('line', spec.onLine);
     return {
         exited,
         kill: signal => {
@@ -218,7 +225,7 @@ function attempt(io: QuickTunnelIo, opts: QuickTunnelOptions, logs: string[], pr
 }
 
 /** SIGTERM, then SIGKILL once the grace period is up. Every call shares the first one's stop. */
-function stopper(proc: TunnelProcess, graceMs: number): () => Promise<void> {
+export function stopper(proc: TunnelProcess, graceMs: number): () => Promise<void> {
     let stopping: Promise<void> | null = null;
     return () => {
         stopping ??= (async () => {
