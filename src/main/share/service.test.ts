@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ShareStatus } from '../../shared/share.ts';
+import type { ShareStart, ShareStatus, ShareView, TorMode } from '../../shared/share.ts';
 import type { CloudflaredAsset } from './cloudflared.ts';
-import { ShareService, shareDialogs, type ShareDeps, type ShareRelay, type ShareTunnel } from './service.ts';
+import { ShareService, shareDialogs, type ShareDeps, type ShareRelay, type ShareTransport, type ShareTunnel } from './service.ts';
 
 const ASSET: CloudflaredAsset = { file: 'cloudflared-darwin-arm64.tgz', size: 19_217_478, sha256: 'a'.repeat(64), archive: 'tgz', binarySha256: 'b'.repeat(64) };
 
@@ -42,8 +42,10 @@ class FakeTunnel implements ShareTunnel {
     private readonly exit = deferred<number | null>();
     readonly exited = this.exit.promise;
     readonly url: string;
-    constructor(url: string) {
+    readonly program: string;
+    constructor(url: string, program = 'cloudflared') {
         this.url = url;
+        this.program = program;
     }
     die(code: number | null): void {
         this.exit.resolve(code);
@@ -57,48 +59,78 @@ class FakeTunnel implements ShareTunnel {
     }
 }
 
-interface Harness {
-    deps: ShareDeps;
+/** One way's transport, recording every call the service makes of it. */
+interface FakeWay {
+    transport: ShareTransport;
     downloads: { onProgress: (p: number) => void; done: Deferred<string> }[];
-    relays: FakeRelay[];
     tunnels: { binary: string; port: number; signal: AbortSignal; done: Deferred<ShareTunnel> }[];
-    waits: { url: string; probe: { path: string; token: string }; signal: AbortSignal; done: Deferred<void> }[];
-    world: { port: number | null };
+    waits: { url: string; tunnel: ShareTunnel; probe: { path: string; token: string }; signal: AbortSignal; done: Deferred<void> }[];
 }
 
-function harness(over: { asset?: CloudflaredAsset | null } = {}): Harness {
-    const downloads: Harness['downloads'] = [];
-    const relays: FakeRelay[] = [];
-    const tunnels: Harness['tunnels'] = [];
-    const waits: Harness['waits'] = [];
-    const world = { port: 40001 as number | null };
-    const deps: ShareDeps = {
-        asset: over.asset === undefined ? ASSET : over.asset,
+function fakeWay(program: 'cloudflared' | 'tor'): FakeWay {
+    const downloads: FakeWay['downloads'] = [];
+    const tunnels: FakeWay['tunnels'] = [];
+    const waits: FakeWay['waits'] = [];
+    const transport: ShareTransport = {
+        program,
         ensureBinary: onProgress => {
             const done = deferred<string>();
             downloads.push({ onProgress, done });
             return done.promise;
-        },
-        startRelay: async target => {
-            const relay = new FakeRelay(50000 + relays.length, target);
-            relays.push(relay);
-            return relay;
         },
         startTunnel: (binary, port, signal) => {
             const done = deferred<ShareTunnel>();
             tunnels.push({ binary, port, signal, done });
             return done.promise;
         },
-        waitReachable: (url, probe, signal) => {
+        waitReachable: (tunnel, probe, signal) => {
             const done = deferred<void>();
-            waits.push({ url, probe, signal, done });
+            waits.push({ url: tunnel.url, tunnel, probe, signal, done });
             return done.promise;
+        }
+    };
+    return { transport, downloads, tunnels, waits };
+}
+
+/** Cloudflare's calls are the harness's own fields, as they were before Tor; Tor's are under `tor`. */
+interface Harness extends Omit<FakeWay, 'transport'> {
+    deps: ShareDeps;
+    relays: FakeRelay[];
+    tor: FakeWay & { modes: TorMode[] };
+    world: { port: number | null };
+}
+
+function harness(over: { cloudflare?: boolean; tor?: boolean } = {}): Harness {
+    const cf = fakeWay('cloudflared');
+    const tor = { ...fakeWay('tor'), modes: [] as TorMode[] };
+    const relays: FakeRelay[] = [];
+    const world = { port: 40001 as number | null };
+    const deps: ShareDeps = {
+        cloudflare: over.cloudflare === false ? null : cf.transport,
+        tor:
+            over.tor === false
+                ? null
+                : mode => {
+                      tor.modes.push(mode);
+                      return tor.transport;
+                  },
+        startRelay: async target => {
+            const relay = new FakeRelay(50000 + relays.length, target);
+            relays.push(relay);
+            return relay;
         },
         worldPort: () => world.port,
         log: () => {}
     };
-    return { deps, downloads, relays, tunnels, waits, world };
+    return { deps, downloads: cf.downloads, tunnels: cf.tunnels, waits: cf.waits, relays, tor, world };
 }
+
+const CF: ShareStart = { way: 'cloudflare' };
+const TOR_SINGLE: ShareStart = { way: 'tor', mode: 'single' };
+const ONION = 'http://' + 'a'.repeat(56) + '.onion';
+
+/** The view while off, on a platform that offers both ways. */
+const OFF: ShareView = { status: 'off', url: null, progress: null, reason: null, offered: { cloudflare: true, tor: true }, way: null, torMode: null };
 
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
 
@@ -110,7 +142,7 @@ async function connect(h: Harness, tunnel: FakeTunnel): Promise<void> {
 }
 
 async function goLive(h: Harness, service: ShareService, url = 'https://calm-river.trycloudflare.com'): Promise<FakeTunnel> {
-    const started = service.start();
+    const started = service.start(CF);
     await tick();
     h.downloads.at(-1)!.done.resolve('/cf/cloudflared');
     await tick();
@@ -122,7 +154,7 @@ async function goLive(h: Harness, service: ShareService, url = 'https://calm-riv
 
 /** A share whose tunnel is up and whose link is being checked. */
 async function goChecking(h: Harness, service: ShareService): Promise<{ started: Promise<void>; tunnel: FakeTunnel }> {
-    const started = service.start();
+    const started = service.start(CF);
     await tick();
     h.downloads.at(-1)!.done.resolve('/cf/cloudflared');
     await tick();
@@ -132,15 +164,17 @@ async function goChecking(h: Harness, service: ShareService): Promise<{ started:
     return { started, tunnel };
 }
 
-test('sharing starts off, and says whether this platform can share at all', () => {
-    assert.deepEqual(new ShareService(harness().deps).view(), { status: 'off', url: null, progress: null, reason: null, available: true });
-    assert.equal(new ShareService(harness({ asset: null }).deps).view().available, false);
+test('sharing starts off, and says which ways this platform can share', () => {
+    assert.deepEqual(new ShareService(harness().deps).view(), OFF);
+    assert.deepEqual(new ShareService(harness({ cloudflare: false }).deps).view().offered, { cloudflare: false, tor: true });
+    assert.deepEqual(new ShareService(harness({ tor: false }).deps).view().offered, { cloudflare: true, tor: false });
+    assert.deepEqual(new ShareService(harness({ cloudflare: false, tor: false }).deps).view().offered, { cloudflare: false, tor: false });
 });
 
 test('on a platform with no cloudflared, starting does nothing', async () => {
-    const h = harness({ asset: null });
+    const h = harness({ cloudflare: false });
     const service = new ShareService(h.deps);
-    await service.start();
+    await service.start(CF);
     assert.equal(service.view().status, 'off');
     assert.equal(h.downloads.length, 0);
 });
@@ -158,7 +192,7 @@ test('a share downloads, then opens the relay and the tunnel to it, checks the l
     assert.equal(h.relays.length, 1);
     assert.equal(h.tunnels[0]!.binary, '/cf/cloudflared');
     assert.equal(h.tunnels[0]!.port, h.relays[0]!.port);
-    assert.deepEqual(service.view(), { status: 'live', url: `${tunnel.url}/rs2.cgi`, progress: null, reason: null, available: true });
+    assert.deepEqual(service.view(), { ...OFF, status: 'live', url: `${tunnel.url}/rs2.cgi`, way: 'cloudflare' });
 });
 
 test('the relay asks for the world\'s port every time, so a restart moves it and does not end the share', async () => {
@@ -178,7 +212,7 @@ test('download progress is shown, and only a whole-percent change is worth telli
     const h = harness();
     const service = new ShareService(h.deps);
     let notified = 0;
-    void service.start();
+    void service.start(CF);
     await tick();
     service.subscribe(() => notified++);
     const { onProgress } = h.downloads[0]!;
@@ -196,8 +230,8 @@ test('download progress is shown, and only a whole-percent change is worth telli
 test('starting again while a share is on its way is the same share', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
-    const a = service.start();
-    const b = service.start();
+    const a = service.start(CF);
+    const b = service.start(CF);
     await tick();
     assert.equal(h.downloads.length, 1);
     h.downloads[0]!.done.resolve('/cf/cloudflared');
@@ -205,14 +239,14 @@ test('starting again while a share is on its way is the same share', async () =>
     await connect(h, new FakeTunnel('https://x.trycloudflare.com'));
     await Promise.all([a, b]);
     assert.equal(h.relays.length, 1);
-    await service.start();
+    await service.start(CF);
     assert.equal(h.tunnels.length, 1);
 });
 
 test('a failed download is reported, and nothing is opened', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
-    const started = service.start();
+    const started = service.start(CF);
     await tick();
     h.downloads[0]!.done.reject(new Error('cloudflared-darwin-arm64.tgz failed its checksum'));
     await started;
@@ -225,7 +259,7 @@ test('a failed download is reported, and nothing is opened', async () => {
 test('a tunnel that cannot open is reported, and the relay is closed', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
-    const started = service.start();
+    const started = service.start(CF);
     await tick();
     h.downloads[0]!.done.resolve('/cf/cloudflared');
     await tick();
@@ -253,7 +287,7 @@ test('while the link is checked no link is shown, and the check is of this tunne
     const h = harness();
     const service = new ShareService(h.deps);
     const { tunnel } = await goChecking(h, service);
-    assert.deepEqual(service.view(), { status: 'checking', url: null, progress: null, reason: null, available: true });
+    assert.deepEqual(service.view(), { ...OFF, status: 'checking', way: 'cloudflare' });
     assert.equal(h.waits.length, 1);
     assert.equal(h.waits[0]!.url, tunnel.url);
     assert.deepEqual(h.waits[0]!.probe, h.relays[0]!.probe);
@@ -298,7 +332,7 @@ test('stopping while the link is checked cancels the check, stops cloudflared an
     await Promise.all([started, stopped]);
     assert.equal(tunnel.stopped, 1);
     assert.equal(h.relays[0]!.closed, 1);
-    assert.deepEqual(service.view(), { status: 'off', url: null, progress: null, reason: null, available: true });
+    assert.deepEqual(service.view(), OFF);
 });
 
 test('a check that passes after its share was stopped does not bring the link back', async () => {
@@ -309,7 +343,7 @@ test('a check that passes after its share was stopped does not bring the link ba
     h.waits[0]!.done.resolve();
     await started;
     await tick();
-    assert.deepEqual(service.view(), { status: 'off', url: null, progress: null, reason: null, available: true });
+    assert.deepEqual(service.view(), OFF);
 });
 
 test('cloudflared dying while the link is checked fails the share at once and cancels the check', async () => {
@@ -335,13 +369,13 @@ test('stopping a live share stops the tunnel, closes the relay, and is not then 
     assert.equal(tunnel.stopped, 1);
     assert.equal(h.relays[0]!.closed, 1);
     await tick();
-    assert.deepEqual(service.view(), { status: 'off', url: null, progress: null, reason: null, available: true });
+    assert.deepEqual(service.view(), OFF);
 });
 
 test('stopping during the download leaves nothing to open once it finishes', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
-    const started = service.start();
+    const started = service.start(CF);
     await tick();
     await service.stop();
     assert.equal(service.view().status, 'off');
@@ -355,10 +389,10 @@ test('stopping during the download leaves nothing to open once it finishes', asy
 test('sharing again while an abandoned download is still running waits for that download rather than starting another', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
-    void service.start();
+    void service.start(CF);
     await tick();
     await service.stop();
-    const again = service.start();
+    const again = service.start(CF);
     await tick();
     assert.equal(h.downloads.length, 1);
     h.downloads[0]!.done.resolve('/cf/cloudflared');
@@ -371,7 +405,7 @@ test('sharing again while an abandoned download is still running waits for that 
 test('stopping while the tunnel connects cancels it and closes the relay', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
-    const started = service.start();
+    const started = service.start(CF);
     await tick();
     h.downloads[0]!.done.resolve('/cf/cloudflared');
     await tick();
@@ -386,7 +420,7 @@ test('stopping while the tunnel connects cancels it and closes the relay', async
 test('a tunnel that opens after its share was stopped is stopped at once', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
-    const started = service.start();
+    const started = service.start(CF);
     await tick();
     h.downloads[0]!.done.resolve('/cf/cloudflared');
     await tick();
@@ -426,7 +460,7 @@ test('the last window running your home server stops sharing as it closes, and n
 test('a failed share can be tried again', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
-    const first = service.start();
+    const first = service.start(CF);
     await tick();
     h.downloads[0]!.done.reject(new Error('HTTP 503'));
     await first;
@@ -444,27 +478,27 @@ test('a window that throws while being told does not stop the others hearing', a
         throw new Error('gone');
     });
     service.subscribe(() => heard++);
-    void service.start();
+    void service.start(CF);
     await tick();
     assert.ok(heard > 0);
 });
 
 test('the first share asks to download cloudflared, naming the file, its size and where it comes from', () => {
-    const [download, share] = shareDialogs({ asset: ASSET, installed: false, cheats: false });
+    const [download, share] = shareDialogs({ way: 'cloudflare', download: ASSET, cheats: false, lastTorMode: 'full' });
     assert.equal(download!.kind, 'download');
     assert.equal(download!.detail, "Downloads cloudflared-darwin-arm64.tgz (19.2 MB) from Cloudflare's GitHub, once.");
     assert.equal(share!.kind, 'share');
 });
 
 test('once cloudflared is here, only the share itself is asked about', () => {
-    const dialogs = shareDialogs({ asset: ASSET, installed: true, cheats: false });
+    const dialogs = shareDialogs({ way: 'cloudflare', download: null, cheats: false, lastTorMode: 'full' });
     assert.deepEqual(dialogs.map(d => d.kind), ['share']);
 });
 
 test('the share dialog says anyone with the link can be any character, and that cheats go with it when on', () => {
-    const [off] = shareDialogs({ asset: ASSET, installed: true, cheats: false });
-    const [on] = shareDialogs({ asset: ASSET, installed: true, cheats: true });
-    for (const dialog of [off!, on!]) assert.equal(dialog.confirm, 'Share');
+    const [off] = shareDialogs({ way: 'cloudflare', download: null, cheats: false, lastTorMode: 'full' });
+    const [on] = shareDialogs({ way: 'cloudflare', download: null, cheats: true, lastTorMode: 'full' });
+    for (const dialog of [off!, on!]) assert.deepEqual(dialog.buttons, ['Share']);
     assert.equal(off!.detail, 'Anyone with the link can log in as any character, yours included. Only share it with people you trust. The link ends when you stop sharing or quit.');
     assert.equal(
         on!.detail,
@@ -480,7 +514,7 @@ test('sharing again while a stop is finishing waits for it, then starts afresh',
     const stopping = service.stop().then(() => {
         stopFinished = true;
     });
-    const again = service.start();
+    const again = service.start(CF);
     assert.equal(h.downloads.length, 1, 'nothing new until the stop is done');
     await stopping;
     await tick();
@@ -498,12 +532,206 @@ test('closing the last window after a failure clears it', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
     service.acquire();
-    const started = service.start();
+    const started = service.start(CF);
     await tick();
     h.downloads[0]!.done.reject(new Error('HTTP 503'));
     await started;
     assert.equal(service.view().status, 'failed');
     service.release();
     await tick();
-    assert.deepEqual(service.view(), { status: 'off', url: null, progress: null, reason: null, available: true });
+    assert.deepEqual(service.view(), OFF);
+});
+
+// ── by Tor ───────────────────────────────────────────────────────────────
+
+/** A Tor share whose onion service is up and whose link is being checked. */
+async function goCheckingTor(h: Harness, service: ShareService, how: ShareStart = TOR_SINGLE): Promise<{ started: Promise<void>; tunnel: FakeTunnel }> {
+    const started = service.start(how);
+    await tick();
+    h.tor.downloads.at(-1)!.done.resolve('/tor/tor');
+    await tick();
+    const tunnel = new FakeTunnel(ONION, 'tor');
+    h.tor.tunnels.at(-1)!.done.resolve(tunnel);
+    await tick();
+    return { started, tunnel };
+}
+
+test('a share over Tor goes the same way, downloading, connecting, checking, then live on the onion\'s game page', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const seen: ShareStatus[] = [];
+    service.subscribe(() => {
+        const status = service.view().status;
+        if (seen.at(-1) !== status) seen.push(status);
+    });
+    const { started, tunnel } = await goCheckingTor(h, service);
+    assert.deepEqual(service.view(), { ...OFF, status: 'checking', way: 'tor', torMode: 'single' });
+    assert.equal(h.tor.waits[0]!.tunnel, tunnel);
+    assert.deepEqual(h.tor.waits[0]!.probe, h.relays[0]!.probe);
+    h.tor.waits[0]!.done.resolve();
+    await started;
+    assert.deepEqual(seen, ['downloading', 'connecting', 'checking', 'live']);
+    assert.deepEqual(h.tor.modes, ['single']);
+    assert.equal(h.tor.tunnels[0]!.binary, '/tor/tor');
+    assert.equal(h.tor.tunnels[0]!.port, h.relays[0]!.port);
+    assert.deepEqual(service.view(), { ...OFF, status: 'live', url: `${ONION}/rs2.cgi`, way: 'tor', torMode: 'single' });
+    assert.equal(h.downloads.length + h.tunnels.length + h.waits.length, 0, 'Cloudflare is not asked for anything');
+});
+
+test('the way and the mode stay shown while a share fails, and go when it is stopped', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const started = service.start({ way: 'tor', mode: 'full' });
+    await tick();
+    assert.deepEqual(service.view(), { ...OFF, status: 'downloading', progress: 0, way: 'tor', torMode: 'full' });
+    h.tor.downloads[0]!.done.reject(new Error('HTTP 503'));
+    await started;
+    assert.equal(service.view().way, 'tor');
+    assert.equal(service.view().torMode, 'full');
+    await service.stop();
+    assert.deepEqual(service.view(), OFF);
+});
+
+test('the Tor transport is asked for once per start, for that start\'s mode', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const first = service.start({ way: 'tor', mode: 'full' });
+    void service.start({ way: 'tor', mode: 'single' });
+    await tick();
+    assert.deepEqual(h.tor.modes, ['full'], 'a start while one is on its way is that share');
+    h.tor.downloads[0]!.done.reject(new Error('HTTP 503'));
+    await first;
+    void service.start(TOR_SINGLE);
+    await tick();
+    assert.deepEqual(h.tor.modes, ['full', 'single']);
+});
+
+test('where Tor is not offered, starting a share over it does nothing', async () => {
+    const h = harness({ tor: false });
+    const service = new ShareService(h.deps);
+    await service.start(TOR_SINGLE);
+    assert.deepEqual(service.view(), { ...OFF, offered: { cloudflare: true, tor: false } });
+});
+
+test('stopping a Tor share while its link is checked cancels the check and stops the onion service', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const { started, tunnel } = await goCheckingTor(h, service);
+    const stopped = service.stop();
+    assert.equal(h.tor.waits[0]!.signal.aborted, true);
+    assert.equal(service.view().status, 'off');
+    h.tor.waits[0]!.done.reject(new Error('Sharing was cancelled'));
+    await Promise.all([started, stopped]);
+    assert.equal(tunnel.stopped, 1);
+    assert.equal(h.relays[0]!.closed, 1);
+    assert.deepEqual(service.view(), OFF);
+});
+
+test('Tor exiting on its own says it was tor that exited, and is still stopped so its folder goes', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const { started, tunnel } = await goCheckingTor(h, service);
+    h.tor.waits[0]!.done.resolve();
+    await started;
+    tunnel.die(1);
+    await tick();
+    assert.equal(service.view().status, 'failed');
+    assert.match(service.view().reason!, /^The link closed unexpectedly \(tor exited with code 1\)/);
+    assert.equal(tunnel.stopped, 1);
+    assert.equal(h.relays[0]!.closed, 1);
+});
+
+test('cloudflared exiting on its own is stopped too, which ends nothing more', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const tunnel = await goLive(h, service);
+    tunnel.die(1);
+    await tick();
+    assert.equal(tunnel.stopped, 1);
+    assert.match(service.view().reason!, /^The link closed unexpectedly \(cloudflared exited with code 1\)/);
+});
+
+test('one download per program: two Tor starts share one, and Cloudflare\'s is its own', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    void service.start({ way: 'tor', mode: 'full' });
+    await tick();
+    await service.stop();
+    void service.start(TOR_SINGLE);
+    await tick();
+    assert.equal(h.tor.downloads.length, 1, 'the second Tor start waits on the first one\'s download');
+    await service.stop();
+    const cloudflare = service.start(CF);
+    await tick();
+    assert.equal(h.downloads.length, 1, 'Cloudflare downloads its own program alongside');
+    assert.equal(h.tor.downloads.length, 1);
+    h.downloads[0]!.done.resolve('/cf/cloudflared');
+    await tick();
+    await connect(h, new FakeTunnel('https://both.trycloudflare.com'));
+    await cloudflare;
+    assert.equal(service.view().status, 'live');
+});
+
+test('an abandoned download of the other program does not move this share\'s progress', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    void service.start(TOR_SINGLE);
+    await tick();
+    await service.stop();
+    void service.start(CF);
+    await tick();
+    h.tor.downloads[0]!.onProgress(0.7);
+    assert.equal(service.view().progress, 0);
+    h.downloads[0]!.onProgress(0.2);
+    assert.equal(service.view().progress, 0.2);
+});
+
+test('a failed share may be tried again the other way', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const first = service.start(CF);
+    await tick();
+    h.downloads[0]!.done.reject(new Error('HTTP 503'));
+    await first;
+    const { started } = await goCheckingTor(h, service);
+    h.tor.waits[0]!.done.resolve();
+    await started;
+    assert.deepEqual(service.view(), { ...OFF, status: 'live', url: `${ONION}/rs2.cgi`, way: 'tor', torMode: 'single' });
+});
+
+test('Cloudflare\'s dialogs go ahead with Download and Share', () => {
+    const [download, share] = shareDialogs({ way: 'cloudflare', download: ASSET, cheats: false, lastTorMode: 'single' });
+    assert.equal(download!.message, "Sharing needs Cloudflare's tunnel program.");
+    assert.deepEqual(download!.buttons, ['Download']);
+    assert.equal(share!.message, 'Share your home server with a link?');
+    assert.deepEqual(share!.buttons, ['Share']);
+});
+
+test('the first share over Tor asks to download Tor, naming the file, its size and where it comes from', () => {
+    const tor = { file: 'tor-expert-bundle-macos-aarch64-15.0.25.tar.gz', size: 21_456_789 };
+    const [download, share] = shareDialogs({ way: 'tor', download: tor, cheats: false, lastTorMode: 'full' });
+    assert.deepEqual(download, {
+        kind: 'download',
+        message: "Sharing over Tor needs Tor Project's Tor program.",
+        detail: 'Downloads tor-expert-bundle-macos-aarch64-15.0.25.tar.gz (21.5 MB) from torproject.org, once.',
+        buttons: ['Download']
+    });
+    assert.equal(share!.kind, 'share');
+});
+
+test('the Tor share offers Hide me and Faster, the mode picked last first, and says what each does', () => {
+    const [full] = shareDialogs({ way: 'tor', download: null, cheats: false, lastTorMode: 'full' });
+    const [single] = shareDialogs({ way: 'tor', download: null, cheats: true, lastTorMode: 'single' });
+    assert.equal(full!.kind, 'share');
+    assert.equal(full!.message, 'Share your home server over Tor?');
+    assert.deepEqual(full!.buttons, ['Hide me', 'Faster']);
+    assert.deepEqual(single!.buttons, ['Faster', 'Hide me']);
+    assert.equal(
+        full!.detail,
+        'Anyone with the link can log in as any character, yours included. Only share it with people you trust. The link ends when you stop sharing or quit. Hide me keeps your address hidden, and is slower. Faster hides only your friends. Friends need Tor Browser.'
+    );
+    assert.equal(
+        single!.detail,
+        'Anyone with the link can log in as any character, yours included. Only share it with people you trust. Cheats work for them too. The link ends when you stop sharing or quit. Hide me keeps your address hidden, and is slower. Faster hides only your friends. Friends need Tor Browser.'
+    );
 });
