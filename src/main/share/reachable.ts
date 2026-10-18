@@ -168,7 +168,7 @@ const TRYCLOUDFLARE_APEX = 'trycloudflare.com';
 
 const DNS_TIMEOUT_MS = 2_000;
 const PROBE_TIMEOUT_MS = 5_000;
-const BODY_LIMIT = 4096;
+export const BODY_LIMIT = 4096;
 const TYPE_A = 1;
 const TYPE_AAAA = 28;
 const CLASS_IN = 1;
