@@ -451,8 +451,8 @@ is the whole security story. Keep these true:
   Bumping `CLOUDFLARED_VERSION` means new sizes and digests from GitHub's asset
   API — for the macOS archives, the release notes list the binary's digest, not
   the archive's.
-- **Live means the link works, and nothing asks a caching resolver about its
-  name.** cloudflared registers before the link works: Cloudflare publishes
+- **Over Cloudflare, live means the link works, and nothing asks a caching
+  resolver about its name.** cloudflared registers before the link works: Cloudflare publishes
   the name, and its edge stops answering 530, anywhere from a few seconds to
   over half a minute later. `share/reachable.ts` waits for both — the name on
   every authoritative nameserver that answers, then the relay's token back
@@ -484,21 +484,39 @@ is the whole security story. Keep these true:
   share, and a share over Tor first sweeps away any a killed kit left behind.
 - **Tor reads nothing of the machine's and gets a new address every share.**
   `-f` and `--defaults-torrc` name an empty file, so no system or user torrc
-  is read; every `LD_*` and `DYLD_*` variable is dropped (`torEnv`); and
+  is read; every `LD_*` and `DYLD_*` variable is dropped (`torEnv`), then on
+  Linux `LD_LIBRARY_PATH` is set to the kit's own folder; and
   `--DataDirectory` is a fresh folder per share, holding the service's keys,
   removed when the share ends. `HiddenServicePort` points at the relay, never
   at the world. Hide me runs a normal onion service; Faster runs Tor's
   single-hop, non-anonymous mode, which hides the friends and not the host,
   and the dialog says so every share.
+- **What a Tor keeps between shares is public, and one Tor holds it at a
+  time.** Each Tor gets `--CacheDirectory`, `cache/service` for the onion
+  service and `cache/client` for Faster's link checker, beside `run/` so the
+  sweep never takes it, mode 700 as Tor requires. It holds the consensus and
+  relay descriptors, the same for every Tor, so a warm start skips most of a
+  bootstrap; the keys stay in the data folder, so the address is still new
+  every share. Tor locks the folder, so `cacheLeases` hands each kind to one
+  Tor at a time, and a Tor started while the last of its kind is stopping
+  waits for it to go.
+- **No Tor outlives the kit.** Every Tor, the service and the link checker,
+  is started with `__OwningControllerProcess` and the kit's pid, which Tor
+  polls and exits once it has gone, so a crash or a force quit, which runs no
+  exit handler, leaves no Tor holding the onion open.
 - **Live over Tor means the token came back through Tor, and nothing touches
   DNS.** `share/onionReachable.ts` asks the onion link for the relay's
   readiness path through a loopback SOCKS port, the host sent to Tor as a
   name (ATYP 3) and never looked up — a local lookup of a `.onion` name would
   hand it to the resolver — until the body is the token, a few seconds apart,
   for up to five minutes. Hide me checks through its own Tor's SOCKS port.
-  Faster's Tor cannot be a client, so a second, client-only Tor is started
-  from the same checked files to check through, and stopped as soon as it has
-  its answer or the share ends. Both are tracked and killed at exit, as
+  Faster's Tor cannot be a client, so a second, client-only Tor, the link
+  checker, is started from the same checked files to check through, and
+  stopped as soon as it has its answer or the share ends
+  (`checkThroughClient`). It has three minutes to bootstrap, and a failure
+  names it as the checker; if it exits while the link is checked, the check
+  fails at once rather than asking a closed port until the deadline. No
+  attempt is given longer than the time left before the deadline. Both are tracked and killed at exit, as
   cloudflared is. An onion link is `http://`, which the system browser cannot
   open, so Open in browser is offered only for a Cloudflare link.
 

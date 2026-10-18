@@ -21,10 +21,13 @@ const COPIED_MS = 1_500;
  *
  * Only the ways this computer is offered are drawn, side by side when wide
  * and stacked when narrow, and the note sits under them at every width.
- * Failed, Try again starts the way that failed and nothing else: the other
- * way comes back with Dismiss, since there is one share at a time. Narrow, what sits beside Cancel
- * goes above it instead: beside it, the words it cancels were left a word to
- * a line and Cancel went past the section's edge.
+ *
+ * Failed, Try again starts the way that failed and nothing else. The other
+ * way comes back with Dismiss, since there is one share at a time.
+ *
+ * Narrow, what sits beside Cancel goes above it instead. Beside it, the words
+ * it cancels were left a word to a line, and Cancel went past the section's
+ * edge.
  */
 export default function Friends({ view, worldReady, wide }: { view: ShareView; worldReady: boolean; wide: boolean }): ReactNode {
     const [copied, setCopied] = useState(false);
@@ -86,7 +89,7 @@ export default function Friends({ view, worldReady, wide }: { view: ShareView; w
             )}
             {view.status === 'checking' && (
                 <div className={row} aria-live="polite">
-                    <span className="text-cream">Waiting for the link to go live…</span>
+                    <span className="text-cream">{overTor ? 'Waiting for the Tor link to go live… this can take a few minutes.' : 'Waiting for the link to go live…'}</span>
                     {cancel}
                 </div>
             )}
