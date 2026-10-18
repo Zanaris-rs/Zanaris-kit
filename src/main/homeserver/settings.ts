@@ -1,4 +1,5 @@
 import { DEFAULT_HOME_SERVER_SETTINGS, isXpRate, type BuildLine, type HomeServerSettings } from '../../shared/homeserver.ts';
+import type { TorMode } from '../../shared/share.ts';
 import type { Confirmation } from './confirm.ts';
 
 /**
@@ -23,6 +24,11 @@ const BUILD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** The stored choice of build line: an id, or null. Whether that line still exists is the service's question. */
 export function readHomeServerBuild(x: unknown): string | null {
     return typeof x === 'string' && BUILD_ID.test(x) ? x : null;
+}
+
+/** The Tor mode the last share over Tor was started in: `single` only when stored exactly so, otherwise Hide me. */
+export function readShareTorMode(x: unknown): TorMode {
+    return x === 'single' ? 'single' : 'full';
 }
 
 /**

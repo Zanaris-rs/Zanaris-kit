@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_HOME_SERVER_SETTINGS, type BuildLine, type HomeServerSettings } from '../../shared/homeserver.ts';
-import { changesSettings, readSettingChange, readHomeServerSettings, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './settings.ts';
+import { changesSettings, readSettingChange, readHomeServerSettings, readShareTorMode, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './settings.ts';
 
 const DEFAULTS: HomeServerSettings = { cheats: false, xpRate: 1, members: true };
 
@@ -17,6 +17,14 @@ test('readHomeServerSettings keeps each good field and defaults each bad one', (
     assert.deepEqual(readHomeServerSettings({ cheats: true }), { ...DEFAULTS, cheats: true }, 'the block as the kit wrote it before xp rate and members');
     assert.deepEqual(readHomeServerSettings('junk'), DEFAULTS);
     assert.deepEqual(readHomeServerSettings(null), DEFAULTS);
+});
+
+test("readShareTorMode reads 'single' only for exactly 'single', and 'full' for anything else", () => {
+    assert.equal(readShareTorMode('single'), 'single');
+    assert.equal(readShareTorMode('full'), 'full');
+    for (const bad of [undefined, null, '', 'Single', ' single', 'tor-single', 1, true, {}, ['single']]) {
+        assert.equal(readShareTorMode(bad), 'full', JSON.stringify(bad));
+    }
 });
 
 test('readHomeServerSettings hands back a fresh object each time', () => {

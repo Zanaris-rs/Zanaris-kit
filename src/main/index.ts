@@ -64,7 +64,8 @@ import type { CommandRef } from '../shared/commands';
 import type { Confirm, Confirmation } from './homeserver/confirm';
 import { changesSettings, readSettingChange, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './homeserver/settings';
 import { ShareService, shareDialogs } from './share/service';
-import { cloudflaredInstalled, shareAsset, shareDeps } from './share/electron';
+import { cloudflaredInstalled, shareAsset, shareDeps, torAsset, torFilesInstalled } from './share/electron';
+import type { TorMode } from '../shared/share';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
 import { readAlertSound } from './timers/electron';
 import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversView, startupServers } from './servers';
@@ -1943,25 +1944,41 @@ ipcMain.handle(IPC.homeServerShowLog, async () => {
 // ── sharing your home server ──────────────────────────────────────────
 // Asked for from the Sharing section of a window running your home server, and nowhere else.
 
-ipcMain.handle(IPC.shareStart, async event => {
+ipcMain.handle(IPC.shareStart, async (event, way: unknown) => {
     const sw = homeServerWindow(event.sender);
-    if (!sw || !share || !homeServer || !shareAsset) return;
-    const { status } = share.view();
+    if (!sw || !share || !homeServer) return;
+    if (way !== 'cloudflare' && way !== 'tor') return;
+    const { status, offered } = share.view();
     if (status !== 'off' && status !== 'failed') return;
-    const dialogs = shareDialogs({ asset: shareAsset, installed: await cloudflaredInstalled(), cheats: homeServer.view().settings.cheats });
+    if (!offered[way]) return;
+    const lastTorMode = appState.shareTorMode();
+    let download: { file: string; size: number } | null = null;
+    if (way === 'cloudflare' && shareAsset && !(await cloudflaredInstalled())) download = { file: shareAsset.file, size: shareAsset.size };
+    if (way === 'tor' && torAsset && !(await torFilesInstalled())) download = { file: torAsset.file, size: torAsset.size };
+    const dialogs = shareDialogs({ way, download, cheats: homeServer.view().settings.cheats, lastTorMode });
+    // Over Tor the share's dialog names the modes, the last one first; which was pressed is the mode.
+    let mode: TorMode = lastTorMode;
     for (const ask of dialogs) {
+        const buttons = [...ask.buttons, 'Cancel'];
+        const cancel = buttons.length - 1;
         const { response } = await dialog.showMessageBox(sw.window, {
             type: ask.kind === 'share' ? 'warning' : 'question',
-            buttons: [ask.confirm, 'Cancel'],
+            buttons,
             // Letting strangers into the world is not something Return should do by accident.
-            defaultId: ask.kind === 'share' ? 1 : 0,
-            cancelId: 1,
+            defaultId: ask.kind === 'share' ? cancel : 0,
+            cancelId: cancel,
             message: ask.message,
             detail: ask.detail
         });
-        if (response !== 0) return;
+        if (response < 0 || response >= cancel) return;
+        if (ask.kind === 'share' && way === 'tor') mode = response === 0 ? lastTorMode : lastTorMode === 'full' ? 'single' : 'full';
     }
-    await share.start();
+    if (way === 'cloudflare') {
+        await share.start({ way: 'cloudflare' });
+        return;
+    }
+    appState.setShareTorMode(mode);
+    await share.start({ way: 'tor', mode });
 });
 
 ipcMain.handle(IPC.shareStop, async event => {
@@ -1976,6 +1993,7 @@ ipcMain.handle(IPC.shareCopy, event => {
 
 ipcMain.handle(IPC.shareOpen, async event => {
     const url = homeServerWindow(event.sender) ? share?.view().url : null;
+    // Only Cloudflare's: the system browser cannot open an onion link.
     if (url?.startsWith('https://')) await shell.openExternal(url);
 });
 
