@@ -16,7 +16,8 @@ import { connect, type Socket } from 'node:net';
  *
  * One path it answers itself: `probe.path`, with `probe.token` as the body, so
  * the kit can tell that a request to the link came through the tunnel to this
- * relay rather than stopping at a Cloudflare error page. Both are random per
+ * relay rather than stopping short of it, at a Cloudflare error page or a Tor
+ * circuit that went nowhere. Both are random per
  * relay, and the answer tells a caller nothing it did not already send.
  */
 

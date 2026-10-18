@@ -2,8 +2,9 @@
 
 /**
  * `connecting` until the tunnel's program has its link, then `checking`
- * until the link reaches the kit from the internet, which takes from a few
- * seconds to over half a minute more, and only then `live`.
+ * until the link reaches the kit from the internet, and only then `live`.
+ * Checking takes from a few seconds to over half a minute more by Cloudflare,
+ * and can take minutes over Tor.
  */
 export type ShareStatus = 'off' | 'downloading' | 'connecting' | 'checking' | 'live' | 'failed';
 

@@ -423,10 +423,12 @@ routes that write content. The owner cut it as a setting on 2026-09-16.
 
 ## Sharing your home server
 
-A share is a Cloudflare quick tunnel to a loopback relay in main, which
-forwards to the world's web port (`src/main/share/`). The link is the only
-access control — a world with no login server checks no passwords — so what
-the link reaches is the whole security story. Keep these true:
+A share is a Cloudflare quick tunnel or a Tor onion service in front of a
+loopback relay in main, which forwards to the world's web port
+(`src/main/share/`). Both ways go through the same relay, and there is one
+share at a time, whichever way it went. The link is the only access control —
+a world with no login server checks no passwords — so what the link reaches
+is the whole security story. Keep these true:
 
 - **Only the web port is ever a relay target.** The management port answers
   `POST /shutdown` with no authentication.
@@ -460,6 +462,45 @@ the link reaches is the whole security story. Keep these true:
   nameservers, over the kit's own UDP query with recursion off, and to a probe
   pinned to the address they gave: never through `dns.lookup`, `net.fetch` or a
   public resolver.
+- **Tor is the pinned Expert Bundle, and every file kept of it is checked
+  before every share.** `share/tor.ts` pins `TOR_BUNDLE_VERSION`, each
+  archive's size and digest, and the sha-256 of every file kept from its
+  `tor/` folder as Tor Project shipped it. The archive comes from Tor
+  Project's package archive, not dist.torproject.org, which keeps only the
+  newest few releases. `ensureTor` checks the archive, then every kept file in
+  a scratch folder before any is moved in, and nothing unchecked is ever left
+  where Tor goes; the check before a share is against the kit's pins, not
+  against anything recorded on the machine. Bumping `TOR_BUNDLE_VERSION` means
+  new sizes and digests for every archive and new per-file digests taken from
+  the files inside each bundle itself — Tor Project publishes none for them.
+- **On macOS, what runs is a signed copy of what was checked.** Tor Project
+  ships the macOS binary unsigned, and macOS kills an unsigned arm64 binary,
+  so `share/electron.ts` copies the checked files into a run folder of the
+  share's own, checks the copies against the pins again, and signs each ad
+  hoc there (`/usr/bin/codesign --sign -`). Signing changes the bytes, which
+  is why the checked files and the ones that run cannot be the same; the copy
+  is checked again so nothing that changed between the check and the copy
+  runs. Elsewhere the checked folder itself runs. Run folders go with their
+  share, and a share over Tor first sweeps away any a killed kit left behind.
+- **Tor reads nothing of the machine's and gets a new address every share.**
+  `-f` and `--defaults-torrc` name an empty file, so no system or user torrc
+  is read; every `LD_*` and `DYLD_*` variable is dropped (`torEnv`); and
+  `--DataDirectory` is a fresh folder per share, holding the service's keys,
+  removed when the share ends. `HiddenServicePort` points at the relay, never
+  at the world. Hide me runs a normal onion service; Faster runs Tor's
+  single-hop, non-anonymous mode, which hides the friends and not the host,
+  and the dialog says so every share.
+- **Live over Tor means the token came back through Tor, and nothing touches
+  DNS.** `share/onionReachable.ts` asks the onion link for the relay's
+  readiness path through a loopback SOCKS port, the host sent to Tor as a
+  name (ATYP 3) and never looked up — a local lookup of a `.onion` name would
+  hand it to the resolver — until the body is the token, a few seconds apart,
+  for up to five minutes. Hide me checks through its own Tor's SOCKS port.
+  Faster's Tor cannot be a client, so a second, client-only Tor is started
+  from the same checked files to check through, and stopped as soon as it has
+  its answer or the share ends. Both are tracked and killed at exit, as
+  cloudflared is. An onion link is `http://`, which the system browser cannot
+  open, so Open in browser is offered only for a Cloudflare link.
 
 The engine's own login server was ruled out for passwords: upstream binds it,
 and the friend and logger servers, to `0.0.0.0` in code. Turning it on would put
