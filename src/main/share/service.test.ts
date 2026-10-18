@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ShareStart, ShareStatus, ShareView, TorMode } from '../../shared/share.ts';
 import type { CloudflaredAsset } from './cloudflared.ts';
-import { ShareService, shareDialogs, type ShareDeps, type ShareRelay, type ShareTransport, type ShareTunnel } from './service.ts';
+import { ShareService, shareDialogs, torModeFor, type ShareDeps, type ShareRelay, type ShareTransport, type ShareTunnel } from './service.ts';
 
 const ASSET: CloudflaredAsset = { file: 'cloudflared-darwin-arm64.tgz', size: 19_217_478, sha256: 'a'.repeat(64), archive: 'tgz', binarySha256: 'b'.repeat(64) };
 
@@ -43,9 +43,15 @@ class FakeTunnel implements ShareTunnel {
     readonly exited = this.exit.promise;
     readonly url: string;
     readonly program: string;
+    /** What the program printed last, stamped as its own log is, and as its tunnel answers it without the stamp. */
+    private readonly last: { stamped: string; bare: string };
     constructor(url: string, program = 'cloudflared') {
         this.url = url;
         this.program = program;
+        this.last =
+            program === 'tor'
+                ? { stamped: 'Oct 18 19:36:15.000 [warn] Your Guard is failing an extremely large amount of circuits.', bare: 'Your Guard is failing an extremely large amount of circuits.' }
+                : { stamped: '2026-09-16T10:00:00Z ERR connection to edge lost', bare: 'connection to edge lost' };
     }
     die(code: number | null): void {
         this.exit.resolve(code);
@@ -55,7 +61,10 @@ class FakeTunnel implements ShareTunnel {
         this.exit.resolve(0);
     }
     logs(): string[] {
-        return ['2026-09-16T10:00:00Z ERR connection to edge lost'];
+        return [this.last.stamped];
+    }
+    lastLine(): string {
+        return this.last.bare;
     }
 }
 
@@ -592,6 +601,16 @@ test('the way and the mode stay shown while a share fails, and go when it is sto
     assert.deepEqual(service.view(), OFF);
 });
 
+test('a start the other way while one is starting joins the share already on its way', async () => {
+    const h = harness();
+    const service = new ShareService(h.deps);
+    const first = service.start(CF);
+    assert.equal(service.start(TOR_SINGLE), first);
+    await tick();
+    assert.deepEqual(h.tor.modes, []);
+    assert.equal(service.view().way, 'cloudflare');
+});
+
 test('the Tor transport is asked for once per start, for that start\'s mode', async () => {
     const h = harness();
     const service = new ShareService(h.deps);
@@ -636,7 +655,8 @@ test('Tor exiting on its own says it was tor that exited, and is still stopped s
     tunnel.die(1);
     await tick();
     assert.equal(service.view().status, 'failed');
-    assert.match(service.view().reason!, /^The link closed unexpectedly \(tor exited with code 1\)/);
+    assert.equal(service.view().reason, 'The link closed unexpectedly (tor exited with code 1): Your Guard is failing an extremely large amount of circuits.');
+    assert.doesNotMatch(service.view().reason!, /Oct 18|\[warn\]/, "Tor's timestamp and level are not part of the reason");
     assert.equal(tunnel.stopped, 1);
     assert.equal(h.relays[0]!.closed, 1);
 });
@@ -734,4 +754,15 @@ test('the Tor share offers Hide me and Faster, the mode picked last first, and s
         single!.detail,
         'Anyone with the link can log in as any character, yours included. Only share it with people you trust. Cheats work for them too. The link ends when you stop sharing or quit. Hide me keeps your address hidden, and is slower. Faster hides only your friends. Friends need Tor Browser.'
     );
+});
+
+test('each button of the Tor share dialog picks the mode it names, and Cancel or anything past it picks none', () => {
+    const named = { 'Hide me': 'full', Faster: 'single' } as const;
+    for (const lastTorMode of ['full', 'single'] as const) {
+        const share = shareDialogs({ way: 'tor', download: null, cheats: false, lastTorMode }).find(d => d.kind === 'share')!;
+        share.buttons.forEach((label, index) => assert.equal(torModeFor(lastTorMode, index), named[label as keyof typeof named], `${label} after ${lastTorMode}`));
+        assert.equal(torModeFor(lastTorMode, share.buttons.length), null, 'Cancel');
+        assert.equal(torModeFor(lastTorMode, -1), null);
+        assert.equal(torModeFor(lastTorMode, share.buttons.length + 1), null);
+    }
 });

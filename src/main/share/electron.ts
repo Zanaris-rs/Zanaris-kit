@@ -168,7 +168,7 @@ function cloudflareTransport(asset: CloudflaredAsset, log: (msg: string) => void
             const configPath = join(dir, 'quick.yml');
             if (!existsSync(configPath)) writeFileSync(configPath, '{}\n');
             const tunnel = await startQuickTunnel({ env: process.env, spawn: spawnTracked }, { binary, port, configPath, signal });
-            return { program: 'cloudflared', url: tunnel.url, exited: tunnel.exited, stop: tunnel.stop, logs: tunnel.logs };
+            return { program: 'cloudflared', url: tunnel.url, exited: tunnel.exited, stop: tunnel.stop, logs: tunnel.logs, lastLine: tunnel.lastLine };
         },
         waitReachable: (tunnel, probe, signal) => waitUntilReachable(nodeReachableIo(), { url: tunnel.url, probe, signal, log })
     };
@@ -193,7 +193,7 @@ function torTransport(asset: TorAsset, mode: TorMode, log: (msg: string) => void
         },
         startTunnel: async (checkedDir, relayPort, signal): Promise<ShareTunnel> => {
             const onion = await startOnion(io, { checkedDir, empty: emptyTorrc(), mode, relayPort, signal });
-            const tunnel: ShareTunnel = { program: 'tor', url: onion.url, exited: onion.exited, stop: onion.stop, logs: onion.logs };
+            const tunnel: ShareTunnel = { program: 'tor', url: onion.url, exited: onion.exited, stop: onion.stop, logs: onion.logs, lastLine: onion.lastLine };
             onions.set(tunnel, { checkedDir, socksPort: onion.socksPort });
             return tunnel;
         },

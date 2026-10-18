@@ -57,6 +57,8 @@ export interface QuickTunnel {
     stop(): Promise<void>;
     /** The last lines cloudflared printed, across both attempts. */
     logs(): string[];
+    /** The last line cloudflared printed, without its timestamp and level. */
+    lastLine(): string;
 }
 
 export class TunnelError extends Error {
@@ -223,7 +225,7 @@ function attempt(io: QuickTunnelIo, opts: QuickTunnelOptions, logs: string[], pr
         opts.signal?.addEventListener('abort', onAbort, { once: true });
         changed = () => {
             const url = parser.url();
-            if (url !== null && parser.registered()) finish(() => resolve({ url, exited: proc.exited, stop, logs: () => [...logs] }));
+            if (url !== null && parser.registered()) finish(() => resolve({ url, exited: proc.exited, stop, logs: () => [...logs], lastLine: () => unstamped(logs.at(-1)) }));
         };
         void proc.exited.then(code => finish(() => reject(new TunnelError(`cloudflared exited (code ${code}) before the tunnel connected${lastError(logs)}`, [...logs]))));
     });
@@ -252,6 +254,11 @@ export function stopper(proc: TunnelProcess, graceMs: number): () => Promise<voi
 
 /** The last error cloudflared logged, without its timestamp, or its last line of any kind. */
 function lastError(logs: string[]): string {
-    const line = [...logs].reverse().find(l => /\bERR\b/.test(l)) ?? logs.at(-1);
-    return line ? `: ${line.replace(/^\S+Z\s+[A-Z]{3}\s+/, '').trim()}` : '';
+    const line = unstamped([...logs].reverse().find(l => /\bERR\b/.test(l)) ?? logs.at(-1));
+    return line ? `: ${line}` : '';
+}
+
+/** A line of cloudflared's without the timestamp and level at its front: `2026-09-16T10:00:00Z ERR `. */
+function unstamped(line: string | undefined): string {
+    return line ? line.replace(/^\S+Z\s+[A-Z]{3}\s+/, '').trim() : '';
 }

@@ -180,6 +180,7 @@ test('an onion is ready only once the address is written and Tor has bootstrappe
     const onion = await pending;
     assert.equal(onion.url, `http://${HOST}`);
     assert.equal(onion.socksPort, 49731);
+    assert.equal(onion.lastLine(), 'Bootstrapped 100% (done): Done', 'without the timestamp and level');
     await onion.stop();
     assert.deepEqual(tor.trace, ['prepared', 'made', 'started', 'ended', 'removed /kit/run/data', 'released']);
 });

@@ -15,6 +15,8 @@ export interface ShareTunnel {
     readonly exited: Promise<number | null>;
     stop(): Promise<void>;
     logs(): string[];
+    /** The program's last line, without its own timestamp and level, which a failure ends with. */
+    lastLine(): string;
 }
 
 /** One way of putting the relay on a link: its program, how it starts, and how its link is known to work. */
@@ -253,7 +255,7 @@ export class ShareService {
         // A link still being checked has nothing left to check.
         this.controller?.abort();
         this.controller = null;
-        const last = lastLine(tunnel.logs());
+        const last = tunnel.lastLine();
         this.fail(`The link closed unexpectedly (${tunnel.program} exited with code ${code})${last ? `: ${last}` : ''}`);
         // The program is gone, but what it left is not: Tor's stop removes its data folder.
         void tunnel.stop().catch(err => this.deps.log(`[share] stopping the tunnel: ${String(err)}`));
@@ -285,12 +287,6 @@ export class ShareService {
     }
 }
 
-/** The program's last line, without cloudflared's timestamp and level. */
-function lastLine(logs: string[]): string {
-    const line = logs.at(-1);
-    return line ? line.replace(/^\S+Z\s+[A-Z]{3}\s+/, '').trim() : '';
-}
-
 export interface ShareDialog {
     kind: 'download' | 'share';
     message: string;
@@ -300,6 +296,22 @@ export interface ShareDialog {
 }
 
 const TOR_MODE_BUTTONS = { full: 'Hide me', single: 'Faster' } as const;
+
+/** The mode the share over Tor was not last started in. */
+function otherTorMode(mode: TorMode): TorMode {
+    return mode === 'full' ? 'single' : 'full';
+}
+
+/**
+ * The mode a press of the Tor share dialog's button `buttonIndex` picks, as
+ * `shareDialogs` orders them: the mode picked last, then the other. Null for
+ * Cancel, which comes after them, or anything else.
+ */
+export function torModeFor(lastTorMode: TorMode, buttonIndex: number): TorMode | null {
+    if (buttonIndex === 0) return lastTorMode;
+    if (buttonIndex === 1) return otherTorMode(lastTorMode);
+    return null;
+}
 
 /**
  * What to ask before a share, in order: the download when `download` names
@@ -320,7 +332,7 @@ export function shareDialogs(opts: { way: ShareWay; download: { file: string; si
     }
     const warning = `Anyone with the link can log in as any character, yours included. Only share it with people you trust.${opts.cheats ? ' Cheats work for them too.' : ''} The link ends when you stop sharing or quit.`;
     if (tor) {
-        const other: TorMode = opts.lastTorMode === 'full' ? 'single' : 'full';
+        const other = otherTorMode(opts.lastTorMode);
         dialogs.push({
             kind: 'share',
             message: 'Share your home server over Tor?',

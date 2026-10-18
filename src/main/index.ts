@@ -63,7 +63,7 @@ import { characterMenu, isSection, sectionsOffered, worldRunning, type Character
 import type { CommandRef } from '../shared/commands';
 import type { Confirm, Confirmation } from './homeserver/confirm';
 import { changesSettings, readSettingChange, removeBuildConfirmation, restartConfirmation, switchConfirmation } from './homeserver/settings';
-import { ShareService, shareDialogs } from './share/service';
+import { ShareService, shareDialogs, torModeFor } from './share/service';
 import { cloudflaredInstalled, shareAsset, shareDeps, torAsset, torFilesInstalled } from './share/electron';
 import type { TorMode } from '../shared/share';
 import { deleteTimer, newCustomId, readSaveInput, restoreTimer, saveTimer, timersFor, type TimersChange } from './timers/defs';
@@ -1971,7 +1971,7 @@ ipcMain.handle(IPC.shareStart, async (event, way: unknown) => {
             detail: ask.detail
         });
         if (response < 0 || response >= cancel) return;
-        if (ask.kind === 'share' && way === 'tor') mode = response === 0 ? lastTorMode : lastTorMode === 'full' ? 'single' : 'full';
+        if (ask.kind === 'share' && way === 'tor') mode = torModeFor(lastTorMode, response) ?? lastTorMode;
     }
     if (way === 'cloudflare') {
         await share.start({ way: 'cloudflare' });

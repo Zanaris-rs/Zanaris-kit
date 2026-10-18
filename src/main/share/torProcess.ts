@@ -31,6 +31,8 @@ export interface TorHandle {
     stop(): Promise<void>;
     /** The last lines Tor printed. */
     logs(): string[];
+    /** The last line Tor printed, without its timestamp and level. */
+    lastLine(): string;
 }
 
 const LOG_LINES = 200;
@@ -217,7 +219,7 @@ async function runTor(io: TorIo, opts: RunOptions, mode: TorMode | 'client', rel
         stopping ??= kill().then(tidy);
         return stopping;
     };
-    const handle: TorHandle = { exited: proc.exited, stop, logs: () => [...logs] };
+    const handle: TorHandle = { exited: proc.exited, stop, logs: () => [...logs], lastLine: () => parser.lastLine() };
     const timeoutMs = opts.bootTimeoutMs ?? BOOT_TIMEOUT_MS;
     const ending = (): string => (parser.lastLine() ? `: ${parser.lastLine()}` : '');
 
