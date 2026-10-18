@@ -70,6 +70,7 @@ import { readAlertSound } from './timers/electron';
 import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversView, startupServers } from './servers';
 import { appearanceView, closeQuestion, deleteQuestion, editFromWindow, lookFor, readEditing, savesTo, themeChoice, themeMenu, type Editing, type ThemeMenuAction, type ThemeMenuEntry } from './appearance';
 import { swatchPng } from './swatch';
+import { serversMenu, type ServersMenuAction, type ServersMenuEntry } from './servers';
 import { APP_ID, APP_NAME, aboutOptions, devBranding } from './branding';
 import { reportUrl } from './report';
 import { MIME, PICTURE_MAX, PictureStore } from './pictures';
@@ -803,6 +804,26 @@ function themeMenuFor(sw: ServerWindow): ThemeMenuEntry[] {
         isMac: process.platform === 'darwin',
         drafting: editing?.name ?? null
     });
+}
+
+/** What the Servers menu at the start of a window's tab bar lists now: `servers.serversMenu`, given the list and the windows open on it. */
+function serversMenuFor(): ServersMenuEntry[] {
+    return serversMenu({ catalog: catalog.list(), openCounts: windowCounts(), isMac: process.platform === 'darwin' });
+}
+
+/**
+ * A choice in a window's Servers menu: a new window of the server picked, as
+ * File > New Window For opens one, or Settings beside this window on Servers.
+ * Nothing for a server gone from the list since the menu opened, or for a
+ * window gone since then when it would have anchored Settings.
+ */
+function serversMenuChose(sw: ServerWindow, action: ServersMenuAction): void {
+    if (action.kind === 'open') {
+        const server = catalog.get(action.server);
+        if (server) openServer(server);
+        return;
+    }
+    if (!sw.window.isDestroyed()) showInSettings(sw, { section: 'servers', edit: null });
 }
 
 /** A choice in a window's Theme menu. Nothing for a window gone since the menu opened. */
@@ -1539,6 +1560,27 @@ ipcMain.handle(IPC.tabThemeMenu, (event, x: unknown, y: unknown) => {
                       enabled: entry.enabled,
                       ...(entry.swatch ? { icon: nativeImage.createFromBuffer(swatchPng(entry.swatch, 2), { scaleFactor: 2 }) } : {}),
                       click: () => themeMenuChose(sw, entry.action)
+                  }
+    );
+    Menu.buildFromTemplate(template).popup({ window: sw.window, x: Math.round(x), y: Math.round(y) });
+});
+
+/** The server button's menu, at the start of the tab bar: `servers.serversMenu`, popped under the button as the Theme menu is. */
+ipcMain.handle(IPC.tabServersMenu, (event, x: unknown, y: unknown) => {
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const sw = windowFor(event.sender);
+    if (!sw || sw.window.isDestroyed()) return;
+    const template = serversMenuFor().map(
+        (entry): MenuItemConstructorOptions =>
+            entry.kind === 'separator'
+                ? { type: 'separator' }
+                : {
+                      label: entry.label,
+                      enabled: entry.enabled,
+                      click: () => {
+                          if (entry.action) serversMenuChose(sw, entry.action);
+                      }
                   }
     );
     Menu.buildFromTemplate(template).popup({ window: sw.window, x: Math.round(x), y: Math.round(y) });
@@ -3078,6 +3120,40 @@ async function captureAndExit(dir: string): Promise<void> {
             appState.setServerTheme(own, null);
             appState.setTheme(DEFAULT_THEME);
             appearanceChanged();
+        }
+
+        // The Servers menu, through the function its items call, since a
+        // native menu cannot be clicked from here: Manage Servers opens
+        // Settings on Servers, and a pick opens a new window of that server,
+        // closed again once it is there. Not shot: Settings on Servers is the
+        // shot the run starts with.
+        {
+            const listed = serversMenuFor()
+                .flatMap(e => (e.kind === 'item' ? [e.label] : []))
+                .join(' · ');
+            log(`[capture] servers menu: ${listed}`);
+            serversMenuChose(first, { kind: 'manage' });
+            const settingsWindow = settings.current();
+            if (!settingsWindow) fault('servers-menu: Manage Servers opened no Settings');
+            else {
+                await settingsWindow.loaded;
+                const contents = settingsWindow.window.webContents;
+                const section = (): Promise<string | null> => contents.executeJavaScript(`document.querySelector('button[aria-current="true"]')?.textContent ?? null`);
+                for (let tries = 0; tries < 20 && (await section()) !== 'Servers'; tries++) await wait(250);
+                const open = await section();
+                if (open !== 'Servers') fault(`servers-menu: Manage Servers opened Settings on ${String(open)}, not Servers`);
+                log(`[capture] servers menu: Manage Servers opened Settings on ${String(open)}`);
+                settingsWindow.window.close();
+                await wait(500);
+            }
+            const before = new Set(serverWindows.keys());
+            const server = first.state().server;
+            serversMenuChose(first, { kind: 'open', server: server.id });
+            const made = [...serverWindows.entries()].filter(([id]) => !before.has(id)).map(([, sw]) => sw);
+            if (made.length !== 1 || made[0]!.state().server.id !== server.id) fault(`servers-menu: a pick of ${server.name} opened ${made.length} window(s): ${made.map(sw => sw.state().title).join(', ') || 'none'}`);
+            log(`[capture] servers menu: a pick of ${server.name} opened ${made.map(sw => sw.state().title).join(', ') || 'nothing'}`);
+            for (const sw of made) if (!sw.window.isDestroyed()) sw.window.destroy();
+            await wait(500);
         }
 
         // A crash, on the second window, which is closed next anyway. The
