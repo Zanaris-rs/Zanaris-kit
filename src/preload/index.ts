@@ -91,7 +91,7 @@ const api: ZanarisApi = {
         commands: () => ipcRenderer.invoke(IPC.homeServerCommands)
     },
     share: {
-        start: () => ipcRenderer.invoke(IPC.shareStart),
+        start: way => ipcRenderer.invoke(IPC.shareStart, way),
         stop: () => ipcRenderer.invoke(IPC.shareStop),
         copyLink: () => ipcRenderer.invoke(IPC.shareCopy),
         openLink: () => ipcRenderer.invoke(IPC.shareOpen)

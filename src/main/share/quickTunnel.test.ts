@@ -197,6 +197,7 @@ test('a tunnel that dies after going live says so through exited', async t => {
     const { io } = fake(t, 'crash-after-ready');
     const tunnel = await startQuickTunnel(io, OPTS);
     assert.equal(await tunnel.exited, 3);
+    assert.match(tunnel.lastLine(), /^Registered tunnel connection connIndex=0 /, 'the last line, without the timestamp and level');
     await tunnel.stop();
 });
 

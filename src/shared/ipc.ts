@@ -9,7 +9,7 @@ import type { DropTargets, DropZone, PaneView, SeamView, TabView } from './panes
 import type { PaneContent } from '../main/paneTree';
 import type { CharacterAction, CharacterOutcome, ImportPick, HomeServerSection, HomeServerSettings, HomeServerView } from './homeserver';
 import type { CommandRef } from './commands';
-import type { ShareView } from './share';
+import type { ShareView, ShareWay } from './share';
 import type { TimerAlert, TimerSaveInput, TimersView } from './timers';
 import type { ServersView } from '../main/servers.ts';
 import type { AppearanceView, Editing } from '../main/appearance.ts';
@@ -510,12 +510,16 @@ export interface ZanarisApi {
         commands(): Promise<CommandRef[] | null>;
     };
     share: {
-        /** Asks first: to download cloudflared if it is not here yet, then to share. */
-        start(): Promise<void>;
+        /**
+         * Asks first: to download the way's program (cloudflared, or Tor) if
+         * it is not here yet, then to share. Over Tor that second question
+         * also picks the mode, which main remembers.
+         */
+        start(way: ShareWay): Promise<void>;
         stop(): Promise<void>;
         /** Main copies the link it holds; the renderer never supplies one. */
         copyLink(): Promise<void>;
-        /** Opens the link in the system browser, to see what friends see. */
+        /** Opens the link in the system browser, to see what friends see. Only a Cloudflare link: the system browser cannot open an onion one. */
         openLink(): Promise<void>;
     };
     update: {

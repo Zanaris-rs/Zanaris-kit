@@ -534,6 +534,31 @@ test('the chosen build line is kept beside the settings, and read back as a line
     }
 });
 
+test("the last Tor mode is kept beside the settings, written only when it is not 'full'", () => {
+    const file = tempFile();
+    const state = new AppState(file);
+    state.load();
+    assert.equal(state.shareTorMode(), 'full', 'Hide me until a share picks otherwise');
+    state.setShareTorMode('full');
+    assert.equal('shareTorMode' in JSON.parse(readFileSync(file, 'utf8')).singlePlayer, false, 'the default is not written');
+    state.setHomeServerBuild('lostcity-289');
+    state.setShareTorMode('single');
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).singlePlayer, { cheats: false, xpRate: 1, members: true, build: 'lostcity-289', shareTorMode: 'single' });
+    const again = new AppState(file);
+    again.load();
+    assert.equal(again.shareTorMode(), 'single');
+    assert.equal(again.homeServerBuild(), 'lostcity-289');
+    again.setShareTorMode('full');
+    assert.equal('shareTorMode' in JSON.parse(readFileSync(file, 'utf8')).singlePlayer, false, 'back to the default, the key goes');
+    for (const bad of [7, '', 'Single', 'tor-single', null]) {
+        writeFileSync(file, JSON.stringify({ version: 1, worlds: {}, singlePlayer: { cheats: true, shareTorMode: bad } }));
+        const odd = new AppState(file);
+        odd.load();
+        assert.equal(odd.shareTorMode(), 'full', JSON.stringify(bad));
+        assert.equal(odd.homeServerSettings().cheats, true, 'a bad mode costs nothing else');
+    }
+});
+
 test('the startup list saves, and a fresh instance reads it back', () => {
     const file = tempFile();
     const a = new AppState(file);

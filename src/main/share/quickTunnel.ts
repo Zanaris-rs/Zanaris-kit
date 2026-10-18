@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { basename } from 'node:path';
 import { createInterface } from 'node:readline';
 
 /**
@@ -19,8 +20,14 @@ export interface TunnelSpawnSpec {
     command: string;
     args: string[];
     env: Record<string, string>;
-    /** One line of cloudflared's log. It writes all of it to stderr. */
+    /** One line of the program's log, read from `stream`. */
     onLine: (line: string) => void;
+    /**
+     * Where the program writes its log: stderr for cloudflared, the default,
+     * with stdout ignored; stdout for Tor, with stderr read as well, since
+     * that is where the loader says why a program would not start.
+     */
+    stream?: 'stdout' | 'stderr';
 }
 
 export interface QuickTunnelIo {
@@ -50,6 +57,8 @@ export interface QuickTunnel {
     stop(): Promise<void>;
     /** The last lines cloudflared printed, across both attempts. */
     logs(): string[];
+    /** The last line cloudflared printed, without its timestamp and level. */
+    lastLine(): string;
 }
 
 export class TunnelError extends Error {
@@ -138,19 +147,24 @@ export function createLogParser(): { push(line: string): void; url(): string | n
     };
 }
 
-/** cloudflared as a child process, its stderr split into lines. */
+/** A child process, its log split into lines: stderr alone by default, or stdout and stderr both when the spec says stdout. */
 export function spawnProcess(spec: TunnelSpawnSpec): TunnelProcess {
-    const child = spawn(spec.command, spec.args, { env: spec.env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+    const stream = spec.stream ?? 'stderr';
+    const stdio: ['ignore', 'ignore' | 'pipe', 'pipe'] = ['ignore', stream === 'stdout' ? 'pipe' : 'ignore', 'pipe'];
+    const child = spawn(spec.command, spec.args, { env: spec.env, stdio, windowsHide: true });
+    const program = basename(spec.command).replace(/\.exe$/i, '');
     const exited = new Promise<number | null>(resolve => {
         child.once('error', err => {
-            spec.onLine(`[kit] could not run cloudflared: ${err.message}`);
+            spec.onLine(`[kit] could not run ${program}: ${err.message}`);
             resolve(null);
         });
-        // 'close' rather than 'exit': it comes after stderr is drained, so the
+        // 'close' rather than 'exit': it comes after the log is drained, so the
         // lines explaining an early exit are in the log before anyone reads it.
         child.once('close', code => resolve(code));
     });
-    if (child.stderr) createInterface({ input: child.stderr, crlfDelay: Infinity }).on('line', spec.onLine);
+    for (const log of [child.stdout, child.stderr]) {
+        if (log) createInterface({ input: log, crlfDelay: Infinity }).on('line', spec.onLine);
+    }
     return {
         exited,
         kill: signal => {
@@ -211,14 +225,14 @@ function attempt(io: QuickTunnelIo, opts: QuickTunnelOptions, logs: string[], pr
         opts.signal?.addEventListener('abort', onAbort, { once: true });
         changed = () => {
             const url = parser.url();
-            if (url !== null && parser.registered()) finish(() => resolve({ url, exited: proc.exited, stop, logs: () => [...logs] }));
+            if (url !== null && parser.registered()) finish(() => resolve({ url, exited: proc.exited, stop, logs: () => [...logs], lastLine: () => unstamped(logs.at(-1)) }));
         };
         void proc.exited.then(code => finish(() => reject(new TunnelError(`cloudflared exited (code ${code}) before the tunnel connected${lastError(logs)}`, [...logs]))));
     });
 }
 
 /** SIGTERM, then SIGKILL once the grace period is up. Every call shares the first one's stop. */
-function stopper(proc: TunnelProcess, graceMs: number): () => Promise<void> {
+export function stopper(proc: TunnelProcess, graceMs: number): () => Promise<void> {
     let stopping: Promise<void> | null = null;
     return () => {
         stopping ??= (async () => {
@@ -240,6 +254,11 @@ function stopper(proc: TunnelProcess, graceMs: number): () => Promise<void> {
 
 /** The last error cloudflared logged, without its timestamp, or its last line of any kind. */
 function lastError(logs: string[]): string {
-    const line = [...logs].reverse().find(l => /\bERR\b/.test(l)) ?? logs.at(-1);
-    return line ? `: ${line.replace(/^\S+Z\s+[A-Z]{3}\s+/, '').trim()}` : '';
+    const line = unstamped([...logs].reverse().find(l => /\bERR\b/.test(l)) ?? logs.at(-1));
+    return line ? `: ${line}` : '';
+}
+
+/** A line of cloudflared's without the timestamp and level at its front: `2026-09-16T10:00:00Z ERR `. */
+function unstamped(line: string | undefined): string {
+    return line ? line.replace(/^\S+Z\s+[A-Z]{3}\s+/, '').trim() : '';
 }

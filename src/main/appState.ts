@@ -5,9 +5,10 @@ import type { ChatSettings } from '../shared/chat.ts';
 import { DEFAULT_CHAT } from '../shared/chat.ts';
 import { AUTO_JOIN_MAX, IGNORE_MAX, channelProblem, isNick } from '../shared/chatSettings.ts';
 import type { HomeServerSettings } from '../shared/homeserver.ts';
+import type { TorMode } from '../shared/share.ts';
 import type { TimersState } from '../shared/timers.ts';
 import { emptyTimersState, readTimers } from './timers/defs.ts';
-import { readHomeServerBuild, readHomeServerSettings } from './homeserver/settings.ts';
+import { readHomeServerBuild, readHomeServerSettings, readShareTorMode } from './homeserver/settings.ts';
 import { CUSTOM_MAX, DEFAULT_THEME, isThemeId, readCustomTheme, type Appearance, type Theme } from '../shared/themes.ts';
 import { writeWhole } from './wholeFile.ts';
 import { picturesNamedIn } from './pictures.ts';
@@ -30,10 +31,12 @@ interface StateFile {
     chat: ChatSettings & { nickserv?: string };
     /**
      * `build` is the line the player chose, absent until they choose one.
+     * `shareTorMode` is the mode the last share over Tor started in, absent
+     * while it is the default, `full`.
      * The key is still `singlePlayer`: the tool was renamed, the files people
      * have were not, and nobody reads this one.
      */
-    singlePlayer: HomeServerSettings & { build?: string };
+    singlePlayer: HomeServerSettings & { build?: string; shareTorMode?: TorMode };
     hiscores: Record<string, string>;
     alwaysOnTop: boolean;
     timers: TimersState;
@@ -224,6 +227,8 @@ export class AppState {
     // Home server's settings: cheats off, xp as the game gives it and members on, until asked otherwise.
     private homeServer: HomeServerSettings = readHomeServerSettings(undefined);
     private homeServerBuildId: string | null = null;
+    // Hide me, until a share over Tor is started Faster.
+    private torMode: TorMode = 'full';
     // Last name looked up per server, so the Hiscores box reopens prefilled rather than empty.
     private hiscoresNames = new Map<string, string>();
     // Off until asked for: a window that floats over everything else is not
@@ -255,6 +260,7 @@ export class AppState {
         this.nickservSealed = null;
         this.homeServer = readHomeServerSettings(undefined);
         this.homeServerBuildId = null;
+        this.torMode = 'full';
         this.hiscoresNames = new Map();
         this.onTop = false;
         this.timersState = emptyTimersState();
@@ -315,6 +321,7 @@ export class AppState {
         this.nickservSealed = readSealed(parsed?.chat);
         this.homeServer = readHomeServerSettings(parsed?.singlePlayer);
         this.homeServerBuildId = readHomeServerBuild((parsed?.singlePlayer as { build?: unknown } | undefined)?.build);
+        this.torMode = readShareTorMode((parsed?.singlePlayer as { shareTorMode?: unknown } | undefined)?.shareTorMode);
         this.hiscoresNames = new Map(Object.entries(readHiscores(parsed?.hiscores)));
         // Absent in files written before the preference existed, so anything that is not a boolean keeps the default.
         if (typeof parsed?.alwaysOnTop === 'boolean') this.onTop = parsed.alwaysOnTop;
@@ -450,6 +457,16 @@ export class AppState {
 
     setHomeServerBuild(id: string): void {
         this.homeServerBuildId = readHomeServerBuild(id);
+        this.save();
+    }
+
+    /** The mode the last share over Tor started in, which its dialog lists first. */
+    shareTorMode(): TorMode {
+        return this.torMode;
+    }
+
+    setShareTorMode(mode: TorMode): void {
+        this.torMode = readShareTorMode(mode);
         this.save();
     }
 
@@ -646,7 +663,11 @@ export class AppState {
             worlds: Object.fromEntries(this.worlds),
             warnOnSwitch: this.warn,
             chat: this.nickservSealed === null ? this.chatSettings : { ...this.chatSettings, nickserv: this.nickservSealed },
-            singlePlayer: this.homeServerBuildId === null ? this.homeServer : { ...this.homeServer, build: this.homeServerBuildId },
+            singlePlayer: {
+                ...this.homeServer,
+                ...(this.homeServerBuildId === null ? {} : { build: this.homeServerBuildId }),
+                ...(this.torMode === 'full' ? {} : { shareTorMode: this.torMode })
+            },
             hiscores: Object.fromEntries(this.hiscoresNames),
             alwaysOnTop: this.onTop,
             timers: this.timersState,

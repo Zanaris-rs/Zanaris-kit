@@ -26,7 +26,8 @@ const STATUS: Record<HomeServerView['status'], string> = {
  * also give their rows 4px sides rather than 8. The row of sections becomes
  * one tab that opens a menu of them, and under it the section scrolls as one
  * page rather than each list scrolling inside it (homeserver/fill.ts). A note
- * on one button, a World switch's or Share's, sits under it at every width.
+ * on buttons sits under them at every width: under a World switch, and under
+ * Sharing's Share buttons.
  *
  * The name box beside Duplicate, the widest of its buttons, and Cancel holds
  * "Character name" whole from about 284: it was 273 beside Rename, and
