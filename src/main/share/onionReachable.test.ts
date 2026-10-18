@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer, type Server, type Socket } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { fetchViaSocks, waitOnionReachable, type OnionIo } from './onionReachable.ts';
-import type { ProbeAnswer } from './reachable.ts';
+import { BODY_LIMIT, type ProbeAnswer } from './reachable.ts';
 
 const HOST = `${'a'.repeat(56)}.onion`;
 const URL_ = `http://${HOST}`;
@@ -14,11 +14,13 @@ function fake(script: (attempt: number) => ProbeAnswer | Error) {
     const controller = new AbortController();
     const sleeps: number[] = [];
     const calls: string[] = [];
+    const timeouts: number[] = [];
     let attempt = 0;
     let clock = 0;
     const io: OnionIo = {
-        fetchViaSocks: async (port, host, path) => {
+        fetchViaSocks: async (port, host, path, _signal, timeoutMs) => {
             calls.push(`${port} ${host} ${path}`);
+            timeouts.push(timeoutMs);
             const next = script(attempt++);
             if (next instanceof Error) throw next;
             return next;
@@ -30,7 +32,7 @@ function fake(script: (attempt: number) => ProbeAnswer | Error) {
         },
         now: () => clock
     };
-    return { io, controller, sleeps, calls };
+    return { io, controller, sleeps, calls, timeouts };
 }
 
 const run = (f: ReturnType<typeof fake>, extra: { deadlineMs?: number; intervalMs?: number } = {}) =>
@@ -52,9 +54,15 @@ test('a wrong body, a 503 and a thrown fetch keep waiting', async () => {
 
 test('the deadline rejects with the message', async () => {
     const f = fake(() => answer(503));
-    await assert.rejects(run(f, { deadlineMs: 60_000, intervalMs: 20_000 }), { message: 'The onion link did not come up within 1 minutes' });
+    await assert.rejects(run(f, { deadlineMs: 60_000, intervalMs: 20_000 }), { message: 'The onion link did not come up within 1 minute' });
     const g = fake(() => answer(503));
     await assert.rejects(run(g), { message: 'The onion link did not come up within 5 minutes' });
+});
+
+test('no attempt is given longer than the time left before the deadline', async () => {
+    const f = fake(() => answer(503));
+    await assert.rejects(run(f, { deadlineMs: 90_000, intervalMs: 40_000 }));
+    assert.deepEqual(f.timeouts, [60_000, 50_000, 10_000]);
 });
 
 test('an abort rejects promptly', async () => {
@@ -160,7 +168,7 @@ test('fetchViaSocks stops reading at the body limit', async () => {
     const s = await socks(0, socket => socket.write(`HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n${'x'.repeat(8000)}`));
     try {
         const got = await fetchViaSocks(s.port, HOST, PROBE.path, never);
-        assert.equal(got.body.length, 4096);
+        assert.equal(got.body.length, BODY_LIMIT);
     } finally {
         stop(s);
     }

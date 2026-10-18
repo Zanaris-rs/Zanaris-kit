@@ -16,8 +16,8 @@ import { BODY_LIMIT, type ProbeAnswer } from './reachable.ts';
  */
 
 export interface OnionIo {
-    /** Rejects on a network or SOCKS error, or when `signal` aborts. */
-    fetchViaSocks(socksPort: number, host: string, path: string, signal: AbortSignal): Promise<ProbeAnswer>;
+    /** Rejects on a network or SOCKS error, after `timeoutMs`, or when `signal` aborts. */
+    fetchViaSocks(socksPort: number, host: string, path: string, signal: AbortSignal, timeoutMs: number): Promise<ProbeAnswer>;
     /** Rejects if `signal` aborts. */
     sleep(ms: number, signal: AbortSignal): Promise<void>;
     now(): number;
@@ -37,6 +37,8 @@ export interface OnionWaitOptions {
 
 const DEADLINE_MS = 300_000;
 const INTERVAL_MS = 5_000;
+/** The longest one attempt may take, and never longer than the time left before the deadline. */
+const ATTEMPT_TIMEOUT_MS = 60_000;
 
 /**
  * Resolves once a request to the link comes back from this share's relay with
@@ -50,6 +52,10 @@ export async function waitOnionReachable(io: OnionIo, opts: OnionWaitOptions): P
     const log = opts.log ?? (() => {});
     const started = io.now();
     const cancelled = (): Error => new Error('Sharing was cancelled');
+    const overdue = (): Error => {
+        const minutes = Math.round(deadlineMs / 60_000);
+        return new Error(`The onion link did not come up within ${minutes} minute${minutes === 1 ? '' : 's'}`);
+    };
 
     let said = '';
     /** Every attempt reports what it saw; the log hears it only when it changes. */
@@ -62,8 +68,11 @@ export async function waitOnionReachable(io: OnionIo, opts: OnionWaitOptions): P
     if (signal.aborted) throw cancelled();
     log(`[share] waiting for ${host} to work over Tor`);
     for (;;) {
+        // The sleep before an attempt ends at the deadline at the latest, so a wait with nothing left is the deadline.
+        const timeoutMs = Math.min(ATTEMPT_TIMEOUT_MS, deadlineMs - (io.now() - started));
+        if (timeoutMs <= 0) throw overdue();
         try {
-            const answer = await io.fetchViaSocks(opts.socksPort, host, probe.path, signal);
+            const answer = await io.fetchViaSocks(opts.socksPort, host, probe.path, signal, timeoutMs);
             if (answer.status === 200 && answer.body === probe.token) {
                 log(`[share] ${host} reached this share after ${Math.round((io.now() - started) / 1000)} s`);
                 return;
@@ -75,7 +84,7 @@ export async function waitOnionReachable(io: OnionIo, opts: OnionWaitOptions): P
 
         if (signal.aborted) throw cancelled();
         const left = deadlineMs - (io.now() - started);
-        if (left <= 0) throw new Error(`The onion link did not come up within ${Math.round(deadlineMs / 60_000)} minutes`);
+        if (left <= 0) throw overdue();
         try {
             await io.sleep(Math.min(intervalMs, left), signal);
         } catch (err) {
@@ -86,11 +95,9 @@ export async function waitOnionReachable(io: OnionIo, opts: OnionWaitOptions): P
 
 // ── the real io ─────────────────────────────────────────────────────────
 
-const ATTEMPT_TIMEOUT_MS = 60_000;
-
 export function nodeOnionIo(): OnionIo {
     return {
-        fetchViaSocks: (socksPort, host, path, signal) => fetchViaSocks(socksPort, host, path, signal),
+        fetchViaSocks: (socksPort, host, path, signal, timeoutMs) => fetchViaSocks(socksPort, host, path, signal, { timeoutMs }),
         sleep: (ms, signal) => delay(ms, undefined, { signal }),
         now: () => performance.now()
     };
