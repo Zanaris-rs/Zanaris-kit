@@ -7,6 +7,7 @@ import {
     contentOf,
     evenOut,
     gameSizeIn,
+    insertPane,
     layoutTree,
     leaf,
     makeRoom,
@@ -23,16 +24,17 @@ import {
     type PaneContent,
     type PaneNode,
     type Rect,
+    type Side,
     type Size
 } from './paneTree.ts';
-import { canDrop, dropPane, dropTargets, type DropTargets, type DropZone } from './paneDrop.ts';
+import { canDrop, canInsert, dropPane, dropTargets, insertTargets, type DropTargets, type DropZone } from './paneDrop.ts';
 import { PANE_HEADER_HEIGHT } from '../shared/layout.ts';
 import { canClosePane, paneContentItems, paneName, showsClocks } from './paneMenu.ts';
 import { closeTab, closingTab, labelOfTab, loadingLayout, marksOfTab, moveGame, newTab, nextIds, selectTab, type TabClosing, type TabSet } from './tabs.ts';
 import { instantiateLayout, type StoredNode } from './layoutFile.ts';
-import type { ChatPage } from '../shared/chat.ts';
+import { renameRoom, renamedFit } from './chatPanes.ts';
 import type { ToolId } from '../shared/ipc.ts';
-import type { PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
+import type { ChatPaneView, PageState, PaneView, SeamView, TabView } from '../shared/panes.ts';
 import { troubleNotice, type PaneTrouble } from '../shared/paneNotice.ts';
 
 /**
@@ -97,8 +99,6 @@ export interface PaneHostDeps {
     contextMenu: (paneId: string, x: number, y: number) => void;
     /** The ground a page view shows before its page draws: the theme's `window`. A getter, since the theme can change while the window is open. */
     background: () => string;
-    /** A chat pane's page, Settings or the conversation, which the window keeps. Null for any other pane. */
-    chatPage: (paneId: string) => ChatPage | null;
 }
 
 export function createPaneHost(deps: PaneHostDeps): PaneHost {
@@ -151,7 +151,8 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
     const fits = new Map<string, Fitted>();
     if (deps.initialSize) fits.set(set.activeId, arrangedAt(active(), deps.initialSize));
     /**
-     * True while a pane is being dragged by its header.
+     * True while a pane is being dragged by its header, or a room by its tab
+     * in a chat pane's row.
      *
      * Every native view is hidden for the duration, because the shell cannot
      * draw over one: a game or page view is stacked above it, so a drop target
@@ -437,6 +438,25 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         return made.grown;
     }
 
+    /**
+     * A pane added beside another — a split, or a room put on an edge — made
+     * by `make` with the next ids, adopted with its room made (`adoptAdded`)
+     * and focused. Null, with nothing changed, when the pane it was to go
+     * beside is not in the tab in front.
+     */
+    function added(make: (ids: { paneId: string; splitId: string }) => PaneNode, room: Size): { paneId: string | null; grown: Size } {
+        const born = `pane-${nextPane++}`;
+        const next = make({ paneId: born, splitId: `split-${nextSplit++}` });
+        if (!paneIds(next).includes(born)) return { paneId: null, grown: { width: 0, height: 0 } };
+        const grown = adoptAdded(next, room);
+        focus(born);
+        return { paneId: born, grown };
+    }
+
+    function insert(to: string, side: Side, room: Size, content: PaneContent): { paneId: string | null; grown: Size } {
+        return added(ids => insertPane(active(), to, side, ids, content), room);
+    }
+
     return {
         tree: active,
         trees: () => set.tabs.map(tab => tab.tree),
@@ -460,7 +480,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             place();
         },
 
-        panes(): PaneView[] {
+        panes(chat: (paneId: string) => ChatPaneView | null): PaneView[] {
             const tree = active();
             const trees = set.tabs.map(tab => tab.tree);
             return paneIds(tree).map(paneId => {
@@ -473,7 +493,7 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
                     focused: paneId === focused(),
                     closable: canClosePane(tree, paneId),
                     page: pageStates.get(paneId) ?? null,
-                    chatPage: deps.chatPage(paneId),
+                    chat: chat(paneId),
                     // Only the launcher draws a list; every other pane reaches
                     // the same one through its header, which main pops as a
                     // native menu and builds on the spot.
@@ -526,11 +546,32 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
         },
 
         endDrag: () => setDragging(false),
+
+        beginInsertDrag(content: PaneContent): DropTargets {
+            setDragging(true);
+            return insertTargets(active(), bounds, content);
+        },
+
+        dropInsert(content: PaneContent, to: string, zone: DropZone, room: Size): { paneId: string | null; grown: Size } {
+            // Out of the drag before the tree changes, and asked again rather
+            // than trusted from the table the drag began with, for the reasons
+            // `drop` gives.
+            dragging = false;
+            if (zone === 'centre' || !canInsert(active(), bounds, to, zone)) {
+                place();
+                return { paneId: null, grown: { width: 0, height: 0 } };
+            }
+            const made = insert(to, zone, room, content);
+            if (made.paneId === null) place();
+            return made;
+        },
+
         rectOf: (paneId: string) => rects.get(paneId) ?? null,
 
-        newTab(): void {
-            set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`);
+        newTab(content: PaneContent = { kind: 'empty' }): void {
+            set = newTab(set, `tab-${nextTab++}`, `pane-${nextPane++}`, content);
             dragging = false;
+            syncViews();
             deps.changed();
         },
 
@@ -593,14 +634,9 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
             deps.changed();
         },
 
-        split(paneId: string, axis: 'x' | 'y', room: Size, content: PaneContent): { paneId: string | null; grown: Size } {
-            const born = `pane-${nextPane++}`;
-            const next = splitPane(active(), paneId, axis, { paneId: born, splitId: `split-${nextSplit++}` }, content);
-            if (!paneIds(next).includes(born)) return { paneId: null, grown: { width: 0, height: 0 } };
-            const grown = adoptAdded(next, room);
-            focus(born);
-            return { paneId: born, grown };
-        },
+        split: (paneId: string, axis: 'x' | 'y', room: Size, content: PaneContent) => added(ids => splitPane(active(), paneId, axis, ids, content), room),
+
+        insert,
 
         appendColumn(content: PaneContent, width: number, room: Size): { paneId: string; grown: Size } {
             const born = `pane-${nextPane++}`;
@@ -627,6 +663,25 @@ export function createPaneHost(deps: PaneHostDeps): PaneHost {
 
         setContent(paneId: string, content: PaneContent): void {
             adopt(setContent(active(), paneId, content));
+        },
+
+        /**
+         * Every room panel for `from` now for `to`, in every tab
+         * (`chatPanes.renameRoom`): a conversation following its person to a
+         * new nick. Nothing is laid out or pushed. Only a panel's name
+         * changes, and chat pushes every window as it tells of the rename.
+         */
+        renameRoom(from: string, to: string): void {
+            const was = set;
+            set = renameRoom(set, from, to);
+            if (set === was) return;
+            // Each tab's fit carries the rename, which is chat's rather than
+            // the player's, so a resize after it is fitted from the
+            // arrangement the player left (`chatPanes.renamedFit`).
+            was.tabs.forEach((tab, i) => {
+                const fit = fits.get(tab.id);
+                if (fit) fits.set(tab.id, renamedFit(fit, tab.tree, set.tabs[i]!.tree, from, to));
+            });
         },
 
         /**
@@ -745,7 +800,8 @@ export interface PaneHost {
     treeOf: (tabId: string) => PaneNode | null;
     focusedPaneId: () => string;
     layout: (rect: Rect) => void;
-    panes: () => PaneView[];
+    /** The tab in front's panes as the shell draws them, each chat pane and room panel with what `chat` says it shows of chat, which the window keeps. */
+    panes: (chat: (paneId: string) => ChatPaneView | null) => PaneView[];
     tabs: () => TabView[];
     seams: () => SeamView[];
     focus: (paneId: string) => void;
@@ -757,11 +813,34 @@ export interface PaneHost {
     beginDrag: (from: string) => DropTargets | null;
     /** Drops the dragged pane on another and ends the drag in the same step. A drop `canDrop` refuses changes nothing. */
     drop: (from: string, to: string, zone: DropZone) => void;
-    /** Ends a drag without dropping. */
+    /** Ends a drag without dropping, a pane's or a room's. */
     endDrag: () => void;
+    /**
+     * Starts a drag of something that has no pane yet — a room out of a chat
+     * pane's row — to put beside a pane: hides every native view, as
+     * `beginDrag` does, and answers where on each pane's edges it would land
+     * (`paneDrop.insertTargets`). Every pane in the tab in front is a target,
+     * so there is nothing for this to refuse.
+     */
+    beginInsertDrag: (content: PaneContent) => DropTargets;
+    /**
+     * Puts `content` in a new pane on `to`'s `zone` edge and ends the drag in
+     * the same step. Asked again (`paneDrop.canInsert`): a drop it refuses
+     * changes nothing, and so does the centre. The window grows for the new
+     * pane as for a split, and the new pane's id and that growth are
+     * returned as `split` returns them.
+     */
+    dropInsert: (content: PaneContent, to: string, zone: DropZone, room: Size) => { paneId: string | null; grown: Size };
     /** Where a pane was last drawn, for anything that needs its size — the context menu asks whether it can still be halved. */
     rectOf: (paneId: string) => Rect | null;
-    newTab: () => void;
+    /**
+     * A new tab in front, its one pane the launcher or `content`. Given here
+     * rather than set after, so the one layout and push the new tab costs
+     * already show it: an empty tab pushed first would take the room a panel
+     * is opened for off the screen, and its New divider with it, before the
+     * panel came.
+     */
+    newTab: (content?: PaneContent) => void;
     instantiate: (stored: StoredNode) => PaneNode;
     /** What opening a setup into a tab would do, the game above all — null when there is no such tab. Nothing changes until `replaceTab`. */
     loading: (tabId: string, tree: PaneNode) => { set: TabSet; dropsGame: boolean } | null;
@@ -782,11 +861,15 @@ export interface PaneHost {
      * tab in front has no such pane to split and nothing changed.
      */
     split: (paneId: string, axis: 'x' | 'y', room: Size, content: PaneContent) => { paneId: string | null; grown: Size };
+    /** Puts a new pane holding `content` beside `to`, on the side given, and focuses it: a split on any of the four sides, paid for as `split` is. */
+    insert: (to: string, side: Side, room: Size, content: PaneContent) => { paneId: string | null; grown: Size };
     /** Adds a pane holding `content` down the active tab's right edge, `width` being the px the tab is laid out in, and focuses it. Returns the new pane's id, and the window's growth as `split` does. */
     appendColumn: (content: PaneContent, width: number, room: Size) => { paneId: string; grown: Size };
     /** Closes a pane in the active tab. `room` is how far the window could shrink; what it has to shrink by, and at which edge, for the game to keep its size, is returned (`paneTree.closeGivingBack`). */
     close: (paneId: string, room: Size) => { shrunk: Size; edge: Edge | null };
     setContent: (paneId: string, content: PaneContent) => void;
+    /** Every room panel for `from`, in every tab, now for `to`. Lays nothing out and pushes nothing. */
+    renameRoom: (from: string, to: string) => void;
     /** Moves the game into a pane, emptying the one it was in, in whichever tab that was. */
     moveGame: (paneId: string) => void;
     evenOut: (splitId: string) => void;

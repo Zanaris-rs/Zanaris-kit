@@ -11,6 +11,11 @@ export type ChatStatus = 'offline' | 'connecting' | 'registering' | 'online' | '
 /** Where server notices and errors go, since they belong to no channel. The pane calls it Status. */
 export const SERVER_LOG = '*';
 
+/** What the shell calls a room on its tab, and on its tab while it is dragged out: Status for `SERVER_LOG`, and its own name for the rest. */
+export function roomLabel(room: string): string {
+    return room === SERVER_LOG ? 'Status' : room;
+}
+
 /** Someone else joining, leaving, quitting or changing name in a channel. */
 export type Presence = 'join' | 'part' | 'quit' | 'nick';
 
@@ -56,14 +61,16 @@ export interface ChatChannel {
     name: string;
     /** Highest rank first, then by name, as the server last reported them. */
     users: ChatUser[];
-    /** Lines worth reading that arrived while this tab was not being read: not open, or open with no chat pane showing the conversation. */
+    /**
+     * Lines worth reading that arrived while this room was not being read:
+     * while no window had its lines on screen (`ChatSight.reading`), in a
+     * chat pane on its conversation page or in a room panel.
+     */
     unread: number;
     /**
-     * Lines for you — naming you, or said to you alone — since this tab was
-     * last opened or left. Both happen only while a chat pane shows the
-     * conversation, and chat going out of sight leaves the open tab and
-     * coming back opens it.
-     * While there are any, its unread count is drawn in gold.
+     * Lines for you — naming you, or said to you alone — since this room last
+     * came on screen or went off it (`ChatSight.reading`). While there are
+     * any, its unread count is drawn in gold.
      */
     highlights: number;
     topic: ChatTopic | null;
@@ -71,6 +78,8 @@ export interface ChatChannel {
     modes: string | null;
     /** When the channel was created, in epoch milliseconds. Null until the server has said. */
     createdAt: number | null;
+    /** We were kicked from this channel and have not rejoined: it is listed to say why, and we are not in it. */
+    kicked: boolean;
 }
 
 /** What the shell is shown: everything the client knows, plus what only ChatService can add. */
@@ -99,8 +108,9 @@ export interface ChatSettingsView {
 
 /**
  * A line for you that nobody has seen: one that names you, or was said to you
- * alone, since a chat pane last showed the conversation, in a room chat still
- * counts it in. The game pane's header shows it while none does.
+ * alone, since its room was last on screen in any window — its lines in a
+ * pane or a panel, or its tab in a row (`ChatSight`) — and that its room still
+ * counts (`ChatChannel.highlights`). The game pane's header shows it.
  */
 export interface ChatPing {
     /** The newest of them. */
@@ -113,35 +123,62 @@ export interface ChatPing {
 
 /**
  * What one chat pane shows: its Settings page or the conversation. Each
- * pane's own, and kept in main, since a pane on Settings shows no room and
- * so counts as chat out of sight.
+ * pane's own, and kept in main. A pane on Settings shows no room, and though
+ * it still draws its row of tabs, it adds nothing to what its window shows
+ * of chat (`ChatSight`): Settings counts as chat out of sight, so a ping in a
+ * room whose tab is only in that row still shows in the game's header. A
+ * room panel is always on its conversation.
  */
 export type ChatPage = 'settings' | 'chat';
 
-/** What the Chat panel draws. Lines are for the active channel only. */
+/**
+ * What one window's front tab shows of chat, which the client counts rooms
+ * by. Each window reports its own, and chat takes the union of them.
+ *
+ * - `reading`: the rooms whose lines are on screen — each chat pane's room on
+ *   its conversation page, and each room panel's. A pane on its Settings page
+ *   shows no room and adds none.
+ * - `rowed`: every room in the row of a chat pane on its conversation page,
+ *   whether or not a pane is showing it, so a ping in a room whose tab is in
+ *   view beside a conversation is seen. The whole row when any chat pane is
+ *   on its conversation page, none otherwise: a pane on Settings draws its
+ *   row too, but counts as out of sight.
+ */
+export interface ChatSight {
+    reading: string[];
+    rowed: string[];
+}
+
+/** One room's lines, and where its New divider goes: the part of the chat view that is a pane's rather than the connection's. */
+export interface ChatLog {
+    lines: ChatLine[];
+    /**
+     * The id of the first line that arrived in this room since it was last
+     * left, when anything counted as unread did: the log draws a New divider
+     * above it. Null otherwise. Set as the room comes on screen, kept while
+     * it stays there, and cleared as it goes.
+     */
+    newFrom: number | null;
+}
+
+/**
+ * What every chat pane and room panel is shown of the connection: its rooms,
+ * the ping and how it stands. No room's lines are here, since which room a
+ * pane shows is the pane's: each is sent its own room's log (`ChatLog`).
+ */
 export interface ChatView {
     status: ChatStatus;
     nick: string | null;
     channels: ViewChannel[];
-    active: string;
-    lines: ChatLine[];
-    /**
-     * The id of the first line that arrived in the open tab since it was last
-     * left, when anything counted as unread did: the log draws a New divider
-     * above it. Null otherwise. Opening another tab leaves it, and so does
-     * chat going out of sight, so it stays while the tab stays open with a
-     * chat pane showing the conversation.
-     */
-    newFrom: number | null;
-    /** What pinged you while no chat pane showed the conversation, or null. Unlike `lines`, from any room. */
+    /** The newest line for you whose room no window has had on screen since, from any room, or null (`ChatPing`). */
     ping: ChatPing | null;
     /**
      * Why the connection failed, or why the server turned it away, in words
-     * for a player; what the socket itself said is in Status. The panel shows
-     * it under its tabs, whichever page is open.
+     * for a player; what the socket itself said is in Status. A chat pane
+     * shows it under its tabs, whichever page is open.
      */
     error: string | null;
-    /** True until a nick is chosen. The panel opens on Settings instead of a log. */
+    /** True until a nick is chosen. A chat pane opens on Settings instead of a log. */
     needsNick: boolean;
     settings: ChatSettingsView;
 }

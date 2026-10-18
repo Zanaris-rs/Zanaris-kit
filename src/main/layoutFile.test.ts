@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { contentOf, leaf, paneIds, split, type PaneNode } from './paneTree.ts';
-import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
+import { SETUP_PANES_MAX, instantiateLayout, layoutEntries, layoutFileName, readContent, readSetup, storeTree, writeLayout, type StoredNode } from './layoutFile.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
 const LINKS = [
@@ -54,6 +54,72 @@ test('contents the kit does not know are refused', () => {
     assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'tool', tool: 'telescope' } })), null);
     assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'page', bookmark: '' } })), null);
     assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'window' } })), null);
+});
+
+test('a room panel survives a setup file', () => {
+    const tree = split('split-1', 'x', [leaf('pane-1', { kind: 'game' }), leaf('pane-2', { kind: 'tool', tool: 'chat', room: '#LostHQ' })], [0.7, 0.3]);
+    const read = readSetup(writeLayout(tree, 'lostcity'))?.tree;
+    assert.deepEqual(read, storeTree(tree));
+    const opened = instantiateLayout(read!, { tools: TOOLS, links: LINKS, ...counters() });
+    assert.deepEqual(contentOf(opened, 'pane-2'), { kind: 'tool', tool: 'chat', room: '#LostHQ' }, 'and opens as a room panel, not as a chat pane');
+    assert.deepEqual(contentOf(opened, 'pane-1'), { kind: 'game' });
+});
+
+test('a conversation\'s panel is saved as a chat pane, and a channel\'s and Status\'s as panels', () => {
+    const tree = split(
+        'split-1',
+        'x',
+        [leaf('pane-1', { kind: 'tool', tool: 'chat', room: 'zed' }), leaf('pane-2', { kind: 'tool', tool: 'chat', room: '#LostHQ' }), leaf('pane-3', { kind: 'tool', tool: 'chat', room: '*' }), leaf('pane-4', { kind: 'game' })],
+        [0.25, 0.25, 0.25, 0.25]
+    );
+    const text = writeLayout(tree, 'lostcity');
+    assert.doesNotMatch(text, /zed/, 'the nick is not in the file at all');
+    const stored = readSetup(text)?.tree;
+    assert.deepEqual(stored, {
+        kind: 'split',
+        axis: 'x',
+        fractions: [0.25, 0.25, 0.25, 0.25],
+        children: [
+            { kind: 'leaf', content: { kind: 'tool', tool: 'chat' } },
+            { kind: 'leaf', content: { kind: 'tool', tool: 'chat', room: '#LostHQ' } },
+            { kind: 'leaf', content: { kind: 'tool', tool: 'chat', room: '*' } },
+            { kind: 'leaf', content: { kind: 'game' } }
+        ]
+    });
+});
+
+test('a file that names a conversation\'s panel still opens it as one', () => {
+    const read = readSetup(file({ kind: 'leaf', content: { kind: 'tool', tool: 'chat', room: 'zed' } }))?.tree;
+    assert.deepEqual(read, { kind: 'leaf', content: { kind: 'tool', tool: 'chat', room: 'zed' } }, 'only saving changes it');
+});
+
+test('a room the reader cannot trust sinks the file', () => {
+    const chat = (room: unknown): string => file({ kind: 'leaf', content: { kind: 'tool', tool: 'chat', room } });
+    assert.equal(readSetup(chat('#a,0')), null, 'a JOIN that would leave every channel');
+    assert.equal(readSetup(chat('two words')), null);
+    assert.equal(readSetup(chat('')), null);
+    assert.equal(readSetup(chat(7)), null);
+    assert.equal(readSetup(chat(null)), null, 'a room that is there and wrong is not the same as no room');
+    assert.notEqual(readSetup(chat('*')), null, 'Status');
+    assert.notEqual(readSetup(chat('zed')), null, 'a nick');
+});
+
+test('room on a tool other than chat sinks the file', () => {
+    assert.equal(readSetup(file({ kind: 'leaf', content: { kind: 'tool', tool: 'worlds', room: '#x' } })), null);
+});
+
+test('a pane\'s content off the wire is read as a file\'s is, and comes back with nothing it did not know', () => {
+    assert.deepEqual(readContent({ kind: 'tool', tool: 'chat', room: '#LostHQ', extra: 1 }), { kind: 'tool', tool: 'chat', room: '#LostHQ' });
+    assert.deepEqual(readContent({ kind: 'tool', tool: 'chat' }), { kind: 'tool', tool: 'chat' }, 'a chat pane');
+    assert.deepEqual(readContent({ kind: 'page', bookmark: 'https://2004.losthq.rs/' }), { kind: 'page', bookmark: 'https://2004.losthq.rs/' });
+    assert.deepEqual(readContent({ kind: 'game', room: '#x' }), { kind: 'game' });
+    assert.equal(readContent({ kind: 'tool', tool: 'chat', room: '#a,0' }), null, 'a room readRoom refuses');
+    assert.equal(readContent({ kind: 'tool', tool: 'chat', room: null }), null);
+    assert.equal(readContent({ kind: 'tool', tool: 'timers', room: '#a' }), null, 'a room on another tool');
+    assert.equal(readContent({ kind: 'tool', tool: 'guides' }), null, 'a tool TOOL_IDS does not have');
+    assert.equal(readContent({ kind: 'window' }), null);
+    assert.equal(readContent('chat'), null);
+    assert.equal(readContent(null), null);
 });
 
 test('a second game is refused — the window has one game view', () => {

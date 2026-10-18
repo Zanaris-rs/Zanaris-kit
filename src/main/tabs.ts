@@ -1,6 +1,5 @@
 import { arrangeForGame, clearGame, contentOf, leaf, paneIds, setContent, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
 import { paneName, type PaneLink } from './paneMenu.ts';
-import type { ChatPage } from '../shared/chat.ts';
 import type { ToolId } from '../shared/ipc.ts';
 
 /**
@@ -60,8 +59,13 @@ export function openWindowTabs(tree: PaneNode, saved: Size | null): { set: TabSe
     return { set: { tabs: [{ id: 'tab-1', tree: arranged.tree, focusedPaneId: focus }], activeId: 'tab-1' }, size: arranged.size };
 }
 
-export function newTab(set: TabSet, tabId: string, paneId: string): TabSet {
-    return { tabs: [...set.tabs, { id: tabId, tree: leaf(paneId, { kind: 'empty' }), focusedPaneId: paneId }], activeId: tabId };
+/**
+ * A tab of one pane, brought to the front: the launcher, or `content` when
+ * the tab is opened to show something, in one step, so the first layout of
+ * the tab already has it.
+ */
+export function newTab(set: TabSet, tabId: string, paneId: string, content: PaneContent = { kind: 'empty' }): TabSet {
+    return { tabs: [...set.tabs, { id: tabId, tree: leaf(paneId, content), focusedPaneId: paneId }], activeId: tabId };
 }
 
 export function selectTab(set: TabSet, tabId: string): TabSet {
@@ -114,8 +118,8 @@ export function closingTab(set: TabSet, tabId: string): TabClosing {
 
 /**
  * Whether a tab's panes include a tool's. In the tab in front, that tool is on
- * screen. Chat being read asks more than that (`readsChat`), since a chat
- * pane on its Settings page shows no room.
+ * screen. Chat being read asks more than that (`chatPanes.chatSight`), since a
+ * chat pane on its Settings page shows no room.
  */
 export function holdsTool(tree: PaneNode, tool: ToolId): boolean {
     return paneIds(tree).some(id => isTool(contentOf(tree, id), tool));
@@ -123,34 +127,6 @@ export function holdsTool(tree: PaneNode, tool: ToolId): boolean {
 
 function isTool(content: PaneContent | null, tool: ToolId): boolean {
     return content?.kind === 'tool' && content.tool === tool;
-}
-
-/**
- * Whether a tab shows chat's conversation: a chat pane in it is on its
- * conversation page. In the tab in front, that is chat being read, which
- * keeps a ping out of the game's header and the open room's lines from
- * counting as unread. A chat pane on its Settings page shows no room, and
- * one whose page is not known is not taken to.
- */
-export function readsChat(tree: PaneNode, pages: ReadonlyMap<string, ChatPage>): boolean {
-    return paneIds(tree).some(id => isTool(contentOf(tree, id), 'chat') && pages.get(id) === 'chat');
-}
-
-/**
- * Each chat pane's page, across every tab: the one it had, or `fresh()`'s for
- * a pane that has come to hold chat since, asked only then. A pane that no
- * longer holds chat drops out, so chat put back in it starts afresh. A pane's
- * id survives a drag (`paneTree.movePane`), so its page goes with it.
- */
-export function chatPages(trees: readonly PaneNode[], known: ReadonlyMap<string, ChatPage>, fresh: () => ChatPage): Map<string, ChatPage> {
-    const pages = new Map<string, ChatPage>();
-    let fresher: ChatPage | null = null;
-    for (const tree of trees) {
-        for (const id of paneIds(tree)) {
-            if (isTool(contentOf(tree, id), 'chat')) pages.set(id, known.get(id) ?? (fresher ??= fresh()));
-        }
-    }
-    return pages;
 }
 
 /** Whether a tab's panes include Home server's. */

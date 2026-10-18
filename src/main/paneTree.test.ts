@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendColumn, arrangedAt, arrangeForGame, canAppendColumn, clearGame, closeGivingBack, closePane, contentOf, evenOut, gameSizeIn, halvable, keepGame, layoutTree, leaf, makeRoom, movePane, paneIds, parentSplitOf, refit, resetAround, resetGame, resetMoves, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
+import { appendColumn, arrangedAt, arrangeForGame, canAppendColumn, clearGame, closeGivingBack, closePane, contentOf, evenOut, gameSizeIn, halvable, insertPane, keepGame, layoutTree, leaf, makeRoom, movePane, paneIds, parentSplitOf, refit, resetAround, resetGame, resetMoves, seamPixels, setContent, setSeam, swapPanes, setFraction, split, splitPane, type PaneNode, type Size } from './paneTree.ts';
 
 test('a lone leaf fills the rect it is given', () => {
     const { panes, seams } = layoutTree(leaf('p1', { kind: 'empty' }), { x: 0, y: 0, width: 800, height: 600 });
@@ -53,6 +53,43 @@ test("a split's minimum is what all its children and seams need, not one pane's"
 test('splitting a lone leaf nests a split of two equal halves, the new one empty', () => {
     const next = splitPane(leaf('a', { kind: 'game' }), 'a', 'x', { paneId: 'b', splitId: 's1' });
     assert.deepEqual(next, split('s1', 'x', [leaf('a', { kind: 'game' }), leaf('b', { kind: 'empty' })], [0.5, 0.5]));
+});
+
+test('insertPane puts a pane on each side of its target', () => {
+    const ids = { paneId: 'n', splitId: 's1' };
+    const room = { kind: 'tool', tool: 'chat', room: '#LostHQ' } as const;
+    const a = leaf('a', { kind: 'game' });
+    const added = leaf('n', room);
+    assert.deepEqual(insertPane(a, 'a', 'left', ids, room), split('s1', 'x', [added, a], [0.5, 0.5]));
+    assert.deepEqual(insertPane(a, 'a', 'right', ids, room), split('s1', 'x', [a, added], [0.5, 0.5]));
+    assert.deepEqual(insertPane(a, 'a', 'top', ids, room), split('s1', 'y', [added, a], [0.5, 0.5]));
+    assert.deepEqual(insertPane(a, 'a', 'bottom', ids, room), split('s1', 'y', [a, added], [0.5, 0.5]));
+});
+
+test('insertPane along the grain is a sibling, and across it a nested split, on either side', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.6, 0.4]);
+    const before = insertPane(tree, 'a', 'left', { paneId: 'c', splitId: 's2' }, { kind: 'empty' });
+    assert.deepEqual(paneIds(before), ['c', 'a', 'b'], 'the new pane goes before the target');
+    assert.deepEqual(before.kind === 'split' && before.fractions, [0.3, 0.3, 0.4], "and only the target's share is halved");
+    const across = insertPane(tree, 'b', 'top', { paneId: 'c', splitId: 's2' }, { kind: 'empty' });
+    assert.deepEqual(across, split('s1', 'x', [leaf('a', { kind: 'empty' }), split('s2', 'y', [leaf('c', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.5, 0.5])], [0.6, 0.4]));
+});
+
+test('insertPane returns the tree itself when its target is not in it', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'empty' }), leaf('b', { kind: 'empty' })], [0.6, 0.4]);
+    assert.equal(insertPane(tree, 'gone', 'right', { paneId: 'c', splitId: 's2' }, { kind: 'empty' }), tree);
+    const lone = leaf('a', { kind: 'empty' });
+    assert.equal(insertPane(lone, 'gone', 'left', { paneId: 'c', splitId: 's2' }, { kind: 'empty' }), lone);
+});
+
+test('splitPane is insertPane on the right or the bottom', () => {
+    const tree = split('s1', 'x', [leaf('a', { kind: 'game' }), split('s2', 'y', [leaf('b', { kind: 'empty' }), leaf('c', { kind: 'empty' })], [0.5, 0.5])], [0.6, 0.4]);
+    const ids = { paneId: 'n', splitId: 's9' };
+    const worlds = { kind: 'tool', tool: 'worlds' } as const;
+    for (const id of ['a', 'b', 'c']) {
+        assert.deepEqual(splitPane(tree, id, 'x', ids, worlds), insertPane(tree, id, 'right', ids, worlds), `${id} to the right`);
+        assert.deepEqual(splitPane(tree, id, 'y', ids, worlds), insertPane(tree, id, 'bottom', ids, worlds), `${id} below`);
+    }
 });
 
 test("splitting along the parent's own axis appends a sibling and halves only that pane's share", () => {

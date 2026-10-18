@@ -22,8 +22,12 @@ const api: ZanarisApi = {
         }
     },
     chat: {
-        send: text => ipcRenderer.invoke(IPC.chatSend, text),
-        select: channel => ipcRenderer.invoke(IPC.chatSelect, channel),
+        send: (paneId, text) => ipcRenderer.invoke(IPC.chatSend, paneId, text),
+        showRoom: (paneId, room) => ipcRenderer.invoke(IPC.chatShowRoom, paneId, room),
+        showSettings: () => ipcRenderer.invoke(IPC.chatShowSettings),
+        roomMenu: (paneId, room, x, y) => ipcRenderer.invoke(IPC.chatRoomMenu, paneId, room, x, y),
+        beginRoomDrag: room => ipcRenderer.invoke(IPC.chatBeginRoomDrag, room),
+        dropRoom: (room, to, zone) => ipcRenderer.invoke(IPC.chatDropRoom, room, to, zone),
         closeRoom: channel => ipcRenderer.invoke(IPC.chatCloseRoom, channel),
         saveSettings: save => ipcRenderer.invoke(IPC.chatSaveSettings, save),
         connect: () => ipcRenderer.invoke(IPC.chatConnect),
@@ -31,7 +35,7 @@ const api: ZanarisApi = {
         openLink: url => ipcRenderer.invoke(IPC.chatOpenLink, url),
         openPing: () => ipcRenderer.invoke(IPC.chatOpenPing),
         showPage: (paneId, page) => ipcRenderer.invoke(IPC.chatShowPage, paneId, page),
-        userMenu: (nick, x, y) => ipcRenderer.invoke(IPC.chatUserMenu, nick, x, y)
+        userMenu: (paneId, nick, x, y) => ipcRenderer.invoke(IPC.chatUserMenu, paneId, nick, x, y)
     },
     worlds: {
         refresh: () => ipcRenderer.invoke(IPC.worldsRefresh),

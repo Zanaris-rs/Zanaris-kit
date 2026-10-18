@@ -49,7 +49,11 @@ export const IPC = {
     chatState: 'zanaris:chat-state',
     chatGet: 'zanaris:chat-get',
     chatSend: 'zanaris:chat-send',
-    chatSelect: 'zanaris:chat-select',
+    chatShowRoom: 'zanaris:chat-show-room',
+    chatShowSettings: 'zanaris:chat-show-settings',
+    chatRoomMenu: 'zanaris:chat-room-menu',
+    chatBeginRoomDrag: 'zanaris:chat-begin-room-drag',
+    chatDropRoom: 'zanaris:chat-drop-room',
     chatCloseRoom: 'zanaris:chat-close-room',
     chatSaveSettings: 'zanaris:chat-save-settings',
     chatConnect: 'zanaris:chat-connect',
@@ -252,10 +256,43 @@ export interface ZanarisApi {
         onState(cb: (state: ShellState) => void): () => void;
     };
     chat: {
-        /** Sends a line. Text beginning with / is a command: /me, /msg, /nick, /join and /part are read here, and anything else goes to the server as typed. */
-        send(text: string): Promise<void>;
-        /** Opens a channel in chat, which reads it while a chat pane shows the conversation. */
-        select(channel: string): Promise<void>;
+        /**
+         * Sends a line typed in a pane, to the room that pane shows, which
+         * main reads for itself. Text beginning with / is a command: the
+         * kit's own are read in main (`COMMAND_HELP`), and anything else goes
+         * to the server as typed. Nothing said aloud goes to a channel chat
+         * does not have; in one we were kicked from, chat answers it with how
+         * to go back and sends nothing. A line that opens a room — /join,
+         * /query — opens it from that pane: a chat pane is put on it, and a
+         * room panel shows it as the ping does.
+         */
+        send(paneId: string, text: string): Promise<void>;
+        /** A tab in a chat pane's row, picked: that pane on the room and on its conversation, in one step. Main refuses a room the row does not list. */
+        showRoom(paneId: string, room: string): Promise<void>;
+        /** Chat's pane on its Settings page, found or added: for a room panel that has no nick to connect as. */
+        showSettings(): Promise<void>;
+        /**
+         * Raises a room tab's menu — Open Right, Open Below and Open in New
+         * Tab — at a point in the window. Native and built in main, like the
+         * pane menus. Resolves when it closes. Coordinates are the window's.
+         */
+        roomMenu(paneId: string, room: string, x: number, y: number): Promise<void>;
+        /**
+         * Starts dragging a room's tab out of its row. Main hides every native
+         * view until the drag ends, as for a header drag, and resolves with
+         * where a panel for the room would land on each pane's edges: the
+         * centre is always null. Null when main refuses the room. A drag
+         * ends with `dropRoom`, or with `panes.endDrag`.
+         */
+        beginRoomDrag(room: string): Promise<DropTargets | null>;
+        /**
+         * Puts a panel for the dragged room on `to`'s `zone` edge and ends the
+         * drag in the same step. Main asks again whether the drop is allowed,
+         * and changes nothing but the drag when it is not. The window grows
+         * for the new pane as for Split Right, so the panel is the size the
+         * preview drew, but it and the game may sit further right or lower.
+         */
+        dropRoom(room: string, to: string, zone: DropZone): Promise<void>;
         /**
          * Leaves a channel for the rest of the session. The saved auto-join
          * list is not touched, so an auto-join channel comes back on the next
@@ -274,16 +311,18 @@ export interface ZanarisApi {
         disconnect(): Promise<void>;
         /** Opens a link from the log in the system browser. Main reads it again, and opens only http and https. */
         openLink(url: string): Promise<void>;
-        /** Opens chat on the room of `ChatView.ping`, beside the game or in a tab of its own. */
+        /** Opens the room of `ChatView.ping`: its panel in this window, or chat's pane on it, beside the game or in a tab of its own. */
         openPing(): Promise<void>;
         /** Puts one chat pane on its Settings page or on the conversation. Main keeps the page, since a pane on Settings is chat out of sight. */
         showPage(paneId: string, page: ChatPage): Promise<void>;
         /**
          * Shows the menu for someone's name at a point in the window, and does
-         * what was chosen that main can. Resolves to the choice, so the shell
-         * can do the rest — a mention goes in its message box — or null.
+         * what was chosen that main can, as though typed in the pane it was
+         * raised from: a whois answer lands in that pane's room. Resolves to
+         * the choice, so the shell can do the rest — a mention goes in its
+         * message box — or null.
          */
-        userMenu(nick: string, x: number, y: number): Promise<UserAction | null>;
+        userMenu(paneId: string, nick: string, x: number, y: number): Promise<UserAction | null>;
     };
     worlds: {
         refresh(): Promise<void>;
@@ -312,7 +351,9 @@ export interface ZanarisApi {
          * Puts something in a pane. Main checks a `page` bookmark against this
          * window's own catalog links and refuses anything else — there is no
          * address box, so the shell has no business naming an arbitrary page —
-         * and refuses a second `game`, which is unrepresentable.
+         * and moves the `game` rather than placing a second, which is
+         * unrepresentable. A `room` is judged by `readRoom`, and refused on
+         * any tool but chat.
          */
         setContent(paneId: string, content: PaneContent): Promise<void>;
         focus(paneId: string): Promise<void>;
@@ -335,7 +376,7 @@ export interface ZanarisApi {
          * changes nothing when it is not.
          */
         drop(from: string, to: string, zone: DropZone): Promise<void>;
-        /** Ends a drag without dropping: Escape, a cancelled pointer, or a release over nothing that takes a drop. */
+        /** Ends a drag without dropping, a header's or a room's (`chat.beginRoomDrag`): Escape, a cancelled pointer, or a release over nothing that takes a drop. */
         endDrag(): Promise<void>;
         /**
          * Drags a seam to a pixel position. Resolves with the position main

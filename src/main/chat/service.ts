@@ -1,5 +1,5 @@
 import { connect } from 'node:tls';
-import { DEFAULT_AUTO_JOIN, SERVER_LOG, type ChatLine, type ChatSettings, type ChatSettingsView, type ChatView } from '../../shared/chat.ts';
+import { DEFAULT_AUTO_JOIN, SERVER_LOG, type ChatLine, type ChatLog, type ChatSettings, type ChatSettingsView, type ChatSight, type ChatView } from '../../shared/chat.ts';
 import { backoffDelay, IrcClient } from './client.ts';
 import { foldName, formatCommand, parseInput, sameName } from './protocol.ts';
 
@@ -117,7 +117,7 @@ const NO_SETTINGS: ChatSettingsView = { nick: null, autoJoin: [...DEFAULT_AUTO_J
 
 /** What the panel shows when there is no connection to describe yet. */
 export function offlineChat(nick: string | null, settings: ChatSettingsView = NO_SETTINGS): ChatView {
-    return { status: 'offline', nick, channels: [], active: SERVER_LOG, lines: [], newFrom: null, ping: null, error: null, needsNick: nick === null, settings };
+    return { status: 'offline', nick, channels: [], ping: null, error: null, needsNick: nick === null, settings };
 }
 
 /** What the service starts from: the saved settings, and the password `index.ts` opened for it. */
@@ -143,6 +143,12 @@ export interface ChatStart extends ChatSettings {
      * does not count against the next.
      */
     onMention?: (line: ChatLine) => boolean | void;
+    /**
+     * Told a conversation's old name and its new one when it follows its
+     * person through a NICK, after the line saying so is in it, so a pane or
+     * panel showing it by name can follow it.
+     */
+    onRenamed?: (from: string, to: string) => void;
 }
 
 /** One save from the Settings tab, already checked by `readSettingsDraft`. */
@@ -165,6 +171,13 @@ export class ChatService {
     private readonly onConnectionWanted: (wanted: boolean) => void;
     private readonly onIgnoreChanged: (ignore: string[]) => void;
     private readonly onMention: (line: ChatLine) => boolean | void;
+    private readonly onRenamed: (from: string, to: string) => void;
+    /**
+     * What main last said every window shows of chat. Kept, because chat can
+     * be on screen before there is a nick and so before there is a client:
+     * a client made later starts from it.
+     */
+    private sight: ChatSight = { reading: [], rowed: [] };
     /** When the last notification was raised, and when each person's last was, by folded nick. */
     private lastMention = -Infinity;
     private readonly mentionedAt = new Map<string, number>();
@@ -206,6 +219,7 @@ export class ChatService {
         this.onConnectionWanted = start.onConnectionWanted ?? (() => {});
         this.onIgnoreChanged = start.onIgnoreChanged ?? (() => {});
         this.onMention = start.onMention ?? (() => {});
+        this.onRenamed = start.onRenamed ?? (() => {});
         this.nick = start.nick === '' ? null : start.nick;
         this.autoJoin = [...start.autoJoin];
         this.ignore = [...start.ignore];
@@ -306,7 +320,7 @@ export class ChatService {
             const { status, nick: holding } = client.snapshot();
             if (nick !== '') client.setCredentials(nick, this.password);
             if (nick !== '' && nick !== holding) {
-                if (status === 'online' || status === 'registering') client.input(`/nick ${nick}`);
+                if (status === 'online' || status === 'registering') client.input(`/nick ${nick}`, SERVER_LOG);
                 else client.rename(nick);
             }
             if (status !== 'offline') for (const channel of added) client.join(channel);
@@ -316,20 +330,24 @@ export class ChatService {
     }
 
     /**
-     * One typed line. Text beginning with / is a command, and the client
-     * decides what it means — except /quit, which is a disconnect. Sent as a
-     * plain QUIT it would drop the connection the way a network fault does, and
-     * the kit would reconnect behind it.
+     * One typed line, and `at`, the room it was typed in. Text beginning with
+     * / is a command, and the client decides what it means — except /quit,
+     * which is a disconnect. Sent as a plain QUIT it would drop the connection
+     * the way a network fault does, and the kit would reconnect behind it.
+     *
+     * Answers the room the line means to open, as the client does: a /join's
+     * channel or a /query's conversation, and null for anything else.
      */
-    send(text: string): void {
-        if (this.client === null) return;
+    send(text: string, at: string): { open: string | null } {
+        if (this.client === null) return { open: null };
         const typed = parseInput(text);
         if (typed?.kind === 'quit') {
             this.disconnect(typed.reason);
-            return;
+            return { open: null };
         }
-        this.client.input(text);
+        const answer = this.client.input(text, at);
         this.emit();
+        return answer;
     }
 
     /**
@@ -346,35 +364,25 @@ export class ChatService {
         return true;
     }
 
-    select(channel: string): void {
-        if (this.client === null) return;
-        // Only a channel the rail already shows: selecting anything else would
-        // invent a tab for a room nobody is in.
-        const known = this.client.snapshot().channels.some(c => sameName(c.name, channel));
-        if (!known) return;
-        this.client.select(channel);
-        this.emit();
+    /**
+     * What every window shows of chat, together: which rooms are read, and
+     * whose pings are seen (`IrcClient.see`). Kept for a client made later.
+     * Says whether anything a window draws changed, and tells no subscriber:
+     * main calls this while it is telling the windows, and a push from in
+     * here would reach some of them with the view it is about to replace.
+     */
+    see(sight: ChatSight): boolean {
+        this.sight = { reading: [...sight.reading], rowed: [...sight.rowed] };
+        return this.client?.see(this.sight) ?? false;
     }
 
     /**
-     * A chat pane shows the conversation in some window: whatever pinged you
-     * has been seen, and the room chat has open is read if chat was out of sight until
-     * now. Says whether a ping was waiting, and tells no subscriber: main
-     * calls this while it is telling the windows, and a push from in here
-     * would reach some of them with the view it is about to replace.
+     * One room's lines and its New divider, for a pane showing it. Empty for
+     * a room chat does not have, or with no client at all. Changes nothing,
+     * so it has nothing to tell a subscriber.
      */
-    seePings(): boolean {
-        return this.client?.seePings() ?? false;
-    }
-
-    /**
-     * No chat pane shows the conversation in any window: the open room
-     * counts what arrives from now on. Tells no subscriber, for the reason
-     * `seePings` does not, and has nothing to tell one: the change shows only
-     * in a chat pane's conversation, and none is on screen.
-     */
-    lookAway(): void {
-        this.client?.lookAway();
+    log(room: string): ChatLog {
+        return this.client?.log(room) ?? { lines: [], newFrom: null };
     }
 
     /**
@@ -416,9 +424,9 @@ export class ChatService {
         if (this.nick === null || this.stopped || this.socket !== null) return;
 
         // The client survives a reconnect, so the log does too.
-        const client =
-            this.client ??
-            new IrcClient({
+        let client = this.client;
+        if (client === null) {
+            client = new IrcClient({
                 nick: this.nick,
                 channels: [...this.autoJoin],
                 password: this.password,
@@ -429,8 +437,12 @@ export class ChatService {
                     this.ignore = [...ignore];
                     this.onIgnoreChanged([...ignore]);
                 },
-                onHighlight: line => this.mentioned(line)
+                onHighlight: line => this.mentioned(line),
+                onRenamed: (from, to) => this.onRenamed(from, to)
             });
+            // What is on screen already, which may be from before there was a nick.
+            client.see(this.sight);
+        }
         this.client = client;
         client.connecting();
         this.pending = '';
