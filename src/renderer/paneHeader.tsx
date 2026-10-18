@@ -117,16 +117,22 @@ function Step({ label, on, disabled, children }: { label: string; on: () => void
 }
 
 /**
- * The pointer handlers that make this strip a drag handle. Shell's, because
- * only Shell knows every pane's rect, and so which pane and which part of it
- * the pointer is over.
+ * The pointer handlers that make this strip a drag handle, and a room's tab in
+ * chat's row one too (`tab.tsx`). Shell's, because only Shell knows every
+ * pane's rect, and so which pane and which part of it the pointer is over.
  */
 export interface Grab {
-    onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
-    onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
-    onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
-    onPointerCancel: (event: PointerEvent<HTMLDivElement>) => void;
-    onLostPointerCapture: (event: PointerEvent<HTMLDivElement>) => void;
+    onPointerDown: (event: PointerEvent<HTMLElement>) => void;
+    onPointerMove: (event: PointerEvent<HTMLElement>) => void;
+    onPointerUp: (event: PointerEvent<HTMLElement>) => void;
+    onPointerCancel: (event: PointerEvent<HTMLElement>) => void;
+    onLostPointerCapture: (event: PointerEvent<HTMLElement>) => void;
+    /**
+     * A room's tab only: drops the click a press that became a drag ends
+     * with, which would otherwise pick the tab. A header has nothing to pick,
+     * and a press on one of its buttons never starts a drag.
+     */
+    onClickCapture?: (event: MouseEvent<HTMLElement>) => void;
 }
 
 export default function PaneHeader({

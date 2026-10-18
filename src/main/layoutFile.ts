@@ -1,6 +1,9 @@
 import { leaf, split, type PaneContent, type PaneNode, type Size } from './paneTree.ts';
 import type { PaneLink } from './paneMenu.ts';
 import { TOOL_IDS, type ToolId } from '../shared/ipc.ts';
+import { readRoom } from '../shared/chatSettings.ts';
+import { SERVER_LOG } from '../shared/chat.ts';
+import { isChannel } from '../shared/ircNames.ts';
 
 /**
  * A saved setup: one tab's panes, as a file the player chose to write.
@@ -33,9 +36,21 @@ export const LAYOUT_VERSION = 1;
  */
 export type StoredNode = { kind: 'leaf'; content: PaneContent } | { kind: 'split'; axis: 'x' | 'y'; fractions: number[]; children: StoredNode[] };
 
+/**
+ * A tree as a setup file stores it. A conversation's room panel — one whose
+ * room is a nick, neither a channel nor Status — is stored as a plain chat
+ * pane, while a channel's panel and Status's are stored as they are. Done
+ * here, on the way out, and never on the way in: a file that names a
+ * conversation still opens as one.
+ */
 export function storeTree(node: PaneNode): StoredNode {
-    if (node.kind === 'leaf') return { kind: 'leaf', content: node.content };
+    if (node.kind === 'leaf') return { kind: 'leaf', content: storedContent(node.content) };
     return { kind: 'split', axis: node.axis, fractions: [...node.fractions], children: node.children.map(storeTree) };
+}
+
+function storedContent(content: PaneContent): PaneContent {
+    if (content.kind !== 'tool' || content.room === undefined) return content;
+    return isChannel(content.room) || content.room === SERVER_LOG ? content : { kind: 'tool', tool: content.tool };
 }
 
 /**
@@ -152,13 +167,31 @@ function readNode(x: unknown, depth: number, pane: (content: PaneContent) => boo
     return { kind: 'split', axis, children: read, fractions: (fractions as number[]).map(f => f / total) };
 }
 
-function readContent(x: unknown): PaneContent | null {
+/**
+ * One pane's content, read off a file or off the wire: the four kinds, a
+ * page that names something, a tool `TOOL_IDS` has, and a room only on chat,
+ * judged by `readRoom`. Null for anything else. What comes back is built
+ * here, so a field it does not know is not carried along.
+ *
+ * Also what the shell's `paneSetContent` is read by, since a renderer is no
+ * more to be trusted with a room than a stranger's file is. What the window
+ * then allows — this server's links, the tools it offers — is the window's.
+ */
+export function readContent(x: unknown): PaneContent | null {
     if (typeof x !== 'object' || x === null) return null;
     const content = x as Record<string, unknown>;
     if (content.kind === 'empty' || content.kind === 'game') return { kind: content.kind };
     if (content.kind === 'page') return typeof content.bookmark === 'string' && content.bookmark !== '' ? { kind: 'page', bookmark: content.bookmark } : null;
     if (content.kind !== 'tool') return null;
-    return (TOOL_IDS as readonly string[]).includes(content.tool as string) ? { kind: 'tool', tool: content.tool as ToolId } : null;
+    if (!(TOOL_IDS as readonly string[]).includes(content.tool as string)) return null;
+    const tool = content.tool as ToolId;
+    if (content.room === undefined) return { kind: 'tool', tool };
+    // A room panel. The room is a stranger's writing that ends up in a JOIN, so
+    // `readRoom` judges it, and a room that is there and wrong sinks the file
+    // like any other bad field rather than turning into a chat pane that was
+    // never asked for. Only chat has rooms.
+    const room = tool === 'chat' ? readRoom(content.room) : null;
+    return room === null ? null : { kind: 'tool', tool, room };
 }
 
 /**

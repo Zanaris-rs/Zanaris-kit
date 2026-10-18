@@ -1,8 +1,10 @@
 import { PANE_MIN_HEIGHT, PANE_MIN_WIDTH } from '../shared/layout.ts';
-import { closePane, contentOf, halvable, layoutTree, movePane, paneIds, swapPanes, type PaneNode, type Rect, type Side } from './paneTree.ts';
+import { closePane, contentOf, halvable, insertPane, layoutTree, movePane, paneIds, swapPanes, type PaneContent, type PaneNode, type Rect, type Side } from './paneTree.ts';
 
 /**
- * What a header dragged onto another pane does, and where the pane would land.
+ * What a header dragged onto another pane does, and where the pane would land;
+ * and the same for a room dragged out of a chat pane's tabs, which has no pane
+ * of its own to move and so adds one.
  *
  * Pure, next to `paneTree.ts`, for the reason `CLAUDE.md` gives: whether a drop
  * is allowed and what it does are rules, and the shell only draws the answer.
@@ -21,8 +23,9 @@ export const DROP_ZONES: readonly DropZone[] = ['centre', 'left', 'right', 'top'
  */
 export type DropTargets = Record<string, Record<DropZone, Rect | null>>;
 
-/** The split a preview may nest in. It names a tree that is laid out and thrown away, never adopted. */
+/** The split and the pane a preview may add. They name a tree that is laid out and thrown away, never adopted. */
 const PREVIEW_SPLIT = 'drop-preview';
+const PREVIEW_PANE = 'drop-preview-pane';
 
 /** The drop itself: the centre swaps the two panes, an edge moves the dragged one beside the target. */
 export function dropPane(tree: PaneNode, from: string, to: string, zone: DropZone, splitId: string): PaneNode {
@@ -53,6 +56,10 @@ export function canDrop(tree: PaneNode, rect: Rect, from: string, to: string, zo
  * applied and the result laid out, not approximated. The shell never works out
  * a size, so the preview it draws cannot disagree with where the pane ends up.
  * A tab has a handful of panes, so the whole table is a few dozen tree walks.
+ *
+ * That promise is for a move, which changes nothing about the window. A room
+ * dropped on an edge adds a pane and may grow the window, so `insertTargets`
+ * promises less.
  */
 export function dropTargets(tree: PaneNode, rect: Rect, from: string): DropTargets {
     const targets: DropTargets = {};
@@ -62,6 +69,44 @@ export function dropTargets(tree: PaneNode, rect: Rect, from: string): DropTarge
         const landing = (zone: DropZone): Rect | null =>
             canDrop(tree, rect, from, to, zone) ? (layoutTree(dropPane(tree, from, to, zone, PREVIEW_SPLIT), rect).panes.get(from) ?? null) : null;
         targets[to] = { centre: landing('centre'), left: landing('left'), right: landing('right'), top: landing('top'), bottom: landing('bottom') };
+    }
+    return targets;
+}
+
+/**
+ * Whether a room may be put beside a pane, on one of its edges.
+ *
+ * The target is measured as it is, at its current size, by the same test as a
+ * drop (`halvable`): no pane leaves first, so no sibling's room is freed for it,
+ * as `canDrop` allows for a pane that is moved. The centre is never allowed. A
+ * swap needs a pane to swap with, and a room has none.
+ */
+export function canInsert(tree: PaneNode, rect: Rect, to: string, zone: DropZone): boolean {
+    if (zone === 'centre') return false;
+    const target = layoutTree(tree, rect).panes.get(to);
+    if (!target) return false;
+    return zone === 'left' || zone === 'right' ? halvable(target.width, PANE_MIN_WIDTH) : halvable(target.height, PANE_MIN_HEIGHT);
+}
+
+/**
+ * Every drop a room could make, answered once when the drag starts: for each
+ * pane, the rect the new pane would occupy beside each of its edges, or null
+ * where that is refused. The centre is always null, and every pane has an
+ * entry, since no pane is the one being dragged.
+ *
+ * Laid out the way `dropTargets` lays out a move: `insertPane` is applied and
+ * the result measured, so the shell draws what the layout says. The promise is
+ * smaller, though. Dropping a room adds a pane, and the window may then grow
+ * for it (`paneTree.makeRoom`) as it does for a split, so the new pane is the
+ * size shown on the side shown, but it and the game can sit further right or
+ * lower than the preview drew them.
+ */
+export function insertTargets(tree: PaneNode, rect: Rect, content: PaneContent): DropTargets {
+    const targets: DropTargets = {};
+    for (const to of paneIds(tree)) {
+        const landing = (zone: Side): Rect | null =>
+            canInsert(tree, rect, to, zone) ? (layoutTree(insertPane(tree, to, zone, { paneId: PREVIEW_PANE, splitId: PREVIEW_SPLIT }, content), rect).panes.get(PREVIEW_PANE) ?? null) : null;
+        targets[to] = { centre: null, left: landing('left'), right: landing('right'), top: landing('top'), bottom: landing('bottom') };
     }
     return targets;
 }

@@ -4,7 +4,7 @@ import type { PaneContentItem } from '../main/paneMenu.ts';
 import type { DropTargets, DropZone } from '../main/paneDrop.ts';
 import type { TabMark } from '../main/tabs.ts';
 import type { PaneNotice } from './paneNotice.ts';
-import type { ChatPage } from './chat.ts';
+import type { ChatLine, ChatPage } from './chat.ts';
 
 export type { DropTargets, DropZone, PaneContent, PaneContentItem, PaneNotice, Rect, TabMark };
 
@@ -15,6 +15,26 @@ export interface PageState {
     canGoBack: boolean;
     canGoForward: boolean;
     loading: boolean;
+}
+
+/**
+ * What one chat pane or room panel shows of chat: the pane's own half, which
+ * main keeps for it. The connection's half, which every pane shares, is
+ * `ShellState.chat`.
+ */
+export interface ChatPaneView {
+    /** A room panel: no row, one room. */
+    panel: boolean;
+    /** Always 'chat' for a room panel. */
+    page: ChatPage;
+    /** What it shows. Null for a chat pane whose row is empty. */
+    room: string | null;
+    /** The tabs a chat pane lists, in chat's order. Empty for a room panel. */
+    row: string[];
+    /** The lines of `room`, and none when it is null. */
+    lines: ChatLine[];
+    /** Where `room`'s New divider goes, or null (`ChatLog.newFrom`). */
+    newFrom: number | null;
 }
 
 export interface PaneView {
@@ -29,8 +49,8 @@ export interface PaneView {
     closable: boolean;
     /** Null unless `content.kind === 'page'`. */
     page: PageState | null;
-    /** Null unless the pane holds chat: whether it shows Settings or the conversation, which main keeps. */
-    chatPage: ChatPage | null;
+    /** Null unless the pane holds chat: what it shows of chat, which main keeps (`ChatPaneView`). */
+    chat: ChatPaneView | null;
     /**
      * What this pane could become, for the launcher an empty one shows. Null
      * for every other kind, which reaches the same list through the header's

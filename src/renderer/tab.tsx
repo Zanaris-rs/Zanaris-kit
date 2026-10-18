@@ -1,11 +1,12 @@
 import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { Caret, CloseRoom } from './icons';
+import type { Grab } from './paneHeader';
 
 /**
  * The interface tab that carries a label, worn by the window strip, by the
- * chat pane's row of Settings, Status and channels, and by the Home server
- * tool's rows of sections and command lists. Chat's Settings draws a gear in
- * place of its label, which it still carries as its name.
+ * chat pane's row of Settings and its rooms, and by the Home server tool's
+ * rows of sections and command lists. Chat's Settings draws a gear in place
+ * of its label, which it still carries as its name.
  *
  * It lives here rather than in either of them because they are the same
  * object: one box, one open-versus-resting split, one place to change it. Two
@@ -48,6 +49,7 @@ export default function Tab({
     onClose,
     closeLabel,
     onContextMenu,
+    grab,
     menu = false,
     icon
 }: {
@@ -75,12 +77,25 @@ export default function Tab({
     onSelect?: (event: MouseEvent<HTMLElement>) => void;
     /** The detail some tabs carry to the right of the label: a revision, an unread count. */
     after?: ReactNode;
-    /** Puts a close inside the tab, at its right edge. The window strip's tabs carry one, and so does every chat channel. */
+    /** Puts a close inside the tab, at its right edge. The window strip's tabs carry one, and so does every chat room but Status. */
     onClose?: () => void;
     /** What the close is announced as. Names the tab rather than the act, since "Close" alone says nothing about which one. */
     closeLabel?: string;
-    /** A right-click anywhere on the tab, close included. The window strip's tabs raise their tab menu (Close Tab) with it; chat's tabs have none. */
+    /**
+     * A right-click anywhere on the tab, close included. The window strip's
+     * tabs raise their tab menu (Close Tab) with it, and chat's rooms their
+     * room menu (Open Right, Open Below, Open in New Tab). Chat's gear has none.
+     */
     onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
+    /**
+     * Makes the tab a drag handle as well as a button: chat's rooms, which a
+     * drag takes out of the row into a panel of their own. On the part that
+     * selects, never on the close, so a press on the close still only closes.
+     * The handlers are Shell's, and so is the call on when a press has become
+     * a drag; a press that did ends with no `onSelect`, since the grab drops
+     * the click that follows it (`Grab.onClickCapture`).
+     */
+    grab?: Grab;
     /**
      * The tab opens a menu rather than being chosen: Home server's, in a
      * narrow pane, in place of its row of sections. It says so to a screen
@@ -140,7 +155,7 @@ export default function Tab({
         const close = closeLabel ?? `Close ${label}`;
         return (
             <div title={title} style={BOX} onContextMenu={onContextMenu} className={`flex min-w-0 items-center gap-[7px] pl-2.5 ${face}`}>
-                <button type="button" {...announce} onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-[7px] self-stretch">
+                <button type="button" {...announce} {...grab} onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-[7px] self-stretch">
                     {body}
                 </button>
                 {/* 24px wide for the WCAG 2.5.8 floor; the tab's own 24px inside its border is the height. */}
@@ -157,6 +172,7 @@ export default function Tab({
             {...announce}
             aria-label={icon === undefined ? undefined : label}
             title={title ?? (icon === undefined ? undefined : label)}
+            {...grab}
             onClick={onSelect}
             onContextMenu={onContextMenu}
             style={icon !== undefined ? ICON_PADDED : menu ? MENU_PADDED : PADDED}

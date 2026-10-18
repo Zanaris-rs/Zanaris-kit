@@ -158,7 +158,7 @@ test('/join takes a channel and adds the missing hash', () => {
 
 test('/part may name a channel or leave it to the client', () => {
     assert.deepEqual(parseInput('/part #04scape'), { kind: 'part', channel: '#04scape' });
-    assert.deepEqual(parseInput('/part'), { kind: 'part', channel: '' }, 'the caller parts the active channel');
+    assert.deepEqual(parseInput('/part'), { kind: 'part', channel: '' }, 'the caller parts the room it was typed in');
 });
 
 test('a slash command this client has no reading of its own for is one for the server', () => {

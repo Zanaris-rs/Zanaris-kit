@@ -19,11 +19,22 @@ export interface Rect {
     height: number;
 }
 
+/**
+ * What a pane shows.
+ *
+ * `room` is set only on chat. A chat pane with one is a room panel: that room,
+ * with no row of tabs. It is a field rather than a tool id so that a setup
+ * written with a room panel still opens in a kit that does not know them, as a
+ * chat pane where the panel was: that kit's reader keeps a tool's id and drops
+ * the fields it has no use for, where an id it did not know would sink the
+ * whole file (see `CLAUDE.md` on `TOOL_IDS`). `readRoom` decides what a room
+ * may be wherever one arrives from outside main.
+ */
 export type PaneContent =
     | { kind: 'empty' }
     | { kind: 'game' }
     | { kind: 'page'; bookmark: string }
-    | { kind: 'tool'; tool: ToolId };
+    | { kind: 'tool'; tool: ToolId; room?: string };
 
 export type PaneNode =
     | { kind: 'leaf'; paneId: string; content: PaneContent }
@@ -391,12 +402,15 @@ function share(had: number[], at: number, target: number, gross: number, minimum
  * Whether one extent can hold two panes and the seam between them.
  *
  * The one test behind every way of halving a pane — the menus' Split Right and
- * Split Down, and a header dropped on another pane's edge — so none of them can
- * offer a split another would refuse.
+ * Split Down, a header dropped on another pane's edge, and a room dropped on
+ * one — so none of them can offer a split another would refuse.
  */
 export function halvable(extent: number, floor: number): boolean {
     return extent >= floor * 2 + SEAM;
 }
+
+/** A pane's edge: where a dragged header is dropped on it, and where a pane is put beside it. */
+export type Side = 'left' | 'right' | 'top' | 'bottom';
 
 /**
  * Splits the named pane, putting `content` in the new half: an empty pane
@@ -407,14 +421,38 @@ export function halvable(extent: number, floor: number): boolean {
  * Ids are handed in rather than counted here, so this stays a pure function of
  * its arguments — `serverWindow` owns the monotonic counter, exactly as it
  * does for page ids today.
+ *
+ * Right on `x` and below on `y`: it is `insertPane` on the side a split puts
+ * its new half.
  */
 export function splitPane(node: PaneNode, paneId: string, axis: 'x' | 'y', ids: { paneId: string; splitId: string }, content: PaneContent = { kind: 'empty' }): PaneNode {
-    return insertBeside(node, paneId, axis, true, leaf(ids.paneId, content), ids.splitId);
+    return insertPane(node, paneId, axis === 'x' ? 'right' : 'bottom', ids, content);
+}
+
+/**
+ * Puts a new pane holding `content` beside the named one, on the side given:
+ * what a split does on the right or below, and what a room dropped on a pane's
+ * edge does on any of the four.
+ *
+ * Returns the tree itself, by identity, when `to` is not in it, so a caller can
+ * tell that nothing was added. Ids are handed in for the reason `splitPane`
+ * gives.
+ */
+export function insertPane(node: PaneNode, to: string, side: Side, ids: { paneId: string; splitId: string }, content: PaneContent): PaneNode {
+    if (!contentOf(node, to)) return node;
+    const { axis, after } = along(side);
+    return insertBeside(node, to, axis, after, leaf(ids.paneId, content), ids.splitId);
+}
+
+/** Which way a side runs, and whether it is the far end of that way: right and bottom are, left and top are not. */
+function along(side: Side): { axis: 'x' | 'y'; after: boolean } {
+    return { axis: side === 'left' || side === 'right' ? 'x' : 'y', after: side === 'right' || side === 'bottom' };
 }
 
 /**
  * Puts `added` beside the named leaf on `axis`, after it or before it: the
- * half of a split and of a move that is the same act.
+ * half of a split, of a move and of a room dropped on an edge, which are the
+ * same act.
  *
  * `splitId` names the split a lone leaf, or a leaf in a split running the other
  * way, is nested in. Along the grain it goes unused.
@@ -444,9 +482,6 @@ function insertBeside(node: PaneNode, paneId: string, axis: 'x' | 'y', after: bo
     return { ...node, children: node.children.map(child => insertBeside(child, paneId, axis, after, added, splitId)) };
 }
 
-/** A pane's edge, as a dragged header is dropped on it. */
-export type Side = 'left' | 'right' | 'top' | 'bottom';
-
 /**
  * Moves a pane beside another, splitting the target on the side it was dropped
  * on — what a header dragged onto another pane's edge does.
@@ -469,8 +504,7 @@ export type Side = 'left' | 'right' | 'top' | 'bottom';
 export function movePane(node: PaneNode, from: string, to: string, side: Side, splitId: string): PaneNode {
     const content = contentOf(node, from);
     if (from === to || !content || !contentOf(node, to)) return node;
-    const axis = side === 'left' || side === 'right' ? 'x' : 'y';
-    const after = side === 'right' || side === 'bottom';
+    const { axis, after } = along(side);
     if (besideAlready(node, from, to, axis, after)) return node;
     return insertBeside(closePane(node, from), to, axis, after, leaf(from, content), splitId);
 }

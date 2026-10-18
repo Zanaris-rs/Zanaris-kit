@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { Rect, ShellState } from '../shared/ipc';
-import type { ChatPing } from '../shared/chat';
+import { roomLabel, type ChatPing } from '../shared/chat';
 import { pingTitle, pingWords } from '../shared/chatPing';
 import { clockHint, clockTone, clockValueAt, formatClock, headerClocks, type TimersView } from '../shared/timers';
-import type { DropTargets, DropZone, PaneView, SeamView, TabView } from '../shared/panes';
-import { draggedFar, zoneAt } from '../shared/dropZone';
+import type { ChatPaneView, DropTargets, DropZone, PaneView, SeamView, TabView } from '../shared/panes';
+import { draggedFar, pressEnded, zoneAt } from '../shared/dropZone';
 import { PANE_HEADER_HEIGHT } from '../shared/layout';
 import { AppMenu, Caret, Gear, Plus } from './icons';
 import { playAlert } from './alertSound';
@@ -115,7 +115,7 @@ function tabTitle(tab: TabView): string {
  * tool is drawn inside a boundary, keyed by what the pane holds, so one that
  * throws shows its own notice rather than taking the shell with it.
  */
-function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
+function PaneBody({ pane, state, grabRoom }: { pane: PaneView; state: ShellState; grabRoom: (room: string) => Grab }): ReactNode {
     if (pane.notice) {
         const notice = pane.notice;
         return (
@@ -133,13 +133,16 @@ function PaneBody({ pane, state }: { pane: PaneView; state: ShellState }): React
     return (
         <div className="flex min-h-0 flex-1 flex-col p-2.5">
             <PaneBoundary key={pane.content.kind === 'tool' ? pane.content.tool : 'empty'} name={pane.name} paneId={pane.paneId}>
-                <PaneContentBody pane={pane} state={state} />
+                <PaneContentBody pane={pane} state={state} grabRoom={grabRoom} />
             </PaneBoundary>
         </div>
     );
 }
 
-function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState }): ReactNode {
+/** What a chat pane is drawn as if main has not said: its Settings page, which is where a chat pane with nothing else to show opens. */
+const NO_CHAT: ChatPaneView = { panel: false, page: 'settings', room: null, row: [], lines: [], newFrom: null };
+
+function PaneContentBody({ pane, state, grabRoom }: { pane: PaneView; state: ShellState; grabRoom: (room: string) => Grab }): ReactNode {
     switch (pane.content.kind) {
         case 'empty':
             return <Launcher paneId={pane.paneId} links={state.server.bookmarks} contents={pane.contents ?? []} width={pane.rect.width} />;
@@ -149,7 +152,7 @@ function PaneContentBody({ pane, state }: { pane: PaneView; state: ShellState })
         case 'tool':
             switch (pane.content.tool) {
                 case 'chat':
-                    return <Chat view={state.chat} width={pane.rect.width} paneId={pane.paneId} page={pane.chatPage ?? 'settings'} />;
+                    return <Chat view={state.chat} pane={pane.chat ?? NO_CHAT} width={pane.rect.width} paneId={pane.paneId} grabRoom={grabRoom} />;
                 case 'worlds':
                     return state.worlds ? <Worlds view={state.worlds} width={pane.rect.width} /> : null;
                 case 'hiscores':
@@ -200,11 +203,13 @@ function GameReadout({ state, width }: { state: ShellState; width: number }): Re
 
 /**
  * What pinged you, after the game's read-out: the newest line that names you
- * or was said to you alone, and how many more are waiting. Main leaves the
- * ping null while a chat pane shows the conversation in any window, so this
- * shows only while chat is out of sight — closed, behind another tab, or on
- * its Settings page — and it goes once chat is seen. A click opens
- * chat on the ping's room, beside the game or in a tab of its own.
+ * or was said to you alone, and how many more are waiting. Main counts a ping
+ * seen once its room is on screen in any window — its lines in a chat pane or
+ * a room panel, or its tab in a row — so this shows only for a room out of
+ * sight: no pane, panel or tab for it in any window's front tab, or chat on
+ * its Settings page. It goes once that room is seen. A click opens the ping's
+ * room: its panel in this window, or a chat pane put on it, beside the game or
+ * in a tab of its own.
  *
  * Plain text, and nothing in it is a link: the line is a stranger's writing.
  * Gold, as chat draws the count of a room that names you — on the words
@@ -297,15 +302,30 @@ function paneAt(panes: PaneView[], x: number, y: number): PaneView | null {
     return panes.find(p => x >= p.rect.x && x < p.rect.x + p.rect.width && y >= p.rect.y && y < p.rect.y + p.rect.height) ?? null;
 }
 
-/** What a dragged header is over: a pane and the zone of it, or nothing. */
+/** What a drag is over: a pane and the zone of it, or nothing. */
 function aimAt(panes: PaneView[], x: number, y: number): { over: string | null; zone: DropZone } {
     const pane = paneAt(panes, x, y);
     return pane ? { over: pane.paneId, zone: zoneAt(pane.rect, x, y) } : { over: null, zone: 'centre' };
 }
 
-/** A header press. It becomes a drag once the pointer has travelled far enough, so a click on a header still only focuses its pane. */
+/**
+ * What a drag carries: a pane, by its header, or a room, by its tab in a chat
+ * pane's row. A pane is moved, and a room is opened as a panel of its own.
+ */
+type DragFrom = { kind: 'pane'; paneId: string } | { kind: 'room'; room: string };
+
+/** Whether a drag is carrying this pane. A room's drag carries none. */
+function carries(from: DragFrom, paneId: string): boolean {
+    return from.kind === 'pane' && from.paneId === paneId;
+}
+
+/**
+ * A press on a header or a room's tab. It becomes a drag once the pointer has
+ * travelled far enough, so a click on a header still only focuses its pane,
+ * and a click on a room's tab still only opens the room.
+ */
 interface Held {
-    from: string;
+    from: DragFrom;
     pointerId: number;
     start: { x: number; y: number };
     dragging: boolean;
@@ -320,9 +340,19 @@ function layoutKey(panes: PaneView[]): string {
     return panes.map(p => `${p.paneId}@${p.rect.x},${p.rect.y},${p.rect.width}x${p.rect.height}`).join(' ');
 }
 
+/** Every room tab on screen: the rows of the chat panes in the tab in front. */
+function rowsOf(panes: PaneView[]): string[] {
+    return panes.flatMap(p => p.chat?.row ?? []);
+}
+
+/** A held press, as `pressEnded` reads it. */
+function pressOf(grabbed: Held): { room: string | null; dragging: boolean; layout: string } {
+    return { room: grabbed.from.kind === 'room' ? grabbed.from.room : null, dragging: grabbed.dragging, layout: grabbed.layout };
+}
+
 /** A drag in progress. `targets` is main's answer to where each drop would land, and is null until it arrives. */
 interface Drag {
-    from: string;
+    from: DragFrom;
     targets: DropTargets | null;
     over: string | null;
     zone: DropZone;
@@ -338,20 +368,30 @@ interface Drag {
 export default function Shell(): ReactNode {
     const [state, setState] = useState<ShellState | null>(null);
     /**
-     * The header drag. `held` is the pointer's, and survives a re-render; `drag`
-     * is what the overlay reads, and causes them.
+     * The drag, of a header or of a room's tab. `held` is the pointer's, and
+     * survives a re-render; `drag` is what the overlay reads, and causes them.
      *
-     * Main hides every native view from `beginDrag` until the drag ends, because
-     * the shell cannot draw over a game or a page — those views sit above it,
-     * and a drop target painted under either would be invisible. So the panes
-     * go blank for the length of the gesture and each says its own name
-     * instead, which is also what makes an empty-looking game pane legible
-     * while it is moving.
+     * Main hides every native view from `beginDrag`, or `beginRoomDrag`, until
+     * the drag ends, because the shell cannot draw over a game or a page —
+     * those views sit above it, and a drop target painted under either would
+     * be invisible. So the panes go blank for the length of the gesture and
+     * each says its own name instead, which is also what makes an
+     * empty-looking game pane legible while it is moving.
      */
     const held = useRef<Held | null>(null);
     const [drag, setDrag] = useState<Drag | null>(null);
+    /**
+     * Set as a press becomes a drag, and cleared by the next press: the click
+     * a room's tab is sent when that press lets go, wherever it lets go, since
+     * the tab holds the pointer, is the drag's end and not a pick of the tab.
+     */
+    const dragPressed = useRef(false);
 
-    /** Ends a drag without dropping. Reads nothing a render could leave stale, so the Escape listener can hold it. */
+    /**
+     * Ends a press without dropping, and tells main only when it had become a
+     * drag, since only a drag hid anything. Reads nothing a render could
+     * leave stale, so the Escape listener can hold it.
+     */
     const cancelDrag = (): void => {
         const grabbed = held.current;
         held.current = null;
@@ -373,11 +413,19 @@ export default function Shell(): ReactNode {
      * rects, so the preview would be wrong; and when the change takes the
      * dragged header off screen, its pointer events go with it, and nothing
      * else would ever end the drag. Main ends it on its side too.
+     *
+     * A press on a room's tab, a drag or not yet one, also ends when no row
+     * on screen lists the tab any more (`pressEnded`, which says why). A
+     * press whose release never reached the shell ends on the next move,
+     * in `grab`.
      */
     const layout = state ? layoutKey(state.panes) : '';
+    const rows = state ? rowsOf(state.panes) : [];
+    const rowsKey = rows.join('\n');
     useEffect(() => {
-        if (held.current?.dragging && held.current.layout !== layout) cancelDrag();
-    }, [layout]);
+        const grabbed = held.current;
+        if (grabbed && pressEnded(pressOf(grabbed), { layout, rows, buttons: null })) cancelDrag();
+    }, [layout, rowsKey]);
 
     /* Escape puts everything back where it was, as it does for any drag. */
     const dragging = drag !== null;
@@ -416,11 +464,11 @@ export default function Shell(): ReactNode {
 
     /**
      * The release. A drop goes to main only where main said it would land;
-     * anywhere else — a seam, the tab bar, a refused edge, or before main has
-     * answered at all — ends the drag and changes nothing. Main asks again
-     * before it drops.
+     * anywhere else — a seam, the tab bar, a refused edge, a room over a
+     * pane's centre, or before main has answered at all — ends the drag and
+     * changes nothing. Main asks again before it drops.
      */
-    const release = (event: PointerEvent<HTMLDivElement>): void => {
+    const release = (event: PointerEvent<HTMLElement>): void => {
         const grabbed = held.current;
         if (!grabbed || event.pointerId !== grabbed.pointerId) return;
         if (!grabbed.dragging || !state) {
@@ -431,36 +479,68 @@ export default function Shell(): ReactNode {
         const { over, zone } = aimAt(state.panes, event.clientX, event.clientY);
         const landing = over ? grabbed.targets?.[over]?.[zone] : null;
         setDrag(null);
-        if (over && landing) void window.zanaris.panes.drop(grabbed.from, over, zone);
-        else void window.zanaris.panes.endDrag();
+        if (!over || !landing) void window.zanaris.panes.endDrag();
+        else if (grabbed.from.kind === 'pane') void window.zanaris.panes.drop(grabbed.from.paneId, over, zone);
+        else void window.zanaris.chat.dropRoom(grabbed.from.room, over, zone);
     };
 
-    const grabFor = (paneId: string): Grab => ({
+    /**
+     * The pointer handlers for one drag handle: a pane's header, or a room's
+     * tab. The two differ in where a press may start, whether a lone pane can
+     * be dragged at all, what main is asked as the drag begins and what a
+     * drop asks it (`release`), what a refusal does — a room's ends the drag
+     * where it is, since main hid nothing — and in the click a room's tab is
+     * sent after its drag, which is swallowed (`onClickCapture`). How far a
+     * press travels to become a drag, what it is aimed at, and every way it
+     * ends without a drop are the same for both.
+     */
+    const grab = (from: DragFrom): Grab => ({
         onPointerDown: event => {
-            // A press that began on a button is that button's: the nav arrows
-            // and the caret must still click rather than start a drag.
-            if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
-            // A second pointer pressing a header mid-drag ends the first drag
-            // properly, rather than overwriting it and never telling main.
+            if (event.button !== 0) return;
+            // A press on a header that began on a button is that button's: the
+            // nav arrows and the caret must still click rather than start a
+            // drag. A room's tab is itself the button, and its close is not
+            // given these handlers at all.
+            if (from.kind === 'pane' && (event.target as HTMLElement).closest('button')) return;
+            // A second pointer pressing mid-drag ends the first drag properly,
+            // rather than overwriting it and never telling main.
             if (held.current) cancelDrag();
+            dragPressed.current = false;
             event.currentTarget.setPointerCapture(event.pointerId);
-            held.current = { from: paneId, pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, dragging: false, layout: '', targets: null };
+            held.current = { from, pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, dragging: false, layout: '', targets: null };
         },
         onPointerMove: event => {
             const grabbed = held.current;
             if (!grabbed || event.pointerId !== grabbed.pointerId || !state) return;
+            // A press whose release never came here (`pressEnded`).
+            if (pressEnded(pressOf(grabbed), { layout: layoutKey(state.panes), rows: rowsOf(state.panes), buttons: event.buttons })) {
+                cancelDrag();
+                return;
+            }
             const at = { x: event.clientX, y: event.clientY };
             if (!grabbed.dragging) {
                 // A lone pane has nowhere to go, so pressing its header stays a
-                // click however far the pointer wanders.
-                if (state.panes.length < 2 || !draggedFar(grabbed.start, at)) return;
+                // click however far the pointer wanders. A room's tab drags
+                // with one pane on screen, since its panel would go beside it;
+                // where no pane is large enough to halve, main offers no edge,
+                // and letting go anywhere drops nothing.
+                if ((grabbed.from.kind === 'pane' && state.panes.length < 2) || !draggedFar(grabbed.start, at)) return;
                 grabbed.dragging = true;
                 grabbed.layout = layoutKey(state.panes);
+                dragPressed.current = true;
                 setDrag({ from: grabbed.from, targets: null, over: null, zone: 'centre' });
-                void window.zanaris.panes.beginDrag(grabbed.from).then(targets => {
+                const asked = grabbed.from.kind === 'pane' ? window.zanaris.panes.beginDrag(grabbed.from.paneId) : window.zanaris.chat.beginRoomDrag(grabbed.from.room);
+                void asked.then(targets => {
                     // Only for the drag that asked: this one may have ended, and
                     // another begun, while main was answering.
                     if (held.current !== grabbed) return;
+                    if (targets === null && grabbed.from.kind === 'room') {
+                        // Main refused the room and hid nothing, so there is no
+                        // drag of main's to end: this one stops where it is.
+                        held.current = null;
+                        setDrag(null);
+                        return;
+                    }
                     grabbed.targets = targets;
                     setDrag(d => (d ? { ...d, targets } : d));
                 });
@@ -474,8 +554,20 @@ export default function Shell(): ReactNode {
         },
         onLostPointerCapture: event => {
             if (held.current?.pointerId === event.pointerId) cancelDrag();
-        }
+        },
+        // A key's click has no press behind it (detail 0), so it is the tab's
+        // whatever a drag left behind.
+        onClickCapture:
+            from.kind === 'room'
+                ? event => {
+                      if (!dragPressed.current || event.detail === 0) return;
+                      dragPressed.current = false;
+                      event.preventDefault();
+                      event.stopPropagation();
+                  }
+                : undefined
     });
+    const grabRoom = (room: string): Grab => grab({ kind: 'room', room });
 
     if (!state) return <div className="h-full bg-ink" />;
 
@@ -726,8 +818,10 @@ export default function Shell(): ReactNode {
                          * does not reach here is a right-click on the game or a
                          * page *below* its header: that lands on the native view
                          * stacked above the shell, and main raises the same menu
-                         * from there. clientX/Y are already the window's,
-                         * because the shell view spans the whole content area.
+                         * from there. Nor does one on a room's tab in chat's
+                         * row, which raises that room's menu and stops there.
+                         * clientX/Y are already the window's, because the shell
+                         * view spans the whole content area.
                          */
                         onContextMenu={event => {
                             event.preventDefault();
@@ -774,14 +868,15 @@ export default function Shell(): ReactNode {
                                     </>
                                 ) : undefined
                             }
-                            grab={grabFor(pane.paneId)}
-                            grabbing={drag?.from === pane.paneId}
+                            grab={grab({ kind: 'pane', paneId: pane.paneId })}
+                            grabbing={drag !== null && carries(drag.from, pane.paneId)}
                         />
-                        <PaneBody pane={pane} state={state} />
+                        <PaneBody pane={pane} state={state} grabRoom={grabRoom} />
                         {/*
                          * Over the body only, so the header stays readable and
                          * grabbable under the pointer that is dragging it. The
-                         * pane being carried is dimmed. Everything says its name,
+                         * pane being carried is dimmed; a room's tab carries no
+                         * pane, so then none is. Everything says its name,
                          * because with the native views hidden a game or page
                          * pane has nothing else to identify it by — except the
                          * pane under the pointer, whose middle the drop preview's
@@ -791,11 +886,11 @@ export default function Shell(): ReactNode {
                             <div
                                 aria-hidden="true"
                                 className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center font-pixel text-[15px] ${
-                                    drag.from === pane.paneId ? 'text-faint opacity-60' : 'text-dim'
+                                    carries(drag.from, pane.paneId) ? 'text-faint opacity-60' : 'text-dim'
                                 }`}
                                 style={{ top: PANE_HEADER_HEIGHT }}
                             >
-                                {drag.over === pane.paneId && drag.over !== drag.from && drag.targets ? null : pane.name}
+                                {drag.over === pane.paneId && !carries(drag.from, pane.paneId) && drag.targets ? null : pane.name}
                             </div>
                         )}
                     </div>
@@ -812,11 +907,14 @@ export default function Shell(): ReactNode {
              * the seam between them.
              */}
             {(() => {
-                const target = drag?.over && drag.over !== drag.from ? state.panes.find(p => p.paneId === drag.over) : undefined;
-                const dragged = drag ? state.panes.find(p => p.paneId === drag.from) : undefined;
-                const zones = target && drag?.targets?.[target.paneId];
-                if (!drag || !target || !dragged || !zones) return null;
-                return <DropIndicator target={target.rect} targetName={target.name} landing={zones[drag.zone]} zone={drag.zone} dragged={dragged.name} />;
+                if (!drag?.over || carries(drag.from, drag.over)) return null;
+                const from = drag.from;
+                const target = state.panes.find(p => p.paneId === drag.over);
+                /* A pane by the name its header gives it; a room by its tab's, which is what its panel's header will say. */
+                const dragged = from.kind === 'pane' ? state.panes.find(p => p.paneId === from.paneId)?.name : roomLabel(from.room);
+                const zones = target && drag.targets?.[target.paneId];
+                if (!target || dragged === undefined || !zones) return null;
+                return <DropIndicator target={target.rect} targetName={target.name} landing={zones[drag.zone]} zone={drag.zone} dragged={dragged} swaps={from.kind === 'pane'} />;
             })()}
         </div>
     );

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AUTO_JOIN_MAX, IGNORE_MAX, readIgnore, sameNames, PASSWORD_MAX, channelProblem, clockTime, isNick, firstPage, formatAutoJoin, isConnectionWanted, passwordProblem, rankTone, readSettingsDraft, sameSettings } from './chatSettings.ts';
-import { DEFAULT_AUTO_JOIN } from './chat.ts';
+import { AUTO_JOIN_MAX, IGNORE_MAX, readIgnore, readRoom, sameNames, PASSWORD_MAX, channelProblem, clockTime, isNick, firstPage, formatAutoJoin, isConnectionWanted, passwordProblem, rankTone, readSettingsDraft, sameSettings } from './chatSettings.ts';
+import { DEFAULT_AUTO_JOIN, SERVER_LOG } from './chat.ts';
 
 // ── the form ──────────────────────────────────────────────────────────────
 
@@ -157,4 +157,11 @@ test('two name lists are the same whatever their order or case', () => {
     assert.equal(sameNames(['Bob', 'alice'], ['ALICE', 'bob']), true);
     assert.equal(sameNames(['bob'], ['bob', 'alice']), false);
     assert.equal(sameNames([], []), true);
+});
+
+test('readRoom keeps Status, a channel and a nick, and nothing else', () => {
+    assert.equal(readRoom(SERVER_LOG), SERVER_LOG);
+    assert.equal(readRoom('#LostHQ'), '#LostHQ');
+    assert.equal(readRoom('zed'), 'zed');
+    for (const bad of ['#a,0', '#', '# x', 'two words', '', 7, null, undefined, '#' + 'x'.repeat(60)]) assert.equal(readRoom(bad), null, String(bad));
 });

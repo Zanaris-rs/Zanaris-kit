@@ -1,4 +1,4 @@
-import type { ChatPage, ChatStatus, ChatView } from './chat.ts';
+import { SERVER_LOG, type ChatPage, type ChatStatus, type ChatView } from './chat.ts';
 import { asChannel, foldName, isChannel } from './ircNames.ts';
 
 /**
@@ -39,6 +39,24 @@ export function channelProblem(channel: string): string | null {
     if (channel.length > CHANNEL_NAME_MAX) return `${channel.slice(0, 20)}… is longer than ${CHANNEL_NAME_MAX} characters.`;
     if (/[\u0000-\u001f\u007f\s,]/.test(channel)) return `${channel} has a character a channel name cannot.`;
     return null;
+}
+
+/**
+ * A room as a setup file or a message from the shell names one: Status, a
+ * channel `channelProblem` passes, or a nick `isNick` passes. Anything else is
+ * null, and so is anything that is not a string.
+ *
+ * One function decides this for everything that takes a room from outside main,
+ * because `isChannel` alone reads only the first character: a stranger's setup
+ * naming `#a,0` would get a Join that sends `JOIN #a,0`, and on many servers
+ * the `0` leaves every channel. A channel is told from a nick by its prefix, as
+ * everywhere else, so `&` and `#` go through `channelProblem` and the rest
+ * through `isNick`. The room comes back as written, not folded.
+ */
+export function readRoom(x: unknown): string | null {
+    if (typeof x !== 'string') return null;
+    if (x === SERVER_LOG) return x;
+    return isChannel(x) ? (channelProblem(x) === null ? x : null) : isNick(x) ? x : null;
 }
 
 /** What the form holds: the text as typed. */
