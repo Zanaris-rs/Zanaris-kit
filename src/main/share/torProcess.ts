@@ -191,19 +191,26 @@ async function runTor(io: TorIo, opts: RunOptions, mode: TorMode | 'client', rel
             });
     };
 
-    const proc = io.spawn({
-        command: prepared.exe,
-        args: buildTorArgs({ empty: opts.empty, dataDir, mode, relayPort }),
-        env: torEnv(io.env, io.platform, prepared.libDir),
-        stream: 'stdout',
-        onLine: line => {
-            logs.push(line);
-            if (logs.length > LOG_LINES) logs.shift();
-            parser.push(line);
-            look();
-            changed();
-        }
-    });
+    let proc: TunnelProcess;
+    try {
+        proc = io.spawn({
+            command: prepared.exe,
+            args: buildTorArgs({ empty: opts.empty, dataDir, mode, relayPort }),
+            env: torEnv(io.env, io.platform, prepared.libDir),
+            stream: 'stdout',
+            onLine: line => {
+                logs.push(line);
+                if (logs.length > LOG_LINES) logs.shift();
+                parser.push(line);
+                look();
+                changed();
+            }
+        });
+    } catch (err) {
+        // Node throws rather than emitting 'error' for some bad spawns, a NUL in an argument among them.
+        await tidy().catch(() => {});
+        throw new TunnelError(`Tor could not be started: ${err instanceof Error ? err.message : String(err)}`, [...logs]);
+    }
     const kill = stopper(proc, opts.stopGraceMs ?? STOP_GRACE_MS);
     let stopping: Promise<void> | null = null;
     const stop = (): Promise<void> => {

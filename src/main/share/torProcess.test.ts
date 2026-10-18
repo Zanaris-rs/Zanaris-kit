@@ -230,6 +230,31 @@ test('a Tor that exits before it is ready rejects with its last line and leaves 
     });
 });
 
+test('an address that appears after Tor\'s last line is still found, by the poll', async () => {
+    const tor = fakeIo();
+    const pending = startOnion(tor.io, { ...OPTS, mode: 'single', relayPort: 1, signal: new AbortController().signal });
+    await turns();
+    tor.say('Bootstrapped 100% (done): Done');
+    await turns();
+    tor.setHostname(`${HOST}\n`);
+    const onion = await pending;
+    assert.equal(onion.url, `http://${HOST}`);
+    await onion.stop();
+});
+
+test('a spawn that throws leaves no folders behind and is reported as a TunnelError', async () => {
+    const tor = fakeIo();
+    tor.io.spawn = () => {
+        throw new TypeError('The argument \'args[5]\' must be a string without null bytes');
+    };
+    await assert.rejects(startOnion(tor.io, { ...OPTS, mode: 'full', relayPort: 1, signal: new AbortController().signal }), (err: unknown) => {
+        assert.ok(err instanceof TunnelError);
+        assert.match(err.message, /^Tor could not be started: .*null bytes$/);
+        return true;
+    });
+    assert.deepEqual(tor.trace, ['prepared', 'made', 'removed /kit/run/data', 'released']);
+});
+
 test('a Tor that does not bootstrap in time is killed and its folders removed', async () => {
     const tor = fakeIo();
     const pending = startTorClient(tor.io, { ...OPTS, signal: new AbortController().signal, bootTimeoutMs: 50 });
@@ -332,6 +357,17 @@ test('the fake Tor, failing for real, is reported with its last line', async t =
     await assert.rejects(startOnion(io, { checkedDir: '/unused', empty: '/unused', mode: 'full', relayPort: 1, signal: new AbortController().signal }), (err: unknown) => {
         assert.ok(err instanceof TunnelError);
         assert.match(err.message, /: Could not bind to 127\.0\.0\.1:9050: Address already in use\. Is Tor already running\?$/);
+        return true;
+    });
+    assert.equal(existsSync(made[0]!), false);
+    assert.equal(released(), 1);
+});
+
+test('the fake Tor, failing to load for real, is reported with what the loader wrote to stderr', async t => {
+    const { io, made, released } = realIo(t, 'load-fail');
+    await assert.rejects(startOnion(io, { checkedDir: '/unused', empty: '/unused', mode: 'full', relayPort: 1, signal: new AbortController().signal }), (err: unknown) => {
+        assert.ok(err instanceof TunnelError);
+        assert.match(err.message, /^Tor exited \(code 127\) before it was ready: tor: error while loading shared libraries: libevent-2\.1\.so\.7: cannot open shared object file: No such file or directory$/);
         return true;
     });
     assert.equal(existsSync(made[0]!), false);

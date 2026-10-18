@@ -22,7 +22,11 @@ export interface TunnelSpawnSpec {
     env: Record<string, string>;
     /** One line of the program's log, read from `stream`. */
     onLine: (line: string) => void;
-    /** Where the program writes its log: stderr for cloudflared, the default; stdout for Tor. */
+    /**
+     * Where the program writes its log: stderr for cloudflared, the default,
+     * with stdout ignored; stdout for Tor, with stderr read as well, since
+     * that is where the loader says why a program would not start.
+     */
     stream?: 'stdout' | 'stderr';
 }
 
@@ -141,10 +145,10 @@ export function createLogParser(): { push(line: string): void; url(): string | n
     };
 }
 
-/** A child process, its log stream (stderr unless the spec says stdout) split into lines and the other ignored. */
+/** A child process, its log split into lines: stderr alone by default, or stdout and stderr both when the spec says stdout. */
 export function spawnProcess(spec: TunnelSpawnSpec): TunnelProcess {
     const stream = spec.stream ?? 'stderr';
-    const stdio: ['ignore', 'ignore' | 'pipe', 'ignore' | 'pipe'] = stream === 'stdout' ? ['ignore', 'pipe', 'ignore'] : ['ignore', 'ignore', 'pipe'];
+    const stdio: ['ignore', 'ignore' | 'pipe', 'pipe'] = ['ignore', stream === 'stdout' ? 'pipe' : 'ignore', 'pipe'];
     const child = spawn(spec.command, spec.args, { env: spec.env, stdio, windowsHide: true });
     const program = basename(spec.command).replace(/\.exe$/i, '');
     const exited = new Promise<number | null>(resolve => {
@@ -156,8 +160,9 @@ export function spawnProcess(spec: TunnelSpawnSpec): TunnelProcess {
         // lines explaining an early exit are in the log before anyone reads it.
         child.once('close', code => resolve(code));
     });
-    const log = stream === 'stdout' ? child.stdout : child.stderr;
-    if (log) createInterface({ input: log, crlfDelay: Infinity }).on('line', spec.onLine);
+    for (const log of [child.stdout, child.stderr]) {
+        if (log) createInterface({ input: log, crlfDelay: Infinity }).on('line', spec.onLine);
+    }
     return {
         exited,
         kill: signal => {

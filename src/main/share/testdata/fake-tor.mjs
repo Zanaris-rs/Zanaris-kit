@@ -21,6 +21,12 @@ process.on('SIGTERM', () => {
     later(10, () => process.exit(0));
 });
 
+if (mode === 'load-fail') {
+    // What the Linux loader prints, to stderr, for a tor that cannot find libevent; nothing reaches stdout.
+    process.stderr.write('tor: error while loading shared libraries: libevent-2.1.so.7: cannot open shared object file: No such file or directory\n');
+    process.exit(127);
+}
+
 say('notice', 'Tor 0.4.9.14 running on Darwin with Libevent 2.1.12-stable.');
 switch (mode) {
     case 'ok':
