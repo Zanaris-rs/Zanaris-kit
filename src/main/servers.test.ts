@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversView, startupServers } from './servers.ts';
-import { DEFAULT_SERVERS } from './catalog.ts';
+import { isRemovable, nextStartup, readNewServerInput, removeQuestion, serversMenu, serversView, startupServers, type ServersMenuEntry } from './servers.ts';
+import { DEFAULT_SERVERS, serverMenuLabel } from './catalog.ts';
 import type { ServerDef } from '../shared/catalog.ts';
 
 const catalog = DEFAULT_SERVERS.map(s => ({ ...s }) as ServerDef);
@@ -85,4 +85,37 @@ test('readNewServerInput refuses anything that is not the five fields', () => {
         wikiHome: null,
         notes: null
     });
+});
+
+// ── a game window's Servers menu ──────────────────────────────────────────
+
+const menuItems = (entries: ServersMenuEntry[]): Extract<ServersMenuEntry, { kind: 'item' }>[] => entries.filter((e): e is Extract<ServersMenuEntry, { kind: 'item' }> => e.kind === 'item');
+
+test('the Servers menu lists every server as File > New Window For names it, counts the open ones, and ends with Manage Servers', () => {
+    const entries = serversMenu({ catalog, openCounts: new Map([['lostcity', 2]]), isMac: true });
+    assert.deepEqual(
+        menuItems(entries).map(e => e.label),
+        [...catalog.map(s => (s.id === 'lostcity' ? `${serverMenuLabel(s)} · 2 open` : serverMenuLabel(s))), 'Manage Servers…']
+    );
+    assert.deepEqual(entries.map(e => e.kind), [...catalog.map(() => 'item'), 'separator', 'item']);
+    assert.deepEqual(menuItems(entries)[0]?.action, { kind: 'open', server: catalog[0]!.id });
+    assert.deepEqual(menuItems(entries).at(-1)?.action, { kind: 'manage' });
+    assert.ok(menuItems(entries).every(e => e.enabled));
+});
+
+test('an empty server list says so, greyed, and still offers Manage Servers', () => {
+    const entries = serversMenu({ catalog: [], openCounts: new Map(), isMac: true });
+    assert.deepEqual(
+        menuItems(entries).map(e => [e.label, e.enabled, e.action]),
+        [
+            ['No servers in the list', false, null],
+            ['Manage Servers…', true, { kind: 'manage' }]
+        ]
+    );
+});
+
+test("a server's name as typed shows its & off macOS, where a menu reads one as a shortcut's mark", () => {
+    const rock = { ...catalog[0]!, id: 'rock', name: 'Rock & Roll', revision: null } as ServerDef;
+    assert.equal(menuItems(serversMenu({ catalog: [rock], openCounts: new Map(), isMac: false }))[0]?.label, 'Rock && Roll');
+    assert.equal(menuItems(serversMenu({ catalog: [rock], openCounts: new Map(), isMac: true }))[0]?.label, 'Rock & Roll');
 });
