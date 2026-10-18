@@ -94,9 +94,11 @@ const LOG_LINES = 200;
 /** One run on the owner's Mac reached its full onion 55 s after start; a Tor not bootstrapped by twice that is not going to be. */
 const BOOT_TIMEOUT_MS = 120_000;
 /**
- * The link checker's, longer: it bootstraps while the onion's descriptor is
- * published, and the check it serves has five minutes in all, so it may take
- * up to three of them.
+ * The link checker's, longer: with no directory cache yet it can take minutes
+ * to load the ~9000 relay descriptors it needs, and a cold first share has
+ * none. The cache is kept after that, so later checkers bootstrap in seconds.
+ * The check starts only once the checker is ready, so this time comes before
+ * the check's own five minutes, not out of them.
  */
 const CHECKER_BOOT_TIMEOUT_MS = 180_000;
 const STOP_GRACE_MS = 5_000;
