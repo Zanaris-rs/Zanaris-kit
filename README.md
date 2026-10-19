@@ -60,9 +60,13 @@ View menu.
 ## What it does
 
 There are game windows, and one Settings window for the app; new game windows
-come from the **File menu**, from Settings' Open buttons, and at launch from
-the servers ticked there. New Window (Cmd/Ctrl+N) opens another window of the
-focused window's server, and New Window For lists the catalog. On macOS the
+come from the **server button** at the start of every window's tab bar, from
+the **File menu**, from Settings' Open buttons, and at launch from the servers
+ticked there. The server button is named after its window's server, and its
+menu lists the catalog, each server with how many windows of it are open: a
+pick opens a new window of it, and Manage Servers… opens Settings on Servers.
+New Window (Cmd/Ctrl+N) opens another window of the focused window's server,
+and New Window For lists the catalog too. On macOS the
 app keeps running with no windows and the dock menu opens one; elsewhere
 closing the last window quits, since the menu lives in the window.
 
@@ -1223,7 +1227,7 @@ src/main/paneMenu.ts        pure: a pane's name, its gestures, what it may becom
 src/main/paneHost.ts        the views inside a tab's panes; holds no rules
 src/main/catalog.ts         pure validation, migration; the servers.json store     (tested)
 src/main/servers.ts         pure: Settings' Servers section — rows, isRemovable,
-                            startup picks, the add form                             (tested)
+                            startup picks, the add form — and the Servers menu    (tested)
 src/main/settingsWindow.ts  pure: the Settings window's slot, and where it opens   (tested)
 src/main/slots.ts           pure: slot numbers, partitions, titles                  (tested)
 src/main/windowFrame.ts     pure: the title bar macOS and Windows don't draw, and

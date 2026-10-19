@@ -1,4 +1,4 @@
-import { DEFAULT_SERVERS } from './catalog.ts';
+import { DEFAULT_SERVERS, serverMenuLabel } from './catalog.ts';
 import type { NewServerInput, ServerDef } from '../shared/catalog.ts';
 
 /**
@@ -100,6 +100,35 @@ export function serversView(opts: { catalog: readonly ServerDef[]; startup: read
             removable: isRemovable(server.id)
         }))
     };
+}
+
+/** What one of the Servers menu's items does: open a new window of a server, or open Settings on Servers. */
+export type ServersMenuAction = { kind: 'open'; server: string } | { kind: 'manage' };
+
+/** One line of the Servers menu. `action` is null for the greyed line an empty list shows. */
+export type ServersMenuEntry = { kind: 'separator' } | { kind: 'item'; label: string; enabled: boolean; action: ServersMenuAction | null };
+
+/**
+ * The menu under a game window's server button, at the start of its tab bar:
+ * every server in the list, in its order and named as File > New Window For
+ * names it, each with how many windows of it are open when any are, then
+ * Manage Servers. A pick opens a new window, so this window's own server is
+ * not ticked: a tick would read as the server this window could switch to.
+ * A native menu cannot right-align a count, so it goes in the name. A name
+ * is the player's own typing, so an `&` is doubled off macOS, where a menu
+ * reads one as the mark for the next letter's shortcut.
+ */
+export function serversMenu(opts: { catalog: readonly ServerDef[]; openCounts: ReadonlyMap<string, number>; isMac: boolean }): ServersMenuEntry[] {
+    const named = (server: ServerDef): string => {
+        const label = opts.isMac ? serverMenuLabel(server) : serverMenuLabel(server).replace(/&/g, '&&');
+        const open = opts.openCounts.get(server.id) ?? 0;
+        return open > 0 ? `${label} · ${open} open` : label;
+    };
+    const servers: ServersMenuEntry[] =
+        opts.catalog.length === 0
+            ? [{ kind: 'item', label: 'No servers in the list', enabled: false, action: null }]
+            : opts.catalog.map(server => ({ kind: 'item', label: named(server), enabled: true, action: { kind: 'open', server: server.id } }));
+    return [...servers, { kind: 'separator' }, { kind: 'item', label: 'Manage Servers…', enabled: true, action: { kind: 'manage' } }];
 }
 
 /**

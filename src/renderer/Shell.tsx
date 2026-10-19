@@ -64,6 +64,8 @@ const MENU_BOX: CSSProperties = { height: 26, width: HEADER_BUTTON_WIDTH, paddin
 const SHARING_BOX: CSSProperties = { height: 26, color: 'var(--color-warn)' };
 /** The tabs' height. Inline for the same reason as the boxes above. */
 const UPDATE_BOX: CSSProperties = { height: 26 };
+/** Add pane's box, held to a width a long server name truncates in. Inline for the same reason as the boxes above. */
+const SERVER_BOX: CSSProperties = { ...ADD_PANE_BOX, maxWidth: 180 };
 
 /**
  * What a tab in the background still has running, after its label: the game's
@@ -575,7 +577,8 @@ export default function Shell(): ReactNode {
         <div className="picture relative h-full overflow-hidden bg-ink text-cream">
             <TopBar frame={state.frame} style={at(rects.tabBar)}>
                 {/*
-                 * The menu, where the window has no menu bar, then tabs and
+                 * The menu, where the window has no menu bar, then this
+                 * window's server, then tabs and
                  * the control that makes one, then Sharing while a live link
                  * has no pane to mark, then the kit's own update while there
                  * is one, then three menus side by side — Setups, Theme and
@@ -613,8 +616,31 @@ export default function Shell(): ReactNode {
                     </button>
                 )}
                 {/*
-                 * The tablist is its own box so Setups, Theme and Add pane,
-                 * menu buttons rather than tabs, sit outside it. `min-w-0` is
+                 * This window's server, named, which also says which server
+                 * the window is. Its menu, main's, lists every server and
+                 * opens a new window of the one picked, as File > New
+                 * Window For does, then Manage Servers, which opens Settings
+                 * on Servers. First after the ≡, where the window's identity
+                 * is looked for; a long name truncates, whole in the tooltip.
+                 */}
+                <button
+                    type="button"
+                    title={`${state.server.name}: open a window of any server`}
+                    aria-haspopup="menu"
+                    onClick={event => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        void window.zanaris.panes.serversMenu(box.left, box.bottom);
+                    }}
+                    style={SERVER_BOX}
+                    className="btn shrink-0 gap-[3px]"
+                >
+                    <span className="min-w-0 truncate">{state.server.name}</span>
+                    <Caret />
+                </button>
+                {/*
+                 * The tablist is its own box so the server button, Setups,
+                 * Theme and Add pane, menu buttons rather than tabs, sit
+                 * outside it. `min-w-0` is
                  * what lets the tabs give way to them as they multiply,
                  * and `overflow-hidden` keeps what still does not fit
                  * inside the box: on a window narrower than the bar's

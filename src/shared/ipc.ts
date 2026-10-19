@@ -37,6 +37,7 @@ export const IPC = {
     tabAddPaneMenu: 'zanaris:tab-add-pane-menu',
     tabSetupsMenu: 'zanaris:tab-setups-menu',
     tabThemeMenu: 'zanaris:tab-theme-menu',
+    tabServersMenu: 'zanaris:tab-servers-menu',
     tabAppMenu: 'zanaris:tab-app-menu',
     tabShowHomeServer: 'zanaris:tab-show-home-server',
     paneOpenExternal: 'zanaris:pane-open-external',
@@ -443,6 +444,13 @@ export interface ZanarisApi {
          * like the pane menus. Coordinates are the window's.
          */
         themeMenu(x: number, y: number): Promise<void>;
+        /**
+         * Raises the menu under the server button at the start of the tab
+         * bar: every server in the list, a pick opening a new window of it,
+         * and Manage Servers. Native and built in main like the pane menus.
+         * Coordinates are the window's.
+         */
+        serversMenu(x: number, y: number): Promise<void>;
         /**
          * Raises the application menu — File, Edit, View, Window and Help —
          * from the ≡ that starts the tab bar where the window has no menu bar
